@@ -33,7 +33,6 @@ const SHELL_LIST_SURFACES = new Set<PendingPageSurface>([
   "knowledge",
   "contacts",
   "organizations",
-  "social",
   "letters",
 ]);
 

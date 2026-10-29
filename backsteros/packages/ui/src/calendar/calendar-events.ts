@@ -89,6 +89,8 @@ export type TaskCalendarEvent = {
   editable?: boolean;
   startEditable?: boolean;
   durationEditable?: boolean;
+  /** When false, FC omits the end from `timeText` (social posts are a point-in-time). */
+  displayEventEnd?: boolean;
   classNames: string[];
   extendedProps:
     | {
@@ -101,6 +103,18 @@ export type TaskCalendarEvent = {
         notification?: boolean;
         habitId?: string | null;
         habitIcon?: string | null;
+        /**
+         * Network Social planned post — calendar chip shows this platform
+         * mark instead of a task status icon. Prefer `socialPlatforms` when
+         * a post targets more than one network.
+         */
+        socialPlatform?: string | null;
+        /** All platforms for a grouped multi-network planned post. */
+        socialPlatforms?: readonly string[] | null;
+        /** Image-only planned post (no caption) — chip shows an image mark. */
+        socialImageOnly?: boolean;
+        /** Trailing hashtags to show under the caption when space allows. */
+        socialHashtags?: readonly string[] | null;
       }
     | {
         entityType: "meeting";
@@ -330,18 +344,52 @@ export type CalendarEventChange = {
   allDay: boolean;
 };
 
+export type CalendarChangeToTaskPatchOptions = {
+  /**
+   * When a timed task is dropped on a month / all-day cell, keep this clock
+   * time on the new calendar day instead of clearing to an all-day due date.
+   * Only applied when `previousAllDay === false`.
+   */
+  previousStart?: Date | null;
+  previousEnd?: Date | null;
+  previousAllDay?: boolean;
+};
+
 /**
  * Convert a FullCalendar drop/resize/receive result into a task patch.
- * All-day placement clears the end time; timed placement without an explicit
- * end gets the default block duration.
+ * All-day placement clears the end time unless a timed `previousStart` is
+ * provided (month moves of timed tasks keep the publish/due clock time).
+ * Timed placement without an explicit end gets the default block duration.
  */
 export function calendarChangeToTaskPatch(
   change: CalendarEventChange,
+  options?: CalendarChangeToTaskPatchOptions,
 ): TaskCalendarPatch | null {
   const start = toValidDate(change.start);
   if (!start) return null;
 
   if (change.allDay) {
+    const previousStart = toValidDate(options?.previousStart ?? null);
+    if (previousStart && options?.previousAllDay === false) {
+      const nextStart = new Date(
+        start.getFullYear(),
+        start.getMonth(),
+        start.getDate(),
+        previousStart.getHours(),
+        previousStart.getMinutes(),
+        previousStart.getSeconds(),
+        0,
+      );
+      const previousEnd = toValidDate(options?.previousEnd ?? null);
+      const durationMs =
+        previousEnd && previousEnd.getTime() > previousStart.getTime()
+          ? previousEnd.getTime() - previousStart.getTime()
+          : DEFAULT_TIMED_TASK_DURATION_MINUTES * 60_000;
+      return {
+        dueDate: nextStart.toISOString(),
+        dueEndDate: new Date(nextStart.getTime() + durationMs).toISOString(),
+      };
+    }
     return { dueDate: start.toISOString(), dueEndDate: null };
   }
 
@@ -356,6 +404,33 @@ export function calendarChangeToTaskPatch(
     dueDate: start.toISOString(),
     dueEndDate: effectiveEnd.toISOString(),
   };
+}
+
+/** Build a timed task patch that only changes the local calendar day. */
+export function taskPatchMovingToLocalDateYmd(input: {
+  dateYmd: string;
+  previousStart: Date;
+  previousEnd?: Date | null;
+}): TaskCalendarPatch | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(input.dateYmd.trim());
+  if (!match) return null;
+  const dayAnchor = new Date(
+    Number(match[1]),
+    Number(match[2]) - 1,
+    Number(match[3]),
+    12,
+    0,
+    0,
+    0,
+  );
+  return calendarChangeToTaskPatch(
+    { start: dayAnchor, end: null, allDay: true },
+    {
+      previousStart: input.previousStart,
+      previousEnd: input.previousEnd ?? null,
+      previousAllDay: false,
+    },
+  );
 }
 
 /** Open tasks without a due date — candidates for dragging onto the calendar. */

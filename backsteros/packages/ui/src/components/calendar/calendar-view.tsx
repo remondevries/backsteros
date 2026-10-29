@@ -38,6 +38,7 @@ import {
   DEFAULT_CALENDAR_VIEW_MODE,
   calendarViewModeToFcView,
   fcViewTypeToCalendarViewMode,
+  getCalendarViewModeLabel,
   type CalendarViewMode,
 } from "../../calendar/calendar-view-modes.js";
 import {
@@ -46,10 +47,12 @@ import {
   calendarEntityFromEvent,
   calendarSelectionToMeetingRange,
   isCalendarMeetingDuplicateModifier,
+  taskPatchMovingToLocalDateYmd,
   type MeetingCalendarPatch,
   type TaskCalendarEvent,
   type TaskCalendarPatch,
 } from "../../calendar/calendar-events.js";
+import { resolveCalendarDropAtPoint } from "../../calendar/calendar-task-drag.js";
 import {
   isMeetingsAvailabilityGridView,
   MEETINGS_AVAILABILITY_MARKER_TYPE,
@@ -90,7 +93,7 @@ import {
   calendarMonthStripDates,
   CALENDAR_MONTH_STRIP_CENTER_INDEX,
   CALENDAR_MONTH_STRIP_PANE_COUNT,
-  CALENDAR_MONTH_STRIP_WEEKDAY_LABELS,
+  formatCalendarMonthStripTitle,
   formatLocalYm,
   formatMonthAnchorYmd,
   parseMonthAnchorYmd,
@@ -110,6 +113,7 @@ import { syncCalendarWeekStripAllDayHeights } from "../../calendar/calendar-week
 import { useCalendarWeekStripScroll } from "../../calendar/use-calendar-week-strip-scroll.js";
 import { useCalendarWeekStripAxisRail } from "../../calendar/use-calendar-week-strip-axis-rail.js";
 import { useCalendarMonthStripScroll } from "../../calendar/use-calendar-month-strip-scroll.js";
+import { useCalendarMonthEventDrag } from "../../calendar/use-calendar-month-event-drag.js";
 import { useCalendarDayStripScroll } from "../../calendar/use-calendar-day-strip-scroll.js";
 import { useListDismissDetailShortcut } from "../../list-nav/use-list-clear-selection-shortcut.js";
 
@@ -147,6 +151,11 @@ export type CalendarViewProps = {
     contactId: string,
   ) => CalendarBirthdayPopoverContact | null | undefined;
   onTaskOpen?: (taskId: string) => void;
+  /**
+   * After an event drag ends (before/with drop). Used when month-strip CSS
+   * breaks FC hit-testing so hosts can resolve the day under the pointer.
+   */
+  onEventDragStop?: (info: EventDragStopArg) => void;
   /** Opens the contact profile for a birthday marker (View profile / fallback). */
   onBirthdayOpen?: (contactId: string) => void;
   onBirthdayAddNote?: (contactId: string) => void;
@@ -194,6 +203,7 @@ export function CalendarView({
   onTaskPopoverChange,
   resolveBirthdayContact,
   onTaskOpen,
+  onEventDragStop,
   onBirthdayOpen,
   onBirthdayAddNote,
   onBirthdayAddTask,
@@ -449,6 +459,104 @@ export function CalendarView({
     onShiftMonths: shiftMonthAnchor,
   });
 
+  // Month-strip CSS breaks FC HitDragging (no initial day hit) — own the gesture.
+  useCalendarMonthEventDrag(monthStripRef, {
+    enabled: isMonthStrip,
+    minDistance: 8,
+    resolveTarget: (eventEl) => {
+      const entityType = eventEl.getAttribute("data-calendar-entity-type");
+      if (entityType === "birthday" || entityType === "external") return null;
+      if (entityType && entityType !== "task") return null;
+      const taskId = eventEl.getAttribute("data-calendar-entity-id")?.trim();
+      if (!taskId) return null;
+      const listed = eventsRef.current.find(
+        (entry) =>
+          entry.id ===
+            (eventEl.getAttribute(CALENDAR_GRID_KEYBOARD_ITEM_ATTR)?.trim() ||
+              "") ||
+          (entry.extendedProps.entityType === "task" &&
+            entry.extendedProps.taskId === taskId),
+      );
+      const previousStart = listed?.start
+        ? new Date(listed.start)
+        : eventEl.getAttribute("data-calendar-event-start")
+          ? new Date(
+              `${eventEl.getAttribute("data-calendar-event-start")}T12:00:00`,
+            )
+          : null;
+      if (!previousStart || Number.isNaN(previousStart.getTime())) return null;
+      const previousEnd = listed?.end ? new Date(listed.end) : null;
+      const allDay =
+        listed?.allDay === true ||
+        eventEl.getAttribute("data-calendar-event-all-day") === "true";
+      return {
+        taskId,
+        allDay,
+        previousStart,
+        previousEnd:
+          previousEnd && !Number.isNaN(previousEnd.getTime())
+            ? previousEnd
+            : null,
+      };
+    },
+    onMoveToDate: ({
+      taskId,
+      dateYmd,
+      allDay,
+      previousStart,
+      previousEnd,
+    }) => {
+      const dayMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateYmd);
+      if (!dayMatch) return;
+      const patch = allDay
+        ? calendarChangeToTaskPatch({
+            start: new Date(
+              Number(dayMatch[1]),
+              Number(dayMatch[2]) - 1,
+              Number(dayMatch[3]),
+              12,
+              0,
+              0,
+              0,
+            ),
+            end: null,
+            allDay: true,
+          })
+        : taskPatchMovingToLocalDateYmd({
+            dateYmd,
+            previousStart,
+            previousEnd,
+          });
+      if (!patch) return;
+      void Promise.resolve(onTaskReschedule(taskId, patch));
+    },
+    onClick: (taskId, eventEl) => {
+      const listed = eventsRef.current.find(
+        (entry) =>
+          entry.extendedProps.entityType === "task" &&
+          entry.extendedProps.taskId === taskId,
+      );
+      openCalendarEventFromFcRef.current({
+        event: {
+          id: listed?.id || taskId,
+          title: listed?.title || eventEl.textContent?.trim() || "",
+          start: null,
+          end: null,
+          startStr:
+            (typeof listed?.start === "string" && listed.start) ||
+            eventEl.getAttribute("data-calendar-event-start") ||
+            "",
+          endStr: typeof listed?.end === "string" ? listed.end : "",
+          extendedProps: listed?.extendedProps ?? {
+            entityType: "task",
+            taskId,
+          },
+        },
+        el: eventEl,
+      });
+    },
+  });
+
   useEffect(() => {
     const enteringMonth = isMonthStrip && !wasMonthStripRef.current;
     wasMonthStripRef.current = isMonthStrip;
@@ -459,7 +567,8 @@ export function CalendarView({
       middleApi?.getDate?.() ??
       new Date();
     setMonthAnchorYmd(formatMonthAnchorYmd(base));
-  }, [isMonthStrip]);
+    onRangeTitleChange?.(getCalendarViewModeLabel("month"));
+  }, [isMonthStrip, onRangeTitleChange]);
 
   useLayoutEffect(() => {
     if (!isMonthStrip) return;
@@ -468,9 +577,16 @@ export function CalendarView({
       if (cancelled) return;
       syncMonthStripDates();
       const strip = monthStripRef.current;
-      if (strip && strip.clientHeight > 0) {
+      if (!strip) return;
+      const panes = strip.querySelectorAll<HTMLElement>(
+        ".calendar-month-strip__pane",
+      );
+      const centerPane =
+        panes[CALENDAR_MONTH_STRIP_CENTER_INDEX] ?? panes[0] ?? null;
+      const paneHeight = centerPane?.offsetHeight ?? 0;
+      if (paneHeight > 0) {
         strip.scrollTop = calendarStripCenterScrollOffset(
-          strip.clientHeight,
+          paneHeight,
           CALENDAR_MONTH_STRIP_PANE_COUNT,
         );
       }
@@ -1223,8 +1339,13 @@ export function CalendarView({
     visibleRangeMsRef.current = { start: startMs, end: endMs };
     setVisibleRange({ start: info.start, end: info.end });
     setActiveGridView(info.view.type);
-    onRangeTitleChange?.(info.view.title);
+    // Month strip paints its own in-pane titles — chrome keeps a stable "Month".
     const mode = fcViewTypeToCalendarViewMode(info.view.type);
+    onRangeTitleChange?.(
+      mode === "month" || (isMonthStrip && info.view.type === "dayGridMonth")
+        ? getCalendarViewModeLabel("month")
+        : info.view.title,
+    );
     if (mode !== viewMode) {
       updateViewMode(mode);
     }
@@ -1262,10 +1383,21 @@ export function CalendarView({
     closePopovers();
   };
 
+  const monthTaskMoveRef = useRef<{
+    taskId: string;
+    dateYmd: string;
+    handledByFc: boolean;
+  } | null>(null);
+
   const applyCalendarChange = (
     event: EventDropArg["event"] | EventResizeDoneArg["event"],
     revert: () => void,
-    options?: { duplicate?: boolean },
+    options?: {
+      duplicate?: boolean;
+      previousStart?: Date | null;
+      previousEnd?: Date | null;
+      previousAllDay?: boolean;
+    },
   ) => {
     const entity = calendarEntityFromEvent(event);
     if (entity.entityType === "birthday" || entity.entityType === "external") {
@@ -1301,11 +1433,21 @@ export function CalendarView({
       ).catch(() => revert());
       return;
     }
-    const patch = calendarChangeToTaskPatch({
-      start: event.start,
-      end: event.end,
-      allDay: event.allDay,
-    });
+    if (monthTaskMoveRef.current?.taskId === entity.entityId) {
+      monthTaskMoveRef.current.handledByFc = true;
+    }
+    const patch = calendarChangeToTaskPatch(
+      {
+        start: event.start,
+        end: event.end,
+        allDay: event.allDay,
+      },
+      {
+        previousStart: options?.previousStart,
+        previousEnd: options?.previousEnd,
+        previousAllDay: options?.previousAllDay,
+      },
+    );
     if (!patch) {
       revert();
       return;
@@ -1344,8 +1486,74 @@ export function CalendarView({
     };
   };
 
-  const handleEventDragStop = (_info: EventDragStopArg) => {
+  const handleEventDragStop = (info: EventDragStopArg) => {
     clearMeetingDragCopyAffordance();
+    onEventDragStop?.(info);
+
+    // Month-strip CSS breaks FC day hit-testing — if the drop never lands,
+    // resolve the day under the pointer and keep the task's clock time.
+    if (viewMode !== "month") return;
+    const entity = calendarEntityFromEvent(info.event);
+    if (entity.entityType !== "task" || !entity.entityId) return;
+    const jsEvent = info.jsEvent;
+    if (!jsEvent || !("clientX" in jsEvent)) return;
+    const drop = resolveCalendarDropAtPoint(
+      (jsEvent as MouseEvent).clientX,
+      (jsEvent as MouseEvent).clientY,
+    );
+    if (!drop?.allDay || !drop.dateYmd) return;
+
+    const existing = eventsRef.current.find(
+      (entry) =>
+        entry.id === info.event.id ||
+        (entry.extendedProps.entityType === "task" &&
+          entry.extendedProps.taskId === entity.entityId),
+    );
+    const previousStart = existing?.start
+      ? new Date(existing.start)
+      : info.event.start;
+    if (!previousStart || Number.isNaN(previousStart.getTime())) return;
+    const previousEnd = existing?.end
+      ? new Date(existing.end)
+      : info.event.end;
+    const previousAllDay = existing
+      ? existing.allDay === true
+      : info.event.allDay === true;
+
+    monthTaskMoveRef.current = {
+      taskId: entity.entityId,
+      dateYmd: drop.dateYmd,
+      handledByFc: false,
+    };
+    window.setTimeout(() => {
+      const pending = monthTaskMoveRef.current;
+      monthTaskMoveRef.current = null;
+      if (!pending || pending.handledByFc) return;
+      if (pending.taskId !== entity.entityId) return;
+      const dayMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(pending.dateYmd);
+      if (!dayMatch) return;
+      const patch = previousAllDay
+        ? calendarChangeToTaskPatch({
+            start: new Date(
+              Number(dayMatch[1]),
+              Number(dayMatch[2]) - 1,
+              Number(dayMatch[3]),
+              12,
+              0,
+              0,
+              0,
+            ),
+            end: null,
+            allDay: true,
+          })
+        : taskPatchMovingToLocalDateYmd({
+            dateYmd: pending.dateYmd,
+            previousStart,
+            previousEnd,
+          });
+      if (!patch) return;
+      void Promise.resolve(onTaskReschedule(entity.entityId, patch));
+    }, 0);
   };
 
   const handleEventDrop = (info: EventDropArg) => {
@@ -1353,6 +1561,9 @@ export function CalendarView({
     clearMeetingDragCopyAffordance();
     applyCalendarChange(info.event, () => info.revert(), {
       duplicate: isCalendarMeetingDuplicateModifier(info.jsEvent),
+      previousStart: info.oldEvent?.start ?? null,
+      previousEnd: info.oldEvent?.end ?? null,
+      previousAllDay: info.oldEvent?.allDay,
     });
   };
 
@@ -1497,6 +1708,10 @@ export function CalendarView({
       });
       info.el.setAttribute("data-calendar-entity-type", entity.entityType);
       info.el.setAttribute("data-calendar-entity-id", entity.entityId);
+      info.el.setAttribute(
+        "data-calendar-event-all-day",
+        info.event.allDay ? "true" : "false",
+      );
       const startYmd = (
         info.event.startStr ||
         (info.event.start instanceof Date && !Number.isNaN(info.event.start.getTime())
@@ -1514,6 +1729,7 @@ export function CalendarView({
     (info: Parameters<typeof handleEventWillUnmount>[0]) => {
       info.el.removeAttribute("data-calendar-entity-type");
       info.el.removeAttribute("data-calendar-entity-id");
+      info.el.removeAttribute("data-calendar-event-all-day");
       info.el.removeAttribute("data-calendar-event-start");
       handleEventWillUnmount(info);
     },
@@ -1536,6 +1752,12 @@ export function CalendarView({
         (eventEl.classList.contains("birthday-calendar-event")
           ? "birthday"
           : "");
+      // Timed daygrid chips (month / week all-day lane) must keep FC drag +
+      // click. This capture path is only for true all-day markers.
+      if (eventEl.classList.contains("social-planned-calendar-event")) return;
+      if (eventEl.getAttribute("data-calendar-event-all-day") === "false") {
+        return;
+      }
       const isAllDayChip =
         entityType === "birthday" ||
         entityType === "external" ||
@@ -1640,8 +1862,15 @@ export function CalendarView({
 
   const monthStripFcProps = {
     ...sharedInteractionProps,
-    // Sticky weekday rail above the strip owns Mon–Sun labels.
+    // Hug the square day grid — no viewport-tall empty band under each month.
+    height: "auto" as const,
+    // In-pane month title owns labeling; no sticky Mon–Sun rail.
     dayHeaders: false,
+    // Only this month’s days — CSS hides `.fc-day-disabled` fillers so day 1
+    // is the first square (FC still emits Mon–Sun week scaffolding).
+    showNonCurrentDates: false,
+    fixedWeekCount: false,
+    expandRows: false,
   };
 
   const dayStripFcProps = {
@@ -1724,16 +1953,6 @@ export function CalendarView({
         ) : isMonthStrip ? (
           <div className="calendar-month-strip-shell">
             <div
-              className="calendar-month-strip__weekday-rail"
-              aria-hidden="true"
-            >
-              {CALENDAR_MONTH_STRIP_WEEKDAY_LABELS.map((label) => (
-                <div key={label} className="calendar-month-strip__weekday">
-                  {label}
-                </div>
-              ))}
-            </div>
-            <div
               ref={monthStripRef}
               className="calendar-month-strip"
               aria-label="Month calendar strip"
@@ -1741,6 +1960,7 @@ export function CalendarView({
               {monthStripDates.map((date, index) => {
                 const ym = formatLocalYm(date);
                 const isMiddle = index === CALENDAR_MONTH_STRIP_CENTER_INDEX;
+                const monthTitle = formatCalendarMonthStripTitle(date);
                 return (
                   <div
                     key={`month-pane-${index}`}
@@ -1748,6 +1968,7 @@ export function CalendarView({
                     data-month-pane={index}
                     data-month-ym={ym}
                   >
+                    <h2 className="calendar-month-strip__title">{monthTitle}</h2>
                     <FullCalendar
                       ref={(instance) =>
                         handleMonthPaneInstanceRef(index, instance)

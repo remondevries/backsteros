@@ -32,7 +32,15 @@ export function useCalendarMonthStripScroll({
     const stripElement: HTMLElement = strip;
 
     const recycle = createCalendarStripRecycleController({
-      getPaneSize: () => stripElement.clientHeight,
+      // Content-sized panes (title + square days) — measure a real pane, not
+      // the viewport. Center pane is the stable reference while recycling.
+      getPaneSize: () => {
+        const panes = stripElement.querySelectorAll<HTMLElement>(
+          ".calendar-month-strip__pane",
+        );
+        const center = panes[CALENDAR_MONTH_STRIP_CENTER_INDEX] ?? panes[0];
+        return center?.offsetHeight || stripElement.clientHeight;
+      },
       getScrollOffset: () => stripElement.scrollTop,
       setScrollOffset: (value) => {
         stripElement.scrollTop = value;

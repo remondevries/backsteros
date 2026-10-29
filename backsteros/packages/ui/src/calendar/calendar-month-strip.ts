@@ -60,3 +60,11 @@ export function formatMonthAnchorYmd(date: Date): string {
 export function parseMonthAnchorYmd(ymd: string): Date {
   return startOfMonthDate(parseLocalYmd(ymd));
 }
+
+/** In-strip heading above each month grid (replaces the chrome range title). */
+export function formatCalendarMonthStripTitle(date: Date): string {
+  return new Intl.DateTimeFormat(undefined, {
+    month: "long",
+    year: "numeric",
+  }).format(startOfMonthDate(date));
+}

@@ -165,7 +165,7 @@ export const routeCopy: Record<
   },
   social: {
     title: "Network",
-    description: "Feeds from contacts and social posting",
+    description: "Social feed, analytics, discovery, and posting",
     singular: "network",
     accent: "#8b7cf6",
   },

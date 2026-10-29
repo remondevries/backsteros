@@ -6,6 +6,7 @@ import {
   calendarMonthStripDates,
   CALENDAR_MONTH_STRIP_CENTER_INDEX,
   CALENDAR_MONTH_STRIP_PANE_COUNT,
+  formatCalendarMonthStripTitle,
   formatLocalYm,
   formatMonthAnchorYmd,
   startOfMonthDate,
@@ -39,4 +40,11 @@ test("addMonthsDate crosses year boundaries", () => {
 
 test("formatMonthAnchorYmd normalizes mid-month dates", () => {
   assert.equal(formatMonthAnchorYmd(new Date(2026, 8, 23)), "2026-09-01");
+});
+
+test("formatCalendarMonthStripTitle uses long month + year", () => {
+  assert.equal(
+    formatCalendarMonthStripTitle(new Date(2026, 8, 23)),
+    "September 2026",
+  );
 });

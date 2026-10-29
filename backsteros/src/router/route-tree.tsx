@@ -719,6 +719,26 @@ const socialRoute = createRoute({
   ),
 });
 
+const socialPostDetailRoute = createRoute({
+  getParentRoute: () => shellRoute,
+  path: "social/post/$postId",
+  component: () => (
+    <LazyRoute>
+      <SocialPage />
+    </LazyRoute>
+  ),
+});
+
+const socialProfileHandleRoute = createRoute({
+  getParentRoute: () => shellRoute,
+  path: "social/profile/$handle",
+  component: () => (
+    <LazyRoute>
+      <SocialPage />
+    </LazyRoute>
+  ),
+});
+
 const socialDetailRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: "social/$slug",
@@ -924,6 +944,8 @@ export const routeTree = rootRoute.addChildren([
     organizationDetailRoute,
     organizationSectionRoute,
     socialRoute,
+    socialPostDetailRoute,
+    socialProfileHandleRoute,
     socialDetailRoute,
     communicationRoute,
     communicationDetailRoute,

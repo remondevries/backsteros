@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { LinkIcon } from "@primer/octicons-react";
 
+import { DevNullIcon } from "../components/icons/dev-null-icon.js";
 import { DiscordIcon } from "../components/icons/discord-icon.js";
 import { FacebookIcon } from "../components/icons/facebook-icon.js";
 import { GitHubIcon } from "../components/icons/github-icon.js";
@@ -239,6 +240,8 @@ export function socialPlatformIcon(
       return <SlackIcon size={size} />;
     case "Website":
       return <GlobeIcon size={size} />;
+    case "Dev-null":
+      return <DevNullIcon size={size} />;
     default:
       return <LinkIcon size={size} />;
   }

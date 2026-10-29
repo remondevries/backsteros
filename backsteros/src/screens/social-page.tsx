@@ -1,30 +1,36 @@
-import { useCallback, useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { formatContactDisplayName } from "@backsteros/contracts";
 
 import {
+  EntityDetailOverlay,
   RegisterPageTitle,
-  SocialContactDetailView,
-  getSocialHref,
-  getUniqueListItemRouteParam,
-  groupItemsByAlphaLetter,
-  normalizeContactSocialAccounts,
-  primeTabTitle,
-  resolveListItemFromSlug,
+  SocialDashboardView,
+  SocialDiscoverPanel,
+  SocialPostDetailView,
+  getSelectedSocialNavIdFromPathname,
+  getSelectedSocialPostIdFromPathname,
+  getSelectedSocialProfileHandleFromPathname,
+  getSocialFeedPlatformFromPathname,
+  getSocialMockPostById,
+  getSocialMockProfileByHandle,
+  getSocialSidePanelSelectionLabel,
   routeCopy,
-  type SocialContactListItem,
+  socialMockProfileDisplayName,
+  type SocialMockAccountKind,
+  type SocialMockAnalyticsPlatformFilterId,
+  type SocialMockPost,
 } from "@backsteros/ui";
 
-import { useDesktopAvatarSrcMap, withAvatarSrc } from "../lib/avatar-src";
+import { useDesktopApi } from "../lib/api-context";
 import {
   useKeepAliveActive,
-  useKeepAliveFrozen,
   useShellLocation,
-  useShellParams,
 } from "../lib/shell-route-keep-alive";
+import { createSocialPlannedPostsClient } from "../lib/social/social-planned-posts-client";
 import { useDesktopSectionBreadcrumb } from "../lib/use-desktop-breadcrumb";
-import { useDesktopWorkspacePeople } from "../lib/workspace-data";
 import { navigateToHref } from "../router/navigate-href";
+
+const SOCIAL_DISCOVER_PANEL_WIDTH_KEY = "social-discover-panel-width";
 
 export function SocialPage() {
   const active = useKeepAliveActive();
@@ -33,133 +39,127 @@ export function SocialPage() {
 }
 
 function SocialPageBody() {
-  const routerNavigate = useNavigate();
-  const navigate = useCallback(
-    (to: string, options?: { replace?: boolean; state?: unknown }) => {
-      navigateToHref(routerNavigate, to, options);
-    },
-    [routerNavigate],
-  );
-  const { pathname } = useShellLocation();
+  const { pathname, searchStr } = useShellLocation();
+  const navigate = useNavigate();
+  const { client } = useDesktopApi();
   const keepAliveActive = useKeepAliveActive();
-  const keepAliveFrozen = useKeepAliveFrozen();
-  const { slug: routedSlug } = useShellParams() as { slug?: string };
-  const people = useDesktopWorkspacePeople();
-
-  const contactAvatarSrc = useDesktopAvatarSrcMap(
-    "contact",
-    keepAliveFrozen ? [] : people.contacts,
+  const plannedPostsClient = useMemo(
+    () => createSocialPlannedPostsClient(client),
+    [client],
   );
-
-  const socialContacts = useMemo((): SocialContactListItem[] => {
-    const withAvatars = keepAliveFrozen
-      ? people.contacts
-      : withAvatarSrc(people.contacts, contactAvatarSrc);
-    const rows: SocialContactListItem[] = [];
-    for (const contact of withAvatars) {
-      const details = people.contactDetails[contact.id];
-      const socialAccounts = normalizeContactSocialAccounts(
-        details?.socialAccounts ??
-          (details as { social_accounts?: unknown } | undefined)
-            ?.social_accounts,
-      );
-      if (socialAccounts.length === 0) continue;
-      rows.push({
-        ...contact,
-        socialAccounts,
-        summary: details?.summary ?? null,
-        address: details?.address ?? null,
-        city: details?.city ?? null,
-        postalCode: details?.postalCode ?? null,
-        region: details?.region ?? null,
-        country: details?.country ?? null,
-        title: details?.title ?? contact.title ?? null,
-      });
-    }
-    return rows;
-  }, [
-    contactAvatarSrc,
-    keepAliveFrozen,
-    people.contactDetails,
-    people.contacts,
-  ]);
-
-  const selected =
-    routedSlug != null
-      ? resolveListItemFromSlug(socialContacts, routedSlug)
-      : null;
+  const [discoverCollapsed, setDiscoverCollapsed] = useState(false);
+  const [inspectPost, setInspectPost] = useState<SocialMockPost | null>(null);
+  const [accountKind, setAccountKind] =
+    useState<SocialMockAccountKind>("personal");
+  const platformFromPath = getSocialFeedPlatformFromPathname(pathname);
+  const [platform, setPlatform] =
+    useState<SocialMockAnalyticsPlatformFilterId>(
+      platformFromPath ?? "all",
+    );
+  const handleNavigateHref = useCallback(
+    (href: string) => {
+      navigateToHref(navigate, href);
+    },
+    [navigate],
+  );
+  const postId = getSelectedSocialPostIdFromPathname(pathname);
+  const post = postId ? getSocialMockPostById(postId) : null;
+  const profileHandle = getSelectedSocialProfileHandleFromPathname(pathname);
+  const profileFromHandle = profileHandle
+    ? getSocialMockProfileByHandle(profileHandle)
+    : null;
+  const navId = getSelectedSocialNavIdFromPathname(pathname);
 
   useEffect(() => {
-    if (!keepAliveActive) return;
-    if (routedSlug) return;
-    const first =
-      groupItemsByAlphaLetter(socialContacts).flatMap(
-        ([, entries]) => entries,
-      )[0] ?? null;
-    if (first) {
-      navigate(
-        getSocialHref(getUniqueListItemRouteParam(first, socialContacts)),
-        { replace: true },
-      );
-    }
-  }, [keepAliveActive, navigate, routedSlug, socialContacts]);
-
-  const displayName = selected
-    ? formatContactDisplayName(
-        selected.firstName ?? "",
-        selected.lastName,
-      ) || selected.name
-    : "Network";
+    if (platformFromPath) setPlatform(platformFromPath);
+  }, [platformFromPath]);
+  const sectionTitle = post
+    ? post.authorName
+    : profileFromHandle
+      ? socialMockProfileDisplayName(profileFromHandle)
+      : navId === "home"
+        ? routeCopy.social.title
+        : getSocialSidePanelSelectionLabel(navId);
 
   useDesktopSectionBreadcrumb(
-    selected
+    post
       ? [
           { label: "Network", href: "/social" },
-          {
-            label: displayName,
-            href: getSocialHref(
-              getUniqueListItemRouteParam(selected, socialContacts),
-            ),
-          },
+          { label: "Post", href: pathname },
         ]
-      : [{ label: "Network", href: "/social" }],
+      : profileHandle
+        ? [
+            { label: "Network", href: "/social" },
+            { label: "Profile", href: "/social/profile" },
+            { label: sectionTitle, href: pathname },
+          ]
+        : [
+            { label: "Network", href: "/social" },
+            ...(navId === "home"
+              ? []
+              : [{ label: sectionTitle, href: pathname }]),
+          ],
   );
 
-  if (selected) {
-    primeTabTitle(pathname, displayName);
-  }
+  const hideDiscover = useCallback(() => setDiscoverCollapsed(true), []);
+  const showDiscover = useCallback(() => setDiscoverCollapsed(false), []);
+  const clearInspectPost = useCallback(() => setInspectPost(null), []);
+  const handleInspectPost = useCallback((next: SocialMockPost) => {
+    setInspectPost(next);
+    setDiscoverCollapsed(false);
+  }, []);
+  const discoverHidden = navId === "analytics";
+
+  useEffect(() => {
+    setInspectPost(null);
+  }, [pathname, accountKind]);
 
   return (
     <>
       <RegisterPageTitle
         active={keepAliveActive}
         href={pathname}
-        title={selected ? displayName : routeCopy.social.title}
+        title={sectionTitle}
       />
-      {selected ? (
-        <SocialContactDetailView
-          contact={{
-            id: selected.id,
-            name: displayName,
-            title: selected.title,
-            summary: selected.summary,
-            socialAccounts: selected.socialAccounts,
-            city: selected.city,
-            region: selected.region,
-            country: selected.country,
-            organizationName: selected.organizationName,
-            avatarSrc: selected.avatarSrc,
-          }}
-        />
-      ) : (
-        <div className="social-contact-detail">
-          <p className="social-contact-detail__title">
-            {socialContacts.length === 0
-              ? "No contacts with social accounts yet."
-              : "Select a contact."}
-          </p>
-        </div>
-      )}
+      <SocialDashboardView
+        pathname={pathname}
+        searchStr={searchStr}
+        platform={platform}
+        onPlatformChange={setPlatform}
+        accountKind={accountKind}
+        onAccountKindChange={setAccountKind}
+        onInspectPost={handleInspectPost}
+        onNavigateHref={handleNavigateHref}
+        plannedPostsClient={plannedPostsClient}
+        discoverCollapsed={discoverHidden || discoverCollapsed}
+        discoverPanel={
+          discoverHidden ? null : (
+            <EntityDetailOverlay
+              open
+              collapsed={discoverCollapsed}
+              title={inspectPost ? "Post" : "Discover"}
+              entityLabel={inspectPost ? "post" : "discover"}
+              overlayDataKey="social-discover"
+              panelWidthStorageKey={SOCIAL_DISCOVER_PANEL_WIDTH_KEY}
+              onHide={hideDiscover}
+              onShow={showDiscover}
+            >
+              {inspectPost ? (
+                <SocialPostDetailView
+                  post={inspectPost}
+                  layout="panel"
+                  onClose={clearInspectPost}
+                />
+              ) : (
+                <SocialDiscoverPanel
+                  platform={platform}
+                  accountKind={accountKind}
+                />
+              )}
+            </EntityDetailOverlay>
+          )
+        }
+      />
     </>
   );
 }

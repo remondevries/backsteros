@@ -161,6 +161,8 @@ export function keepAliveDestinationShowsSidePanel(pathname: string): boolean {
   const surface = keepAliveSidePanelSurface(pathname);
   if (surface == null) return false;
   if (surface === "tasks-list") return false;
+  if (surface === "social") return false;
+  if (surface === "communication") return false;
   if (surface === "projects") {
     return pathname.split("/").filter(Boolean).length >= 2;
   }

@@ -18,8 +18,11 @@ export function buildCalendarBreadcrumbItems(input: {
   const pageMode = input.pageMode ?? DEFAULT_CALENDAR_PAGE_MODE;
   const detailLabel = input.detailLabel?.trim();
 
+  // Month strip owns in-pane titles — keep chrome on the stable "Month" label.
   const rangeLabel =
-    input.rangeTitle?.trim() || getCalendarViewModeLabel(input.viewMode);
+    input.viewMode === "month"
+      ? getCalendarViewModeLabel("month")
+      : input.rangeTitle?.trim() || getCalendarViewModeLabel(input.viewMode);
   const items: ContentBreadcrumbItem[] = [
     { label: "Agenda", href: "/calendar" },
     {

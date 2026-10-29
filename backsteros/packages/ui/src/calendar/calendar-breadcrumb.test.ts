@@ -49,6 +49,17 @@ test("buildCalendarBreadcrumbItems includes view and detail labels", () => {
     { label: "Agenda", href: "/calendar" },
     { label: "Month", href: "/calendar?view=month" },
   ]);
+  // Month strip titles live in-pane — ignore FC range strings in chrome.
+  assert.deepEqual(
+    buildCalendarBreadcrumbItems({
+      viewMode: "month",
+      rangeTitle: "October 2026",
+    }),
+    [
+      { label: "Agenda", href: "/calendar" },
+      { label: "Month", href: "/calendar?view=month" },
+    ],
+  );
   assert.deepEqual(
     buildCalendarBreadcrumbItems({
       viewMode: "week",

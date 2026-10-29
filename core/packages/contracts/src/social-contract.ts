@@ -79,6 +79,74 @@ export type SocialConnectAccountResult = z.infer<
   typeof socialConnectAccountResultSchema
 >;
 
+/** Platforms the Network Planned composer can target (desktop mock set). */
+export const socialPlannedPostPlatformSchema = z.enum([
+  "facebook",
+  "instagram",
+  "x",
+  "linkedin",
+  "dev-null",
+]);
+
+export const socialPlannedPostAccountKindSchema = z.enum([
+  "personal",
+  "business",
+]);
+
+export const socialPlannedPostSchema = z.object({
+  id: z.string().min(1),
+  body: z.string(),
+  accountKind: socialPlannedPostAccountKindSchema,
+  platforms: z.array(socialPlannedPostPlatformSchema).min(1),
+  /** ISO timestamp when scheduled; null = unscheduled tray chip. */
+  scheduledAt: z.string().datetime().nullable(),
+  status: z.enum(["draft", "scheduled"]),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+
+export const socialPlannedPostListSchema = z.object({
+  posts: z.array(socialPlannedPostSchema),
+});
+
+export const createSocialPlannedPostSchema = z.object({
+  body: z.string().trim().min(1),
+  accountKind: socialPlannedPostAccountKindSchema,
+  platforms: z.array(socialPlannedPostPlatformSchema).min(1),
+  scheduledAt: z.string().datetime().nullable().optional(),
+});
+
+export const updateSocialPlannedPostSchema = z
+  .object({
+    body: z.string().trim().min(1).optional(),
+    accountKind: socialPlannedPostAccountKindSchema.optional(),
+    platforms: z.array(socialPlannedPostPlatformSchema).min(1).optional(),
+    scheduledAt: z.string().datetime().nullable().optional(),
+  })
+  .refine(
+    (value) =>
+      value.body !== undefined ||
+      value.accountKind !== undefined ||
+      value.platforms !== undefined ||
+      value.scheduledAt !== undefined,
+    { message: "At least one field is required" },
+  );
+
+export type SocialPlannedPostPlatform = z.infer<
+  typeof socialPlannedPostPlatformSchema
+>;
+export type SocialPlannedPostAccountKind = z.infer<
+  typeof socialPlannedPostAccountKindSchema
+>;
+export type SocialPlannedPost = z.infer<typeof socialPlannedPostSchema>;
+export type SocialPlannedPostList = z.infer<typeof socialPlannedPostListSchema>;
+export type CreateSocialPlannedPostInput = z.infer<
+  typeof createSocialPlannedPostSchema
+>;
+export type UpdateSocialPlannedPostInput = z.infer<
+  typeof updateSocialPlannedPostSchema
+>;
+
 const c = initContract();
 
 export const socialContract = c.router({
@@ -150,5 +218,54 @@ export const socialContract = c.router({
       403: errorSchema,
     },
     summary: "Disconnect a social account",
+  },
+  listSocialPlannedPosts: {
+    method: "GET",
+    path: "/api/v1/social/planned-posts",
+    responses: {
+      200: socialPlannedPostListSchema,
+      401: errorSchema,
+      403: errorSchema,
+    },
+    summary: "List local Network Planned posts (draft + scheduled)",
+  },
+  createSocialPlannedPost: {
+    method: "POST",
+    path: "/api/v1/social/planned-posts",
+    body: createSocialPlannedPostSchema,
+    responses: {
+      201: socialPlannedPostSchema,
+      400: badRequestSchema,
+      401: errorSchema,
+      403: errorSchema,
+    },
+    summary: "Create a local Network Planned post",
+  },
+  updateSocialPlannedPost: {
+    method: "PATCH",
+    path: "/api/v1/social/planned-posts/:id",
+    pathParams: z.object({ id: z.string().min(1) }),
+    body: updateSocialPlannedPostSchema,
+    responses: {
+      200: socialPlannedPostSchema,
+      400: badRequestSchema,
+      401: errorSchema,
+      403: errorSchema,
+      404: errorSchema,
+    },
+    summary: "Update a local Network Planned post",
+  },
+  deleteSocialPlannedPost: {
+    method: "DELETE",
+    path: "/api/v1/social/planned-posts/:id",
+    pathParams: z.object({ id: z.string().min(1) }),
+    body: z.undefined().optional(),
+    responses: {
+      204: z.undefined().optional(),
+      401: errorSchema,
+      403: errorSchema,
+      404: errorSchema,
+    },
+    summary: "Soft-delete a local Network Planned post",
   },
 });

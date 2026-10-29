@@ -68,6 +68,10 @@ export const API_KEY_SCOPES = [
   "email:read",
   /** Compose/send AgentMail drafts and thread metadata writes. */
   "email:send",
+  /** Network Social planned posts (unscheduled tray + scheduled calendar). */
+  "social:read",
+  /** Create/update/delete Network Social planned posts. */
+  "social:write",
   "avatars:read",
   "avatars:write",
   "search:query",

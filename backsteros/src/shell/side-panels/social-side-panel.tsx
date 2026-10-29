@@ -1,11 +1,9 @@
 import {
-  SocialSidePanelView,
-  getSocialHref,
-  getSelectedSocialSlugFromPathname,
-  getUniqueListItemRouteParam,
-  groupItemsByAlphaLetter,
-  resolveListItemFromSlug,
-  type SocialSidePanelViewProps,
+  SOCIAL_NAV_ITEMS,
+  SocialSidePanelNavView,
+  getSelectedSocialNavIdFromPathname,
+  resolveSocialSidePanelHref,
+  type SocialSidePanelNavViewProps,
 } from "@backsteros/ui";
 
 import { useDesktopSidePanelListNav } from "../../lib/use-desktop-side-panel-list-nav";
@@ -16,35 +14,26 @@ export function DesktopSocialSidePanel({
   onNavigate,
   ...viewProps
 }: Omit<
-  SocialSidePanelViewProps,
-  "highlightedId" | "listRef" | "listContainerProps"
+  SocialSidePanelNavViewProps,
+  "highlightedId" | "listRef" | "listContainerProps" | "onNavigate"
 > &
   SidePanelNavProps) {
-  const { pathname, items } = viewProps;
-  const selectedSlug = getSelectedSocialSlugFromPathname(pathname);
-  const selectedId = selectedSlug
-    ? (resolveListItemFromSlug(items, selectedSlug)?.id ?? null)
-    : null;
-  const itemIds = groupItemsByAlphaLetter(items).flatMap(([, entries]) =>
-    entries.map((item) => item.id),
-  );
+  const { pathname } = viewProps;
+  const selectedId = getSelectedSocialNavIdFromPathname(pathname);
+  const itemIds = SOCIAL_NAV_ITEMS.map((item) => item.id);
   const { listRef, highlightedId, listContainerProps } =
     useDesktopSidePanelListNav({
       itemIds,
       selectedId,
       pathname,
       onNavigate: (itemId) => {
-        const item = items.find((entry) => entry.id === itemId);
-        if (item) {
-          onNavigate(
-            getSocialHref(getUniqueListItemRouteParam(item, items)),
-          );
-        }
+        const href = resolveSocialSidePanelHref(itemId);
+        if (href) onNavigate(href);
       },
-      enabled: items.length > 0,
+      enabled: itemIds.length > 0,
     });
   return (
-    <SocialSidePanelView
+    <SocialSidePanelNavView
       {...viewProps}
       listRef={listRef}
       listContainerProps={listContainerProps}

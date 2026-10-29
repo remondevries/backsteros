@@ -1105,6 +1105,7 @@ export {
   CALENDAR_MONTH_STRIP_PANE_COUNT,
   CALENDAR_MONTH_STRIP_WEEKDAY_LABELS,
   formatLocalYm,
+  formatCalendarMonthStripTitle,
   formatMonthAnchorYmd,
   startOfMonthDate,
 } from "./calendar/calendar-month-strip.js";
@@ -3836,16 +3837,85 @@ export {
 } from "./components/social/social-platform-icon.js";
 
 export {
-  SocialSidePanelView,
-  type SocialSidePanelViewProps,
+  SocialSidePanelNavView,
+  SocialSectionNavIcon,
+  type SocialSidePanelNavViewProps,
   type SocialSidePanelLinkComponent,
-} from "./components/social/social-side-panel-view.js";
+} from "./components/social/social-side-panel-nav-view.js";
 
 export {
   SocialContactDetailView,
   type SocialContactDetailViewProps,
   type SocialContactDetailViewContact,
 } from "./components/social/social-contact-detail-view.js";
+
+export {
+  SocialPostCard,
+  type SocialPostCardProps,
+} from "./components/social/social-post-card.js";
+
+export {
+  SocialPostRow,
+  type SocialPostRowProps,
+  type SocialPostFilingActionId,
+} from "./components/social/social-post-row.js";
+
+export {
+  SocialFeedView,
+  type SocialFeedViewProps,
+  type SocialFeedTab,
+} from "./components/social/social-feed-view.js";
+
+export type {
+  SocialPlannedPostCreateInput,
+  SocialPlannedPostRecord,
+  SocialPlannedPostsClient,
+  SocialPlannedPostUpdateInput,
+} from "./social/social-planned-posts.js";
+
+export {
+  SocialPlannedView,
+  pendingPlanAsFeedPost,
+  planTargetsAllPlatforms,
+  type SocialPendingPlan,
+  type SocialPlannedViewProps,
+} from "./components/social/social-planned-view.js";
+
+export {
+  SocialPlannedTimeModal,
+  type SocialPlannedTimeModalProps,
+} from "./components/social/social-planned-time-modal.js";
+
+export {
+  SocialComposerPostButton,
+  type SocialComposerPostButtonProps,
+} from "./components/social/social-composer-post-button.js";
+
+export {
+  SocialProfileView,
+  type SocialProfileTab,
+  type SocialProfileViewProps,
+} from "./components/social/social-profile-view.js";
+
+export {
+  SocialPostDetailView,
+  type SocialPostDetailViewProps,
+} from "./components/social/social-post-detail-view.js";
+
+export {
+  SocialDiscoverPanel,
+  type SocialDiscoverPanelProps,
+} from "./components/social/social-discover-panel.js";
+
+export {
+  SocialAnalyticsView,
+  type SocialAnalyticsViewProps,
+} from "./components/social/social-analytics-view.js";
+
+export {
+  SocialDashboardView,
+  type SocialDashboardViewProps,
+} from "./components/social/social-dashboard-view.js";
 
 export {
   normalizeContactSocialAccounts,
@@ -3859,6 +3929,104 @@ export {
   type SocialContactListItem,
   type SocialPlatformId,
 } from "./social/social-contacts.js";
+
+export {
+  SOCIAL_NAV_IDS,
+  SOCIAL_NAV_ITEMS,
+  SOCIAL_PLATFORM_NAV_IDS,
+  SOCIAL_PLATFORM_NAV_ITEMS,
+  isSocialNavId,
+  isSocialPlatformNavId,
+  getSocialNavHref,
+  getSocialPlatformNavHref,
+  getSocialPostHref,
+  getSocialProfileHref,
+  getSocialAnalyticsHref,
+  getSocialAnalyticsMetricFromSearch,
+  getSocialAnalyticsPeriodFromSearch,
+  getSocialAnalyticsPlatformFromSearch,
+  SOCIAL_FEED_TAB_IDS,
+  SOCIAL_FEED_TAB_PARAM,
+  DEFAULT_SOCIAL_FEED_TAB,
+  isSocialFeedTabId,
+  getSocialFeedTabFromSearch,
+  getSocialFeedHref,
+  getSelectedSocialPostIdFromPathname,
+  getSelectedSocialProfileHandleFromPathname,
+  getSelectedSocialNavIdFromPathname,
+  getSocialFeedPlatformFromPathname,
+  getSocialSidePanelSelectionLabel,
+  resolveSocialSidePanelHref,
+  type SocialNavId,
+  type SocialNavItem,
+  type SocialPlatformNavId,
+  type SocialPlatformNavItem,
+  type SocialSidePanelSelectionId,
+  type SocialAnalyticsHrefOptions,
+  type SocialFeedTabId,
+  type SocialFeedHrefOptions,
+} from "./social/social-nav.js";
+
+export {
+  SOCIAL_MOCK_POSTS,
+  SOCIAL_MOCK_TRENDING,
+  SOCIAL_MOCK_FOLLOW_SUGGESTIONS,
+  SOCIAL_MOCK_ANALYTICS,
+  SOCIAL_MOCK_ANALYTICS_PLATFORM_BREAKDOWN,
+  SOCIAL_MOCK_ANALYTICS_TOP_POSTS,
+  SOCIAL_MOCK_PROFILE,
+  SOCIAL_MOCK_PERSONAL_AVATAR_URL,
+  SOCIAL_MOCK_BUSINESS_PROFILE,
+  SOCIAL_MOCK_BUSINESS_AVATAR_URL,
+  SOCIAL_MOCK_BUSINESS_ANALYTICS,
+  SOCIAL_MOCK_OWNED_ACCOUNTS,
+  SOCIAL_MOCK_REPLIES,
+  getSocialMockPostById,
+  getSocialMockRepliesForPost,
+  getSocialMockAnalyticsSelection,
+  getSocialMockAnalyticsMetrics,
+  getSocialMockProfileForAccount,
+  getSocialMockAnalyticsForAccount,
+  getSocialMockOwnedAccounts,
+  getSocialMockPlatformIdsForAccount,
+  getSocialMockPostsForAccount,
+  getSocialMockPlannedPostsForAccount,
+  getSocialMockPlannedPostById,
+  getSocialMockPlannedPostSchedule,
+  splitSocialPlannedCaption,
+  socialMockPlannedPostAsFeedPost,
+  resolveSocialMockInspectPost,
+  getSocialMockLikedPostsForAccount,
+  getSocialMockPostsByAuthorHandle,
+  getSocialMockProfileByHandle,
+  socialMockProfileDisplayName,
+  isSocialMockAnalyticsSelectionId,
+  isSocialMockAnalyticsPeriodId,
+  isSocialMockAnalyticsPlatformFilterId,
+  type SocialMockPost,
+  type SocialMockPlannedPost,
+  type SocialMockPostPlatform,
+  type SocialMockTrendingTopic,
+  type SocialMockFollowSuggestion,
+  type SocialMockAnalyticsMetric,
+  type SocialMockAnalyticsMetricId,
+  type SocialMockAnalyticsPoint,
+  type SocialMockAnalyticsSelectionId,
+  type SocialMockAnalyticsPeriodId,
+  type SocialMockAnalyticsPlatformFilterId,
+  type SocialMockAnalyticsPlatformBreakdown,
+  type SocialMockAnalyticsTopPost,
+  type SocialMockAnalyticsSnapshot,
+  type SocialMockAccountKind,
+  type SocialMockOwnedAccount,
+  type SocialMockProfile,
+  type SocialMockReply,
+} from "./social/social-mock-data.js";
+
+export {
+  SocialAnalyticsTimelineChart,
+  type SocialAnalyticsTimelineChartProps,
+} from "./components/social/social-analytics-timeline-chart.js";
 
 export {
   COMMUNICATION_LIST_PATH,

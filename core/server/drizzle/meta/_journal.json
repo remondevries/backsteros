@@ -1198,6 +1198,13 @@
       "when": 1796050000000,
       "tag": "0169_contact_telegram_chat_id",
       "breakpoints": true
+    },
+    {
+      "idx": 171,
+      "version": "7",
+      "when": 1796060000000,
+      "tag": "0170_social_planned_posts",
+      "breakpoints": true
     }
   ]
 }

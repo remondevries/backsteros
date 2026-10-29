@@ -7,6 +7,7 @@ import {
   OPEN_ENDED_MEETING_VISUAL_MS,
   calendarChangeToMeetingPatch,
   calendarChangeToTaskPatch,
+  taskPatchMovingToLocalDateYmd,
   calendarSelectionToMeetingRange,
   isCalendarMeetingDuplicateModifier,
   taskCalendarEventClassNames,
@@ -191,6 +192,44 @@ test("calendarChangeToTaskPatch clears the end for all-day placement", () => {
   assert.ok(patch);
   assert.equal(patch.dueDate, start.toISOString());
   assert.equal(patch.dueEndDate, null);
+});
+
+test("calendarChangeToTaskPatch keeps clock time when moving a timed task onto an all-day day", () => {
+  const day = new Date(2026, 7, 26);
+  const previousStart = new Date(2026, 7, 24, 14, 30);
+  const previousEnd = new Date(2026, 7, 24, 15, 0);
+  const patch = calendarChangeToTaskPatch(
+    { start: day, end: null, allDay: true },
+    { previousStart, previousEnd, previousAllDay: false },
+  );
+  assert.ok(patch);
+  assert.equal(patch.dueDate, new Date(2026, 7, 26, 14, 30).toISOString());
+  assert.equal(patch.dueEndDate, new Date(2026, 7, 26, 15, 0).toISOString());
+});
+
+test("calendarChangeToTaskPatch keeps all-day placement when the previous event was all-day", () => {
+  const day = new Date(2026, 7, 26);
+  const previousStart = new Date(2026, 7, 24);
+  const patch = calendarChangeToTaskPatch(
+    { start: day, end: null, allDay: true },
+    { previousStart, previousAllDay: true },
+  );
+  assert.ok(patch);
+  assert.equal(patch.dueDate, day.toISOString());
+  assert.equal(patch.dueEndDate, null);
+});
+
+test("taskPatchMovingToLocalDateYmd moves a timed task to another day", () => {
+  const previousStart = new Date(2026, 7, 24, 14, 30);
+  const previousEnd = new Date(2026, 7, 24, 15, 0);
+  const patch = taskPatchMovingToLocalDateYmd({
+    dateYmd: "2026-08-26",
+    previousStart,
+    previousEnd,
+  });
+  assert.ok(patch);
+  assert.equal(patch.dueDate, new Date(2026, 7, 26, 14, 30).toISOString());
+  assert.equal(patch.dueEndDate, new Date(2026, 7, 26, 15, 0).toISOString());
 });
 
 test("calendarChangeToTaskPatch keeps an explicit end for timed placement", () => {

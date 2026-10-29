@@ -5,10 +5,18 @@
 import type { Context, Hono } from "hono";
 
 import {
+  createSocialPlannedPostSchema,
   socialConnectAccountInputSchema,
+  updateSocialPlannedPostSchema,
   updateSocialSettingsSchema,
 } from "@backsteros/contracts";
 
+import {
+  createSocialPlannedPost,
+  deleteSocialPlannedPost,
+  listSocialPlannedPosts,
+  updateSocialPlannedPost,
+} from "../social/planned-posts.js";
 import {
   disconnectSocialAccount,
   getSocialSettings,
@@ -21,7 +29,7 @@ import {
   zernioHeadersFromRequest,
   ZernioApiError,
 } from "../social/providers/zernio/index.js";
-import { can, forbidden, getAuth } from "./route-helpers.js";
+import { can, forbidden, getAuth, notFound } from "./route-helpers.js";
 
 export function registerSocialRoutes(app: Hono) {
   app.get("/api/v1/settings/social", async (c) => {
@@ -96,6 +104,67 @@ export function registerSocialRoutes(app: Hono) {
       }
     },
   );
+
+  app.get("/api/v1/social/planned-posts", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "social:read")) return c.json(forbidden(), 403);
+    const posts = await listSocialPlannedPosts(auth.workspaceId);
+    return c.json({ posts });
+  });
+
+  app.post("/api/v1/social/planned-posts", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "social:write")) return c.json(forbidden(), 403);
+    const parsed = createSocialPlannedPostSchema.safeParse(await c.req.json());
+    if (!parsed.success) {
+      return c.json(
+        { error: "Invalid planned post", code: "bad_request" },
+        400,
+      );
+    }
+    try {
+      const created = await createSocialPlannedPost(
+        auth.workspaceId,
+        parsed.data,
+      );
+      return c.json(created, 201);
+    } catch (error) {
+      return socialError(c, error);
+    }
+  });
+
+  app.patch("/api/v1/social/planned-posts/:id", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "social:write")) return c.json(forbidden(), 403);
+    const id = decodeURIComponent(c.req.param("id"));
+    const parsed = updateSocialPlannedPostSchema.safeParse(await c.req.json());
+    if (!parsed.success) {
+      return c.json(
+        { error: "Invalid planned post patch", code: "bad_request" },
+        400,
+      );
+    }
+    try {
+      const updated = await updateSocialPlannedPost(
+        auth.workspaceId,
+        id,
+        parsed.data,
+      );
+      if (!updated) return c.json(notFound("Planned post"), 404);
+      return c.json(updated);
+    } catch (error) {
+      return socialError(c, error);
+    }
+  });
+
+  app.delete("/api/v1/social/planned-posts/:id", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "social:write")) return c.json(forbidden(), 403);
+    const id = decodeURIComponent(c.req.param("id"));
+    const deleted = await deleteSocialPlannedPost(auth.workspaceId, id);
+    if (!deleted) return c.json(notFound("Planned post"), 404);
+    return c.body(null, 204);
+  });
 
   /**
    * Provider webhook ingest. Signature-verified; auth middleware skips this path.

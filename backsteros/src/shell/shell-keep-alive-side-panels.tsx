@@ -17,20 +17,15 @@ import {
   getJournalHref,
   getOrganizationsGroupHref,
   getSelectedSpaceRootFromPathname,
-  getSocialHref,
-  getUniqueListItemRouteParam,
-  groupItemsByAlphaLetter,
   HELP_ARTICLE_AUDIENCE_INDIVIDUAL,
   HELP_ARTICLE_INDIVIDUAL_FOLDER_SLUG,
   helpArticleIndividualRootPath,
   isSupportCenterDocumentPath,
-  normalizeContactSocialAccounts,
   parseCrmGroupId,
   resolveLetterDetailHref,
   useHelpArticleAudienceMap,
   useHelpArticleListScope,
   useWriteHelpArticleAudience,
-  type SocialContactListItem,
 } from "@backsteros/ui";
 import {
   getKnowledgeHref,
@@ -46,10 +41,6 @@ import {
 } from "../lib/agent/agent-list-indicators";
 import { useDesktopAgentStatusOptional } from "../lib/agent/agent-status-context";
 import {
-  useDesktopAvatarSrcMap,
-  withAvatarSrc,
-} from "../lib/avatar-src";
-import {
   useKeepAliveFrozen,
   useShellLocation,
 } from "../lib/shell-route-keep-alive";
@@ -59,7 +50,6 @@ import {
   useDesktopWorkspaceActions,
   useDesktopWorkspaceDocuments,
   useDesktopWorkspaceMeta,
-  useDesktopWorkspacePeople,
   useDesktopWorkspaceProjects,
   useDesktopWorkspaceTasks,
   useWorkspaceSurfaceReady,
@@ -72,14 +62,11 @@ import {
   DesktopJournalSidePanel,
   DesktopKnowledgeSidePanel,
   DesktopLettersSidePanel,
-  DesktopSocialSidePanel,
 } from "./app-shell-side-panels-lazy";
 import { DesktopInboxSidePanel } from "./app-shell-inbox-side-panel";
 import { RouterLink } from "./app-shell-links";
 import { handleDocumentTreeReorder } from "./document-tree-reorder";
 import type { LeftSidePanelDest } from "../lib/left-side-panel-dest";
-
-const NO_ENTITIES: [] = [];
 
 type PanelNav = (href: string) => void;
 
@@ -140,7 +127,8 @@ export function keepAliveSidePanelTree(
     case "organizations":
       return <OrganizationsKeepAliveSidePanel onNavigate={onNavigate} />;
     case "social":
-      return <SocialKeepAliveSidePanel onNavigate={onNavigate} />;
+      // Network chrome lives in the page — no shell side panel.
+      return null;
     case "communication":
       // Unified chat list is embedded in the page — no shell side panel.
       return null;
@@ -568,55 +556,6 @@ export function OrganizationsKeepAliveSidePanel({
           }
         });
       }}
-    />
-  );
-}
-
-export function SocialKeepAliveSidePanel({
-  onNavigate,
-}: {
-  onNavigate: PanelNav;
-}) {
-  const frozen = useKeepAliveFrozen();
-  const { pathname } = useShellLocation();
-  const { contacts, contactDetails } = useDesktopWorkspacePeople();
-  const contactAvatarSrc = useDesktopAvatarSrcMap(
-    "contact",
-    frozen ? NO_ENTITIES : contacts,
-  );
-  const items = useMemo((): SocialContactListItem[] => {
-    const withAvatars = frozen
-      ? contacts
-      : withAvatarSrc(contacts, contactAvatarSrc);
-    const rows: SocialContactListItem[] = [];
-    for (const contact of withAvatars) {
-      const details = contactDetails[contact.id];
-      const socialAccounts = normalizeContactSocialAccounts(
-        details?.socialAccounts,
-      );
-      if (socialAccounts.length === 0) continue;
-      rows.push({ ...contact, socialAccounts });
-    }
-    return rows;
-  }, [contactAvatarSrc, contactDetails, contacts, frozen]);
-
-  const first =
-    groupItemsByAlphaLetter(items).flatMap(([, entries]) => entries)[0] ??
-    null;
-  const firstHref = first
-    ? getSocialHref(getUniqueListItemRouteParam(first, items))
-    : null;
-
-  return (
-    <DesktopSocialSidePanel
-      onNavigate={onNavigate}
-      pathname={panePathnameWithFirstItem(
-        pathname,
-        firstHref,
-        pathname.startsWith("/social/"),
-      )}
-      items={items}
-      Link={RouterLink}
     />
   );
 }

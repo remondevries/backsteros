@@ -9,6 +9,7 @@ import {
 import { isSocialSectionPath } from "../social/social-contacts.js";
 import { isCommunicationSectionPath } from "../communication/communication.js";
 import { isLettersSectionPath } from "../letters/letters.js";
+// isSocialSectionPath: width key only — Network has no shell side panel.
 // isCommunicationSectionPath / isEmailCommunicationListContext: width key +
 // isCommunicationPanelPath only — Communication has no shell side panel.
 
@@ -32,7 +33,7 @@ export const COMMUNICATION_LIST_PANEL_WIDTH_KEY =
 /**
  * Routes that show the left content side panel (list + detail).
  * Email detail only keeps the panel when opened from Inbox.
- * Communication embeds its list in-page (no shell side panel).
+ * Communication / Network embed their chrome in-page (no shell side panel).
  */
 export function shouldShowContentSidePanel(
   pathname: string,
@@ -48,8 +49,7 @@ export function shouldShowContentSidePanel(
     isLettersSectionPath(pathname) ||
     isContactSectionPath(pathname) ||
     isOrganizationSectionPath(pathname) ||
-    // Communication uses an embedded chat list (no shell side panel).
-    isSocialSectionPath(pathname) ||
+    // Communication / Network: no shell side panel.
     isFinanceSectionPath(pathname)
   );
 }

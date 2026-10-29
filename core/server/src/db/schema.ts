@@ -2696,9 +2696,10 @@ export const socialPosts = pgTable(
     workspaceId: text("workspace_id")
       .notNull()
       .references(() => workspaces.id, { onDelete: "cascade" }),
-    accountId: text("account_id")
-      .notNull()
-      .references(() => socialAccounts.id, { onDelete: "cascade" }),
+    /** Nullable for local multi-platform drafts before a connected account is chosen. */
+    accountId: text("account_id").references(() => socialAccounts.id, {
+      onDelete: "cascade",
+    }),
     platform: text("platform").notNull(),
     provider: text("provider").notNull(),
     externalId: text("external_id").notNull(),
@@ -2714,6 +2715,13 @@ export const socialPosts = pgTable(
     engagement: jsonb("engagement").$type<Record<string, unknown> | null>(),
     contactId: text("contact_id"),
     organizationId: text("organization_id"),
+    /** Local planned posts — personal | business. */
+    accountKind: text("account_kind"),
+    /** Local planned posts — target network ids (may be multi-platform). */
+    targetPlatforms: jsonb("target_platforms")
+      .$type<string[]>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),

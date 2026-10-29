@@ -191,19 +191,53 @@
 .calendar-month-strip__pane {
   position: relative;
   display: flex;
-  flex: 0 0 100%;
+  flex: 0 0 auto;
+  flex-direction: column;
   width: 100%;
-  height: 100%;
-  min-height: 100%;
+  height: auto;
+  min-height: 0;
   box-sizing: border-box;
 }
 
+.calendar-month-strip__title {
+  flex-shrink: 0;
+  margin: 0;
+  padding: 14px 16px;
+  color: var(--foreground);
+  font-size: 1.125rem;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  line-height: 1.25;
+  border-top: 1px solid var(--calendar-grid-border);
+  border-bottom: 1px solid var(--calendar-grid-border);
+}
+
 .calendar-month-strip__pane > .fc {
-  flex: 1;
+  flex: 0 0 auto;
   min-width: 0;
   min-height: 0;
   width: 100%;
-  height: 100%;
+  height: auto;
+}
+
+/* Content-sized months — don’t stretch the day grid to the viewport. */
+.calendar-view[data-month-strip="true"]
+  .calendar-month-strip
+  .fc-view-harness,
+.calendar-view[data-month-strip="true"]
+  .calendar-month-strip
+  .fc-view-harness-active {
+  height: auto !important;
+  flex: 0 0 auto;
+}
+
+.calendar-view[data-month-strip="true"]
+  .calendar-month-strip
+  .fc-view-harness-active
+  > .fc-view {
+  position: relative !important;
+  inset: auto !important;
+  height: auto !important;
 }
 
 /* Month strip owns scroll — suppress FC daygrid internal scrollers. */
@@ -223,6 +257,118 @@
   .calendar-month-strip
   .fc-col-header {
   display: none !important;
+}
+
+/*
+ * Month days only: FC still emits leading/trailing week fillers as
+ * `.fc-day-disabled` when showNonCurrentDates is false. Drop them and flow
+ * current-month cells in a 7-column grid so day 1 is always the first square.
+ *
+ * Grid lines: the shared calendar rules paint right+bottom borders and then
+ * strip `:last-child` / `tr:last-child` for the outer edge. That assumes a
+ * real 7-cell table row. Here `tr { display: contents }` + hidden fillers
+ * mean `:last-child` is often mid-week (e.g. Sat of week 1 when Sun–Tue are
+ * gone) → missing vertical lines on column 4, and bottoms drop off early.
+ * Draw seams with `gap` + a border-colored grid background instead; only
+ * visible days participate in the grid, so lines stay between squares.
+ */
+.calendar-view[data-month-strip="true"]
+  .calendar-month-strip
+  .fc-daygrid-body
+  > table,
+.calendar-view[data-month-strip="true"]
+  .calendar-month-strip
+  .fc-daygrid-body
+  > table
+  > tbody {
+  display: block;
+  width: 100%;
+  height: auto;
+  table-layout: auto;
+  border: none !important;
+  border-collapse: separate;
+  border-spacing: 0;
+  background: transparent;
+}
+
+.calendar-view[data-month-strip="true"]
+  .calendar-month-strip
+  .fc-daygrid-body
+  > table
+  > tbody {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 1px;
+  background-color: var(--calendar-grid-border);
+}
+
+.calendar-view[data-month-strip="true"]
+  .calendar-month-strip
+  .fc-daygrid-body
+  tr {
+  display: contents;
+}
+
+.calendar-view[data-month-strip="true"]
+  .calendar-month-strip
+  .fc-day-disabled,
+.calendar-view[data-month-strip="true"]
+  .calendar-month-strip
+  .fc-day-other {
+  display: none !important;
+}
+
+.calendar-view[data-month-strip="true"]
+  .calendar-month-strip
+  .fc-daygrid-body
+  td,
+.calendar-view[data-month-strip="true"]
+  .calendar-month-strip
+  .fc-daygrid-day {
+  display: flex;
+  flex-direction: column;
+  aspect-ratio: 1 / 1;
+  width: 100%;
+  height: auto;
+  min-height: 0;
+  /* Neutralize shared right/bottom + :last-child edge stripping. */
+  border: none !important;
+  /* Opaque so the gap “seam” color does not fill the cell. */
+  background-color: var(--background) !important;
+}
+
+.calendar-view[data-month-strip="true"]
+  .calendar-month-strip
+  .fc-daygrid-day-frame {
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+}
+
+/* Shared table-edge selectors must not apply — see gap-based seams above. */
+.calendar-view[data-month-strip="true"]
+  .calendar-month-strip
+  .fc-daygrid-body
+  tr
+  > td:last-child,
+.calendar-view[data-month-strip="true"]
+  .calendar-month-strip
+  .fc-daygrid-body
+  tr
+  > td:last-child
+  .fc-daygrid-day,
+.calendar-view[data-month-strip="true"]
+  .calendar-month-strip
+  .fc-daygrid-body
+  tr:last-child
+  > td,
+.calendar-view[data-month-strip="true"]
+  .calendar-month-strip
+  .fc-daygrid-body
+  tr:last-child
+  > td
+  .fc-daygrid-day {
+  border: none !important;
 }
 
 /* Vertical 7-pane day strip — free pan; recycle only near the edges. */
@@ -1080,6 +1226,55 @@ body.calendar-event-drag-copy
     transparent
   ) !important;
   border: 1px solid color-mix(in srgb, var(--foreground) 22%, transparent) !important;
+}
+
+/* Month-strip custom event drag (FC hits are broken by the packed day grid). */
+html.is-calendar-month-event-dragging,
+html.is-calendar-month-event-dragging * {
+  cursor: grabbing !important;
+  user-select: none !important;
+}
+
+/* Kill any FC drag ghost that still sneaks through — it lands at 0,0. */
+html.is-calendar-month-event-dragging .fc-event-mirror,
+html.is-calendar-month-event-dragging .fc-event.fc-event-mirror,
+html.is-calendar-month-event-dragging .fc-event-dragging:not(.calendar-month-event-drag-source) {
+  opacity: 0 !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
+.calendar-month-event-drag-mirror {
+  position: fixed !important;
+  z-index: 2147483646 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  pointer-events: none !important;
+  cursor: grabbing !important;
+  transform: none !important;
+  inset: auto !important;
+}
+
+.calendar-month-event-drag-mirror__chip {
+  box-sizing: border-box;
+  max-width: 14rem;
+  overflow: hidden;
+  border-radius: 4px;
+  border-width: 1px;
+  border-style: solid;
+  box-shadow: 0 4px 14px rgb(0 0 0 / 0.28);
+  opacity: 0.96;
+  pointer-events: none !important;
+  position: relative !important;
+  inset: auto !important;
+  left: auto !important;
+  top: auto !important;
+  transform: none !important;
+}
+
+.calendar-month-event-drag-source {
+  opacity: 0.35 !important;
 }
 
 .fc-event-mirror .fc-event-main,
