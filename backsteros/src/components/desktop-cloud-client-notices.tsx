@@ -4,9 +4,11 @@ import {
   DESKTOP_VAULT_MISSING_MESSAGE,
   peekPersistedDesktopVaultRoot,
   rememberDesktopVaultRoot,
+  shouldPromptForDesktopVault,
 } from "../lib/desktop-vault";
 import { useCloudClientNotices } from "../lib/cloud-client-notices";
 import { projectFs } from "../lib/project-fs";
+import { isTauriRuntime } from "../lib/tauri-runtime";
 
 const DISMISS_KEY = "backsteros:desktop-vault-prompt-dismissed-v1";
 
@@ -20,6 +22,7 @@ function dismissed(): boolean {
 
 /**
  * Non-blocking cloud-client notices. Task and project lists do not wait on these.
+ * Vault folder chooser is Tauri-only — browser uses REST/core storage.
  */
 export function DesktopCloudClientNotices() {
   const notices = useCloudClientNotices();
@@ -29,7 +32,11 @@ export function DesktopCloudClientNotices() {
   const [hidePrompt, setHidePrompt] = useState(dismissed);
   const [pickError, setPickError] = useState<string | null>(null);
 
-  const showVault = !vaultPath && !hidePrompt;
+  const showVault = shouldPromptForDesktopVault({
+    isTauri: isTauriRuntime(),
+    vaultPath,
+    dismissed: hidePrompt,
+  });
 
   if (
     !showVault &&

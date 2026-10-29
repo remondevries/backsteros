@@ -3,8 +3,10 @@ import { test } from "node:test";
 
 import {
   assertVaultRelativeKeyForTests,
+  DESKTOP_VAULT_MISSING_MESSAGE,
   isUsableAbsoluteVaultPathForTests,
   selectDesktopVaultRoot,
+  shouldPromptForDesktopVault,
 } from "./desktop-vault.ts";
 
 test("isUsableAbsoluteVaultPathForTests accepts unix and windows roots", () => {
@@ -51,4 +53,41 @@ test("assertVaultRelativeKeyForTests rejects traversal and absolute keys", () =>
   assert.throws(() => assertVaultRelativeKeyForTests("../etc/passwd"));
   assert.throws(() => assertVaultRelativeKeyForTests("/etc/passwd"));
   assert.throws(() => assertVaultRelativeKeyForTests(""));
+});
+
+test("shouldPromptForDesktopVault is Tauri-only and optional", () => {
+  assert.equal(
+    shouldPromptForDesktopVault({
+      isTauri: false,
+      vaultPath: null,
+      dismissed: false,
+    }),
+    false,
+  );
+  assert.equal(
+    shouldPromptForDesktopVault({
+      isTauri: true,
+      vaultPath: null,
+      dismissed: false,
+    }),
+    true,
+  );
+  assert.equal(
+    shouldPromptForDesktopVault({
+      isTauri: true,
+      vaultPath: "/Users/me/Vault",
+      dismissed: false,
+    }),
+    false,
+  );
+  assert.equal(
+    shouldPromptForDesktopVault({
+      isTauri: true,
+      vaultPath: null,
+      dismissed: true,
+    }),
+    false,
+  );
+  assert.match(DESKTOP_VAULT_MISSING_MESSAGE, /Optional:/i);
+  assert.match(DESKTOP_VAULT_MISSING_MESSAGE, /saved to BacksterOS/i);
 });

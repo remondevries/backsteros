@@ -1,11 +1,11 @@
 import type { BacksterosApiClient } from "@backsteros/api-client";
 
 import {
-  DESKTOP_VAULT_MISSING_MESSAGE,
   peekPersistedDesktopVaultRoot,
   readDesktopVaultText,
 } from "./desktop-vault";
 import { createPersistedSessionLruCache } from "./session-lru-cache";
+import { isTauriRuntime } from "./tauri-runtime";
 
 export type CachedDocumentContent = {
   content: string;
@@ -191,9 +191,13 @@ async function resolveDocumentContent(
 }
 
 export function documentOpenUnavailableMessage(): string {
+  // Browser has no Mac working copy — never nag about choosing a vault folder.
+  if (!isTauriRuntime()) {
+    return "Could not open this file from cloud storage.";
+  }
   return peekPersistedDesktopVaultRoot()
     ? "Could not open this file from the working copy or cloud storage."
-    : DESKTOP_VAULT_MISSING_MESSAGE;
+    : "Could not open this file from cloud storage. You can optionally choose a local vault folder in Settings → Storage for faster local opens.";
 }
 
 /**

@@ -59,9 +59,25 @@ function isUsableAbsolutePath(path: string): boolean {
   return isUsableAbsoluteVaultPath(path);
 }
 
-/** Shown when this Mac has no working-copy folder yet. Does not start Docker. */
+/**
+ * Desktop (Tauri) banner when no local working-copy folder is chosen yet.
+ * Optional — core still stores documents server-side without it.
+ */
 export const DESKTOP_VAULT_MISSING_MESSAGE =
-  "No vault folder on this Mac. Choose one to open local markdown and PDFs. Lists still sync, and cloud files open from storage when they are there. This does not start Docker.";
+  "Optional: choose a local vault folder for faster loading and editing docs as files. Everything is saved to BacksterOS either way.";
+
+/** Whether the cloud-client vault chooser banner should render (Tauri only). */
+export function shouldPromptForDesktopVault(input: {
+  isTauri: boolean;
+  vaultPath: string | null | undefined;
+  dismissed: boolean;
+}): boolean {
+  return (
+    input.isTauri &&
+    !input.dismissed &&
+    !(input.vaultPath?.trim())
+  );
+}
 
 export type DesktopVaultRootInput = {
   persisted: string | null;

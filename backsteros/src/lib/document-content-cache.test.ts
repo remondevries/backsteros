@@ -3,6 +3,7 @@ import { test } from "node:test";
 
 import {
   discardDocumentContentCache,
+  documentOpenUnavailableMessage,
   fetchDocumentContent,
   isDocumentContentChecksumCorrupt,
   peekDocumentContentCache,
@@ -227,4 +228,11 @@ test("discardDocumentContentCache clears warm entry for SSE force refetch", () =
   assert.ok(peekDocumentContentCache(id));
   discardDocumentContentCache(id);
   assert.equal(peekDocumentContentCache(id), null);
+});
+
+test("documentOpenUnavailableMessage does not nag about vault in browser", () => {
+  const message = documentOpenUnavailableMessage();
+  assert.match(message, /cloud storage/i);
+  assert.doesNotMatch(message, /vault folder/i);
+  assert.doesNotMatch(message, /Optional:/i);
 });
