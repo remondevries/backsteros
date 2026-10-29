@@ -15,6 +15,16 @@ test("localOnlyRestFailClosed for cloud API, not loopback", () => {
   assert.equal(localOnlyRestFailClosed("https://agent.backsteros.com"), true);
   assert.equal(localOnlyRestFailClosed("http://127.0.0.1:8788"), false);
   assert.equal(localOnlyRestFailClosed("http://localhost:8788"), false);
+
+  const previous = process.env.VITE_TREAT_API_AS_LOCAL_CORE;
+  process.env.VITE_TREAT_API_AS_LOCAL_CORE = "1";
+  try {
+    assert.equal(localOnlyRestFailClosed("http://100.126.31.97:8788"), false);
+    assert.equal(localOnlyRestFailClosed("http://development:8788"), false);
+  } finally {
+    if (previous === undefined) delete process.env.VITE_TREAT_API_AS_LOCAL_CORE;
+    else process.env.VITE_TREAT_API_AS_LOCAL_CORE = previous;
+  }
 });
 
 test("shouldSkipRestEntityWrite when PowerSync ready and connected", () => {

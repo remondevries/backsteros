@@ -141,8 +141,13 @@ export default defineConfig(async () => ({
     port: 1420,
     strictPort: true,
     host: host || false,
-    // os.local.backsteros.com is the tailnet name for this dev server.
-    allowedHosts: [".local.backsteros.com"],
+    // MagicDNS `development` + Tailscale IP for browser testing on this box (OS-148).
+    // os.local.backsteros.com remains the Mac HTTPS gateway name.
+    allowedHosts: [
+      ".local.backsteros.com",
+      "development",
+      "100.126.31.97",
+    ],
     // Do not set COEP/COOP here — cross-origin workers/scripts and
     // `require-corp` breaks session tokens (PowerSync then gets 401).
     proxy: {

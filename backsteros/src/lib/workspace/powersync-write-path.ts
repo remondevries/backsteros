@@ -1,3 +1,4 @@
+import { isLocalDevApiUrl } from "../env";
 import type { WorkspacePowerSync } from "./workspace-data-types";
 
 /**
@@ -18,14 +19,10 @@ export function shouldSkipRestEntityWrite(
 /**
  * Cloud-client mode. Local-only REST (scope move, letter vault relocate,
  * flush-empty fallback) must not run — and must not start Docker.
+ * Local-core over loopback or Tailscale (with VITE_TREAT_API_AS_LOCAL_CORE) stays open.
  */
 export function localOnlyRestFailClosed(apiUrl: string): boolean {
-  try {
-    const host = new URL(apiUrl).hostname.toLowerCase();
-    return host !== "127.0.0.1" && host !== "localhost" && host !== "::1";
-  } catch {
-    return true;
-  }
+  return !isLocalDevApiUrl(apiUrl);
 }
 
 /**

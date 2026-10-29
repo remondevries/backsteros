@@ -18,6 +18,18 @@ describe("desktop product auth", () => {
     assert.equal(await provider(), DEFAULT_LOCAL_SHELL_TOKEN);
   });
 
+  it("uses local-shell bearer for Tailscale local-core when opted in", async () => {
+    const previous = process.env.VITE_TREAT_API_AS_LOCAL_CORE;
+    process.env.VITE_TREAT_API_AS_LOCAL_CORE = "1";
+    try {
+      const token = await loadDesktopProductToken("http://100.126.31.97:8788");
+      assert.equal(token, DEFAULT_LOCAL_SHELL_TOKEN);
+    } finally {
+      if (previous === undefined) delete process.env.VITE_TREAT_API_AS_LOCAL_CORE;
+      else process.env.VITE_TREAT_API_AS_LOCAL_CORE = previous;
+    }
+  });
+
   it("does not invent a local-shell bearer for cloud API URLs", async () => {
     const token = await loadDesktopProductToken(
       "https://api.local.backsteros.com",

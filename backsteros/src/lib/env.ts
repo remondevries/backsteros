@@ -42,15 +42,52 @@ function resolveConfiguredDesktopApiUrl(): string {
 }
 
 /**
+ * When `1`/`true`, keep a cleartext Tailscale `:8788` URL as local-core instead
+ * of rewriting it to the HTTPS cloud gateway. Used by the Ubuntu development
+ * server (OS-148) so a browser on the tailnet can talk to this box's API.
+ */
+export function treatConfiguredApiAsLocalCore(): boolean {
+  let flag: string | undefined;
+  try {
+    flag = import.meta.env?.VITE_TREAT_API_AS_LOCAL_CORE?.trim();
+  } catch {
+    flag = undefined;
+  }
+  if (!flag) {
+    flag = process.env.VITE_TREAT_API_AS_LOCAL_CORE?.trim();
+  }
+  const normalized = flag?.toLowerCase();
+  return normalized === "1" || normalized === "true";
+}
+
+function isLoopbackHostname(host: string): boolean {
+  return host === "127.0.0.1" || host === "localhost" || host === "::1";
+}
+
+/** Port on local-core (LaunchAgent / docker API). Vite UI stays on 1420. */
+function isLocalCoreApiPort(port: string): boolean {
+  return port === "" || port === "8788";
+}
+
+/**
  * True when `VITE_API_URL` targets local-core (`:8788`), not the Vite UI on `:1420`.
+ * Loopback always qualifies. Cleartext Tailscale / MagicDNS hosts qualify only when
+ * {@link treatConfiguredApiAsLocalCore} is set (dev-server browser testing).
  */
 export function isLocalDevApiUrl(apiUrl: string): boolean {
   try {
     const url = new URL(apiUrl);
     const host = url.hostname.toLowerCase();
-    if (host !== "127.0.0.1" && host !== "localhost") return false;
     if (url.port === "1420") return false;
-    return true;
+    if (isLoopbackHostname(host)) return isLocalCoreApiPort(url.port);
+    if (!treatConfiguredApiAsLocalCore()) return false;
+    if (!isLocalCoreApiPort(url.port)) return false;
+    // Explicit opt-in: MagicDNS name, this development box, or any CGNAT tailnet IP.
+    return (
+      host === "development" ||
+      host.startsWith("100.") ||
+      host.endsWith(".ts.net")
+    );
   } catch {
     return false;
   }
@@ -92,7 +129,9 @@ export type DesktopPublicEnvironment = {
 
 /**
  * Product API URL. Defaults to local-core. Cleartext Tailscale (`100.*`) still
- * goes through the HTTPS gateway. Explicit loopback stays on local-core.
+ * goes through the HTTPS gateway unless {@link treatConfiguredApiAsLocalCore}
+ * is set (dev-server browser testing against this box). Explicit loopback stays
+ * on local-core.
  */
 export function resolveDesktopApiUrl(
   configured: string | null | undefined,
@@ -100,7 +139,11 @@ export function resolveDesktopApiUrl(
   const raw = (configured?.trim() || LOCAL_CORE_API_URL).replace(/\/$/, "");
   try {
     const url = new URL(raw);
-    if (url.protocol === "http:" && url.hostname.startsWith("100.")) {
+    if (
+      url.protocol === "http:" &&
+      url.hostname.startsWith("100.") &&
+      !treatConfiguredApiAsLocalCore()
+    ) {
       return CLOUD_CORE_API_URL;
     }
   } catch {

@@ -28,6 +28,28 @@ test("product API defaults to local-core", () => {
   );
 });
 
+test("VITE_TREAT_API_AS_LOCAL_CORE keeps Tailscale local-core cleartext", () => {
+  const previous = process.env.VITE_TREAT_API_AS_LOCAL_CORE;
+  process.env.VITE_TREAT_API_AS_LOCAL_CORE = "1";
+  try {
+    assert.equal(
+      resolveDesktopApiUrl("http://100.126.31.97:8788"),
+      "http://100.126.31.97:8788",
+    );
+    assert.equal(isLocalDevApiUrl("http://100.126.31.97:8788"), true);
+    assert.equal(isLocalDevApiUrl("http://development:8788"), true);
+    assert.equal(
+      rewritePowerSyncEndpoint("http://100.126.31.97:8080", {
+        apiUrl: "http://100.126.31.97:8788",
+      }),
+      "http://100.126.31.97:8080",
+    );
+  } finally {
+    if (previous === undefined) delete process.env.VITE_TREAT_API_AS_LOCAL_CORE;
+    else process.env.VITE_TREAT_API_AS_LOCAL_CORE = previous;
+  }
+});
+
 test("cleartext PowerSync stays loopback for local-core API", () => {
   assert.equal(
     rewritePowerSyncEndpoint("http://127.0.0.1:8080", {

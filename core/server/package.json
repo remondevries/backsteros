@@ -20,6 +20,7 @@
     "verify:local-cloud-parity": "bash ./scripts/verify-local-cloud-parity.sh",
     "db:powersync-token": "tsx --env-file=.env src/db/powersync-token.ts",
     "db:seed": "tsx --env-file=.env src/db/seed.ts",
+    "db:seed-demo": "tsx --env-file=.env src/db/seed-demo.ts",
     "replication:bootstrap": "tsx --env-file=.env src/scripts/replication-bootstrap.ts",
     "parity:check": "tsx --env-file=.env src/scripts/core-parity-check.ts",
     "prove:crm-powersync-leader": "tsx --env-file=.env src/scripts/prove-crm-powersync-leader-write.ts",

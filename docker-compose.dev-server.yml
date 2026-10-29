@@ -1,0 +1,26 @@
+# Overlay for the Ubuntu development server (OS-148).
+# Postgres stays on loopback. PowerSync is published on the Tailscale IP so a
+# browser on the tailnet can sync. Never binds 0.0.0.0 or the public IP.
+#
+# Usage (via scripts/dev-server.sh):
+#   BACKSTEROS_COMPOSE_PROJECT=backsteros-devserver \
+#   docker compose -f docker-compose.yml -f docker-compose.dev-server.yml up -d
+
+name: ${BACKSTEROS_COMPOSE_PROJECT:-backsteros-devserver}
+
+services:
+  postgres:
+    container_name: ${BACKSTEROS_COMPOSE_PROJECT:-backsteros-devserver}-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-backsteros}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-backsteros_dev_only}
+      POSTGRES_DB: ${POSTGRES_DB:-backsteros}
+
+  mongo:
+    container_name: ${BACKSTEROS_COMPOSE_PROJECT:-backsteros-devserver}-powersync-mongo
+
+  powersync:
+    container_name: ${BACKSTEROS_COMPOSE_PROJECT:-backsteros-devserver}-powersync
+    ports:
+      # Appended to base `127.0.0.1:8080` so browsers on the tailnet can sync.
+      - "100.126.31.97:8080:8080"

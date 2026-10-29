@@ -12,6 +12,7 @@ agents/build-info.json
 dist/
 node_modules/
 tmp/
+.dev-server-logs/
 
 # Apple codesign / notarization exports — never commit.
 *.p12
