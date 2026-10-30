@@ -22,6 +22,7 @@ import { navigateToHref } from "../router/navigate-href";
 import { RouterLink } from "./app-shell-links";
 import { renderAppShellTabIcon } from "./app-shell-tab-icon";
 import { ShellAgentDmBanner } from "./shell-agent-dm-banner";
+import { ShellAgentDmLiveHost } from "./shell-agent-dm-live-host";
 import { ShellChatPanel } from "./shell-chat-panel";
 import type { useShellTabs } from "./use-shell-tabs";
 import type { resolveInboxSidebarIndicatorTone } from "@backsteros/ui/inbox";
@@ -130,6 +131,8 @@ function ShellChromeInner({
 
   return (
     <>
+      {/* Keep cloud chat SSE alive even when the sidebar banner unmounts (settings). */}
+      <ShellAgentDmLiveHost />
       <DevTrafficLights hidden={windowFullscreen} />
       <ProductAppShell
         className={windowFullscreen ? "is-window-fullscreen" : undefined}

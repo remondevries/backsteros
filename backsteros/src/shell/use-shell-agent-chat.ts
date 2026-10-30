@@ -173,15 +173,28 @@ export function useShellAgentChat(): ShellAgentChatApi {
     [],
   );
 
-  return {
-    agents,
-    webhookReadyAgents,
-    agentsByContactId,
-    agentsLoadError,
-    openThread,
-    sendMessage,
-    getThread,
-    listMessages,
-    deleteMessages,
-  };
+  return useMemo(
+    (): ShellAgentChatApi => ({
+      agents,
+      webhookReadyAgents,
+      agentsByContactId,
+      agentsLoadError,
+      openThread,
+      sendMessage,
+      getThread,
+      listMessages,
+      deleteMessages,
+    }),
+    [
+      agents,
+      agentsByContactId,
+      agentsLoadError,
+      deleteMessages,
+      getThread,
+      listMessages,
+      openThread,
+      sendMessage,
+      webhookReadyAgents,
+    ],
+  );
 }

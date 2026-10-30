@@ -29,6 +29,58 @@ import { useShellAgentChat } from "./use-shell-agent-chat";
 /** Slow catch-up; live updates come from cloud SSE. */
 const POLL_MS = 60_000;
 
+type ThreadPushListener = (payload: AgentShellChatMessagePayload) => void;
+
+/** One SSE loop for the whole shell (banner + always-on live host). */
+const shellChatLive = {
+  readyAgentIds: new Set<string>(),
+  abort: null as AbortController | null,
+  subscribers: new Set<ThreadPushListener>(),
+  onReload: null as null | (() => void),
+};
+
+function ensureShellChatLiveLoop(): void {
+  if (shellChatLive.abort) return;
+  const controller = new AbortController();
+  shellChatLive.abort = controller;
+  startAgentShellChatEventsLoop({
+    signal: controller.signal,
+    onLive: () => {
+      shellChatLive.onReload?.();
+    },
+    onMessage: (payload) => {
+      if (import.meta.env.DEV) {
+        console.info(
+          "[shell-chat-sse] message",
+          payload.threadId,
+          payload.message.id,
+        );
+      }
+      dispatchAgentShellChatMessage(payload);
+      dispatchAgentShellChatStatus({
+        threadId: payload.threadId,
+        agentId: payload.agentId,
+        state: "idle",
+        at: payload.message.createdAt,
+        pendingReplyAt: null,
+      });
+      for (const listener of shellChatLive.subscribers) {
+        listener(payload);
+      }
+    },
+    onStatus: (payload) => {
+      if (import.meta.env.DEV) {
+        console.info(
+          "[shell-chat-sse] status",
+          payload.threadId,
+          payload.state,
+        );
+      }
+      dispatchAgentShellChatStatus(payload);
+    },
+  });
+}
+
 function formatShortRelative(iso: string, nowMs = Date.now()): string {
   const epoch = Date.parse(iso);
   if (Number.isNaN(epoch)) return "";
@@ -135,40 +187,26 @@ export function useAgentDmNotifications(): UseAgentDmNotificationsResult {
   }, [reload]);
 
   useEffect(() => {
-    if (readyAgentIds.size === 0) return;
-    const controller = new AbortController();
-    startAgentShellChatEventsLoop({
-      signal: controller.signal,
-      onLive: () => {
-        void reload();
-      },
-      onMessage: (payload) => {
-        if (!readyAgentIds.has(payload.agentId)) return;
-        // Open thread view listens for the message push and refetches.
-        dispatchAgentShellChatMessage(payload);
-        // Reply implies idle for the open chat thinking indicator.
-        dispatchAgentShellChatStatus({
-          threadId: payload.threadId,
-          agentId: payload.agentId,
-          state: "idle",
-          at: payload.message.createdAt,
-          pendingReplyAt: null,
-        });
-        setThreads((prev) => {
-          const { threads: next, found } = applyShellChatPush(prev, payload);
-          if (!found) {
-            void reload();
-            return prev;
-          }
-          return next;
-        });
-      },
-      onStatus: (payload) => {
-        if (!readyAgentIds.has(payload.agentId)) return;
-        dispatchAgentShellChatStatus(payload);
-      },
-    });
-    return () => controller.abort();
+    shellChatLive.readyAgentIds = readyAgentIds;
+    shellChatLive.onReload = () => {
+      void reload();
+    };
+    ensureShellChatLiveLoop();
+    const onPush: ThreadPushListener = (payload) => {
+      if (!shellChatLive.readyAgentIds.has(payload.agentId)) return;
+      setThreads((prev) => {
+        const { threads: next, found } = applyShellChatPush(prev, payload);
+        if (!found) {
+          void reload();
+          return prev;
+        }
+        return next;
+      });
+    };
+    shellChatLive.subscribers.add(onPush);
+    return () => {
+      shellChatLive.subscribers.delete(onPush);
+    };
   }, [readyAgentIds, reload]);
 
   useEffect(() => {

@@ -21,6 +21,7 @@ import {
   resolveRecentChatProjectsForStrip,
   type ChatProjectOption,
 } from "../../chat/chat-project-option.js";
+import { applyAssistantShellChatPush } from "../../chat/chat-apply-shell-push.js";
 import {
   isOpenChatThreadEvent,
   shouldRefreshOpenChatThreadOnPush,
@@ -430,8 +431,10 @@ export function ChatUiDevPreview({
   }, [activeProject, projectId, threadAgent, threadKey]);
 
   // Open / refresh the live agent thread when Sander (etc.) is selected.
+  // Depend on liveAgentId only — liveAgentChat identity used to thrash this
+  // effect and let a stale openThread overwrite a newer SSE refresh.
   useEffect(() => {
-    if (!liveAgentId || !liveAgentChat) {
+    if (!liveAgentId || !liveAgentChatRef.current) {
       setLiveThreadId(null);
       setLiveMessages(null);
       setThinkingState(CHAT_THINKING_OFF);
@@ -439,9 +442,11 @@ export function ChatUiDevPreview({
     }
     let cancelled = false;
     const gen = ++pollGen.current;
+    const chat = liveAgentChatRef.current;
+    const agentName = threadAgentNameRef.current;
     void (async () => {
       try {
-        const thread = await liveAgentChat.openThread(liveAgentId);
+        const thread = await chat.openThread(liveAgentId);
         if (cancelled || pollGen.current !== gen) return;
         const now = Date.now();
         const nextThinking = chatThinkingFromPendingReplyAt(
@@ -454,9 +459,7 @@ export function ChatUiDevPreview({
         if (cancelled || pollGen.current !== gen) return;
         setLiveThreadId(null);
         setLiveMessages([
-          webhookErrorStatusMessage(
-            `Could not open chat with ${threadAgent.name}.`,
-          ),
+          webhookErrorStatusMessage(`Could not open chat with ${agentName}.`),
         ]);
         setThinkingState(CHAT_THINKING_OFF);
       }
@@ -464,7 +467,7 @@ export function ChatUiDevPreview({
     return () => {
       cancelled = true;
     };
-  }, [applyLiveThread, liveAgentChat, liveAgentId, threadAgent.name]);
+  }, [applyLiveThread, liveAgentId]);
 
   // Expire provisional / working timers without dropping real messages.
   useEffect(() => {
@@ -487,7 +490,12 @@ export function ChatUiDevPreview({
   // Agent reply + status from cloud SSE (via desktop shell window events).
   useEffect(() => {
     const onMessage = (event: Event) => {
-      const detail = (event as CustomEvent<{ threadId?: string }>).detail;
+      const detail = (
+        event as CustomEvent<{
+          threadId?: string;
+          message?: { id?: string; body?: string; createdAt?: string };
+        }>
+      ).detail;
       if (
         !shouldRefreshOpenChatThreadOnPush({
           openThreadId: liveThreadIdRef.current,
@@ -497,6 +505,29 @@ export function ChatUiDevPreview({
       ) {
         return;
       }
+      const messageId = detail?.message?.id?.trim() || "";
+      const body = detail?.message?.body ?? "";
+      const createdAt = detail?.message?.createdAt?.trim() || "";
+      if (import.meta.env.DEV) {
+        console.info("[shell-chat] apply message push", {
+          openThreadId: liveThreadIdRef.current,
+          eventThreadId: detail?.threadId,
+          messageId,
+        });
+      }
+      // Invalidate any in-flight openThread so it cannot overwrite this reply.
+      pollGen.current += 1;
+      setThinkingState(CHAT_THINKING_OFF);
+      if (messageId && createdAt) {
+        setLiveMessages((prev) =>
+          applyAssistantShellChatPush(
+            prev,
+            { id: messageId, body, createdAt },
+            threadAgentNameRef.current,
+          ),
+        );
+      }
+      // Reconcile from cloud (__cloud_core__) in the background.
       void refreshOpenLiveThread();
     };
     const onStatus = (event: Event) => {
@@ -511,6 +542,12 @@ export function ChatUiDevPreview({
       ) {
         return;
       }
+      if (import.meta.env.DEV) {
+        console.info("[shell-chat] status push", {
+          openThreadId: liveThreadIdRef.current,
+          state,
+        });
+      }
       if (
         shouldRefreshOpenChatThreadOnPush({
           openThreadId: liveThreadIdRef.current,
@@ -519,7 +556,8 @@ export function ChatUiDevPreview({
           status: state,
         })
       ) {
-        // idle (and reply) — pull the latest messages and clear thinking.
+        pollGen.current += 1;
+        setThinkingState(CHAT_THINKING_OFF);
         void refreshOpenLiveThread();
         return;
       }
