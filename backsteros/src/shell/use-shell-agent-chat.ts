@@ -10,6 +10,7 @@ import {
   cloudCoreRequestJson,
   isCloudCoreApiError,
 } from "../lib/cloud-core-api";
+import { SHELL_AGENT_ROSTER_CHANGED_EVENT } from "../lib/shell-agent-roster";
 
 export function agentHasWebhookUrl(agent: Agent): boolean {
   return Boolean(agent.webhookUrl?.trim());
@@ -20,6 +21,8 @@ export type ShellAgentChatApi = {
   /** Enabled agents with a webhook URL — the only ones shown in chat (OS-155). */
   webhookReadyAgents: readonly Agent[];
   agentsByContactId: ReadonlyMap<string, Agent>;
+  /** Set when the cloud agents door could not be loaded (e.g. missing owner key). */
+  agentsLoadError: string | null;
   openThread: (agentId: string) => Promise<ChatThreadWithMessages>;
   sendMessage: (
     threadId: string,
@@ -36,26 +39,46 @@ export type ShellAgentChatApi = {
  */
 export function useShellAgentChat(): ShellAgentChatApi {
   const [agents, setAgents] = useState<Agent[]>([]);
+  const [agentsLoadError, setAgentsLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    void (async () => {
+    const load = async () => {
       try {
         const body = await cloudCoreRequestJson<{ agents: Agent[] }>(
           "/api/v1/agents",
         );
-        if (!cancelled) setAgents(body.agents.filter((agent) => agent.enabled));
+        if (!cancelled) {
+          setAgents(body.agents.filter((agent) => agent.enabled));
+          setAgentsLoadError(null);
+        }
       } catch (error) {
         if (!cancelled) {
           if (isCloudCoreApiError(error) && error.status === 401) {
             console.warn("[shell-chat] owner API key required for cloud chat");
+            setAgentsLoadError(
+              "Cloud chat needs an owner API key (Tauri reads ~/.config/backsteros/cli.env; Vite serve loads it automatically). Restart the dev server after updating the key.",
+            );
+          } else {
+            setAgentsLoadError(
+              "Could not load agents from cloud (agent.backsteros.com). Check the network and try again.",
+            );
           }
           setAgents([]);
         }
       }
-    })();
+    };
+    void load();
+    const onRosterChanged = () => {
+      void load();
+    };
+    window.addEventListener(SHELL_AGENT_ROSTER_CHANGED_EVENT, onRosterChanged);
     return () => {
       cancelled = true;
+      window.removeEventListener(
+        SHELL_AGENT_ROSTER_CHANGED_EVENT,
+        onRosterChanged,
+      );
     };
   }, []);
 
@@ -107,6 +130,7 @@ export function useShellAgentChat(): ShellAgentChatApi {
     agents,
     webhookReadyAgents,
     agentsByContactId,
+    agentsLoadError,
     openThread,
     sendMessage,
     getThread,

@@ -120,10 +120,20 @@ export const createChatThreadMessageResultSchema = z.object({
   webhookError: z.string().nullable(),
 });
 
+/** Result of POSTing a one-shot test delivery to the agent's webhook URL. */
+export const agentWebhookTestResultSchema = z.object({
+  ok: z.boolean(),
+  error: z.string().nullable(),
+  deliveryId: z.string().nullable(),
+});
+
 export type Agent = z.infer<typeof agentSchema>;
 export type AgentsList = z.infer<typeof agentsListSchema>;
 export type CreateAgentInput = z.infer<typeof createAgentInputSchema>;
 export type UpdateAgentInput = z.infer<typeof updateAgentInputSchema>;
+export type AgentWebhookTestResult = z.infer<
+  typeof agentWebhookTestResultSchema
+>;
 export type ChatThread = z.infer<typeof chatThreadSchema>;
 export type ChatThreadMessage = z.infer<typeof chatThreadMessageSchema>;
 export type ChatThreadWithMessages = z.infer<

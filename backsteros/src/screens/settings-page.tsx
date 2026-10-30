@@ -1,6 +1,7 @@
 import { ApiClientError } from "@backsteros/api-client";
 import type {
   Agent,
+  AgentWebhookTestResult,
   ApiKey,
   ApiKeyAuditLog,
   ApiKeyRequestLog,
@@ -25,6 +26,11 @@ import {
   type SettingsTabId,
 } from "@backsteros/ui";
 import { useDesktopApi } from "../lib/api-context";
+import {
+  cloudCoreRequestJson,
+  isCloudCoreApiError,
+} from "../lib/cloud-core-api";
+import { notifyShellAgentRosterChanged } from "../lib/shell-agent-roster";
 import { SettingsAccountTab } from "../components/settings-account-tab";
 import { SettingsLabelsTab } from "../components/settings-labels-tab";
 import { SettingsDocumentPropertiesTab } from "../components/settings-document-properties-tab";
@@ -84,6 +90,26 @@ function toSettingsRequestLog(
   };
 }
 
+function cloudSettingsErrorMessage(error: unknown, fallback: string): string {
+  if (isCloudCoreApiError(error) && error.status === 401) {
+    return "Owner API key required for cloud agents (Tauri reads ~/.config/backsteros/cli.env; Vite serve loads it automatically). Restart the dev server after updating the key.";
+  }
+  if (error instanceof Error && error.message.trim()) return error.message;
+  return fallback;
+}
+
+function toAgentWebhookSettings(agent: Agent): AgentWebhookSettings {
+  return {
+    agentId: agent.id,
+    webhookUrl: agent.webhookUrl,
+    webhookSecretConfigured: agent.webhookSecretConfigured,
+  };
+}
+
+/**
+ * Settings → API: agents (+ linked keys) live on cloud-core via the agents door.
+ * Shell chat reads the same store — local-core agents are not the chat roster.
+ */
 function SettingsApiTab({
   title,
   description,
@@ -91,7 +117,6 @@ function SettingsApiTab({
   title: string;
   description: string;
 }) {
-  const { client } = useDesktopApi();
   const { contacts } = useDesktopWorkspacePeople();
   const contactAvatarSrc = useDesktopAvatarSrcMap("contact", contacts);
   const contactsWithAvatars = useMemo(
@@ -111,11 +136,7 @@ function SettingsApiTab({
     const map = new Map<string, AgentWebhookSettings>();
     for (const agent of agents) {
       if (!agent.apiKeyId) continue;
-      map.set(agent.apiKeyId, {
-        agentId: agent.id,
-        webhookUrl: agent.webhookUrl,
-        webhookSecretConfigured: agent.webhookSecretConfigured,
-      });
+      map.set(agent.apiKeyId, toAgentWebhookSettings(agent));
     }
     return map;
   }, [agents]);
@@ -125,27 +146,25 @@ function SettingsApiTab({
     setErrorMessage(null);
     try {
       const [keysBody, auditBody, requestBody, agentsBody] = await Promise.all([
-        client.requestJson<{ apiKeys: ApiKey[] }>("/api/v1/api-keys"),
-        client.requestJson<{ auditLogs: ApiKeyAuditLog[] }>(
+        cloudCoreRequestJson<{ apiKeys: ApiKey[] }>("/api/v1/api-keys"),
+        cloudCoreRequestJson<{ auditLogs: ApiKeyAuditLog[] }>(
           "/api/v1/api-keys/audit-logs?limit=100",
         ),
-        client.requestJson<{ requestLogs: ApiKeyRequestLog[] }>(
+        cloudCoreRequestJson<{ requestLogs: ApiKeyRequestLog[] }>(
           "/api/v1/api-keys/request-logs?limit=200",
         ),
-        client.requestJson<{ agents: Agent[] }>("/api/v1/agents"),
+        cloudCoreRequestJson<{ agents: Agent[] }>("/api/v1/agents"),
       ]);
       setApiKeys(keysBody.apiKeys.map(toSettingsApiKey));
       setAuditLogs(auditBody.auditLogs.map(toSettingsAuditLog));
       setRequestLogs(requestBody.requestLogs.map(toSettingsRequestLog));
       setAgents(agentsBody.agents);
     } catch (error) {
-      setErrorMessage(
-        error instanceof Error ? error.message : "Could not load API keys",
-      );
+      setErrorMessage(cloudSettingsErrorMessage(error, "Could not load API keys"));
     } finally {
       setLoading(false);
     }
-  }, [client]);
+  }, []);
 
   useEffect(() => {
     void loadKeys();
@@ -156,11 +175,10 @@ function SettingsApiTab({
     body: Record<string, unknown>,
   ): Promise<boolean> {
     try {
-      const updated = await client.requestJson<ApiKey>(
+      const updated = await cloudCoreRequestJson<ApiKey>(
         `/api/v1/api-keys/${encodeURIComponent(id)}`,
         {
           method: "PATCH",
-          headers: { "content-type": "application/json" },
           body: JSON.stringify(body),
         },
       );
@@ -172,7 +190,7 @@ function SettingsApiTab({
       return true;
     } catch (error) {
       setErrorMessage(
-        error instanceof Error ? error.message : "Could not update API key",
+        cloudSettingsErrorMessage(error, "Could not update API key"),
       );
       return false;
     }
@@ -181,50 +199,73 @@ function SettingsApiTab({
   async function saveAgentWebhook(
     apiKeyId: string,
     input: { webhookUrl?: string | null; webhookSecret?: string },
-  ): Promise<boolean> {
+  ): Promise<AgentWebhookSettings | null> {
     const existing = agents.find((agent) => agent.apiKeyId === apiKeyId);
     const apiKey = apiKeys.find((entry) => entry.id === apiKeyId);
     try {
+      let saved: Agent;
       if (existing) {
-        const updated = await client.requestJson<Agent>(
+        saved = await cloudCoreRequestJson<Agent>(
           `/api/v1/agents/${encodeURIComponent(existing.id)}`,
           {
             method: "PATCH",
-            headers: { "content-type": "application/json" },
             body: JSON.stringify(input),
           },
         );
         setAgents((current) =>
-          current.map((entry) => (entry.id === updated.id ? updated : entry)),
+          current.map((entry) => (entry.id === saved.id ? saved : entry)),
         );
-        return true;
+      } else {
+        if (!apiKey) {
+          setErrorMessage("API key not found for agent webhook.");
+          return null;
+        }
+        saved = await cloudCoreRequestJson<Agent>("/api/v1/agents", {
+          method: "POST",
+          body: JSON.stringify({
+            name: apiKey.name,
+            contactId: apiKey.contactId,
+            apiKeyId,
+            webhookUrl: input.webhookUrl ?? null,
+            ...(input.webhookSecret !== undefined
+              ? { webhookSecret: input.webhookSecret }
+              : {}),
+          }),
+        });
+        setAgents((current) => [saved, ...current]);
       }
-      if (!apiKey) {
-        setErrorMessage("API key not found for agent webhook.");
-        return false;
-      }
-      const created = await client.requestJson<Agent>("/api/v1/agents", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          name: apiKey.name,
-          contactId: apiKey.contactId,
-          apiKeyId,
-          webhookUrl: input.webhookUrl ?? null,
-          ...(input.webhookSecret !== undefined
-            ? { webhookSecret: input.webhookSecret }
-            : {}),
-        }),
-      });
-      setAgents((current) => [created, ...current]);
-      return true;
+      notifyShellAgentRosterChanged();
+      return toAgentWebhookSettings(saved);
     } catch (error) {
       setErrorMessage(
-        error instanceof Error
-          ? error.message
-          : "Could not save agent webhook",
+        cloudSettingsErrorMessage(error, "Could not save agent webhook"),
       );
-      return false;
+      return null;
+    }
+  }
+
+  async function testAgentWebhook(
+    agentId: string,
+  ): Promise<AgentWebhookTestResult> {
+    try {
+      return await cloudCoreRequestJson<AgentWebhookTestResult>(
+        `/api/v1/agents/${encodeURIComponent(agentId)}/webhook/test`,
+        { method: "POST", body: "{}" },
+      );
+    } catch (error) {
+      if (isCloudCoreApiError(error) && error.status === 404) {
+        return {
+          ok: false,
+          error:
+            "Webhook test endpoint is not on cloud yet — agent save still works; deploy core to enable Test.",
+          deliveryId: null,
+        };
+      }
+      return {
+        ok: false,
+        error: cloudSettingsErrorMessage(error, "Webhook test failed"),
+        deliveryId: null,
+      };
     }
   }
 
@@ -241,9 +282,10 @@ function SettingsApiTab({
       onRetry={() => void loadKeys()}
       agentWebhookByApiKeyId={agentWebhookByApiKeyId}
       onSaveAgentWebhook={saveAgentWebhook}
+      onTestAgentWebhook={testAgentWebhook}
       onRevealSecret={async (id) => {
         try {
-          const body = await client.requestJson<{ secret: string }>(
+          const body = await cloudCoreRequestJson<{ secret: string }>(
             `/api/v1/api-keys/${encodeURIComponent(id)}/secret`,
           );
           return body.secret;
@@ -253,11 +295,10 @@ function SettingsApiTab({
       }}
       onCreate={async (name, contactId, expiresAt, scopes, kind) => {
         try {
-          const result = await client.requestJson<CreateApiKeyResponse>(
+          const result = await cloudCoreRequestJson<CreateApiKeyResponse>(
             "/api/v1/api-keys",
             {
               method: "POST",
-              headers: { "content-type": "application/json" },
               body: JSON.stringify({
                 name,
                 kind,
@@ -275,7 +316,7 @@ function SettingsApiTab({
           return { id: result.apiKey.id, secret: result.secret };
         } catch (error) {
           setErrorMessage(
-            error instanceof Error ? error.message : "Could not create API key",
+            cloudSettingsErrorMessage(error, "Could not create API key"),
           );
           return null;
         }
@@ -285,7 +326,7 @@ function SettingsApiTab({
       onSetExpiry={(id, expiresAt) => patchApiKey(id, { expiresAt })}
       onRotate={async (id) => {
         try {
-          const result = await client.requestJson<CreateApiKeyResponse>(
+          const result = await cloudCoreRequestJson<CreateApiKeyResponse>(
             `/api/v1/api-keys/${encodeURIComponent(id)}/rotate`,
             { method: "POST" },
           );
@@ -300,14 +341,14 @@ function SettingsApiTab({
           return result.secret;
         } catch (error) {
           setErrorMessage(
-            error instanceof Error ? error.message : "Could not rotate API key",
+            cloudSettingsErrorMessage(error, "Could not rotate API key"),
           );
           return null;
         }
       }}
       onRevoke={async (id) => {
         try {
-          await client.requestJson(
+          await cloudCoreRequestJson(
             `/api/v1/api-keys/${encodeURIComponent(id)}`,
             { method: "DELETE" },
           );
@@ -315,6 +356,7 @@ function SettingsApiTab({
           setAgents((current) =>
             current.filter((agent) => agent.apiKeyId !== id),
           );
+          notifyShellAgentRosterChanged();
           void loadKeys();
           return true;
         } catch {

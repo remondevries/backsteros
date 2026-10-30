@@ -172,6 +172,8 @@ export type ChatUiDevPreviewProps = {
   allowEmptyPeers?: boolean;
   /** Settings href for the webhook setup empty state (default `/settings/api`). */
   webhookSetupHref?: string;
+  /** Optional body copy when the webhook setup empty state is shown. */
+  webhookSetupMessage?: string | null;
 };
 
 /**
@@ -185,6 +187,7 @@ export function ChatUiDevPreview({
   liveAgentChat = null,
   allowEmptyPeers = false,
   webhookSetupHref = "/settings/api",
+  webhookSetupMessage = null,
 }: ChatUiDevPreviewProps) {
   const resolvedPeers = useMemo(() => {
     if (peers && peers.length > 0) return [...peers];
@@ -508,11 +511,6 @@ export function ChatUiDevPreview({
       ? liveMessages
       : (threads[threadKey] ?? []);
 
-  const emptyState = useMemo(
-    () => <p>Demo thread is empty — send a message to try the composer.</p>,
-    [],
-  );
-
   if (needsWebhookSetup) {
     return (
       <div className="chat-ui-dev-page" data-content-detail>
@@ -522,8 +520,8 @@ export function ChatUiDevPreview({
               Webhook connection needed
             </h2>
             <p className="chat-ui-webhook-setup__body">
-              No agents have a webhook URL yet, so there is nothing to chat with.
-              Add a webhook under Settings → API → Agents, then come back here.
+              {webhookSetupMessage?.trim() ||
+                "No agents have a webhook URL yet, so there is nothing to chat with. Add a webhook under Settings → API (Agent key → expand), then come back here. Chat reads agents from cloud (agent.backsteros.com), not only the local core."}
             </p>
             {onNavigate ? (
               <button
@@ -557,7 +555,7 @@ export function ChatUiDevPreview({
           projects={resolvedProjects}
           recentProjectIds={recentProjectIds}
           onSelectProject={onSelectProject}
-          emptyState={emptyState}
+          emptyState={null}
           placeholder="Message…"
         />
       </div>

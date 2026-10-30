@@ -36,7 +36,7 @@ export async function cloudCoreRequestJson<T>(
   if (!token) {
     throw new CloudCoreApiError(
       401,
-      "Owner API key required for cloud-core timer sync",
+      "Owner API key required for cloud-core (agent.backsteros.com)",
     );
   }
   const normalized = path.startsWith("/") ? path : `/${path}`;

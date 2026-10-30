@@ -75,6 +75,7 @@ export function ShellChatPanel() {
       liveAgentChat={liveAgentChat}
       allowEmptyPeers
       webhookSetupHref="/settings/api"
+      webhookSetupMessage={agentChat.agentsLoadError}
     />
   );
 }

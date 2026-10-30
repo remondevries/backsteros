@@ -928,6 +928,7 @@ export type {
 } from "./schemas/meetings-habits.js";
 export {
   agentSchema,
+  agentWebhookTestResultSchema,
   agentsListSchema,
   createAgentInputSchema,
   updateAgentInputSchema,
@@ -944,6 +945,7 @@ export {
 } from "./schemas/agents-chat.js";
 export type {
   Agent,
+  AgentWebhookTestResult,
   AgentsList,
   CreateAgentInput,
   UpdateAgentInput,

@@ -1,5 +1,6 @@
 import { and, asc, desc, eq } from "drizzle-orm";
 import type {
+  AgentWebhookTestResult,
   ChatThread,
   ChatThreadMessage,
   ChatThreadWithMessages,
@@ -256,6 +257,65 @@ async function recentContext(
         createdAt: row.createdAt.toISOString(),
       };
     });
+}
+
+/**
+ * One-shot Settings test: POST a synthetic chat webhook payload.
+ * Does not create threads/messages. Never returns the webhook URL or secret.
+ */
+export async function testAgentWebhook(
+  workspaceId: string,
+  agentId: string,
+  deps: DeliverDeps = {},
+): Promise<AgentWebhookTestResult | null> {
+  const agent = await getAgentRowForWebhook(workspaceId, agentId);
+  if (!agent) return null;
+  if (!agent.webhookUrl?.trim()) {
+    return {
+      ok: false,
+      error: "Save a webhook URL before testing.",
+      deliveryId: null,
+    };
+  }
+  if (!agent.webhookSecretCiphertext?.trim()) {
+    return {
+      ok: false,
+      error: "Save a webhook secret before testing.",
+      deliveryId: null,
+    };
+  }
+  const deliveryId = newId();
+  const now = new Date().toISOString();
+  const message: AgentChatWebhookMessage = {
+    id: "test",
+    role: "user",
+    text: "BacksterOS webhook test",
+    createdAt: now,
+  };
+  const payload: AgentChatWebhookPayload = {
+    event: AGENT_CHAT_WEBHOOK_EVENT,
+    workspaceId,
+    agentId: agent.id,
+    agentName: agent.name,
+    threadId: "test",
+    message,
+    context: [message],
+    deliveryId,
+    timestamp: now,
+  };
+  const result = await deliverAgentChatWebhook(
+    payload,
+    {
+      webhookUrl: agent.webhookUrl,
+      webhookSecretCiphertext: agent.webhookSecretCiphertext,
+    },
+    deps,
+  );
+  return {
+    ok: result.ok,
+    error: result.error,
+    deliveryId,
+  };
 }
 
 export async function deliverAgentChatWebhook(

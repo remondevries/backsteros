@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import {
   agentSchema,
+  agentWebhookTestResultSchema,
   agentsListSchema,
   badRequestSchema,
   createAgentInputSchema,
@@ -80,6 +81,19 @@ export const agentsChatRoutes: AppRouter = c.router({
       404: errorSchema,
     },
     summary: "Delete a chat agent",
+  },
+  testAgentWebhook: {
+    method: "POST",
+    path: "/api/v1/agents/:agentId/webhook/test",
+    pathParams: z.object({ agentId: z.string() }),
+    body: z.object({}).default({}),
+    responses: {
+      200: agentWebhookTestResultSchema,
+      401: errorSchema,
+      403: errorSchema,
+      404: errorSchema,
+    },
+    summary: "Send a one-shot test POST to the agent chat webhook",
   },
   listChatThreads: {
     method: "GET",

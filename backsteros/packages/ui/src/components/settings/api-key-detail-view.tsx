@@ -35,7 +35,10 @@ export type ApiKeyDetailViewProps = {
   onSaveAgentWebhook?: (input: {
     webhookUrl?: string | null;
     webhookSecret?: string;
-  }) => Promise<boolean>;
+  }) => Promise<AgentWebhookSettings | null>;
+  onTestAgentWebhook?: (
+    agentId: string,
+  ) => Promise<{ ok: boolean; error: string | null }>;
 };
 
 export function ApiKeyDetailView({
@@ -44,6 +47,7 @@ export function ApiKeyDetailView({
   onBack,
   agentWebhook = null,
   onSaveAgentWebhook,
+  onTestAgentWebhook,
 }: ApiKeyDetailViewProps) {
   const keyType = classifyApiKeyType(apiKey);
   const fullOwnerAccess =
@@ -71,19 +75,48 @@ export function ApiKeyDetailView({
   const [secretConfigured, setSecretConfigured] = useState(
     Boolean(agentWebhook?.webhookSecretConfigured),
   );
+  const [linkedAgentId, setLinkedAgentId] = useState<string | null>(
+    agentWebhook?.agentId ?? null,
+  );
   const [savingWebhook, setSavingWebhook] = useState(false);
+  const [testingWebhook, setTestingWebhook] = useState(false);
   const [webhookError, setWebhookError] = useState<string | null>(null);
+  const [webhookTestMessage, setWebhookTestMessage] = useState<string | null>(
+    null,
+  );
+  const [webhookTestOk, setWebhookTestOk] = useState<boolean | null>(null);
 
   useEffect(() => {
     setWebhookUrl(agentWebhook?.webhookUrl ?? "");
     setSecretConfigured(Boolean(agentWebhook?.webhookSecretConfigured));
+    setLinkedAgentId(agentWebhook?.agentId ?? null);
     setWebhookError(null);
+    setWebhookTestMessage(null);
+    setWebhookTestOk(null);
   }, [
     agentWebhook?.agentId,
     agentWebhook?.webhookUrl,
     agentWebhook?.webhookSecretConfigured,
     apiKey.id,
   ]);
+
+  async function runWebhookTest(agentId: string): Promise<void> {
+    if (!onTestAgentWebhook) return;
+    setTestingWebhook(true);
+    setWebhookTestMessage(null);
+    setWebhookTestOk(null);
+    try {
+      const result = await onTestAgentWebhook(agentId);
+      setWebhookTestOk(result.ok);
+      setWebhookTestMessage(
+        result.ok
+          ? "Webhook test delivered."
+          : result.error?.trim() || "Webhook test failed.",
+      );
+    } finally {
+      setTestingWebhook(false);
+    }
+  }
 
   async function persistWebhook(input: {
     webhookUrl?: string | null;
@@ -92,14 +125,29 @@ export function ApiKeyDetailView({
     if (!onSaveAgentWebhook) return false;
     setSavingWebhook(true);
     setWebhookError(null);
+    setWebhookTestMessage(null);
+    setWebhookTestOk(null);
     try {
-      const ok = await onSaveAgentWebhook(input);
-      if (!ok) {
+      const saved = await onSaveAgentWebhook(input);
+      if (!saved) {
         setWebhookError("Couldn’t save webhook settings. Try again.");
         return false;
       }
+      setLinkedAgentId(saved.agentId);
       if (input.webhookSecret !== undefined) {
         setSecretConfigured(input.webhookSecret.trim().length > 0);
+      }
+      if (saved.webhookUrl !== undefined && saved.webhookUrl !== null) {
+        setWebhookUrl(saved.webhookUrl);
+      }
+      setSecretConfigured(saved.webhookSecretConfigured);
+      const shouldTest =
+        Boolean(onTestAgentWebhook) &&
+        Boolean(saved.agentId) &&
+        Boolean(saved.webhookUrl?.trim()) &&
+        saved.webhookSecretConfigured;
+      if (shouldTest && saved.agentId) {
+        await runWebhookTest(saved.agentId);
       }
       return true;
     } finally {
@@ -114,6 +162,8 @@ export function ApiKeyDetailView({
     await persistWebhook({ webhookUrl: next });
   }
 
+  const webhookBusy = savingWebhook || testingWebhook;
+
   const webhookBlock = showWebhook ? (
     <div className="api-key-agent-webhook">
       <label className="settings-field api-key-detail-field">
@@ -124,7 +174,7 @@ export function ApiKeyDetailView({
           onBlur={() => void saveWebhookUrl()}
           placeholder="https://…"
           autoComplete="off"
-          disabled={savingWebhook}
+          disabled={webhookBusy}
         />
       </label>
       <div className="settings-field api-key-detail-field">
@@ -133,13 +183,37 @@ export function ApiKeyDetailView({
           configured={secretConfigured}
           emptyPlaceholder="Paste a new secret"
           saving={savingWebhook}
-          disabled={savingWebhook}
+          disabled={webhookBusy}
           autoComplete="new-password"
           onSave={async (value) => {
             await persistWebhook({ webhookSecret: value });
           }}
         />
       </div>
+      {onTestAgentWebhook && linkedAgentId ? (
+        <div className="api-key-agent-webhook-test">
+          <button
+            type="button"
+            className="api-key-create-cancel"
+            disabled={webhookBusy || !webhookUrl.trim() || !secretConfigured}
+            onClick={() => void runWebhookTest(linkedAgentId)}
+          >
+            {testingWebhook ? "Testing…" : "Test webhook"}
+          </button>
+          {webhookTestMessage ? (
+            <p
+              className={
+                webhookTestOk
+                  ? "api-key-webhook-test-ok"
+                  : "api-key-row-error"
+              }
+              role="status"
+            >
+              {webhookTestMessage}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
       {webhookError ? (
         <p className="api-key-row-error" role="alert">
           {webhookError}

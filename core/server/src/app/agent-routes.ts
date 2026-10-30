@@ -8,6 +8,7 @@ import {
 } from "@backsteros/contracts";
 
 import * as agentsService from "../services/agents.js";
+import * as agentChatService from "../services/agent-chat.js";
 import {
   can,
   forbidden,
@@ -121,5 +122,16 @@ export function registerAgentRoutes(app: Hono) {
     );
     if (!ok) return c.json(notFound("Agent"), 404);
     return c.body(null, 204);
+  });
+
+  app.post("/api/v1/agents/:agentId/webhook/test", async (c) => {
+    const auth = getAuth(c);
+    if (!canWriteAgents(auth)) return c.json(forbidden(), 403);
+    const result = await agentChatService.testAgentWebhook(
+      auth.workspaceId,
+      c.req.param("agentId"),
+    );
+    if (!result) return c.json(notFound("Agent"), 404);
+    return c.json(result);
   });
 }

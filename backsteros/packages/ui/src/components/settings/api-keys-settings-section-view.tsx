@@ -120,7 +120,11 @@ export type ApiKeysSettingsSectionViewProps = {
   onSaveAgentWebhook?: (
     apiKeyId: string,
     input: { webhookUrl?: string | null; webhookSecret?: string },
-  ) => Promise<boolean>;
+  ) => Promise<AgentWebhookSettings | null>;
+  /** One-shot cloud webhook ping after save (or via Test button). */
+  onTestAgentWebhook?: (
+    agentId: string,
+  ) => Promise<{ ok: boolean; error: string | null }>;
 };
 
 function ApiKeyEditIcon({ size = 14 }: { size?: number }) {
@@ -467,6 +471,7 @@ function ApiKeyRow({
   onRevoke,
   agentWebhook,
   onSaveAgentWebhook,
+  onTestAgentWebhook,
 }: {
   apiKey: SettingsApiKeyItem;
   contacts: SettingsApiKeyContactOption[];
@@ -484,7 +489,10 @@ function ApiKeyRow({
   onSaveAgentWebhook?: (
     apiKeyId: string,
     input: { webhookUrl?: string | null; webhookSecret?: string },
-  ) => Promise<boolean>;
+  ) => Promise<AgentWebhookSettings | null>;
+  onTestAgentWebhook?: (
+    agentId: string,
+  ) => Promise<{ ok: boolean; error: string | null }>;
 }) {
   const [confirmRevoke, setConfirmRevoke] = useState(false);
   const [confirmRotate, setConfirmRotate] = useState(false);
@@ -929,6 +937,7 @@ function ApiKeyRow({
                   ? (input) => onSaveAgentWebhook(apiKey.id, input)
                   : undefined
               }
+              onTestAgentWebhook={onTestAgentWebhook}
             />
           </td>
         </tr>
@@ -1003,6 +1012,7 @@ export function ApiKeysSettingsSectionView({
   onRevoke,
   agentWebhookByApiKeyId,
   onSaveAgentWebhook,
+  onTestAgentWebhook,
 }: ApiKeysSettingsSectionViewProps) {
   const [panel, setPanel] = useState<ApiKeysSettingsPanel>("keys");
   const [tab, setTab] = useState<ApiKeyTypeTab>("access");
@@ -1432,6 +1442,7 @@ export function ApiKeysSettingsSectionView({
                       agentWebhookByApiKeyId?.get(apiKey.id) ?? null
                     }
                     onSaveAgentWebhook={onSaveAgentWebhook}
+                    onTestAgentWebhook={onTestAgentWebhook}
                   />
                 ))}
               </tbody>
