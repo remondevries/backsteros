@@ -6,7 +6,10 @@ import type {
   CreateChatThreadMessageResult,
 } from "@backsteros/contracts";
 
-import { useDesktopApi } from "../lib/api-context";
+import {
+  cloudCoreRequestJson,
+  isCloudCoreApiError,
+} from "../lib/cloud-core-api";
 
 export function agentHasWebhookUrl(agent: Agent): boolean {
   return Boolean(agent.webhookUrl?.trim());
@@ -27,29 +30,34 @@ export type ShellAgentChatApi = {
 };
 
 /**
- * Loads chat agents and exposes REST helpers for the shell ChatThread column.
- * Messages arrive via polling (not PowerSync) — Tier C style.
+ * Shell chat column → cloud-core via the agents door (`agent.backsteros.com`).
+ * Uses the same owner-key cloud client as timer sync; the rest of the product
+ * shell stays on local-core. Chat tables are not replicated.
  */
 export function useShellAgentChat(): ShellAgentChatApi {
-  const { client } = useDesktopApi();
   const [agents, setAgents] = useState<Agent[]>([]);
 
   useEffect(() => {
     let cancelled = false;
     void (async () => {
       try {
-        const body = await client.requestJson<{ agents: Agent[] }>(
+        const body = await cloudCoreRequestJson<{ agents: Agent[] }>(
           "/api/v1/agents",
         );
         if (!cancelled) setAgents(body.agents.filter((agent) => agent.enabled));
-      } catch {
-        if (!cancelled) setAgents([]);
+      } catch (error) {
+        if (!cancelled) {
+          if (isCloudCoreApiError(error) && error.status === 401) {
+            console.warn("[shell-chat] owner API key required for cloud chat");
+          }
+          setAgents([]);
+        }
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [client]);
+  }, []);
 
   const webhookReadyAgents = useMemo(
     () => agents.filter(agentHasWebhookUrl),
@@ -65,49 +73,35 @@ export function useShellAgentChat(): ShellAgentChatApi {
     return map;
   }, [webhookReadyAgents]);
 
-  const openThread = useCallback(
-    async (agentId: string) => {
-      return client.requestJson<ChatThreadWithMessages>("/api/v1/chat/threads", {
+  const openThread = useCallback(async (agentId: string) => {
+    return cloudCoreRequestJson<ChatThreadWithMessages>("/api/v1/chat/threads", {
+      method: "POST",
+      body: JSON.stringify({ agentId }),
+    });
+  }, []);
+
+  const sendMessage = useCallback(async (threadId: string, body: string) => {
+    return cloudCoreRequestJson<CreateChatThreadMessageResult>(
+      `/api/v1/chat/threads/${encodeURIComponent(threadId)}/messages`,
+      {
         method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ agentId }),
-      });
-    },
-    [client],
-  );
+        body: JSON.stringify({ body }),
+      },
+    );
+  }, []);
 
-  const sendMessage = useCallback(
-    async (threadId: string, body: string) => {
-      return client.requestJson<CreateChatThreadMessageResult>(
-        `/api/v1/chat/threads/${encodeURIComponent(threadId)}/messages`,
-        {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ body }),
-        },
-      );
-    },
-    [client],
-  );
+  const getThread = useCallback(async (threadId: string) => {
+    return cloudCoreRequestJson<ChatThreadWithMessages>(
+      `/api/v1/chat/threads/${encodeURIComponent(threadId)}`,
+    );
+  }, []);
 
-  const getThread = useCallback(
-    async (threadId: string) => {
-      return client.requestJson<ChatThreadWithMessages>(
-        `/api/v1/chat/threads/${encodeURIComponent(threadId)}`,
-      );
-    },
-    [client],
-  );
-
-  const listMessages = useCallback(
-    async (threadId: string) => {
-      const body = await client.requestJson<{ messages: ChatThreadMessage[] }>(
-        `/api/v1/chat/threads/${encodeURIComponent(threadId)}/messages`,
-      );
-      return body.messages;
-    },
-    [client],
-  );
+  const listMessages = useCallback(async (threadId: string) => {
+    const body = await cloudCoreRequestJson<{ messages: ChatThreadMessage[] }>(
+      `/api/v1/chat/threads/${encodeURIComponent(threadId)}/messages`,
+    );
+    return body.messages;
+  }, []);
 
   return {
     agents,
