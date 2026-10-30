@@ -14,6 +14,7 @@ import {
   hasFullAccessApiKeyScopes,
 } from "./api-key-type.js";
 import { SettingsSecretField } from "./settings-secret-field.js";
+import { SettingsTestConnectionSwap } from "./settings-test-connection-swap.js";
 
 /** Linked agents-table webhook state for an Agent API key (OS-152). */
 export type AgentWebhookSettings = {
@@ -36,9 +37,11 @@ export type ApiKeyDetailViewProps = {
     webhookUrl?: string | null;
     webhookSecret?: string;
   }) => Promise<AgentWebhookSettings | null>;
-  onTestAgentWebhook?: (
-    agentId: string,
-  ) => Promise<{ ok: boolean; error: string | null }>;
+  /**
+   * One-shot webhook ping (same pattern as integration Test connection).
+   * Resolve on success; reject/throw on failure so the Action swap can animate.
+   */
+  onTestAgentWebhook?: (agentId: string) => Promise<void>;
 };
 
 export function ApiKeyDetailView({
@@ -79,44 +82,22 @@ export function ApiKeyDetailView({
     agentWebhook?.agentId ?? null,
   );
   const [savingWebhook, setSavingWebhook] = useState(false);
-  const [testingWebhook, setTestingWebhook] = useState(false);
   const [webhookError, setWebhookError] = useState<string | null>(null);
-  const [webhookTestMessage, setWebhookTestMessage] = useState<string | null>(
-    null,
-  );
-  const [webhookTestOk, setWebhookTestOk] = useState<boolean | null>(null);
+  /** Remount Test swap after URL/secret changes so a prior green check resets. */
+  const [testSwapKey, setTestSwapKey] = useState(0);
 
   useEffect(() => {
     setWebhookUrl(agentWebhook?.webhookUrl ?? "");
     setSecretConfigured(Boolean(agentWebhook?.webhookSecretConfigured));
     setLinkedAgentId(agentWebhook?.agentId ?? null);
     setWebhookError(null);
-    setWebhookTestMessage(null);
-    setWebhookTestOk(null);
+    setTestSwapKey((key) => key + 1);
   }, [
     agentWebhook?.agentId,
     agentWebhook?.webhookUrl,
     agentWebhook?.webhookSecretConfigured,
     apiKey.id,
   ]);
-
-  async function runWebhookTest(agentId: string): Promise<void> {
-    if (!onTestAgentWebhook) return;
-    setTestingWebhook(true);
-    setWebhookTestMessage(null);
-    setWebhookTestOk(null);
-    try {
-      const result = await onTestAgentWebhook(agentId);
-      setWebhookTestOk(result.ok);
-      setWebhookTestMessage(
-        result.ok
-          ? "Webhook test delivered."
-          : result.error?.trim() || "Webhook test failed.",
-      );
-    } finally {
-      setTestingWebhook(false);
-    }
-  }
 
   async function persistWebhook(input: {
     webhookUrl?: string | null;
@@ -125,8 +106,6 @@ export function ApiKeyDetailView({
     if (!onSaveAgentWebhook) return false;
     setSavingWebhook(true);
     setWebhookError(null);
-    setWebhookTestMessage(null);
-    setWebhookTestOk(null);
     try {
       const saved = await onSaveAgentWebhook(input);
       if (!saved) {
@@ -134,21 +113,11 @@ export function ApiKeyDetailView({
         return false;
       }
       setLinkedAgentId(saved.agentId);
-      if (input.webhookSecret !== undefined) {
-        setSecretConfigured(input.webhookSecret.trim().length > 0);
-      }
       if (saved.webhookUrl !== undefined && saved.webhookUrl !== null) {
         setWebhookUrl(saved.webhookUrl);
       }
       setSecretConfigured(saved.webhookSecretConfigured);
-      const shouldTest =
-        Boolean(onTestAgentWebhook) &&
-        Boolean(saved.agentId) &&
-        Boolean(saved.webhookUrl?.trim()) &&
-        saved.webhookSecretConfigured;
-      if (shouldTest && saved.agentId) {
-        await runWebhookTest(saved.agentId);
-      }
+      setTestSwapKey((key) => key + 1);
       return true;
     } finally {
       setSavingWebhook(false);
@@ -162,7 +131,11 @@ export function ApiKeyDetailView({
     await persistWebhook({ webhookUrl: next });
   }
 
-  const webhookBusy = savingWebhook || testingWebhook;
+  const canTest =
+    Boolean(onTestAgentWebhook) &&
+    Boolean(linkedAgentId) &&
+    Boolean(webhookUrl.trim()) &&
+    secretConfigured;
 
   const webhookBlock = showWebhook ? (
     <div className="api-key-agent-webhook">
@@ -174,7 +147,7 @@ export function ApiKeyDetailView({
           onBlur={() => void saveWebhookUrl()}
           placeholder="https://…"
           autoComplete="off"
-          disabled={webhookBusy}
+          disabled={savingWebhook}
         />
       </label>
       <div className="settings-field api-key-detail-field">
@@ -183,37 +156,30 @@ export function ApiKeyDetailView({
           configured={secretConfigured}
           emptyPlaceholder="Paste a new secret"
           saving={savingWebhook}
-          disabled={webhookBusy}
+          disabled={savingWebhook}
           autoComplete="new-password"
           onSave={async (value) => {
             await persistWebhook({ webhookSecret: value });
           }}
+          trailing={
+            onTestAgentWebhook ? (
+              <SettingsTestConnectionSwap
+                key={testSwapKey}
+                disabled={!canTest || savingWebhook}
+                idleLabel="Test"
+                successLabel="Connected"
+                failureLabel="Webhook failed"
+                onTest={async () => {
+                  if (!linkedAgentId) {
+                    throw new Error("Save the webhook URL and secret first.");
+                  }
+                  await onTestAgentWebhook(linkedAgentId);
+                }}
+              />
+            ) : null
+          }
         />
       </div>
-      {onTestAgentWebhook && linkedAgentId ? (
-        <div className="api-key-agent-webhook-test">
-          <button
-            type="button"
-            className="api-key-create-cancel"
-            disabled={webhookBusy || !webhookUrl.trim() || !secretConfigured}
-            onClick={() => void runWebhookTest(linkedAgentId)}
-          >
-            {testingWebhook ? "Testing…" : "Test webhook"}
-          </button>
-          {webhookTestMessage ? (
-            <p
-              className={
-                webhookTestOk
-                  ? "api-key-webhook-test-ok"
-                  : "api-key-row-error"
-              }
-              role="status"
-            >
-              {webhookTestMessage}
-            </p>
-          ) : null}
-        </div>
-      ) : null}
       {webhookError ? (
         <p className="api-key-row-error" role="alert">
           {webhookError}

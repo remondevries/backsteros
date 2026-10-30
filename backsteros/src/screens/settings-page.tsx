@@ -31,6 +31,10 @@ import {
   isCloudCoreApiError,
 } from "../lib/cloud-core-api";
 import { notifyShellAgentRosterChanged } from "../lib/shell-agent-roster";
+import {
+  clearAgentWebhookVerified,
+  markAgentWebhookVerified,
+} from "../lib/shell-agent-webhook-verified";
 import { SettingsAccountTab } from "../components/settings-account-tab";
 import { SettingsLabelsTab } from "../components/settings-labels-tab";
 import { SettingsDocumentPropertiesTab } from "../components/settings-document-properties-tab";
@@ -253,6 +257,9 @@ function SettingsApiTab({
         });
         setAgents((current) => [saved, ...current]);
       }
+      // Saving URL/secret is not enough for chat — clear prior Connected state
+      // until SettingsTestConnectionSwap succeeds.
+      if (saved.id) clearAgentWebhookVerified(saved.id);
       notifyShellAgentRosterChanged();
       return toAgentWebhookSettings(saved);
     } catch (error) {
@@ -263,29 +270,30 @@ function SettingsApiTab({
     }
   }
 
-  async function testAgentWebhook(
-    agentId: string,
-  ): Promise<AgentWebhookTestResult> {
+  async function testAgentWebhook(agentId: string): Promise<void> {
+    let result: AgentWebhookTestResult;
     try {
-      return await cloudCoreRequestJson<AgentWebhookTestResult>(
+      result = await cloudCoreRequestJson<AgentWebhookTestResult>(
         `/api/v1/agents/${encodeURIComponent(agentId)}/webhook/test`,
         { method: "POST", body: "{}" },
       );
     } catch (error) {
       if (isCloudCoreApiError(error) && error.status === 404) {
-        return {
-          ok: false,
-          error:
-            "Webhook test endpoint is not on cloud yet — agent save still works; deploy core to enable Test.",
-          deliveryId: null,
-        };
+        throw new Error(
+          "Webhook test endpoint is not on cloud yet — deploy core to enable Test.",
+        );
       }
-      return {
-        ok: false,
-        error: cloudSettingsErrorMessage(error, "Webhook test failed"),
-        deliveryId: null,
-      };
+      throw new Error(
+        cloudSettingsErrorMessage(error, "Webhook test failed"),
+      );
     }
+    if (!result.ok) {
+      clearAgentWebhookVerified(agentId);
+      notifyShellAgentRosterChanged();
+      throw new Error(result.error?.trim() || "Webhook test failed");
+    }
+    markAgentWebhookVerified(agentId);
+    notifyShellAgentRosterChanged();
   }
 
   return (

@@ -11,14 +11,27 @@ import {
   isCloudCoreApiError,
 } from "../lib/cloud-core-api";
 import { SHELL_AGENT_ROSTER_CHANGED_EVENT } from "../lib/shell-agent-roster";
+import { isAgentWebhookVerified } from "../lib/shell-agent-webhook-verified";
 
+/** True when a non-empty webhook URL is stored (settings may still need a test). */
 export function agentHasWebhookUrl(agent: Agent): boolean {
   return Boolean(agent.webhookUrl?.trim());
 }
 
+/**
+ * Shell chat roster gate: URL + secret + successful Settings test on this device.
+ */
+export function agentReadyForChatRoster(agent: Agent): boolean {
+  return (
+    agentHasWebhookUrl(agent) &&
+    agent.webhookSecretConfigured &&
+    isAgentWebhookVerified(agent.id)
+  );
+}
+
 export type ShellAgentChatApi = {
   agents: readonly Agent[];
-  /** Enabled agents with a webhook URL — the only ones shown in chat (OS-155). */
+  /** Enabled agents with a verified webhook — the only ones shown in chat. */
   webhookReadyAgents: readonly Agent[];
   agentsByContactId: ReadonlyMap<string, Agent>;
   /** Set when the cloud agents door could not be loaded (e.g. missing owner key). */
@@ -83,7 +96,7 @@ export function useShellAgentChat(): ShellAgentChatApi {
   }, []);
 
   const webhookReadyAgents = useMemo(
-    () => agents.filter(agentHasWebhookUrl),
+    () => agents.filter(agentReadyForChatRoster),
     [agents],
   );
 

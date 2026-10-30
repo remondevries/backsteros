@@ -121,10 +121,11 @@ export type ApiKeysSettingsSectionViewProps = {
     apiKeyId: string,
     input: { webhookUrl?: string | null; webhookSecret?: string },
   ) => Promise<AgentWebhookSettings | null>;
-  /** One-shot cloud webhook ping after save (or via Test button). */
-  onTestAgentWebhook?: (
-    agentId: string,
-  ) => Promise<{ ok: boolean; error: string | null }>;
+  /**
+   * Webhook ping via SettingsTestConnectionSwap (resolve = Connected;
+   * reject/throw = failed).
+   */
+  onTestAgentWebhook?: (agentId: string) => Promise<void>;
 };
 
 function ApiKeyEditIcon({ size = 14 }: { size?: number }) {
@@ -490,9 +491,7 @@ function ApiKeyRow({
     apiKeyId: string,
     input: { webhookUrl?: string | null; webhookSecret?: string },
   ) => Promise<AgentWebhookSettings | null>;
-  onTestAgentWebhook?: (
-    agentId: string,
-  ) => Promise<{ ok: boolean; error: string | null }>;
+  onTestAgentWebhook?: (agentId: string) => Promise<void>;
 }) {
   const [confirmRevoke, setConfirmRevoke] = useState(false);
   const [confirmRotate, setConfirmRotate] = useState(false);

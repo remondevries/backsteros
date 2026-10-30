@@ -3714,20 +3714,6 @@ button.api-key-prefix-copy:disabled {
   margin-top: 0;
 }
 
-.api-key-agent-webhook-test {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.65rem 1rem;
-  margin-top: 0.35rem;
-}
-
-.api-key-webhook-test-ok {
-  margin: 0;
-  font-size: 0.85rem;
-  color: var(--success, #1a7f37);
-}
-
 .api-key-create-actions {
   display: flex;
   flex-wrap: wrap;
