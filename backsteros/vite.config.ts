@@ -220,6 +220,15 @@ export default defineConfig(async ({ command }) => {
         target: t3CodeHttpUrl,
         changeOrigin: true,
       },
+      // Agents door (cloud-core). Browser fetch to agent.backsteros.com fails in
+      // Firefox/Zen with NetworkError when CORP is same-origin; same-origin
+      // proxy avoids that for Settings agents + shell chat.
+      "/__cloud_core__": {
+        target: "https://agent.backsteros.com",
+        changeOrigin: true,
+        secure: true,
+        rewrite: (p: string) => p.replace(/^\/__cloud_core__/, "") || "/",
+      },
       // SSE through Vite so browser streams do not fight REST for the
       // HTTP/1.1 6-connection cap on local-core :8788 (presence/email banners).
       ...Object.fromEntries(
