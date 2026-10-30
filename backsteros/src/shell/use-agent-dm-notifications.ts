@@ -14,6 +14,7 @@ import {
   markAgentDmSeen,
 } from "../lib/agent-dm-seen";
 import {
+  dispatchAgentShellChatMessage,
   dispatchAgentShellChatStatus,
   startAgentShellChatEventsLoop,
   type AgentShellChatMessagePayload,
@@ -143,6 +144,8 @@ export function useAgentDmNotifications(): UseAgentDmNotificationsResult {
       },
       onMessage: (payload) => {
         if (!readyAgentIds.has(payload.agentId)) return;
+        // Open thread view listens for the message push and refetches.
+        dispatchAgentShellChatMessage(payload);
         // Reply implies idle for the open chat thinking indicator.
         dispatchAgentShellChatStatus({
           threadId: payload.threadId,

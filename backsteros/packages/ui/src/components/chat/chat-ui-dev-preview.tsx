@@ -22,6 +22,10 @@ import {
   type ChatProjectOption,
 } from "../../chat/chat-project-option.js";
 import {
+  isOpenChatThreadEvent,
+  shouldRefreshOpenChatThreadOnPush,
+} from "../../chat/chat-open-thread-live.js";
+import {
   CHAT_THINKING_OFF,
   chatThinkingAfterSend,
   chatThinkingAfterStatus,
@@ -34,9 +38,13 @@ import type { ChatCardNavigate } from "./chat-card-navigate.js";
 import { ChatThread } from "./chat-thread.js";
 import type { ChatThreadPeer } from "./chat-thread-header.js";
 
-/** Dispatched by desktop shell when cloud SSE pushes agent.chat.status / reply. */
+/** Dispatched by desktop shell when cloud SSE pushes agent.chat.status. */
 export const AGENT_SHELL_CHAT_STATUS_WINDOW_EVENT =
   "backsteros:agent-shell-chat-status";
+
+/** Dispatched by desktop shell when cloud SSE pushes agent.chat.message. */
+export const AGENT_SHELL_CHAT_MESSAGE_WINDOW_EVENT =
+  "backsteros:agent-shell-chat-message";
 
 export type LiveAgentChatHandlers = {
   /** contactId → agent id for peers that have an agents record. */
@@ -373,7 +381,44 @@ export function ChatUiDevPreview({
     useState<ChatThinkingState>(CHAT_THINKING_OFF);
   const pollGen = useRef(0);
   const liveThreadIdRef = useRef<string | null>(null);
+  const liveAgentChatRef = useRef(liveAgentChat);
+  const threadAgentNameRef = useRef(threadAgent.name);
   liveThreadIdRef.current = liveThreadId;
+  liveAgentChatRef.current = liveAgentChat;
+  threadAgentNameRef.current = threadAgent.name;
+
+  const applyLiveThread = useCallback(
+    (thread: ChatThreadWithMessages, thinking: ChatThinkingState) => {
+      const now = Date.now();
+      const active = chatThinkingIsActive(thinking, now);
+      setThinkingState(thinking);
+      setLiveMessages(
+        messagesFromThread(
+          thread,
+          thread.agentName ?? threadAgentNameRef.current,
+          active,
+        ),
+      );
+    },
+    [],
+  );
+
+  const refreshOpenLiveThread = useCallback(async () => {
+    const threadId = liveThreadIdRef.current;
+    const chat = liveAgentChatRef.current;
+    if (!threadId || !chat) return;
+    try {
+      const thread = await chat.getThread(threadId);
+      if (liveThreadIdRef.current !== threadId) return;
+      const now = Date.now();
+      applyLiveThread(
+        thread,
+        chatThinkingFromPendingReplyAt(thread.pendingReplyAt, now),
+      );
+    } catch {
+      /* keep current messages */
+    }
+  }, [applyLiveThread]);
 
   useEffect(() => {
     if (!projectId || !activeProject) return;
@@ -404,14 +449,7 @@ export function ChatUiDevPreview({
           now,
         );
         setLiveThreadId(thread.id);
-        setThinkingState(nextThinking);
-        setLiveMessages(
-          messagesFromThread(
-            thread,
-            thread.agentName ?? threadAgent.name,
-            chatThinkingIsActive(nextThinking, now),
-          ),
-        );
+        applyLiveThread(thread, nextThinking);
       } catch {
         if (cancelled || pollGen.current !== gen) return;
         setLiveThreadId(null);
@@ -426,9 +464,9 @@ export function ChatUiDevPreview({
     return () => {
       cancelled = true;
     };
-  }, [liveAgentChat, liveAgentId, threadAgent.name]);
+  }, [applyLiveThread, liveAgentChat, liveAgentId, threadAgent.name]);
 
-  // Expire provisional / working timers without polling the thread.
+  // Expire provisional / working timers without dropping real messages.
   useEffect(() => {
     const remaining = chatThinkingRemainingMs(thinkingState, Date.now());
     if (remaining == null) return;
@@ -437,75 +475,94 @@ export function ChatUiDevPreview({
       if (!chatThinkingIsActive(thinkingState, now)) {
         setThinkingState(CHAT_THINKING_OFF);
         setLiveMessages((prev) =>
-          prev ? withThinkingMessage(prev, threadAgent.name, false) : prev,
+          prev
+            ? withThinkingMessage(prev, threadAgentNameRef.current, false)
+            : prev,
         );
       }
     }, remaining + 25);
     return () => window.clearTimeout(handle);
-  }, [thinkingState, threadAgent.name]);
+  }, [thinkingState]);
 
-  // Agent status / reply presence from cloud SSE (via desktop shell).
+  // Agent reply + status from cloud SSE (via desktop shell window events).
   useEffect(() => {
+    const onMessage = (event: Event) => {
+      const detail = (event as CustomEvent<{ threadId?: string }>).detail;
+      if (
+        !shouldRefreshOpenChatThreadOnPush({
+          openThreadId: liveThreadIdRef.current,
+          eventThreadId: detail?.threadId,
+          kind: "message",
+        })
+      ) {
+        return;
+      }
+      void refreshOpenLiveThread();
+    };
     const onStatus = (event: Event) => {
       const detail = (event as CustomEvent<{
         threadId?: string;
         state?: "working" | "idle";
       }>).detail;
-      const threadId = detail?.threadId?.trim() || "";
-      if (!threadId || threadId !== liveThreadIdRef.current) return;
-      if (detail.state !== "working" && detail.state !== "idle") return;
+      const state = detail?.state;
+      if (state !== "working" && state !== "idle") return;
+      if (
+        !isOpenChatThreadEvent(liveThreadIdRef.current, detail?.threadId)
+      ) {
+        return;
+      }
+      if (
+        shouldRefreshOpenChatThreadOnPush({
+          openThreadId: liveThreadIdRef.current,
+          eventThreadId: detail?.threadId,
+          kind: "status",
+          status: state,
+        })
+      ) {
+        // idle (and reply) — pull the latest messages and clear thinking.
+        void refreshOpenLiveThread();
+        return;
+      }
+      // working: show thinking without refetching yet
       const now = Date.now();
-      const next = chatThinkingAfterStatus(detail.state, now);
+      const next = chatThinkingAfterStatus("working", now);
       setThinkingState(next);
       setLiveMessages((prev) =>
         prev
           ? withThinkingMessage(
               prev,
-              threadAgent.name,
+              threadAgentNameRef.current,
               chatThinkingIsActive(next, now),
             )
           : prev,
       );
     };
+    window.addEventListener(AGENT_SHELL_CHAT_MESSAGE_WINDOW_EVENT, onMessage);
     window.addEventListener(AGENT_SHELL_CHAT_STATUS_WINDOW_EVENT, onStatus);
-    return () =>
+    return () => {
+      window.removeEventListener(
+        AGENT_SHELL_CHAT_MESSAGE_WINDOW_EVENT,
+        onMessage,
+      );
       window.removeEventListener(AGENT_SHELL_CHAT_STATUS_WINDOW_EVENT, onStatus);
-  }, [threadAgent.name]);
+    };
+  }, [refreshOpenLiveThread]);
 
-  // Light poll only while agent has reported working (catch reply without SSE).
+  // Poll while thinking (provisional or working) so replies land without SSE.
   useEffect(() => {
-    if (
-      thinkingState.mode !== "working" ||
-      !liveThreadId ||
-      !liveAgentChat
-    ) {
+    if (thinkingState.mode === "off" || !liveThreadId || !liveAgentChat) {
       return;
     }
-    const agentName = threadAgent.name;
     const handle = window.setInterval(() => {
-      void (async () => {
-        try {
-          const thread = await liveAgentChat.getThread(liveThreadId);
-          const now = Date.now();
-          const next = chatThinkingFromPendingReplyAt(
-            thread.pendingReplyAt,
-            now,
-          );
-          setThinkingState(next);
-          setLiveMessages(
-            messagesFromThread(
-              thread,
-              thread.agentName ?? agentName,
-              chatThinkingIsActive(next, now),
-            ),
-          );
-        } catch {
-          /* keep waiting */
-        }
-      })();
+      void refreshOpenLiveThread();
     }, 2500);
     return () => window.clearInterval(handle);
-  }, [liveAgentChat, liveThreadId, thinkingState.mode, threadAgent.name]);
+  }, [
+    liveAgentChat,
+    liveThreadId,
+    refreshOpenLiveThread,
+    thinkingState.mode,
+  ]);
 
   const onSelectProject = useCallback(
     (nextProjectId: string) => {

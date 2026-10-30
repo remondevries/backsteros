@@ -15,6 +15,10 @@ export const AGENT_SHELL_CHAT_STATUS_SSE_EVENT = "agent.chat.status" as const;
 export const AGENT_SHELL_CHAT_STATUS_WINDOW_EVENT =
   "backsteros:agent-shell-chat-status";
 
+/** Window event so the open thread can refetch when an assistant reply lands. */
+export const AGENT_SHELL_CHAT_MESSAGE_WINDOW_EVENT =
+  "backsteros:agent-shell-chat-message";
+
 export type AgentShellChatMessagePayload = {
   threadId: string;
   agentId: string;
@@ -39,6 +43,17 @@ export function dispatchAgentShellChatStatus(
   if (typeof window === "undefined") return;
   window.dispatchEvent(
     new CustomEvent(AGENT_SHELL_CHAT_STATUS_WINDOW_EVENT, {
+      detail: payload,
+    }),
+  );
+}
+
+export function dispatchAgentShellChatMessage(
+  payload: AgentShellChatMessagePayload,
+): void {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(
+    new CustomEvent(AGENT_SHELL_CHAT_MESSAGE_WINDOW_EVENT, {
       detail: payload,
     }),
   );
