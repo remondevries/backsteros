@@ -7,21 +7,34 @@ import {
   writeAgentSortOrderIds,
 } from "./shell-agent-order.ts";
 
-const memory = new Map<string, string>();
-
 afterEach(() => {
-  memory.clear();
+  // no-op without window
 });
 
 describe("shell agent order", () => {
-  it("sorts by server sortOrder when any agent is non-zero", () => {
+  it("prefers preferred/local ids over server sortOrder so edits cannot jump", () => {
+    const sorted = sortAgentsForDisplay(
+      [
+        { id: "b", name: "B", sortOrder: 0 },
+        { id: "a", name: "A", sortOrder: 2 },
+        { id: "c", name: "C", sortOrder: 1 },
+      ],
+      ["b", "c", "a"],
+    );
+    assert.deepEqual(
+      sorted.map((agent) => agent.id),
+      ["b", "c", "a"],
+    );
+  });
+
+  it("falls back to sortOrder when no preferred ids", () => {
     const sorted = sortAgentsForDisplay(
       [
         { id: "b", name: "B", sortOrder: 2 },
         { id: "a", name: "A", sortOrder: 0 },
         { id: "c", name: "C", sortOrder: 1 },
       ],
-      ["b", "c", "a"],
+      [],
     );
     assert.deepEqual(
       sorted.map((agent) => agent.id),
@@ -29,18 +42,25 @@ describe("shell agent order", () => {
     );
   });
 
-  it("uses preferred/local ids when all sortOrders are zero", () => {
+  it("keeps an edited agent at its preferred index even with sortOrder 0", () => {
     const sorted = sortAgentsForDisplay(
       [
         { id: "a", name: "A", sortOrder: 0 },
         { id: "b", name: "B", sortOrder: 0 },
         { id: "c", name: "C", sortOrder: 0 },
       ],
-      ["c", "a", "b"],
+      ["a", "b", "c"],
+    );
+    // Simulate PATCH returning sortOrder 0 for middle agent — still stays put.
+    const afterEdit = sortAgentsForDisplay(
+      sorted.map((agent) =>
+        agent.id === "b" ? { ...agent, sortOrder: 0, name: "B2" } : agent,
+      ),
+      ["a", "b", "c"],
     );
     assert.deepEqual(
-      sorted.map((agent) => agent.id),
-      ["c", "a", "b"],
+      afterEdit.map((agent) => agent.id),
+      ["a", "b", "c"],
     );
   });
 
@@ -54,5 +74,3 @@ describe("shell agent order", () => {
     writeAgentSortOrderIds(["a", "b"]);
   });
 });
-
-void memory;

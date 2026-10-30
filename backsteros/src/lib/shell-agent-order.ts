@@ -1,7 +1,7 @@
 /**
  * Display order for Settings → API → Agent and the shell chat peer strip.
- * Server `sortOrder` is source of truth after migration; localStorage covers
- * pre-migration cloud and optimistic reorder before the PUT returns.
+ * localStorage is the sticky client order (survives webhook edits that return
+ * sortOrder 0). Server `sortOrder` seeds order when localStorage is empty.
  */
 
 const STORAGE_KEY = "backsteros:agent-sort-order";
@@ -39,10 +39,16 @@ type OrderableAgent = {
   name?: string | null;
 };
 
+function compareBySortOrderThenName(a: OrderableAgent, b: OrderableAgent): number {
+  const byOrder = (a.sortOrder ?? 0) - (b.sortOrder ?? 0);
+  if (byOrder !== 0) return byOrder;
+  return (a.name ?? a.id).localeCompare(b.name ?? b.id);
+}
+
 /**
  * Sort agents for the Settings table and chat strip.
- * Prefer non-default server sortOrder when any agent has sortOrder ≠ 0;
- * otherwise fall back to localStorage order (pre-migration / first use).
+ * Prefer localStorage order whenever it mentions any of these agents so a
+ * webhook/API-key edit cannot bump a row to the top via sortOrder 0.
  */
 export function sortAgentsForDisplay<T extends OrderableAgent>(
   agents: readonly T[],
@@ -50,29 +56,20 @@ export function sortAgentsForDisplay<T extends OrderableAgent>(
 ): T[] {
   if (agents.length <= 1) return [...agents];
   const local = preferredIds ?? readAgentSortOrderIds();
-  const hasServerOrder = agents.some((agent) => (agent.sortOrder ?? 0) !== 0);
-
-  if (hasServerOrder) {
-    return [...agents].sort((a, b) => {
-      const byOrder = (a.sortOrder ?? 0) - (b.sortOrder ?? 0);
-      if (byOrder !== 0) return byOrder;
-      return (a.name ?? a.id).localeCompare(b.name ?? b.id);
-    });
+  if (local.length > 0) {
+    const index = new Map(local.map((id, i) => [id, i]));
+    const hasOverlap = agents.some((agent) => index.has(agent.id));
+    if (hasOverlap) {
+      return [...agents].sort((a, b) => {
+        const ai = index.has(a.id) ? index.get(a.id)! : Number.MAX_SAFE_INTEGER;
+        const bi = index.has(b.id) ? index.get(b.id)! : Number.MAX_SAFE_INTEGER;
+        if (ai !== bi) return ai - bi;
+        return compareBySortOrderThenName(a, b);
+      });
+    }
   }
 
-  if (local.length === 0) {
-    return [...agents].sort((a, b) =>
-      (a.name ?? a.id).localeCompare(b.name ?? b.id),
-    );
-  }
-
-  const index = new Map(local.map((id, i) => [id, i]));
-  return [...agents].sort((a, b) => {
-    const ai = index.has(a.id) ? index.get(a.id)! : Number.MAX_SAFE_INTEGER;
-    const bi = index.has(b.id) ? index.get(b.id)! : Number.MAX_SAFE_INTEGER;
-    if (ai !== bi) return ai - bi;
-    return (a.name ?? a.id).localeCompare(b.name ?? b.id);
-  });
+  return [...agents].sort(compareBySortOrderThenName);
 }
 
 /** Swap two positions in an id list (no-op when out of bounds). */

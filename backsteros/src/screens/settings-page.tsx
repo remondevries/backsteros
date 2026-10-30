@@ -147,9 +147,14 @@ function SettingsApiTab({
 
   const agentWebhookByApiKeyId = useMemo(() => {
     const map = new Map<string, AgentWebhookSettings>();
-    for (const agent of agents) {
+    // Index = display order so webhook edits that return sortOrder 0 cannot
+    // reshuffle the Agent tab (table sorts by this field).
+    for (const [index, agent] of sortAgentsForDisplay(agents).entries()) {
       if (!agent.apiKeyId) continue;
-      map.set(agent.apiKeyId, toAgentWebhookSettings(agent));
+      map.set(agent.apiKeyId, {
+        ...toAgentWebhookSettings(agent),
+        sortOrder: index,
+      });
     }
     return map;
   }, [agents]);
@@ -244,9 +249,20 @@ function SettingsApiTab({
             body: JSON.stringify(input),
           },
         );
-        setAgents((current) =>
-          current.map((entry) => (entry.id === saved.id ? saved : entry)),
-        );
+        setAgents((current) => {
+          const next = current.map((entry) =>
+            entry.id === saved.id
+              ? {
+                  ...saved,
+                  // Keep list position — PATCH often returns sortOrder 0.
+                  sortOrder: entry.sortOrder ?? saved.sortOrder ?? 0,
+                }
+              : entry,
+          );
+          const ordered = sortAgentsForDisplay(next);
+          writeAgentSortOrderIds(ordered.map((agent) => agent.id));
+          return ordered;
+        });
       } else {
         if (!apiKey) {
           setErrorMessage("API key not found for agent webhook.");
@@ -264,13 +280,20 @@ function SettingsApiTab({
               : {}),
           }),
         });
-        setAgents((current) => sortAgentsForDisplay([...current, saved]));
+        setAgents((current) => {
+          const ordered = sortAgentsForDisplay([...current, saved]);
+          writeAgentSortOrderIds(ordered.map((agent) => agent.id));
+          return ordered;
+        });
       }
       // Saving URL/secret is not enough for chat — clear prior Connected state
       // until SettingsTestConnectionSwap succeeds.
       if (saved.id) clearAgentWebhookVerified(saved.id);
       notifyShellAgentRosterChanged();
-      return toAgentWebhookSettings(saved);
+      return toAgentWebhookSettings({
+        ...saved,
+        sortOrder: existing?.sortOrder ?? saved.sortOrder ?? 0,
+      });
     } catch (error) {
       setErrorMessage(
         cloudSettingsErrorMessage(error, "Could not save agent webhook"),
