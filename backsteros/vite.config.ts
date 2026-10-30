@@ -61,6 +61,24 @@ export default defineConfig(async () => ({
       "@backsteros/api-client",
       "@backsteros/powersync-schema",
     ],
+    // UI is excluded (source-aliased), so Vite discovers its node deps at
+    // runtime and re-optimizes → full reload loops. Force-include the
+    // ChatThread stack via `parent > nested` (pnpm does not hoist these to
+    // the desktop root).
+    include: [
+      "@backsteros/ui > @assistant-ui/react",
+      "@backsteros/ui > @assistant-ui/react > @assistant-ui/core",
+      "@backsteros/ui > @assistant-ui/react > @assistant-ui/store",
+      "@backsteros/ui > @assistant-ui/react > @assistant-ui/tap",
+      "@backsteros/ui > @assistant-ui/react > assistant-stream",
+      "@backsteros/ui > @assistant-ui/react > assistant-cloud",
+      "@backsteros/ui > @assistant-ui/react > zustand",
+      "@backsteros/ui > @assistant-ui/react > radix-ui",
+      "@backsteros/ui > @assistant-ui/react > react-textarea-autosize",
+      "@backsteros/ui > @assistant-ui/react > safe-content-frame",
+      "@legendapp/list/react",
+      "@backsteros/ui > @legendapp/list/react",
+    ],
   },
 
   // Resolve UI package to source in dev so HMR picks up edits without a
