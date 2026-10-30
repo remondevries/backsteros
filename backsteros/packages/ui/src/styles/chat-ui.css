@@ -752,6 +752,12 @@
   padding: 4px 8px;
 }
 
+/* Live thinking / step label — shimmer owns muted color via background. */
+.chat-ui-status-line.live-status-shine {
+  opacity: 1;
+  display: inline-block;
+}
+
 .chat-ui-error {
   display: flex;
   gap: 8px;

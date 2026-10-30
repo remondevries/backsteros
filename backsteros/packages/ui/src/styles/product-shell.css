@@ -812,12 +812,8 @@ button.agent-dm-card__dismiss:hover {
   background-repeat: no-repeat;
   background-clip: text;
   -webkit-background-clip: text;
-}
-
-@media (prefers-reduced-motion: no-preference) {
-  .live-status-shine {
-    animation: live-status-shine 2.2s steps(30) infinite;
-  }
+  /* Always animate — shell chat step labels / Thinking… must read as live. */
+  animation: live-status-shine 2.2s steps(30) infinite;
 }
 
 .sidebar-agentmail-degraded {

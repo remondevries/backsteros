@@ -130,7 +130,14 @@ function ChatTextPartView({
   return <div className="chat-ui-text">{part.text}</div>;
 }
 
-export function ChatUiPartView({ part }: { part: ChatUiMessagePart }): ReactNode {
+export function ChatUiPartView({
+  part,
+  liveShine = false,
+}: {
+  part: ChatUiMessagePart;
+  /** Agent working / Thinking… — reuse shell `live-status-shine` shimmer. */
+  liveShine?: boolean;
+}): ReactNode {
   switch (part.type) {
     case "text":
       return <ChatTextPartView part={part} />;
@@ -161,7 +168,17 @@ export function ChatUiPartView({ part }: { part: ChatUiMessagePart }): ReactNode
         </pre>
       );
     case "status-line":
-      return <div className="chat-ui-status-line">{part.text}</div>;
+      return (
+        <div
+          className={
+            liveShine
+              ? "chat-ui-status-line live-status-shine"
+              : "chat-ui-status-line"
+          }
+        >
+          {part.text}
+        </div>
+      );
     case "error":
       return (
         <div className="chat-ui-error" role="alert">
@@ -205,10 +222,16 @@ export function ChatUiMessageBody({
     (message.parts.length === 1 && message.parts[0]?.type === "status-line");
 
   if (isStatusOnly) {
+    // Thinking / step-label rows use status "streaming"; static system lines do not.
+    const liveShine = message.status === "streaming";
     return (
       <div className="chat-ui-message is-system" data-message-id={message.id}>
         {message.parts.map((part, index) => (
-          <ChatUiPartView key={`${message.id}-${index}`} part={part} />
+          <ChatUiPartView
+            key={`${message.id}-${index}`}
+            part={part}
+            liveShine={liveShine && part.type === "status-line"}
+          />
         ))}
       </div>
     );
