@@ -5,19 +5,9 @@ import { useEffect } from "react";
 import { useCommandPaletteRuntimeRefs } from "../components/command-palette/command-palette-context.js";
 import { isLetterDetailPath } from "../letters/letters.js";
 import { isLetterPdfToggleShortcut } from "../letters/letter-pdf-toggle-shortcut.js";
-import {
-  openFinanceChromeDropdown,
-  openFinanceTxPropertyDropdown,
-  openTaskPropertyDropdown,
-} from "./open-task-property-dropdown.js";
+import { isPersonalAssistantDoubleAKey } from "../chat/personal-assistant-double-a.js";
 import { shouldHandleTaskPropertyDropdownNavigation } from "./should-handle-task-property-dropdown-shortcut.js";
-import {
-  pageHasFinanceChromeHotkeyTargets,
-  resolveFinanceChromeDropdownOpenCandidatesFromEvent,
-  resolveFinanceTxPropertyDropdownOpenCandidatesFromEvent,
-  resolveTaskPropertyDropdownOpenCandidatesFromEvent,
-  shouldYieldComposeToFinanceTxCategory,
-} from "./task-property-dropdown-keys.js";
+import { tryOpenPropertyDropdownForShortcutEvent } from "./try-open-property-dropdown-for-shortcut-event.js";
 
 /**
  * S/P/A/T/W/D/R/L (and shift variants) open property dropdowns on the highlighted row
@@ -30,6 +20,9 @@ import {
  * P/G open project/goal only while the transaction detail panel is open;
  * Shift+A/C/O/G/R/M open filter or bulk chrome.
  * Plain L opens Labels when that property is on screen.
+ *
+ * Plain A is owned by the personal-assistant double-tap chord (A A → chat;
+ * single A deferred → assignee). Shift+A still opens here immediately.
  */
 export function useTaskPropertyDropdownShortcuts({
   enabled = true,
@@ -60,46 +53,16 @@ export function useTaskPropertyDropdownShortcuts({
         return;
       }
 
+      // Plain A → deferred assignee / A A chat (shell capture listener).
+      if (isPersonalAssistantDoubleAKey(event)) {
+        return;
+      }
+
       if (!shouldHandleTaskPropertyDropdownNavigation(event)) {
         return;
       }
 
-      if (pageHasFinanceChromeHotkeyTargets()) {
-        const chromeIds =
-          resolveFinanceChromeDropdownOpenCandidatesFromEvent(event);
-        if (chromeIds.length > 0 && openFinanceChromeDropdown(chromeIds)) {
-          event.preventDefault();
-          event.stopPropagation();
-          event.stopImmediatePropagation();
-          return;
-        }
-      }
-
-      const financeIds =
-        resolveFinanceTxPropertyDropdownOpenCandidatesFromEvent(event);
-      const financeCandidates =
-        shouldYieldComposeToFinanceTxCategory() ||
-        !financeIds.includes("category")
-          ? financeIds
-          : financeIds.filter((id) => id !== "category");
-
-      if (
-        financeCandidates.length > 0 &&
-        openFinanceTxPropertyDropdown(financeCandidates)
-      ) {
-        event.preventDefault();
-        event.stopPropagation();
-        event.stopImmediatePropagation();
-        return;
-      }
-
-      const dropdownIds =
-        resolveTaskPropertyDropdownOpenCandidatesFromEvent(event);
-      if (dropdownIds.length === 0) {
-        return;
-      }
-
-      if (!openTaskPropertyDropdown(dropdownIds)) {
+      if (!tryOpenPropertyDropdownForShortcutEvent(event)) {
         return;
       }
 

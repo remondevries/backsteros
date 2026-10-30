@@ -235,6 +235,36 @@ export {
 
 export { isChatPanelToggleShortcut } from "./chat/chat-panel-toggle-shortcut.js";
 
+export {
+  clearPersonalAssistantDoubleA,
+  consumePersonalAssistantDoubleA,
+  isPersonalAssistantDoubleAKey,
+  isPersonalAssistantDoubleAPending,
+  setPersonalAssistantDoubleAHandler,
+  setPersonalAssistantSingleAHandler,
+  PERSONAL_ASSISTANT_DOUBLE_A_MS,
+} from "./chat/personal-assistant-double-a.js";
+
+export {
+  focusShellChatComposer,
+  isFocusInsideShellChatPanel,
+  isShellChatSlashMenuOpen,
+  scheduleFocusShellChatComposer,
+  SHELL_CHAT_COMPOSER_INPUT_SELECTOR,
+} from "./chat/focus-shell-chat-composer.js";
+
+export {
+  isShellChatPanelCollapsed,
+  resolveAdjacentChatPeerId,
+  resolveChatPeerNavShortcut,
+  type ChatPeerNavDirection,
+} from "./chat/chat-peer-nav-shortcut.js";
+
+export {
+  plainAShortcutEvent,
+  tryOpenPropertyDropdownForShortcutEvent,
+} from "./tasks/try-open-property-dropdown-for-shortcut-event.js";
+
 export { AppToastHost } from "./components/shell/app-toast-host.js";
 export {
   APP_TOAST_EVENT,
@@ -2188,6 +2218,7 @@ export {
   type AgentWebhookSettings,
   type ApiKeyDetailViewProps,
 } from "./components/settings/api-key-detail-view.js";
+
 
 export {
   APP_TIMEZONE_OPTIONS,

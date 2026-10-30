@@ -8,6 +8,7 @@ import {
   DEFAULT_FINANCE_GO_NAVIGATION_ITEMS,
   type FinanceGoNavigationItem,
 } from "./finance-nav.js";
+import { clearPersonalAssistantDoubleA } from "../chat/personal-assistant-double-a.js";
 import {
   clearFinanceLeaderSequence,
   isFinanceLeaderSequencePending,
@@ -83,6 +84,7 @@ export function useFinanceNavigationShortcuts({
         }
         event.preventDefault();
         clearGoLeaderSequence();
+        clearPersonalAssistantDoubleA();
         registerFinanceLeaderKeyPress();
         openFinanceGo();
         return;
@@ -94,6 +96,7 @@ export function useFinanceNavigationShortcuts({
 
       const binding = findFinanceGoItemByLetter(key, financeGoItems);
       clearFinanceLeaderSequence();
+      clearPersonalAssistantDoubleA();
 
       if (!binding) {
         return;

@@ -75,19 +75,34 @@
   margin: 0;
   padding: 0;
   border: none;
-  border-radius: 6px;
+  border-radius: 999px;
   color: var(--tab-text);
   background: transparent;
   cursor: pointer;
 }
 
 .content-tabs-chat-toggle:hover {
-  color: var(--tab-text-active);
   background: var(--tab-close-hover-bg);
 }
 
-.content-tabs-chat-toggle.is-expanded {
-  color: var(--tab-text-active);
+.content-tabs-chat-toggle__orb {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  line-height: 0;
+  opacity: 0.72;
+  transition: opacity 140ms ease, transform 140ms ease;
+}
+
+.content-tabs-chat-toggle:hover .content-tabs-chat-toggle__orb,
+.content-tabs-chat-toggle.is-expanded .content-tabs-chat-toggle__orb {
+  opacity: 1;
+}
+
+.content-tabs-chat-toggle.is-expanded .content-tabs-chat-toggle__orb {
+  transform: scale(1.06);
 }
 
 .content-tabs-timer {

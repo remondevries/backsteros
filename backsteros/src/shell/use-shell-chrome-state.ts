@@ -5,11 +5,26 @@ import {
   CONTEXT_PANEL_COLLAPSE_DURATION_MS,
   CHAT_PANEL_COLLAPSE_DURATION_MS,
   CHAT_PANEL_VISIBLE_STORAGE_KEY,
+  clearGoLeaderSequence,
+  clearFinanceLeaderSequence,
+  clearPersonalAssistantDoubleA,
+  consumePersonalAssistantDoubleA,
   isChatPanelToggleShortcut,
+  isFinanceLeaderSequencePending,
+  isFocusInsideShellChatPanel,
+  isGoLeaderSequencePending,
+  isPersonalAssistantDoubleAKey,
+  isPersonalAssistantDoubleAPending,
+  isShellChatSlashMenuOpen,
+  plainAShortcutEvent,
   readStoredChatPanelCollapsed,
   readStoredChatPanelWidth,
+  scheduleFocusShellChatComposer,
+  setPersonalAssistantDoubleAHandler,
+  setPersonalAssistantSingleAHandler,
   SIDEBAR_COLLAPSE_DURATION_MS,
   shouldHandleGlobalShortcut,
+  tryOpenPropertyDropdownForShortcutEvent,
   useBlockBrowserTabFocus,
   useComposeShortcut,
   useContentPreviewScrollShortcuts,
@@ -91,6 +106,7 @@ export function useShellChromeState() {
   const chatPanelAnimRafRef = useRef<number | null>(null);
   const chatPanelCollapsedRef = useRef(chatPanelCollapsed);
   const sidebarCollapsedRef = useRef(sidebarCollapsed);
+  const { openRef: commandPaletteOpenRef } = useCommandPaletteRuntimeRefs();
 
   useEffect(() => {
     chatPanelCollapsedRef.current = chatPanelCollapsed;
@@ -285,6 +301,81 @@ export function useShellChromeState() {
     window.addEventListener("keydown", listener);
     return () => window.removeEventListener("keydown", listener);
   }, [toggleChatPanelCollapsed]);
+
+  useEffect(() => {
+    // A A (fast) toggles personal-assistant chat; single A defers to assignee.
+    setPersonalAssistantDoubleAHandler(() => {
+      const opening = chatPanelCollapsedRef.current;
+      toggleChatPanelCollapsed();
+      if (opening) {
+        scheduleFocusShellChatComposer();
+      }
+    });
+    setPersonalAssistantSingleAHandler(() => {
+      tryOpenPropertyDropdownForShortcutEvent(plainAShortcutEvent());
+    });
+    return () => {
+      setPersonalAssistantDoubleAHandler(null);
+      setPersonalAssistantSingleAHandler(null);
+      clearPersonalAssistantDoubleA();
+    };
+  }, [toggleChatPanelCollapsed]);
+
+  useEffect(() => {
+    const listener = (event: KeyboardEvent) => {
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+      if (event.repeat) return;
+
+      // Escape while the chat column owns focus → blur only (A A toggles visibility).
+      // Slash menu keeps Escape to dismiss the menu first.
+      if (event.key === "Escape") {
+        if (chatPanelCollapsedRef.current) return;
+        if (commandPaletteOpenRef.current) return;
+        if (isShellChatSlashMenuOpen()) return;
+        if (!isFocusInsideShellChatPanel(event.target)) return;
+        event.preventDefault();
+        event.stopPropagation();
+        if (event.target instanceof HTMLElement) {
+          event.target.blur();
+        }
+        return;
+      }
+
+      // Other keys cancel a waiting single-A (do not open assignee).
+      if (
+        isPersonalAssistantDoubleAPending() &&
+        !isPersonalAssistantDoubleAKey(event)
+      ) {
+        clearPersonalAssistantDoubleA();
+        return;
+      }
+
+      if (!isPersonalAssistantDoubleAKey(event)) return;
+      if (commandPaletteOpenRef.current) return;
+      if (isGoLeaderSequencePending() || isFinanceLeaderSequencePending()) {
+        return;
+      }
+      // First A must be a valid global shortcut; second A may arrive after
+      // focus moved — still complete the chord while pending.
+      if (
+        !isPersonalAssistantDoubleAPending() &&
+        !shouldHandleGlobalShortcut(event)
+      ) {
+        return;
+      }
+
+      if (!consumePersonalAssistantDoubleA(event)) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+      clearGoLeaderSequence();
+      clearFinanceLeaderSequence();
+    };
+    // Capture so we defer assignee before property-dropdown handlers run.
+    window.addEventListener("keydown", listener, true);
+    return () => window.removeEventListener("keydown", listener, true);
+  }, [commandPaletteOpenRef]);
 
   useEffect(() => {
     const applyNarrowLayout = () => {

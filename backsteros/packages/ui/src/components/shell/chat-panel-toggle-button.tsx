@@ -1,6 +1,9 @@
 "use client";
 
-import { CommentDiscussionIcon } from "@primer/octicons-react";
+import { ChatPanelToggleOrb } from "./chat-panel-toggle-orb.js";
+
+/** Inline Thinking Orb size (libraries.dev/orbs). */
+const ORB_SIZE = 20;
 
 export type ChatPanelToggleButtonProps = {
   collapsed: boolean;
@@ -8,8 +11,8 @@ export type ChatPanelToggleButtonProps = {
 };
 
 /**
- * Tabs-chrome control for the global right chat column (mirrors `[` for the
- * left nav; keyboard chord is plain `]`).
+ * Tabs-chrome control for the global right chat column — solving Thinking Orb
+ * (https://libraries.dev/orbs). Keyboard chord is plain `]`.
  */
 export function ChatPanelToggleButton({
   collapsed,
@@ -25,11 +28,13 @@ export function ChatPanelToggleButton({
       ].join(" ")}
       aria-label={label}
       aria-pressed={!collapsed}
-      title={`${label} (])`}
+      title={`${label} (]) · A A toggles`}
       data-tauri-drag-region="false"
       onClick={onToggle}
     >
-      <CommentDiscussionIcon size={14} aria-hidden="true" />
+      <span className="content-tabs-chat-toggle__orb" aria-hidden="true">
+        <ChatPanelToggleOrb size={ORB_SIZE} paused={collapsed} />
+      </span>
     </button>
   );
 }

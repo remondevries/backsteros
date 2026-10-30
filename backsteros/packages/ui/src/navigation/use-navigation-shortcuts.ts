@@ -7,6 +7,7 @@ import {
   DEFAULT_GO_NAVIGATION_ITEMS,
   type GoNavigationItem,
 } from "../command-palette/command-palette.js";
+import { clearPersonalAssistantDoubleA } from "../chat/personal-assistant-double-a.js";
 import { clearFinanceLeaderSequence } from "../finance/finance-leader-sequence-gate.js";
 import {
   clearGoFinanceChord,
@@ -83,6 +84,7 @@ export function useNavigationShortcuts({
       ) {
         event.preventDefault();
         clearFinanceLeaderSequence();
+        clearPersonalAssistantDoubleA();
         clearGoFinanceChord();
         registerGoLeaderKeyPress();
         openGo();
@@ -97,6 +99,7 @@ export function useNavigationShortcuts({
           event.preventDefault();
           event.stopPropagation();
           clearGoLeaderSequence();
+          clearPersonalAssistantDoubleA();
           clearGoFinanceChord();
           if (leaderBinding.id === "finance") {
             registerGoFinanceChord(leaderBinding.href, () => {
