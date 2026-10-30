@@ -5,11 +5,15 @@ import type { ChatUiMessage, ChatUiMessagePart } from "@backsteros/contracts";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
+import { chatMessagePlainText } from "../../chat/chat-message-plain-text.js";
+import { isChatMessageSelectable } from "../../chat/chat-select-mode.js";
 import { AlertTriangleIcon } from "../icons/alert-triangle-icon.js";
 import { TerminalConsoleIcon } from "../icons/terminal-console-icon.js";
+import { PolishedCheckbox } from "../shared/polished-checkbox.js";
 import { TaskStatusIcon } from "../tasks/task-status-icon.js";
 import { TaskStatusWorkingPulse } from "../tasks/task-status-working-pulse.js";
 import { ChatCardPartView } from "./chat-card-registry.js";
+import { ChatMessageHoverActions } from "./chat-message-hover-actions.js";
 
 function formatJson(value: unknown): string {
   if (value == null) return "";
@@ -179,7 +183,23 @@ export function ChatUiPartView({ part }: { part: ChatUiMessagePart }): ReactNode
   }
 }
 
-export function ChatUiMessageBody({ message }: { message: ChatUiMessage }) {
+export type ChatUiMessageBodyProps = {
+  message: ChatUiMessage;
+  /** Soft-delete this message (owner). */
+  onDelete?: ((messageId: string) => void) | null;
+  /** Multi-select delete mode. */
+  selectMode?: boolean;
+  selected?: boolean;
+  onToggleSelect?: ((messageId: string) => void) | null;
+};
+
+export function ChatUiMessageBody({
+  message,
+  onDelete = null,
+  selectMode = false,
+  selected = false,
+  onToggleSelect = null,
+}: ChatUiMessageBodyProps) {
   const isStatusOnly =
     message.role === "system" ||
     (message.parts.length === 1 && message.parts[0]?.type === "status-line");
@@ -200,6 +220,14 @@ export function ChatUiMessageBody({ message }: { message: ChatUiMessage }) {
   const bodyClass = isAssistant
     ? "chat-ui-message__body"
     : "chat-ui-message__bubble";
+  const selectable = selectMode && isChatMessageSelectable(message.role);
+  const statusLabel =
+    message.status === "pending"
+      ? "Sending…"
+      : message.status === "streaming"
+        ? "Streaming…"
+        : null;
+  const plainText = chatMessagePlainText(message);
 
   return (
     <div
@@ -209,6 +237,8 @@ export function ChatUiMessageBody({ message }: { message: ChatUiMessage }) {
         message.status === "pending" ? "is-pending" : "",
         message.status === "streaming" ? "is-streaming" : "",
         message.status === "error" ? "is-error" : "",
+        selectMode ? "is-select-mode" : "",
+        selected ? "is-selected" : "",
       ]
         .filter(Boolean)
         .join(" ")}
@@ -216,26 +246,39 @@ export function ChatUiMessageBody({ message }: { message: ChatUiMessage }) {
       data-role={message.role}
       data-status={message.status}
     >
-      {message.author?.name ? (
-        <div className="chat-ui-message__author">{message.author.name}</div>
+      {selectable ? (
+        <div className="chat-ui-message__select">
+          <PolishedCheckbox
+            checked={selected}
+            ariaLabel={`Select message from ${message.author?.name ?? message.role}`}
+            onCheckedChange={() => onToggleSelect?.(message.id)}
+          />
+        </div>
       ) : null}
-      <div className={bodyClass}>
-        {message.parts.map((part, index) => (
-          <ChatUiPartView key={`${message.id}-${index}`} part={part} />
-        ))}
+      <div className="chat-ui-message__main">
+        {message.author?.name ? (
+          <div className="chat-ui-message__author">{message.author.name}</div>
+        ) : null}
+        <div className={bodyClass}>
+          {message.parts.map((part, index) => (
+            <ChatUiPartView key={`${message.id}-${index}`} part={part} />
+          ))}
+        </div>
+        {!selectMode ? (
+          <ChatMessageHoverActions
+            plainText={plainText}
+            createdAt={message.createdAt}
+            statusLabel={statusLabel}
+            onDelete={
+              onDelete
+                ? () => {
+                    onDelete(message.id);
+                  }
+                : null
+            }
+          />
+        ) : null}
       </div>
-      {message.status === "pending" ? (
-        <time className="chat-ui-message__timestamp">Sending…</time>
-      ) : message.status === "streaming" ? (
-        <time className="chat-ui-message__timestamp">Streaming…</time>
-      ) : !isAssistant && message.createdAt ? (
-        <time className="chat-ui-message__timestamp" dateTime={message.createdAt}>
-          {new Date(message.createdAt).toLocaleTimeString([], {
-            hour: "2-digit",
-            minute: "2-digit",
-          })}
-        </time>
-      ) : null}
     </div>
   );
 }

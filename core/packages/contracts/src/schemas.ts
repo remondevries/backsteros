@@ -944,6 +944,8 @@ export {
   getOrCreateChatThreadInputSchema,
   createChatThreadMessageInputSchema,
   createChatThreadMessageResultSchema,
+  deleteChatThreadMessagesInputSchema,
+  deleteChatThreadMessagesResultSchema,
 } from "./schemas/agents-chat.js";
 export type {
   Agent,
@@ -960,4 +962,6 @@ export type {
   GetOrCreateChatThreadInput,
   CreateChatThreadMessageInput,
   CreateChatThreadMessageResult,
+  DeleteChatThreadMessagesInput,
+  DeleteChatThreadMessagesResult,
 } from "./schemas/agents-chat.js";

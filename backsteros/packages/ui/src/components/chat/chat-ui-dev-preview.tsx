@@ -34,6 +34,10 @@ export type LiveAgentChatHandlers = {
     body: string,
   ) => Promise<CreateChatThreadMessageResult>;
   getThread: (threadId: string) => Promise<ChatThreadWithMessages>;
+  deleteMessages?: (
+    threadId: string,
+    messageIds: readonly string[],
+  ) => Promise<{ deletedIds: string[] }>;
 };
 
 function messagesFromThread(
@@ -522,6 +526,58 @@ export function ChatUiDevPreview({
     ],
   );
 
+  const onDeleteMessages = useCallback(
+    async (messageIds: readonly string[]) => {
+      if (messageIds.length === 0) return;
+
+      if (liveAgentId && liveAgentChat?.deleteMessages && liveThreadId) {
+        const ids = new Set(messageIds);
+        setLiveMessages((prev) =>
+          (prev ?? []).filter((message) => !ids.has(message.id)),
+        );
+        try {
+          await liveAgentChat.deleteMessages(liveThreadId, messageIds);
+          const thread = await liveAgentChat.getThread(liveThreadId);
+          setLiveMessages(
+            messagesFromThread(
+              thread,
+              thread.agentName ?? threadAgent.name,
+            ),
+          );
+          setLiveThinking(Boolean(thread.pendingReplyAt));
+        } catch {
+          try {
+            const thread = await liveAgentChat.getThread(liveThreadId);
+            setLiveMessages(
+              messagesFromThread(
+                thread,
+                thread.agentName ?? threadAgent.name,
+              ),
+            );
+          } catch {
+            /* keep optimistic removal */
+          }
+        }
+        return;
+      }
+
+      const key = chatDemoThreadKey(threadAgent.id, projectId);
+      const ids = new Set(messageIds);
+      setThreads((prev) => ({
+        ...prev,
+        [key]: (prev[key] ?? []).filter((message) => !ids.has(message.id)),
+      }));
+    },
+    [
+      liveAgentChat,
+      liveAgentId,
+      liveThreadId,
+      projectId,
+      threadAgent.id,
+      threadAgent.name,
+    ],
+  );
+
   const messages =
     liveAgentId && liveMessages != null
       ? liveMessages
@@ -571,6 +627,7 @@ export function ChatUiDevPreview({
           projects={resolvedProjects}
           recentProjectIds={recentProjectIds}
           onSelectProject={onSelectProject}
+          onDeleteMessages={onDeleteMessages}
           emptyState={null}
           placeholder="Message…"
         />

@@ -8,6 +8,15 @@ const BOOTSTRAP_KEY = "backsteros:agent-dm-seen-bootstrapped-v1";
 
 export const AGENT_DM_SEEN_CHANGED_EVENT = "backsteros:agent-dm-seen-changed";
 
+/** Fired after chat messages are deleted so sidebar DM cards recompute. */
+export const AGENT_DM_THREADS_INVALIDATE_EVENT =
+  "backsteros:agent-dm-threads-invalidate";
+
+export function invalidateAgentDmThreads(): void {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new Event(AGENT_DM_THREADS_INVALIDATE_EVENT));
+}
+
 type SeenMap = Record<string, string>;
 
 function readMap(): SeenMap {

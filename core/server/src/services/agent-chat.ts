@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull } from "drizzle-orm";
 import type {
   AgentWebhookTestResult,
   ChatThread,
@@ -6,6 +6,7 @@ import type {
   ChatThreadMessage,
   ChatThreadWithMessages,
   CreateChatThreadMessageResult,
+  DeleteChatThreadMessagesResult,
 } from "@backsteros/contracts";
 
 import { db } from "../db/index.js";
@@ -129,6 +130,7 @@ export async function listChatThreads(
         eq(chatThreadMessages.workspaceId, workspaceId),
         inArray(chatThreadMessages.threadId, threadIds),
         eq(chatThreadMessages.role, "assistant"),
+        isNull(chatThreadMessages.deletedAt),
       ),
     )
     .orderBy(desc(chatThreadMessages.createdAt));
@@ -159,6 +161,7 @@ async function loadMessages(
       and(
         eq(chatThreadMessages.workspaceId, workspaceId),
         eq(chatThreadMessages.threadId, threadId),
+        isNull(chatThreadMessages.deletedAt),
       ),
     )
     .orderBy(asc(chatThreadMessages.createdAt));
@@ -282,6 +285,7 @@ async function recentContext(
       and(
         eq(chatThreadMessages.workspaceId, workspaceId),
         eq(chatThreadMessages.threadId, threadId),
+        isNull(chatThreadMessages.deletedAt),
       ),
     )
     .orderBy(desc(chatThreadMessages.createdAt))
@@ -610,4 +614,69 @@ export async function postChatThreadMessage(
     thinking,
     webhookError,
   };
+}
+
+/**
+ * Soft-delete messages in a thread (owner only — enforced at the route).
+ * Returns the ids that were newly marked deleted.
+ */
+export async function softDeleteChatThreadMessages(
+  workspaceId: string,
+  threadId: string,
+  messageIds: readonly string[],
+): Promise<DeleteChatThreadMessagesResult> {
+  const uniqueIds = [
+    ...new Set(
+      messageIds.map((id) => id.trim()).filter((id) => id.length > 0),
+    ),
+  ];
+  if (uniqueIds.length === 0) {
+    throw badRequest("At least one message id is required");
+  }
+
+  const [thread] = await db
+    .select({ id: chatThreads.id })
+    .from(chatThreads)
+    .where(
+      and(
+        eq(chatThreads.workspaceId, workspaceId),
+        eq(chatThreads.id, threadId),
+      ),
+    )
+    .limit(1);
+  if (!thread) throw notFound("Thread");
+
+  const now = new Date();
+  const deleted = await db
+    .update(chatThreadMessages)
+    .set({ deletedAt: now, updatedAt: now })
+    .where(
+      and(
+        eq(chatThreadMessages.workspaceId, workspaceId),
+        eq(chatThreadMessages.threadId, threadId),
+        inArray(chatThreadMessages.id, uniqueIds),
+        isNull(chatThreadMessages.deletedAt),
+      ),
+    )
+    .returning({ id: chatThreadMessages.id });
+
+  if (deleted.length > 0) {
+    await db
+      .update(chatThreads)
+      .set({ updatedAt: now })
+      .where(eq(chatThreads.id, threadId));
+  }
+
+  return { deletedIds: deleted.map((row) => row.id) };
+}
+
+export async function softDeleteChatThreadMessage(
+  workspaceId: string,
+  threadId: string,
+  messageId: string,
+): Promise<boolean> {
+  const result = await softDeleteChatThreadMessages(workspaceId, threadId, [
+    messageId,
+  ]);
+  return result.deletedIds.includes(messageId);
 }

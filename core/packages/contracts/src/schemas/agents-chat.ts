@@ -137,6 +137,15 @@ export const createChatThreadMessageResultSchema = z.object({
   webhookError: z.string().nullable(),
 });
 
+/** Soft-delete one or more messages in a thread (owner only). */
+export const deleteChatThreadMessagesInputSchema = z.object({
+  messageIds: z.array(z.string().trim().min(1)).min(1).max(200),
+});
+
+export const deleteChatThreadMessagesResultSchema = z.object({
+  deletedIds: z.array(z.string()),
+});
+
 /** Result of POSTing a one-shot test delivery to the agent's webhook URL. */
 export const agentWebhookTestResultSchema = z.object({
   ok: z.boolean(),
@@ -171,4 +180,10 @@ export type CreateChatThreadMessageInput = z.infer<
 >;
 export type CreateChatThreadMessageResult = z.infer<
   typeof createChatThreadMessageResultSchema
+>;
+export type DeleteChatThreadMessagesInput = z.infer<
+  typeof deleteChatThreadMessagesInputSchema
+>;
+export type DeleteChatThreadMessagesResult = z.infer<
+  typeof deleteChatThreadMessagesResultSchema
 >;

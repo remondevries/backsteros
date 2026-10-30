@@ -4,8 +4,10 @@ import type {
   ChatThreadMessage,
   ChatThreadWithMessages,
   CreateChatThreadMessageResult,
+  DeleteChatThreadMessagesResult,
 } from "@backsteros/contracts";
 
+import { invalidateAgentDmThreads } from "../lib/agent-dm-seen";
 import {
   cloudCoreRequestJson,
   isCloudCoreApiError,
@@ -44,6 +46,10 @@ export type ShellAgentChatApi = {
   ) => Promise<CreateChatThreadMessageResult>;
   getThread: (threadId: string) => Promise<ChatThreadWithMessages>;
   listMessages: (threadId: string) => Promise<ChatThreadMessage[]>;
+  deleteMessages: (
+    threadId: string,
+    messageIds: readonly string[],
+  ) => Promise<DeleteChatThreadMessagesResult>;
 };
 
 /**
@@ -144,6 +150,29 @@ export function useShellAgentChat(): ShellAgentChatApi {
     return body.messages;
   }, []);
 
+  const deleteMessages = useCallback(
+    async (threadId: string, messageIds: readonly string[]) => {
+      const ids = [...messageIds];
+      if (ids.length === 0) return { deletedIds: [] };
+      const result =
+        ids.length === 1
+          ? await cloudCoreRequestJson<null>(
+              `/api/v1/chat/threads/${encodeURIComponent(threadId)}/messages/${encodeURIComponent(ids[0]!)}`,
+              { method: "DELETE" },
+            ).then(() => ({ deletedIds: ids }))
+          : await cloudCoreRequestJson<DeleteChatThreadMessagesResult>(
+              `/api/v1/chat/threads/${encodeURIComponent(threadId)}/messages/delete`,
+              {
+                method: "POST",
+                body: JSON.stringify({ messageIds: ids }),
+              },
+            );
+      invalidateAgentDmThreads();
+      return result;
+    },
+    [],
+  );
+
   return {
     agents,
     webhookReadyAgents,
@@ -153,5 +182,6 @@ export function useShellAgentChat(): ShellAgentChatApi {
     sendMessage,
     getThread,
     listMessages,
+    deleteMessages,
   };
 }

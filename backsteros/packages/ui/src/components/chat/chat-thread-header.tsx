@@ -2,13 +2,19 @@
 
 import {
   useCallback,
+  useEffect,
+  useId,
   useLayoutEffect,
   useRef,
   useState,
+  type CSSProperties,
 } from "react";
+import { createPortal } from "react-dom";
 
 import { AssigneeListMark } from "../tasks/assignee-list-mark.js";
 import { ProjectOcticon } from "../projects/project-octicon.js";
+import { SidebarSettingsIcon } from "../shell/sidebar-nav-icons.js";
+import { useMounted } from "../entity-actions/use-mounted.js";
 
 type ChatThreadPeerBase = {
   /** Stable id used for focus + per-peer thread state. */
@@ -128,6 +134,11 @@ export type ChatThreadHeaderProps = {
   peers: readonly ChatThreadPeer[];
   activePeerId: string | null;
   onSelectPeer?: (peerId: string) => void;
+  /**
+   * When set, hovering the active peer avatar reveals a gear that opens
+   * “Delete messages” (multi-select mode).
+   */
+  onEnterSelectMode?: (() => void) | null;
 };
 
 /**
@@ -135,10 +146,113 @@ export type ChatThreadHeaderProps = {
  * Switching peers animates the strip like a slot reel into center and lights
  * up the focused agent. Switch projects or agents anytime from the strip.
  */
+function ActivePeerGear({
+  onEnterSelectMode,
+}: {
+  onEnterSelectMode: () => void;
+}) {
+  const menuId = useId();
+  const mounted = useMounted();
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const [open, setOpen] = useState(false);
+  const [panelStyle, setPanelStyle] = useState<CSSProperties>({
+    position: "fixed",
+    visibility: "hidden",
+  });
+
+  const close = useCallback(() => setOpen(false), []);
+
+  useLayoutEffect(() => {
+    if (!open || !triggerRef.current) return;
+    const rect = triggerRef.current.getBoundingClientRect();
+    setPanelStyle({
+      position: "fixed",
+      top: `${rect.bottom + 6}px`,
+      left: `${Math.max(8, rect.left + rect.width / 2 - 90)}px`,
+      minWidth: "180px",
+      visibility: "visible",
+      zIndex: 1000,
+    });
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        close();
+      }
+    };
+    const onPointer = (event: globalThis.MouseEvent) => {
+      const target = event.target as Node | null;
+      if (
+        triggerRef.current?.contains(target) ||
+        panelRef.current?.contains(target)
+      ) {
+        return;
+      }
+      close();
+    };
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("mousedown", onPointer);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("mousedown", onPointer);
+    };
+  }, [close, open]);
+
+  return (
+    <span className="chat-ui-thread__peer-gear-wrap">
+      <button
+        ref={triggerRef}
+        type="button"
+        className="chat-ui-thread__peer-gear"
+        aria-label="Chat settings"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-controls={open ? menuId : undefined}
+        onClick={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          setOpen((value) => !value);
+        }}
+      >
+        <SidebarSettingsIcon size={14} />
+      </button>
+      {mounted && open
+        ? createPortal(
+            <div
+              ref={panelRef}
+              id={menuId}
+              role="menu"
+              className="chat-ui-thread__peer-gear-menu"
+              style={panelStyle}
+            >
+              <button
+                type="button"
+                role="menuitem"
+                className="chat-ui-thread__peer-gear-item"
+                onClick={() => {
+                  close();
+                  onEnterSelectMode();
+                }}
+              >
+                Delete messages
+              </button>
+            </div>,
+            document.body,
+          )
+        : null}
+    </span>
+  );
+}
+
 export function ChatThreadHeader({
   peers,
   activePeerId,
   onSelectPeer,
+  onEnterSelectMode = null,
 }: ChatThreadHeaderProps) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const trackRef = useRef<HTMLDivElement | null>(null);
@@ -313,13 +427,24 @@ export function ChatThreadHeader({
             const active = peer.id === activePeerId;
             const selectable = Boolean(onSelectPeer) && peers.length > 1;
             const subtitle = peer.subtitle?.trim() || null;
+            const showGear = active && typeof onEnterSelectMode === "function";
             const className = [
               "chat-ui-thread__peer",
               active ? "is-active" : "is-inactive",
               selectable ? "is-selectable" : "",
+              showGear ? "has-gear" : "",
             ]
               .filter(Boolean)
               .join(" ");
+
+            const avatarBlock = (
+              <span className="chat-ui-thread__peer-avatar-wrap">
+                <ChatThreadPeerAvatar peer={peer} />
+                {showGear ? (
+                  <ActivePeerGear onEnterSelectMode={onEnterSelectMode} />
+                ) : null}
+              </span>
+            );
 
             if (selectable) {
               return (
@@ -332,7 +457,7 @@ export function ChatThreadHeader({
                   className={className}
                   onClick={() => onSelectPeer?.(peer.id)}
                 >
-                  <ChatThreadPeerAvatar peer={peer} />
+                  {avatarBlock}
                   <span className="chat-ui-thread__peer-name">{peer.name}</span>
                   {subtitle ? (
                     <span className="chat-ui-thread__peer-subtitle">
@@ -349,7 +474,7 @@ export function ChatThreadHeader({
                 ref={(node) => setPeerRef(peer.id, node)}
                 className={className}
               >
-                <ChatThreadPeerAvatar peer={peer} />
+                {avatarBlock}
                 <div className="chat-ui-thread__peer-name">{peer.name}</div>
                 {subtitle ? (
                   <div className="chat-ui-thread__peer-subtitle">{subtitle}</div>

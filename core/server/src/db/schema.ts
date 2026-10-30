@@ -3154,6 +3154,8 @@ export const chatThreadMessages = pgTable(
     body: text("body").notNull().default(""),
     /** pending | streaming | done | error */
     status: text("status").notNull().default("done"),
+    /** Soft-delete — excluded from lists / DM last-assistant. */
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),

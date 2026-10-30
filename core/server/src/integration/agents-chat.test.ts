@@ -405,6 +405,76 @@ test("OS-151/150 agents + chat loop: secret write-only, webhook fire, agent repl
   );
   assert.equal(thread.status, 200);
   assert.equal(thread.body?.pendingReplyAt, null);
-  const messages = thread.body?.messages as Array<{ role: string; body: string }>;
+  const messages = thread.body?.messages as Array<{
+    id: string;
+    role: string;
+    body: string;
+  }>;
   assert.ok(messages.some((m) => m.role === "assistant" && m.body.includes("got it")));
+
+  const assistant = messages.find(
+    (m) => m.role === "assistant" && m.body.includes("got it"),
+  );
+  assert.ok(assistant);
+
+  // Agent keys cannot delete.
+  const agentDeleteDenied = await app.request(
+    `/api/v1/chat/threads/${threadId}/messages/${assistant.id}`,
+    {
+      method: "DELETE",
+      headers: { authorization: `Bearer ${agentSecret}` },
+    },
+  );
+  assert.equal(agentDeleteDenied.status, 403);
+
+  // Owner soft-deletes one message.
+  const deletedOne = await app.request(
+    `/api/v1/chat/threads/${threadId}/messages/${assistant.id}`,
+    {
+      method: "DELETE",
+      headers: { authorization: `Bearer ${ownerSecret}` },
+    },
+  );
+  assert.equal(deletedOne.status, 204);
+
+  const afterDelete = await json(
+    app,
+    `/api/v1/chat/threads/${threadId}`,
+    ownerSecret,
+  );
+  assert.equal(afterDelete.status, 200);
+  const remaining = afterDelete.body?.messages as Array<{ id: string }>;
+  assert.equal(
+    remaining.some((m) => m.id === assistant.id),
+    false,
+  );
+
+  const listedThreads = await json(app, "/api/v1/chat/threads", ownerSecret);
+  assert.equal(listedThreads.status, 200);
+  const listRow = (
+    listedThreads.body?.threads as Array<{
+      id: string;
+      lastAssistantMessage: { id: string } | null;
+    }>
+  )?.find((row) => row.id === threadId);
+  assert.ok(listRow);
+  assert.notEqual(listRow.lastAssistantMessage?.id, assistant.id);
+
+  // Bulk delete remaining user message(s).
+  const userMsg = remaining.find((m) => m.id !== assistant.id);
+  if (userMsg) {
+    const bulk = await json(
+      app,
+      `/api/v1/chat/threads/${threadId}/messages/delete`,
+      ownerSecret,
+      {
+        method: "POST",
+        body: JSON.stringify({ messageIds: [userMsg.id] }),
+      },
+    );
+    assert.equal(bulk.status, 200);
+    assert.ok(
+      (bulk.body?.deletedIds as string[] | undefined)?.includes(userMsg.id),
+    );
+  }
 });

@@ -8,6 +8,7 @@ import type { AgentMessageNotificationItem } from "@backsteros/ui/shell";
 
 import {
   AGENT_DM_SEEN_CHANGED_EVENT,
+  AGENT_DM_THREADS_INVALIDATE_EVENT,
   bootstrapAgentDmSeenIfNeeded,
   isAgentDmMessageUnseen,
   markAgentDmSeen,
@@ -159,6 +160,15 @@ export function useAgentDmNotifications(): UseAgentDmNotificationsResult {
     window.addEventListener(AGENT_DM_SEEN_CHANGED_EVENT, onSeen);
     return () => window.removeEventListener(AGENT_DM_SEEN_CHANGED_EVENT, onSeen);
   }, []);
+
+  useEffect(() => {
+    const onInvalidate = () => {
+      void reload();
+    };
+    window.addEventListener(AGENT_DM_THREADS_INVALIDATE_EVENT, onInvalidate);
+    return () =>
+      window.removeEventListener(AGENT_DM_THREADS_INVALIDATE_EVENT, onInvalidate);
+  }, [reload]);
 
   const items = useMemo((): AgentMessageNotificationItem[] => {
     void seenTick;

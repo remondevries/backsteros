@@ -64,6 +64,11 @@ import {
 import { ProjectOcticon } from "../projects/project-octicon.js";
 import { AssigneeListMark } from "../tasks/assignee-list-mark.js";
 import { isBlockingModalOpen } from "../../shortcuts/shortcut-guards.js";
+import {
+  chatSelectModeCountLabel,
+  isChatMessageSelectable,
+  toggleChatMessageSelection,
+} from "../../chat/chat-select-mode.js";
 
 /** Window when the thread is long enough that DOM cost matters. */
 export const CHAT_THREAD_VIRTUALIZE_THRESHOLD = 48;
@@ -117,6 +122,11 @@ export type ChatThreadProps = {
   placeholder?: string;
   /** Disable composer (e.g. while detail loading). */
   composerDisabled?: boolean;
+  /**
+   * Soft-delete messages (single or bulk). When set, hover ⋯ + header gear
+   * multi-select become available.
+   */
+  onDeleteMessages?: ((messageIds: readonly string[]) => void | Promise<void>) | null;
   /**
    * Optional empty state when there are no messages.
    * Pass `null` to show no empty-state copy (composer only).
@@ -466,11 +476,21 @@ function ChatThreadComposer({
   );
 }
 
+type ChatMessagesRenderProps = {
+  messages: readonly ChatUiMessage[];
+  onDelete?: ((messageId: string) => void) | null;
+  selectMode?: boolean;
+  selectedIds?: ReadonlySet<string>;
+  onToggleSelect?: ((messageId: string) => void) | null;
+};
+
 function VirtualizedChatMessages({
   messages,
-}: {
-  messages: readonly ChatUiMessage[];
-}) {
+  onDelete = null,
+  selectMode = false,
+  selectedIds,
+  onToggleSelect = null,
+}: ChatMessagesRenderProps) {
   const listRef = useRef<LegendListRef | null>(null);
   const rows = useMemo(
     () => messages.map((message) => ({ key: message.id, message })),
@@ -479,9 +499,15 @@ function VirtualizedChatMessages({
 
   const renderItem = useCallback(
     ({ item }: LegendListRenderItemProps<(typeof rows)[number]>) => (
-      <ChatUiMessageBody message={item.message} />
+      <ChatUiMessageBody
+        message={item.message}
+        onDelete={onDelete}
+        selectMode={selectMode}
+        selected={selectedIds?.has(item.message.id) ?? false}
+        onToggleSelect={onToggleSelect}
+      />
     ),
-    [],
+    [onDelete, onToggleSelect, selectMode, selectedIds],
   );
 
   return (
@@ -501,13 +527,22 @@ function VirtualizedChatMessages({
 
 function PlainChatMessages({
   messages,
-}: {
-  messages: readonly ChatUiMessage[];
-}) {
+  onDelete = null,
+  selectMode = false,
+  selectedIds,
+  onToggleSelect = null,
+}: ChatMessagesRenderProps) {
   return (
     <div className="chat-ui-thread__messages">
       {messages.map((message) => (
-        <ChatUiMessageBody key={message.id} message={message} />
+        <ChatUiMessageBody
+          key={message.id}
+          message={message}
+          onDelete={onDelete}
+          selectMode={selectMode}
+          selected={selectedIds?.has(message.id) ?? false}
+          onToggleSelect={onToggleSelect}
+        />
       ))}
     </div>
   );
@@ -534,6 +569,7 @@ export function ChatThread({
   onSelectProject,
   placeholder = "Message…",
   composerDisabled = false,
+  onDeleteMessages = null,
   emptyState,
   className,
 }: ChatThreadProps) {
@@ -542,6 +578,79 @@ export function ChatThread({
   const pendingImagesRef = useRef(pendingImages);
   pendingImagesRef.current = pendingImages;
   const threadRootRef = useRef<HTMLDivElement | null>(null);
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
+
+  const exitSelectMode = useCallback(() => {
+    setSelectMode(false);
+    setSelectedIds(new Set());
+  }, []);
+
+  const enterSelectMode = useCallback(() => {
+    setSelectMode(true);
+    setSelectedIds(new Set());
+  }, []);
+
+  const toggleSelect = useCallback((messageId: string) => {
+    setSelectedIds((prev) => toggleChatMessageSelection(prev, messageId));
+  }, []);
+
+  const deleteOne = useCallback(
+    (messageId: string) => {
+      void onDeleteMessages?.([messageId]);
+    },
+    [onDeleteMessages],
+  );
+
+  const deleteSelected = useCallback(() => {
+    const ids = [...selectedIds].filter((id) =>
+      messages.some(
+        (message) =>
+          message.id === id && isChatMessageSelectable(message.role),
+      ),
+    );
+    if (ids.length === 0) return;
+    if (
+      typeof window !== "undefined" &&
+      !window.confirm(
+        ids.length === 1
+          ? "Delete this message?"
+          : `Delete ${ids.length} messages?`,
+      )
+    ) {
+      return;
+    }
+    void Promise.resolve(onDeleteMessages?.(ids)).finally(() => {
+      exitSelectMode();
+    });
+  }, [exitSelectMode, messages, onDeleteMessages, selectedIds]);
+
+  useEffect(() => {
+    if (!selectMode) return;
+    const onKey = (event: globalThis.KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      if (isBlockingModalOpen()) return;
+      event.preventDefault();
+      exitSelectMode();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [exitSelectMode, selectMode]);
+
+  useEffect(() => {
+    // Drop selection for messages that disappeared (e.g. after delete).
+    setSelectedIds((prev) => {
+      if (prev.size === 0) return prev;
+      const alive = new Set(messages.map((message) => message.id));
+      let changed = false;
+      const next = new Set<string>();
+      for (const id of prev) {
+        if (alive.has(id)) next.add(id);
+        else changed = true;
+      }
+      return changed ? next : prev;
+    });
+  }, [messages]);
 
   const registry = useMemo(
     () => mergeChatCardRegistry(cardRegistry),
@@ -697,7 +806,36 @@ export function ChatThread({
                 peers={resolvedPeers}
                 activePeerId={resolvedActivePeerId}
                 onSelectPeer={onPeerChange}
+                onEnterSelectMode={onDeleteMessages ? enterSelectMode : null}
               />
+              {selectMode ? (
+                <div
+                  className="chat-ui-thread__select-bar"
+                  role="status"
+                  aria-live="polite"
+                >
+                  <span className="chat-ui-thread__select-count">
+                    {chatSelectModeCountLabel(selectedIds.size)}
+                  </span>
+                  <div className="chat-ui-thread__select-actions">
+                    <button
+                      type="button"
+                      className="chat-ui-thread__select-delete"
+                      disabled={selectedIds.size === 0}
+                      onClick={deleteSelected}
+                    >
+                      Delete
+                    </button>
+                    <button
+                      type="button"
+                      className="chat-ui-thread__select-cancel"
+                      onClick={exitSelectMode}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : null}
               <ThreadPrimitive.Viewport
                 className={[
                   "chat-ui-thread__viewport",
@@ -717,9 +855,21 @@ export function ChatThread({
                     </div>
                   )
                 ) : virtualize ? (
-                  <VirtualizedChatMessages messages={messages} />
+                  <VirtualizedChatMessages
+                    messages={messages}
+                    onDelete={onDeleteMessages ? deleteOne : null}
+                    selectMode={selectMode}
+                    selectedIds={selectedIds}
+                    onToggleSelect={toggleSelect}
+                  />
                 ) : (
-                  <PlainChatMessages messages={messages} />
+                  <PlainChatMessages
+                    messages={messages}
+                    onDelete={onDeleteMessages ? deleteOne : null}
+                    selectMode={selectMode}
+                    selectedIds={selectedIds}
+                    onToggleSelect={toggleSelect}
+                  />
                 )}
               </ThreadPrimitive.Viewport>
               {/*

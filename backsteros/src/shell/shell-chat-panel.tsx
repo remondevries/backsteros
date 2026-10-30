@@ -86,6 +86,7 @@ export function ShellChatPanel() {
         markLatestAssistantSeen(thread);
         return thread;
       },
+      deleteMessages: agentChat.deleteMessages,
     };
   }, [agentChat]);
 

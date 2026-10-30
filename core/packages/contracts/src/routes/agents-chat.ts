@@ -13,6 +13,8 @@ import {
   chatThreadSchema,
   chatThreadWithMessagesSchema,
   chatThreadsListSchema,
+  deleteChatThreadMessagesInputSchema,
+  deleteChatThreadMessagesResultSchema,
   errorSchema,
   getOrCreateChatThreadInputSchema,
   reorderAgentsInputSchema,
@@ -172,5 +174,34 @@ export const agentsChatRoutes: AppRouter = c.router({
     },
     summary:
       "Post a message (Remon as user, or agent API key as assistant reply)",
+  },
+  deleteChatThreadMessage: {
+    method: "DELETE",
+    path: "/api/v1/chat/threads/:threadId/messages/:messageId",
+    pathParams: z.object({
+      threadId: z.string(),
+      messageId: z.string(),
+    }),
+    responses: {
+      204: z.void(),
+      401: errorSchema,
+      403: errorSchema,
+      404: errorSchema,
+    },
+    summary: "Soft-delete one chat message (owner / Access keys only)",
+  },
+  deleteChatThreadMessages: {
+    method: "POST",
+    path: "/api/v1/chat/threads/:threadId/messages/delete",
+    pathParams: z.object({ threadId: z.string() }),
+    body: deleteChatThreadMessagesInputSchema,
+    responses: {
+      200: deleteChatThreadMessagesResultSchema,
+      400: badRequestSchema,
+      401: errorSchema,
+      403: errorSchema,
+      404: errorSchema,
+    },
+    summary: "Soft-delete multiple chat messages (owner / Access keys only)",
   },
 });

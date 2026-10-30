@@ -5,6 +5,7 @@ import type { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import {
   createChatThreadMessageInputSchema,
+  deleteChatThreadMessagesInputSchema,
   getOrCreateChatThreadInputSchema,
 } from "@backsteros/contracts";
 
@@ -222,6 +223,61 @@ export function registerAgentChatRoutes(app: Hono) {
       const status = errorStatus(error);
       const message =
         error instanceof Error ? error.message : "Could not post message";
+      return c.json({ error: message, code: errorCode(status) }, status);
+    }
+  });
+
+  /** Soft-delete one message — owner / Access keys only. */
+  app.delete(
+    "/api/v1/chat/threads/:threadId/messages/:messageId",
+    async (c) => {
+      const auth = getAuth(c);
+      if (!canWriteUserMessage(auth)) return c.json(forbidden(), 403);
+      try {
+        const ok = await agentChat.softDeleteChatThreadMessage(
+          auth.workspaceId,
+          c.req.param("threadId"),
+          c.req.param("messageId"),
+        );
+        if (!ok) return c.json(notFound("Message"), 404);
+        return c.body(null, 204);
+      } catch (error) {
+        const status = errorStatus(error);
+        const message =
+          error instanceof Error ? error.message : "Could not delete message";
+        return c.json({ error: message, code: errorCode(status) }, status);
+      }
+    },
+  );
+
+  /** Soft-delete many messages — owner / Access keys only. */
+  app.post("/api/v1/chat/threads/:threadId/messages/delete", async (c) => {
+    const auth = getAuth(c);
+    if (!canWriteUserMessage(auth)) return c.json(forbidden(), 403);
+    let body: unknown;
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ error: "Invalid JSON body", code: "bad_request" }, 400);
+    }
+    const parsed = deleteChatThreadMessagesInputSchema.safeParse(body);
+    if (!parsed.success) {
+      return c.json(
+        { error: "Invalid delete payload", code: "bad_request" },
+        400,
+      );
+    }
+    try {
+      const result = await agentChat.softDeleteChatThreadMessages(
+        auth.workspaceId,
+        c.req.param("threadId"),
+        parsed.data.messageIds,
+      );
+      return c.json(result);
+    } catch (error) {
+      const status = errorStatus(error);
+      const message =
+        error instanceof Error ? error.message : "Could not delete messages";
       return c.json({ error: message, code: errorCode(status) }, status);
     }
   });
