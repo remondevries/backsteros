@@ -929,11 +929,7 @@ export function ChatThread({
                     </form>
                 ) : (
                   <ChatThreadComposer
-                    placeholder={
-                      resolvedPeers.length > 1 || projects.length > 0
-                        ? `${placeholder}  ·  /agent or /project`
-                        : placeholder
-                    }
+                    placeholder={placeholder}
                     disabled={false}
                     peers={resolvedPeers}
                     onSelectPeer={onPeerChange}
