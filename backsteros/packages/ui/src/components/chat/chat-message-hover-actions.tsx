@@ -113,21 +113,6 @@ export function ChatMessageHoverActions({
 
   return (
     <div className="chat-ui-message__hover-row">
-      <button
-        type="button"
-        className={[
-          "chat-ui-message__copy-btn",
-          copied ? "is-copied" : "",
-        ]
-          .filter(Boolean)
-          .join(" ")}
-        aria-label={copyLabel}
-        title={copyLabel}
-        onClick={copy}
-      >
-        {copied ? <CopiedIcon /> : <CopyIcon />}
-        {copied ? <span className="chat-ui-message__copy-label">Copied</span> : null}
-      </button>
       {statusLabel ? (
         <time className="chat-ui-message__timestamp is-status">{statusLabel}</time>
       ) : iso ? (
@@ -163,6 +148,21 @@ export function ChatMessageHoverActions({
           ]}
         />
       ) : null}
+      <button
+        type="button"
+        className={[
+          "chat-ui-message__copy-btn",
+          copied ? "is-copied" : "",
+        ]
+          .filter(Boolean)
+          .join(" ")}
+        aria-label={copyLabel}
+        title={copyLabel}
+        onClick={copy}
+      >
+        {copied ? <CopiedIcon /> : <CopyIcon />}
+        {copied ? <span className="chat-ui-message__copy-label">Copied</span> : null}
+      </button>
     </div>
   );
 }

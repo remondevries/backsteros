@@ -256,9 +256,6 @@ export function ChatUiMessageBody({
         </div>
       ) : null}
       <div className="chat-ui-message__main">
-        {message.author?.name ? (
-          <div className="chat-ui-message__author">{message.author.name}</div>
-        ) : null}
         <div className={bodyClass}>
           {message.parts.map((part, index) => (
             <ChatUiPartView key={`${message.id}-${index}`} part={part} />

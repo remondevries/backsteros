@@ -401,43 +401,64 @@
 }
 
 .chat-ui-message__hover-row {
-  display: none;
+  display: inline-flex;
   align-items: center;
   gap: 6px;
   min-height: 20px;
   padding-inline: 2px;
 }
 
-.chat-ui-message:hover .chat-ui-message__hover-row,
-.chat-ui-message:focus-within .chat-ui-message__hover-row {
-  display: inline-flex;
-}
-
 .chat-ui-message__copy-btn,
-.chat-ui-message__more-btn {
+.chat-ui-message__more-btn,
+.chat-ui-message__more {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 4px;
-  min-width: 22px;
-  height: 22px;
-  padding: 0 6px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0;
   border: 0;
-  border-radius: 6px;
-  background: color-mix(in oklab, var(--foreground, #fff) 8%, transparent);
-  color: color-mix(in oklab, var(--foreground, #fff) 72%, transparent);
+  border-radius: 0;
+  outline: none;
+  box-shadow: none;
+  background: transparent;
+  color: color-mix(in oklab, var(--foreground, #fff) 55%, transparent);
   cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease, color 120ms ease;
+}
+
+.chat-ui-message:hover .chat-ui-message__copy-btn,
+.chat-ui-message:hover .chat-ui-message__more-btn,
+.chat-ui-message:hover .chat-ui-message__more,
+.chat-ui-message:focus-within .chat-ui-message__copy-btn,
+.chat-ui-message:focus-within .chat-ui-message__more-btn,
+.chat-ui-message:focus-within .chat-ui-message__more {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.chat-ui-message__copy-btn:hover,
+.chat-ui-message__more-btn:hover,
+.chat-ui-message__copy-btn:focus-visible,
+.chat-ui-message__more-btn:focus-visible {
+  background: transparent;
+  outline: none;
+  box-shadow: none;
+  color: color-mix(in oklab, var(--foreground, #fff) 88%, transparent);
 }
 
 .chat-ui-message.is-user .chat-ui-message__copy-btn,
 .chat-ui-message.is-user .chat-ui-message__more-btn {
-  background: color-mix(in oklab, #fff 18%, transparent);
-  color: #fff;
+  background: transparent;
+  color: color-mix(in oklab, var(--foreground, #fff) 55%, transparent);
 }
 
-.chat-ui-message__copy-btn:hover,
-.chat-ui-message__more-btn:hover {
-  background: color-mix(in oklab, var(--foreground, #fff) 16%, transparent);
+.chat-ui-message.is-user .chat-ui-message__copy-btn:hover,
+.chat-ui-message.is-user .chat-ui-message__more-btn:hover {
+  color: color-mix(in oklab, var(--foreground, #fff) 88%, transparent);
 }
 
 .chat-ui-message__copy-btn.is-copied {
@@ -447,10 +468,6 @@
 .chat-ui-message__copy-label {
   font-size: 0.68rem;
   font-weight: 500;
-}
-
-.chat-ui-message__more {
-  display: inline-flex;
 }
 
 .chat-ui-thread__peer-avatar-wrap {
@@ -582,7 +599,20 @@
   align-self: flex-end;
   align-items: flex-end;
   max-width: min(28rem, 85%);
-  text-align: start;
+}
+
+.chat-ui-message.is-user .chat-ui-message__main {
+  align-items: flex-end;
+  flex: 0 1 auto;
+}
+
+.chat-ui-message.is-user .chat-ui-message__author {
+  text-align: right;
+}
+
+.chat-ui-message.is-user .chat-ui-message__hover-row {
+  flex-direction: row-reverse;
+  justify-content: flex-end;
 }
 
 /* Agent replies — flat on the left, no bubble (T3 Code assistant). */
