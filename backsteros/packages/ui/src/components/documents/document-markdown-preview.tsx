@@ -320,6 +320,11 @@ export type DocumentMarkdownPreviewProps = {
    * original src; null hides the image.
    */
   resolveImageSrc?: ResolveMarkdownImageSrc;
+  /**
+   * Force every mention chip to the compact inline layout (chat bubbles).
+   * Own-line task/project mentions otherwise render as full-width block cards.
+   */
+  forceInlineMentions?: boolean;
 };
 
 /**
@@ -1258,8 +1263,11 @@ function renderMentionChip(
   segmentIndex: number,
   catalog: MentionCatalog,
   key: string,
+  forceInlineMentions = false,
 ) {
-  const layout = resolveMentionLayout(segments, segmentIndex);
+  const layout = forceInlineMentions
+    ? "inline"
+    : resolveMentionLayout(segments, segmentIndex);
 
   return (
     <MentionChipLite
@@ -1277,9 +1285,17 @@ function renderInlineSegment(
   segmentIndex: number,
   catalog: MentionCatalog,
   key: string,
+  forceInlineMentions = false,
 ): ReactNode {
   if (segment.type === "mention") {
-    return renderMentionChip(segment, segments, segmentIndex, catalog, key);
+    return renderMentionChip(
+      segment,
+      segments,
+      segmentIndex,
+      catalog,
+      key,
+      forceInlineMentions,
+    );
   }
 
   if (segment.type === "namedLink") {
@@ -1430,6 +1446,7 @@ function renderParagraphWithMentions(
   segments: MentionSegment[],
   catalog: MentionCatalog,
   keyPrefix: string,
+  forceInlineMentions = false,
 ): ReactNode[] {
   const elements: ReactNode[] = [];
   let inlineRun: ReactNode[] = [];
@@ -1563,6 +1580,7 @@ function renderParagraphWithMentions(
     }
 
     if (
+      !forceInlineMentions &&
       segment.type === "mention" &&
       resolveMentionLayout(segments, index) === "block"
     ) {
@@ -1626,6 +1644,7 @@ function renderParagraphWithMentions(
         index,
         catalog,
         `${keyPrefix}-seg-${index}`,
+        forceInlineMentions,
       ),
     );
     index += 1;
@@ -1640,10 +1659,12 @@ function ParagraphPreview({
   paragraph,
   catalog,
   paragraphIndex,
+  forceInlineMentions = false,
 }: {
   paragraph: string;
   catalog: MentionCatalog;
   paragraphIndex: number;
+  forceInlineMentions?: boolean;
 }) {
   const keyPrefix = `p-${paragraphIndex}`;
 
@@ -1670,12 +1691,26 @@ function ParagraphPreview({
   }
 
   if (!hasBlockMarkdown(paragraph)) {
-    return <>{renderParagraphWithMentions(segments, catalog, keyPrefix)}</>;
+    return (
+      <>
+        {renderParagraphWithMentions(
+          segments,
+          catalog,
+          keyPrefix,
+          forceInlineMentions,
+        )}
+      </>
+    );
   }
 
   return (
     <div className="content-markdown-preview-mixed">
-      {renderParagraphWithMentions(segments, catalog, keyPrefix)}
+      {renderParagraphWithMentions(
+        segments,
+        catalog,
+        keyPrefix,
+        forceInlineMentions,
+      )}
     </div>
   );
 }
@@ -1689,6 +1724,7 @@ export function DocumentMarkdownPreview({
   mentionCatalog,
   onChange,
   resolveImageSrc,
+  forceInlineMentions = false,
 }: DocumentMarkdownPreviewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const catalogFromContext = useMentionCatalogOptional()?.catalog;
@@ -1752,6 +1788,7 @@ export function DocumentMarkdownPreview({
               paragraph={paragraph}
               catalog={catalog}
               paragraphIndex={index}
+              forceInlineMentions={forceInlineMentions}
             />
           ))}
         </div>

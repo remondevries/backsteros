@@ -1,18 +1,22 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import type { ChatUiMessage, ChatUiMessagePart } from "@backsteros/contracts";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 
 import { chatMessagePlainText } from "../../chat/chat-message-plain-text.js";
+import {
+  chatMessageBubbleParts,
+  collectChatTaskCardsBelow,
+} from "../../chat/chat-task-mention-layout.js";
 import { isChatMessageSelectable } from "../../chat/chat-select-mode.js";
+import { useMentionCatalogOptional } from "../../mentions/mention-catalog-context.js";
+import { DocumentMarkdownPreview } from "../documents/document-markdown-preview.js";
 import { AlertTriangleIcon } from "../icons/alert-triangle-icon.js";
 import { TerminalConsoleIcon } from "../icons/terminal-console-icon.js";
 import { PolishedCheckbox } from "../shared/polished-checkbox.js";
 import { TaskStatusIcon } from "../tasks/task-status-icon.js";
 import { TaskStatusWorkingPulse } from "../tasks/task-status-working-pulse.js";
-import { ChatCardPartView } from "./chat-card-registry.js";
+import { ChatCardPartView, ChatTaskCard } from "./chat-card-registry.js";
 import { ChatMessageHoverActions } from "./chat-message-hover-actions.js";
 
 function formatJson(value: unknown): string {
@@ -120,10 +124,12 @@ function ChatTextPartView({
 }: {
   part: Extract<ChatUiMessagePart, { type: "text" }>;
 }) {
-  if (part.markdown) {
+  // Mention-aware preview: task mentions stay compact inline chips in the
+  // bubble; full task cards are lifted below the message.
+  if (part.markdown || /\[@[a-z]+:/i.test(part.text)) {
     return (
       <div className="chat-ui-text chat-ui-text--markdown">
-        <ReactMarkdown remarkPlugins={[remarkGfm]}>{part.text}</ReactMarkdown>
+        <DocumentMarkdownPreview body={part.text} forceInlineMentions />
       </div>
     );
   }
@@ -217,6 +223,16 @@ export function ChatUiMessageBody({
   selected = false,
   onToggleSelect = null,
 }: ChatUiMessageBodyProps) {
+  const mentionCatalog = useMentionCatalogOptional()?.catalog ?? null;
+  const bubbleParts = useMemo(
+    () => chatMessageBubbleParts(message.parts),
+    [message.parts],
+  );
+  const taskCardsBelow = useMemo(
+    () => collectChatTaskCardsBelow(message, mentionCatalog),
+    [mentionCatalog, message],
+  );
+
   const isStatusOnly =
     message.role === "system" ||
     (message.parts.length === 1 && message.parts[0]?.type === "status-line");
@@ -297,7 +313,7 @@ export function ChatUiMessageBody({
       ) : null}
       <div className="chat-ui-message__main">
         <div className={bodyClass}>
-          {message.parts.map((part, index) => (
+          {bubbleParts.map((part, index) => (
             <ChatUiPartView key={`${message.id}-${index}`} part={part} />
           ))}
         </div>
@@ -311,6 +327,13 @@ export function ChatUiMessageBody({
               onDelete ? () => onDelete(message.id) : null
             }
           />
+        ) : null}
+        {taskCardsBelow.length > 0 ? (
+          <div className="chat-ui-message__task-cards">
+            {taskCardsBelow.map((entry) => (
+              <ChatTaskCard key={entry.key} part={entry.part} />
+            ))}
+          </div>
         ) : null}
       </div>
     </div>

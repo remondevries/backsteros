@@ -91,7 +91,7 @@ export function buildChatUiDemoMessages(): ChatUiMessage[] {
         {
           type: "text",
           markdown: true,
-          text: "It's **in progress**. Scope so far:\n\n1. Shared `ChatUiMessage` contract\n2. `ChatThread` on assistant-ui\n3. Task card + tool-call chrome",
+          text: "[@task:BSH-demo] is **in progress**. Scope so far:\n\n1. Shared `ChatUiMessage` contract\n2. `ChatThread` on assistant-ui\n3. Task card + tool-call chrome",
         },
       ],
     },
@@ -231,6 +231,11 @@ export function buildChatUiDemoMessages(): ChatUiMessage[] {
           filename: "chat-ui.ts",
           content:
             "@@ -154,6 +154,8 @@\n   title: z.string().optional(),\n   href: z.string().optional(),\n   status: z.string().optional(),\n+  /** Short body preview for the mention hover / click peek. */\n+  description: z.string().nullable().optional(),\n   priority: z.number().int().min(0).max(4).optional(),",
+        },
+        {
+          type: "text",
+          markdown: true,
+          text: "Updated [@task:BSH-demo] with the expand/peek description.",
         },
         {
           type: "card",
