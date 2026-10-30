@@ -1,12 +1,13 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import type { ChatUiMessage } from "@backsteros/contracts";
+import type { ChatUiCardPart, ChatUiMessage } from "@backsteros/contracts";
 
 import { EMPTY_MENTION_CATALOG } from "../mentions/empty-catalog.js";
 import type { MentionCatalog } from "../mentions/mention-menu-types.js";
 import {
   chatMessageBubbleParts,
   collectChatTaskCardsBelow,
+  hrefFromTaskDisplayId,
   taskCardPlainText,
   taskMentionTokensInText,
 } from "./chat-task-mention-layout.js";
@@ -113,12 +114,13 @@ describe("collectChatTaskCardsBelow", () => {
         },
         TASK_CARD,
       ]),
-      CATALOG,
+      { catalog: CATALOG },
     );
     assert.deepEqual(
       below.map((entry) => entry.key),
       ["os-153", "os-12"],
     );
+    assert.equal(below[0]?.unresolved, false);
     assert.equal(below[0]?.part.id, "card-1");
     assert.equal(
       (below[0]?.part.data as { description?: string }).description,
@@ -139,9 +141,10 @@ describe("collectChatTaskCardsBelow", () => {
           text: "[@task:OS-153] looks ready.",
         },
       ]),
-      CATALOG,
+      { catalog: CATALOG },
     );
     assert.equal(below.length, 1);
+    assert.equal(below[0]?.unresolved, false);
     assert.equal(
       (below[0]?.part.data as { description?: string | null }).description,
       "From catalog",
@@ -149,12 +152,15 @@ describe("collectChatTaskCardsBelow", () => {
   });
 
   it("keeps card-only tasks when there is no text mention", () => {
-    const below = collectChatTaskCardsBelow(message([TASK_CARD]), null);
+    const below = collectChatTaskCardsBelow(message([TASK_CARD]), {
+      catalog: null,
+    });
     assert.equal(below.length, 1);
     assert.equal(below[0]?.part.id, "card-1");
+    assert.equal(below[0]?.unresolved, false);
   });
 
-  it("skips unknown text mentions when the catalog has no match", () => {
+  it("emits a looking-up stub when the catalog has no match", () => {
     const below = collectChatTaskCardsBelow(
       message([
         {
@@ -162,9 +168,72 @@ describe("collectChatTaskCardsBelow", () => {
           text: "Missing [@task:ZZ-999]",
         },
       ]),
-      CATALOG,
+      { catalog: CATALOG, lookingUp: true },
     );
-    assert.equal(below.length, 0);
+    assert.equal(below.length, 1);
+    assert.equal(below[0]?.unresolved, true);
+    assert.equal(
+      (below[0]?.part.data as { description?: string }).description,
+      "Looking up…",
+    );
+    assert.equal(
+      (below[0]?.part.data as { displayId?: string }).displayId,
+      "ZZ-999",
+    );
+  });
+
+  it("emits a not-found stub after lookup settles", () => {
+    const below = collectChatTaskCardsBelow(
+      message([{ type: "text", text: "[@task:ZZ-999]" }]),
+      { catalog: CATALOG, lookingUp: false },
+    );
+    assert.equal(below[0]?.unresolved, true);
+    assert.equal(
+      (below[0]?.part.data as { description?: string }).description,
+      "Task not found",
+    );
+  });
+
+  it("prefers workspace resolvedByDisplayId over catalog stubs", () => {
+    const resolved: ChatUiCardPart = {
+      type: "card",
+      cardType: "task",
+      id: "ws-144",
+      data: {
+        taskId: "uuid-144",
+        displayId: "OS-144",
+        title: "Create new Support ticket from the + button",
+        status: "completed",
+      },
+    };
+    const below = collectChatTaskCardsBelow(
+      message([
+        {
+          type: "text",
+          text: "Here it is, Remon: [@task:OS-144] — done.",
+        },
+      ]),
+      {
+        catalog: EMPTY_MENTION_CATALOG,
+        resolvedByDisplayId: new Map([["os-144", resolved]]),
+      },
+    );
+    assert.equal(below.length, 1);
+    assert.equal(below[0]?.unresolved, false);
+    assert.equal(below[0]?.part.id, "ws-144");
+    assert.equal(
+      (below[0]?.part.data as { title?: string }).title,
+      "Create new Support ticket from the + button",
+    );
+  });
+});
+
+describe("hrefFromTaskDisplayId", () => {
+  it("builds a project task href from OS-144", () => {
+    const href = hrefFromTaskDisplayId("OS-144");
+    assert.ok(href);
+    assert.match(href!, /\/projects\/OS\/tasks\//i);
+    assert.match(href!, /144/);
   });
 });
 

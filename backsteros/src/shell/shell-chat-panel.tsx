@@ -1,14 +1,22 @@
 import { useCallback, useMemo } from "react";
 import { useNavigate } from "@tanstack/react-router";
+import type { ChatUiCardPart } from "@backsteros/contracts";
 import {
+  ChatTaskResolveProvider,
   ChatUiDevPreview,
+  getScopedProjectTaskHref,
+  getTaskDisplayId,
+  isTaskStatus,
   type ChatThreadPeer,
   type LiveAgentChatHandlers,
 } from "@backsteros/ui";
 
 import { markAgentDmSeen } from "../lib/agent-dm-seen";
 import { useDesktopAvatarSrcMap } from "../lib/avatar-src";
-import { useDesktopWorkspacePeople } from "../lib/workspace-data";
+import {
+  useDesktopWorkspacePeople,
+  useDesktopWorkspaceTasks,
+} from "../lib/workspace-data";
 import { navigateToHref } from "../router/navigate-href";
 import { useShellAgentChat } from "./use-shell-agent-chat";
 import { useShellChatProjects } from "./use-shell-chat-projects";
@@ -35,6 +43,7 @@ function markLatestAssistantSeen(thread: {
 export function ShellChatPanel() {
   const navigate = useNavigate();
   const { contacts } = useDesktopWorkspacePeople();
+  const { allTasks } = useDesktopWorkspaceTasks();
   const projects = useShellChatProjects();
   const agentChat = useShellAgentChat();
 
@@ -90,15 +99,56 @@ export function ShellChatPanel() {
     };
   }, [agentChat]);
 
+  // Resolve [@task:OS-144] against workspace rows (not only the mention catalog).
+  const taskResolve = useMemo(() => {
+    const byDisplayId = new Map<string, ChatUiCardPart>();
+    for (const task of allTasks) {
+      if (!isTaskStatus(task.status)) continue;
+      const displayId = getTaskDisplayId(task);
+      if (!displayId) continue;
+      const href = task.projectKey
+        ? getScopedProjectTaskHref(task.projectKey, task.number)
+        : undefined;
+      const dueMs =
+        task.dueDate instanceof Date
+          ? task.dueDate.getTime()
+          : typeof task.dueDate === "number"
+            ? task.dueDate
+            : null;
+      byDisplayId.set(displayId.toLowerCase(), {
+        type: "card",
+        cardType: "task",
+        id: `task-ws-${task.id}`,
+        data: {
+          taskId: task.id,
+          displayId,
+          title: task.title,
+          href,
+          status: task.status,
+          priority: task.priority,
+          dueDate: dueMs,
+          projectName: task.projectName ?? null,
+          description: null,
+        },
+      });
+    }
+    return {
+      resolveByDisplayId: (displayId: string) =>
+        byDisplayId.get(displayId.trim().toLowerCase()) ?? null,
+    };
+  }, [allTasks]);
+
   return (
-    <ChatUiDevPreview
-      peers={peers}
-      projects={projects}
-      onNavigate={onNavigate}
-      liveAgentChat={liveAgentChat}
-      allowEmptyPeers
-      webhookSetupHref="/settings/api?type=agent"
-      webhookSetupMessage={agentChat.agentsLoadError}
-    />
+    <ChatTaskResolveProvider value={taskResolve}>
+      <ChatUiDevPreview
+        peers={peers}
+        projects={projects}
+        onNavigate={onNavigate}
+        liveAgentChat={liveAgentChat}
+        allowEmptyPeers
+        webhookSetupHref="/settings/api?type=agent"
+        webhookSetupMessage={agentChat.agentsLoadError}
+      />
+    </ChatTaskResolveProvider>
   );
 }

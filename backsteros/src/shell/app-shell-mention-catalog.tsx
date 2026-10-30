@@ -12,7 +12,6 @@ import {
   buildMentionCatalogFromEmailMessages,
   buildMentionCatalogFromWorkspace,
 } from "../lib/mention-catalog";
-import { needsMentionCatalog } from "../lib/needs-mention-catalog";
 import {
   useDesktopWorkspaceDocuments,
   useDesktopWorkspaceInboxItems,
@@ -38,19 +37,13 @@ export function AppShellMentionCatalog({
   composeOpen: boolean;
   children: ReactNode;
 }) {
-  const active = needsMentionCatalog(pathname, composeOpen);
-  return (
-    <AppShellMentionCatalogTree active={active}>{children}</AppShellMentionCatalogTree>
-  );
+  // pathname / composeOpen kept for call-site compatibility; catalog is always live.
+  void pathname;
+  void composeOpen;
+  return <AppShellMentionCatalogTree>{children}</AppShellMentionCatalogTree>;
 }
 
-function AppShellMentionCatalogTree({
-  active,
-  children,
-}: {
-  active: boolean;
-  children: ReactNode;
-}) {
+function AppShellMentionCatalogTree({ children }: { children: ReactNode }) {
   const inboxItems = useDesktopWorkspaceInboxItems();
   const { allTasks } = useDesktopWorkspaceTasks();
   const { projects, letters, projectSummaries } = useDesktopWorkspaceProjects();
@@ -120,9 +113,12 @@ function AppShellMentionCatalogTree({
     projects,
   ]);
 
-  const catalog = active ? liveCatalog : EMPTY_MENTION_CATALOG;
-
+  // Always expose the live workspace catalog. Chat agent replies resolve
+  // `[@task:…]` cards from it even on routes that do not open a markdown
+  // editor (the old EMPTY gate left those mentions with no below-card).
   return (
-    <MentionCatalogProvider catalog={catalog}>{children}</MentionCatalogProvider>
+    <MentionCatalogProvider catalog={liveCatalog}>
+      {children}
+    </MentionCatalogProvider>
   );
 }

@@ -5601,6 +5601,19 @@ export {
 } from "./chat/agent-chat-message-adapter.js";
 
 export {
+  ChatTaskResolveProvider,
+  useChatTaskResolveOptional,
+  type ChatTaskResolveContextValue,
+} from "./chat/chat-task-resolve-context.js";
+
+export {
+  collectChatTaskCardsBelow,
+  fallbackTaskCardPart,
+  hrefFromTaskDisplayId,
+  taskMentionTokensInMessage,
+} from "./chat/chat-task-mention-layout.js";
+
+export {
   CHAT_THINKING_OFF,
   CHAT_THINKING_PROVISIONAL_MS,
   CHAT_THINKING_WORKING_STALE_MS,
