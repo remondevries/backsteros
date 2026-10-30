@@ -1,6 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useReducer,
+  useRef,
+  useState,
+} from "react";
 import type {
   ChatThreadWithMessages,
   ChatUiFilePart,
@@ -8,11 +15,6 @@ import type {
   CreateChatThreadMessageResult,
 } from "@backsteros/contracts";
 
-import {
-  chatThreadMessageToUi,
-  thinkingStatusMessage,
-  webhookErrorStatusMessage,
-} from "../../chat/agent-chat-message-adapter.js";
 import { buildChatUiDemoMessages } from "../../chat/chat-ui-demo-fixture.js";
 import {
   pruneRecentChatProjectIds,
@@ -21,21 +23,13 @@ import {
   resolveRecentChatProjectsForStrip,
   type ChatProjectOption,
 } from "../../chat/chat-project-option.js";
-import { applyAssistantShellChatPush } from "../../chat/chat-apply-shell-push.js";
+import { chatThinkingRemainingMs } from "../../chat/chat-thinking-state.js";
 import {
-  isOpenChatThreadEvent,
-  shouldApplyOpenLiveThreadFetch,
-  shouldRefreshOpenChatThreadOnPush,
-} from "../../chat/chat-open-thread-live.js";
-import {
-  CHAT_THINKING_OFF,
-  chatThinkingAfterSend,
-  chatThinkingAfterStatus,
-  chatThinkingFromPendingReplyAt,
-  chatThinkingIsActive,
-  chatThinkingRemainingMs,
-  type ChatThinkingState,
-} from "../../chat/chat-thinking-state.js";
+  createCoalescedRunner,
+  createLiveAgentThreadState,
+  liveAgentThreadReducer,
+  liveAgentThreadView,
+} from "../../chat/live-agent-thread-state.js";
 import type { ChatCardNavigate } from "./chat-card-navigate.js";
 import { ChatThread } from "./chat-thread.js";
 import type { ChatThreadPeer } from "./chat-thread-header.js";
@@ -63,35 +57,8 @@ export type LiveAgentChatHandlers = {
   ) => Promise<{ deletedIds: string[] }>;
 };
 
-function messagesFromThread(
-  thread: ChatThreadWithMessages,
-  agentName: string,
-  thinkingActive: boolean,
-  label: string | null = null,
-): ChatUiMessage[] {
-  const mapped = thread.messages.map(chatThreadMessageToUi);
-  if (thinkingActive) {
-    return [...mapped, thinkingStatusMessage(agentName, { label })];
-  }
-  return mapped;
-}
-
-function stripThinkingMessages(
-  messages: readonly ChatUiMessage[],
-): ChatUiMessage[] {
-  return messages.filter((message) => !message.id.startsWith("thinking-"));
-}
-
-function withThinkingMessage(
-  messages: readonly ChatUiMessage[],
-  agentName: string,
-  thinkingActive: boolean,
-  label: string | null = null,
-): ChatUiMessage[] {
-  const base = stripThinkingMessages(messages);
-  if (!thinkingActive) return base;
-  return [...base, thinkingStatusMessage(agentName, { label })];
-}
+/** Safety-net refetch while the agent is thinking, in case SSE drops. */
+const LIVE_THREAD_THINKING_POLL_MS = 5_000;
 
 const FALLBACK_JUDITH: ChatThreadPeer = {
   id: "judith-fallback",
@@ -377,71 +344,36 @@ export function ChatUiDevPreview({
     !projectId && liveAgentChat
       ? (liveAgentChat.agentIdByContactId.get(threadAgent.id) ?? null)
       : null;
-  const [liveThreadId, setLiveThreadId] = useState<string | null>(null);
-  const [liveMessages, setLiveMessages] = useState<ChatUiMessage[] | null>(
+  const [live, dispatchLive] = useReducer(
+    liveAgentThreadReducer,
     null,
+    () => createLiveAgentThreadState(liveAgentId, threadAgent.name),
   );
-  const [thinkingState, setThinkingState] =
-    useState<ChatThinkingState>(CHAT_THINKING_OFF);
-  const pollGen = useRef(0);
-  const liveThreadIdRef = useRef<string | null>(null);
+  const liveRef = useRef(live);
   const liveAgentChatRef = useRef(liveAgentChat);
   const threadAgentNameRef = useRef(threadAgent.name);
-  const thinkingStateRef = useRef<ChatThinkingState>(CHAT_THINKING_OFF);
-  liveThreadIdRef.current = liveThreadId;
+  liveRef.current = live;
   liveAgentChatRef.current = liveAgentChat;
   threadAgentNameRef.current = threadAgent.name;
-  thinkingStateRef.current = thinkingState;
+  const liveThreadId = live.agentId === liveAgentId ? live.threadId : null;
 
-  const applyLiveThread = useCallback(
-    (thread: ChatThreadWithMessages, thinking: ChatThinkingState) => {
-      const now = Date.now();
-      const active = chatThinkingIsActive(thinking, now);
-      setThinkingState(thinking);
-      setLiveMessages(
-        messagesFromThread(
-          thread,
-          thread.agentName ?? threadAgentNameRef.current,
-          active,
-          thinking.label,
-        ),
-      );
-    },
+  // Every refetch (push reconcile, idle, poll, focus) shares one in-flight GET.
+  // Results are merged by id in the reducer, so a late response is harmless.
+  const refreshOpenLiveThread = useMemo(
+    () =>
+      createCoalescedRunner(async () => {
+        const threadId = liveRef.current.threadId;
+        const chat = liveAgentChatRef.current;
+        if (!threadId || !chat) return;
+        try {
+          const thread = await chat.getThread(threadId);
+          dispatchLive({ type: "snapshot", thread, nowMs: Date.now() });
+        } catch {
+          /* keep current messages */
+        }
+      }),
     [],
   );
-
-  const refreshOpenLiveThread = useCallback(async () => {
-    const threadId = liveThreadIdRef.current;
-    const chat = liveAgentChatRef.current;
-    if (!threadId || !chat) return;
-    // Capture generation so a slower in-flight poll/open cannot clobber a
-    // newer SSE message apply (thinking poll every 2.5s was winning the race).
-    const gen = pollGen.current;
-    try {
-      const thread = await chat.getThread(threadId);
-      if (
-        !shouldApplyOpenLiveThreadFetch({
-          startedGen: gen,
-          currentGen: pollGen.current,
-          openThreadId: liveThreadIdRef.current,
-          fetchedThreadId: thread.id,
-        })
-      ) {
-        return;
-      }
-      const now = Date.now();
-      applyLiveThread(
-        thread,
-        chatThinkingFromPendingReplyAt(
-          thread.pendingReplyAt,
-          now,
-          thinkingStateRef.current.label,
-        ),
-      );
-    } catch {
-      /* keep current messages */
-    }
-  }, [applyLiveThread]);
 
   useEffect(() => {
     if (!projectId || !activeProject) return;
@@ -455,59 +387,48 @@ export function ChatUiDevPreview({
   // Open / refresh the live agent thread when Sander (etc.) is selected.
   // Depend on liveAgentId only — liveAgentChat identity used to thrash this
   // effect and let a stale openThread overwrite a newer SSE refresh.
+  // The reducer ignores opens for an agent that is no longer selected, so no
+  // generation counter is needed here.
   useEffect(() => {
-    if (!liveAgentId || !liveAgentChatRef.current) {
-      setLiveThreadId(null);
-      setLiveMessages(null);
-      setThinkingState(CHAT_THINKING_OFF);
-      return;
-    }
-    let cancelled = false;
-    const gen = ++pollGen.current;
+    dispatchLive({
+      type: "reset",
+      agentId: liveAgentId,
+      agentName: threadAgent.name,
+    });
+  }, [liveAgentId, threadAgent.name]);
+
+  useEffect(() => {
     const chat = liveAgentChatRef.current;
+    if (!liveAgentId || !chat) return;
     const agentName = threadAgentNameRef.current;
     void (async () => {
       try {
         const thread = await chat.openThread(liveAgentId);
-        if (cancelled || pollGen.current !== gen) return;
-        const now = Date.now();
-        const nextThinking = chatThinkingFromPendingReplyAt(
-          thread.pendingReplyAt,
-          now,
-        );
-        setLiveThreadId(thread.id);
-        applyLiveThread(thread, nextThinking);
+        dispatchLive({
+          type: "opened",
+          agentId: liveAgentId,
+          thread,
+          nowMs: Date.now(),
+        });
       } catch {
-        if (cancelled || pollGen.current !== gen) return;
-        setLiveThreadId(null);
-        setLiveMessages([
-          webhookErrorStatusMessage(`Could not open chat with ${agentName}.`),
-        ]);
-        setThinkingState(CHAT_THINKING_OFF);
+        dispatchLive({
+          type: "openFailed",
+          agentId: liveAgentId,
+          error: `Could not open chat with ${agentName}.`,
+        });
       }
     })();
-    return () => {
-      cancelled = true;
-    };
-  }, [applyLiveThread, liveAgentId]);
+  }, [liveAgentId]);
 
   // Expire provisional / working timers without dropping real messages.
   useEffect(() => {
-    const remaining = chatThinkingRemainingMs(thinkingState, Date.now());
+    const remaining = chatThinkingRemainingMs(live.thinking, Date.now());
     if (remaining == null) return;
     const handle = window.setTimeout(() => {
-      const now = Date.now();
-      if (!chatThinkingIsActive(thinkingState, now)) {
-        setThinkingState(CHAT_THINKING_OFF);
-        setLiveMessages((prev) =>
-          prev
-            ? withThinkingMessage(prev, threadAgentNameRef.current, false)
-            : prev,
-        );
-      }
+      dispatchLive({ type: "thinkingExpired", nowMs: Date.now() });
     }, remaining + 25);
     return () => window.clearTimeout(handle);
-  }, [thinkingState]);
+  }, [live.thinking]);
 
   // Agent reply + status from cloud SSE (via desktop shell window events).
   useEffect(() => {
@@ -518,38 +439,22 @@ export function ChatUiDevPreview({
           message?: { id?: string; body?: string; createdAt?: string };
         }>
       ).detail;
-      if (
-        !shouldRefreshOpenChatThreadOnPush({
-          openThreadId: liveThreadIdRef.current,
-          eventThreadId: detail?.threadId,
-          kind: "message",
-        })
-      ) {
-        return;
-      }
+      const threadId = detail?.threadId?.trim() || "";
+      if (!threadId || threadId !== liveRef.current.threadId) return;
       const messageId = detail?.message?.id?.trim() || "";
-      const body = detail?.message?.body ?? "";
       const createdAt = detail?.message?.createdAt?.trim() || "";
-      if (import.meta.env.DEV) {
-        console.info("[shell-chat] apply message push", {
-          openThreadId: liveThreadIdRef.current,
-          eventThreadId: detail?.threadId,
-          messageId,
+      if (messageId && createdAt) {
+        dispatchLive({
+          type: "pushMessage",
+          threadId,
+          message: {
+            id: messageId,
+            body: detail?.message?.body ?? "",
+            createdAt,
+          },
         });
       }
-      // Invalidate any in-flight openThread so it cannot overwrite this reply.
-      pollGen.current += 1;
-      setThinkingState(CHAT_THINKING_OFF);
-      if (messageId && createdAt) {
-        setLiveMessages((prev) =>
-          applyAssistantShellChatPush(
-            prev,
-            { id: messageId, body, createdAt },
-            threadAgentNameRef.current,
-          ),
-        );
-      }
-      // Reconcile from cloud (__cloud_core__) in the background.
+      // SSE carries a truncated preview body — fetch the full message.
       void refreshOpenLiveThread();
     };
     const onStatus = (event: Event) => {
@@ -557,52 +462,20 @@ export function ChatUiDevPreview({
         threadId?: string;
         state?: "working" | "idle";
         label?: string | null;
+        at?: string | null;
       }>).detail;
       const state = detail?.state;
       if (state !== "working" && state !== "idle") return;
-      if (
-        !isOpenChatThreadEvent(liveThreadIdRef.current, detail?.threadId)
-      ) {
-        return;
-      }
-      if (import.meta.env.DEV) {
-        console.info("[shell-chat] status push", {
-          openThreadId: liveThreadIdRef.current,
-          state,
-          label: detail?.label ?? null,
-        });
-      }
-      if (
-        shouldRefreshOpenChatThreadOnPush({
-          openThreadId: liveThreadIdRef.current,
-          eventThreadId: detail?.threadId,
-          kind: "status",
-          status: state,
-        })
-      ) {
-        pollGen.current += 1;
-        setThinkingState(CHAT_THINKING_OFF);
-        void refreshOpenLiveThread();
-        return;
-      }
-      // working: show step label (or Thinking…) without refetching yet
-      const now = Date.now();
-      const next = chatThinkingAfterStatus(
-        "working",
-        now,
-        detail?.label ?? null,
-      );
-      setThinkingState(next);
-      setLiveMessages((prev) =>
-        prev
-          ? withThinkingMessage(
-              prev,
-              threadAgentNameRef.current,
-              chatThinkingIsActive(next, now),
-              next.label,
-            )
-          : prev,
-      );
+      const threadId = detail?.threadId?.trim() || "";
+      if (!threadId || threadId !== liveRef.current.threadId) return;
+      dispatchLive({
+        type: "pushStatus",
+        threadId,
+        state,
+        label: detail?.label ?? null,
+        at: detail?.at ?? null,
+        nowMs: Date.now(),
+      });
     };
     window.addEventListener(AGENT_SHELL_CHAT_MESSAGE_WINDOW_EVENT, onMessage);
     window.addEventListener(AGENT_SHELL_CHAT_STATUS_WINDOW_EVENT, onStatus);
@@ -616,20 +489,28 @@ export function ChatUiDevPreview({
   }, [refreshOpenLiveThread]);
 
   // Poll while thinking (provisional or working) so replies land without SSE.
+  const thinkingActive = live.thinking.mode !== "off";
   useEffect(() => {
-    if (thinkingState.mode === "off" || !liveThreadId || !liveAgentChat) {
-      return;
-    }
+    if (!thinkingActive || !liveThreadId) return;
     const handle = window.setInterval(() => {
       void refreshOpenLiveThread();
-    }, 2500);
+    }, LIVE_THREAD_THINKING_POLL_MS);
     return () => window.clearInterval(handle);
-  }, [
-    liveAgentChat,
-    liveThreadId,
-    refreshOpenLiveThread,
-    thinkingState.mode,
-  ]);
+  }, [liveThreadId, refreshOpenLiveThread, thinkingActive]);
+
+  // SSE can drop while the window is hidden / laptop asleep — catch up on focus.
+  useEffect(() => {
+    if (!liveThreadId) return;
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void refreshOpenLiveThread();
+    };
+    window.addEventListener("focus", onVisible);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      window.removeEventListener("focus", onVisible);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [liveThreadId, refreshOpenLiveThread]);
 
   const onSelectProject = useCallback(
     (nextProjectId: string) => {
@@ -677,42 +558,30 @@ export function ChatUiDevPreview({
           createdAt: now,
           parts: [{ type: "text", text }],
         };
-        setLiveMessages((prev) => [...(prev ?? []), optimistic]);
+        dispatchLive({ type: "sendStarted", message: optimistic });
         try {
+          // The POST returns the stored message, so no follow-up GET is needed.
           const result = await liveAgentChat.sendMessage(
             liveThreadId,
             text.trim(),
           );
-          const thread = await liveAgentChat.getThread(liveThreadId);
-          const clock = Date.now();
-          const nextThinking =
-            result.webhookError || !result.thinking
-              ? CHAT_THINKING_OFF
-              : chatThinkingAfterSend(clock);
-          setThinkingState(nextThinking);
-          let mapped = messagesFromThread(
-            thread,
-            thread.agentName ?? threadAgent.name,
-            chatThinkingIsActive(nextThinking, clock),
-            nextThinking.label,
-          );
-          if (result.webhookError) {
-            mapped = [
-              ...stripThinkingMessages(mapped),
-              webhookErrorStatusMessage(result.webhookError),
-            ];
-          }
-          setLiveMessages(mapped);
+          dispatchLive({
+            type: "sendSucceeded",
+            pendingId,
+            message: result.message,
+            thinking: result.thinking,
+            webhookError: result.webhookError ?? null,
+            nowMs: Date.now(),
+          });
         } catch (error) {
-          setLiveMessages((prev) => [
-            ...(prev ?? []).filter((message) => message.id !== pendingId),
-            webhookErrorStatusMessage(
+          dispatchLive({
+            type: "sendFailed",
+            pendingId,
+            error:
               error instanceof Error
                 ? error.message
                 : `Could not send to ${threadAgent.name}.`,
-            ),
-          ]);
-          setThinkingState(CHAT_THINKING_OFF);
+          });
         }
         return;
       }
@@ -757,32 +626,15 @@ export function ChatUiDevPreview({
 
       if (liveAgentId && liveAgentChat?.deleteMessages && liveThreadId) {
         const ids = new Set(messageIds);
-        const previous = liveMessages;
-        setLiveMessages((prev) =>
-          (prev ?? []).filter((message) => !ids.has(message.id)),
+        const restore = liveRef.current.messages.filter((message) =>
+          ids.has(message.id),
         );
+        dispatchLive({ type: "deleteStarted", ids: messageIds });
         try {
           await liveAgentChat.deleteMessages(liveThreadId, messageIds);
-          const thread = await liveAgentChat.getThread(liveThreadId);
-          // Keep locally removed ids out even if the server lag/filters miss one.
-          const clock = Date.now();
-          const nextThinking = chatThinkingFromPendingReplyAt(
-            thread.pendingReplyAt,
-            clock,
-            thinkingStateRef.current.label,
-          );
-          setThinkingState(nextThinking);
-          setLiveMessages(
-            messagesFromThread(
-              thread,
-              thread.agentName ?? threadAgent.name,
-              chatThinkingIsActive(nextThinking, clock),
-              nextThinking.label,
-            ).filter((message) => !ids.has(message.id)),
-          );
         } catch (error) {
           console.warn("[chat] delete messages failed; restoring", error);
-          setLiveMessages(previous);
+          dispatchLive({ type: "deleteFailed", restore });
           throw error;
         }
         return;
@@ -795,21 +647,16 @@ export function ChatUiDevPreview({
         [key]: (prev[key] ?? []).filter((message) => !ids.has(message.id)),
       }));
     },
-    [
-      liveAgentChat,
-      liveAgentId,
-      liveMessages,
-      liveThreadId,
-      projectId,
-      threadAgent.id,
-      threadAgent.name,
-    ],
+    [liveAgentChat, liveAgentId, liveThreadId, projectId, threadAgent.id],
   );
 
-  const messages =
-    liveAgentId && liveMessages != null
-      ? liveMessages
-      : (threads[threadKey] ?? []);
+  const liveView = useMemo(() => liveAgentThreadView(live), [live]);
+  // While a live agent thread loads, show nothing rather than demo messages.
+  const messages: readonly ChatUiMessage[] = liveAgentId
+    ? live.agentId === liveAgentId
+      ? liveView
+      : []
+    : (threads[threadKey] ?? []);
 
   if (needsWebhookSetup) {
     return (

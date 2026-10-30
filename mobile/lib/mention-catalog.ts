@@ -248,7 +248,14 @@ export function resolveMentionChip(
     return { label: token.displayId, deleted: true };
   }
   return {
-    label: token.kind === "document" ? token.relativePath : token.key,
+    label:
+      token.kind === "document"
+        ? token.relativePath
+        : "key" in token
+          ? token.key
+          : "displayId" in token
+            ? token.displayId
+            : token.raw,
     deleted: true,
   };
 }
