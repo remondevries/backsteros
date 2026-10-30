@@ -185,8 +185,8 @@ export function ChatUiPartView({ part }: { part: ChatUiMessagePart }): ReactNode
 
 export type ChatUiMessageBodyProps = {
   message: ChatUiMessage;
-  /** Soft-delete this message (owner). */
-  onDelete?: ((messageId: string) => void) | null;
+  /** Soft-delete this message (owner). Opens the shared delete modal from hover. */
+  onDelete?: ((messageId: string) => void | Promise<void>) | null;
   /** Multi-select delete mode. */
   selectMode?: boolean;
   selected?: boolean;
@@ -229,6 +229,10 @@ export function ChatUiMessageBody({
         : null;
   const plainText = chatMessagePlainText(message);
 
+  const toggleSelect = () => {
+    onToggleSelect?.(message.id);
+  };
+
   return (
     <div
       className={[
@@ -245,13 +249,26 @@ export function ChatUiMessageBody({
       data-message-id={message.id}
       data-role={message.role}
       data-status={message.status}
+      role={selectable ? "button" : undefined}
+      tabIndex={selectable ? 0 : undefined}
+      aria-pressed={selectable ? selected : undefined}
+      onClick={selectable ? toggleSelect : undefined}
+      onKeyDown={
+        selectable
+          ? (event) => {
+              if (event.key !== "Enter" && event.key !== " ") return;
+              event.preventDefault();
+              toggleSelect();
+            }
+          : undefined
+      }
     >
       {selectable ? (
         <div className="chat-ui-message__select">
           <PolishedCheckbox
             checked={selected}
             ariaLabel={`Select message from ${message.author?.name ?? message.role}`}
-            onCheckedChange={() => onToggleSelect?.(message.id)}
+            onCheckedChange={toggleSelect}
           />
         </div>
       ) : null}
@@ -266,12 +283,9 @@ export function ChatUiMessageBody({
             plainText={plainText}
             createdAt={message.createdAt}
             statusLabel={statusLabel}
+            ownMessage={!isAssistant}
             onDelete={
-              onDelete
-                ? () => {
-                    onDelete(message.id);
-                  }
-                : null
+              onDelete ? () => onDelete(message.id) : null
             }
           />
         ) : null}

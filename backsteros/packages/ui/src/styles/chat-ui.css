@@ -16,7 +16,8 @@
 }
 
 .chat-ui-thread__root {
-  --chat-ui-peer-header-inset: 6.5rem;
+  /* Clearance under the peer avatar strip before message text reads. */
+  --chat-ui-peer-header-inset: 10.5rem;
   position: relative;
   display: flex;
   flex-direction: column;
@@ -41,8 +42,9 @@
   flex-direction: column;
   width: 100%;
   overflow: hidden;
-  /* Extra top pad so active scale + glow ring aren’t clipped. */
-  padding: 18px 0 2.75rem;
+  /* Extra top pad so active scale + glow ring aren’t clipped;
+     taller bottom pad so messages don’t crowd the avatar strip. */
+  padding: 18px 0 4.75rem;
   pointer-events: none;
   background: linear-gradient(
     to bottom,
@@ -296,6 +298,7 @@
 /* Keep the first readable line below the solid peer chrome. */
 .chat-ui-thread__root.has-peer-header .chat-ui-thread__viewport {
   padding-top: var(--chat-ui-peer-header-inset);
+  scroll-padding-top: var(--chat-ui-peer-header-inset);
 }
 
 .chat-ui-thread__root.has-peer-header .chat-ui-thread__messages,
@@ -326,10 +329,10 @@
   display: flex;
   flex-direction: column;
   justify-content: flex-end;
-  gap: 10px;
+  gap: 14px;
   box-sizing: border-box;
   min-height: 100%;
-  padding: 16px var(--chat-ui-content-inline-pad) 12px;
+  padding: 12px var(--chat-ui-content-inline-pad) 12px;
   flex: 0 0 auto;
 }
 
@@ -337,11 +340,11 @@
 .chat-ui-thread__virtual-list {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 14px;
   flex: 1;
   min-height: 0;
   height: 100%;
-  padding: 16px var(--chat-ui-content-inline-pad) 12px;
+  padding: 12px var(--chat-ui-content-inline-pad) 12px;
 }
 
 .chat-ui-thread__empty {
@@ -389,15 +392,27 @@
   flex: 1;
 }
 
+.chat-ui-message.is-select-mode {
+  cursor: pointer;
+}
+
 .chat-ui-message__select {
   flex-shrink: 0;
   padding-top: 6px;
 }
 
-.chat-ui-message.is-selected .chat-ui-message__bubble,
-.chat-ui-message.is-selected .chat-ui-message__body {
-  outline: 1px solid color-mix(in oklab, #0a92ff 55%, transparent);
-  outline-offset: 2px;
+.chat-ui-message__select .md-task-checkbox--interactive {
+  border-radius: 999px;
+}
+
+.chat-ui-message__select .md-task-checkbox__box {
+  border-radius: 999px;
+}
+
+.chat-ui-message__select .md-task-checkbox[data-checked="true"] .md-task-checkbox__box {
+  border-color: #0a92ff;
+  background: #0a92ff;
+  color: #fff;
 }
 
 .chat-ui-message__hover-row {
@@ -601,6 +616,11 @@
   max-width: min(28rem, 85%);
 }
 
+/* Select mode: checkbox sits outside the bubble (right), not between bubble and thread. */
+.chat-ui-message.is-user.is-select-mode {
+  flex-direction: row-reverse;
+}
+
 .chat-ui-message.is-user .chat-ui-message__main {
   align-items: flex-end;
   flex: 0 1 auto;
@@ -611,7 +631,6 @@
 }
 
 .chat-ui-message.is-user .chat-ui-message__hover-row {
-  flex-direction: row-reverse;
   justify-content: flex-end;
 }
 

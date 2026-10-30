@@ -30,7 +30,11 @@ export type EntityActionsMenuSubItem = {
 export type EntityActionsMenuItem = {
   id: string;
   label: string;
-  onSelect: () => void;
+  /**
+   * Return `false` to keep the menu open (e.g. two-step delete confirm).
+   * Any other return closes the menu.
+   */
+  onSelect: () => void | false;
   danger?: boolean;
   disabled?: boolean;
   /** Optional leading 16px icon. */
@@ -50,6 +54,8 @@ export type EntityActionsMenuProps = {
   disabled?: boolean;
   className?: string;
   triggerClassName?: string;
+  /** Fires when the menu opens or closes. */
+  onOpenChange?: (open: boolean) => void;
   /** Optional leading content in the menu (unused by default). */
   children?: ReactNode;
 };
@@ -66,6 +72,7 @@ export function EntityActionsMenu({
   disabled = false,
   className,
   triggerClassName = "entity-header-actions-trigger",
+  onOpenChange,
 }: EntityActionsMenuProps) {
   const menuId = useId();
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -77,11 +84,24 @@ export function EntityActionsMenu({
     position: "fixed",
     visibility: "hidden",
   });
+  const onOpenChangeRef = useRef(onOpenChange);
+  onOpenChangeRef.current = onOpenChange;
+  const wasOpenRef = useRef(false);
+
+  const setOpen = useCallback((open: boolean) => {
+    setMenuOpen(open);
+    if (!open) setSubmenuId(null);
+  }, []);
 
   const closeMenu = useCallback(() => {
-    setMenuOpen(false);
-    setSubmenuId(null);
-  }, []);
+    setOpen(false);
+  }, [setOpen]);
+
+  useEffect(() => {
+    if (wasOpenRef.current === menuOpen) return;
+    wasOpenRef.current = menuOpen;
+    onOpenChangeRef.current?.(menuOpen);
+  }, [menuOpen]);
 
   const updatePanelPosition = useCallback(() => {
     const trigger = triggerRef.current;
@@ -222,8 +242,8 @@ export function EntityActionsMenu({
               aria-checked={Boolean(item.selected)}
               disabled={disabled || item.disabled}
               onClick={() => {
+                if (item.onSelect() === false) return;
                 closeMenu();
-                item.onSelect();
               }}
               className="entity-header-action-menu__item entity-header-action-menu__item--check"
             >
@@ -254,8 +274,8 @@ export function EntityActionsMenu({
                     setSubmenuId(item.id);
                     return;
                   }
+                  if (item.onSelect() === false) return;
                   closeMenu();
-                  item.onSelect();
                 }}
                 className={`entity-header-action-menu__item${
                   item.danger ? " entity-header-action-menu-item-danger" : ""
@@ -310,10 +330,7 @@ export function EntityActionsMenu({
         onClick={(event) => {
           event.stopPropagation();
           event.preventDefault();
-          setMenuOpen((open) => {
-            if (open) setSubmenuId(null);
-            return !open;
-          });
+          setOpen(!menuOpen);
         }}
         onMouseDown={(event) => event.stopPropagation()}
         className={triggerClassName}

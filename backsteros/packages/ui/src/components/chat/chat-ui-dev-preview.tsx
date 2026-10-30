@@ -532,31 +532,25 @@ export function ChatUiDevPreview({
 
       if (liveAgentId && liveAgentChat?.deleteMessages && liveThreadId) {
         const ids = new Set(messageIds);
+        const previous = liveMessages;
         setLiveMessages((prev) =>
           (prev ?? []).filter((message) => !ids.has(message.id)),
         );
         try {
           await liveAgentChat.deleteMessages(liveThreadId, messageIds);
           const thread = await liveAgentChat.getThread(liveThreadId);
+          // Keep locally removed ids out even if the server lag/filters miss one.
           setLiveMessages(
             messagesFromThread(
               thread,
               thread.agentName ?? threadAgent.name,
-            ),
+            ).filter((message) => !ids.has(message.id)),
           );
           setLiveThinking(Boolean(thread.pendingReplyAt));
-        } catch {
-          try {
-            const thread = await liveAgentChat.getThread(liveThreadId);
-            setLiveMessages(
-              messagesFromThread(
-                thread,
-                thread.agentName ?? threadAgent.name,
-              ),
-            );
-          } catch {
-            /* keep optimistic removal */
-          }
+        } catch (error) {
+          console.warn("[chat] delete messages failed; restoring", error);
+          setLiveMessages(previous);
+          throw error;
         }
         return;
       }
@@ -571,6 +565,7 @@ export function ChatUiDevPreview({
     [
       liveAgentChat,
       liveAgentId,
+      liveMessages,
       liveThreadId,
       projectId,
       threadAgent.id,

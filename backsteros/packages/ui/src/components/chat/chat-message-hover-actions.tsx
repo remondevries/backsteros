@@ -1,8 +1,15 @@
 "use client";
 
-import { useEffect, useRef, useState, type MouseEvent } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type MouseEvent,
+  type ReactNode,
+} from "react";
 
 import { EntityActionsMenu } from "../entity-actions/entity-actions-menu.js";
+import { useEntityHeaderActionsContextOptional } from "../entity-actions/entity-header-actions-context.js";
 
 function CopyIcon({ size = 12 }: { size?: number }) {
   return (
@@ -58,24 +65,32 @@ function formatFullTooltip(iso: string): string {
 export type ChatMessageHoverActionsProps = {
   plainText: string;
   createdAt?: string | null;
-  /** When set, show ⋯ → Delete message (with confirm). */
-  onDelete?: (() => void) | null;
+  /** When set, show ⋯ → Delete message (shared delete modal). */
+  onDelete?: (() => void | Promise<void>) | null;
   /** Status line shown instead of clock (Sending… / Streaming…). */
   statusLabel?: string | null;
+  /**
+   * Own messages: ⋯ on the far left, time on the far right.
+   * Agent messages: time → copy → ⋯ (⋯ last).
+   */
+  ownMessage?: boolean;
 };
 
 /**
- * Hover strip: copy + timestamp + optional delete menu.
- * Parent reveals this via `.chat-ui-message:hover` / `:focus-within`.
+ * Hover strip: timestamp + copy + optional delete menu.
+ * Parent reveals action icons via `.chat-ui-message:hover` / `:focus-within`.
  */
 export function ChatMessageHoverActions({
   plainText,
   createdAt = null,
   onDelete = null,
   statusLabel = null,
+  ownMessage = false,
 }: ChatMessageHoverActionsProps) {
   const [copied, setCopied] = useState(false);
   const copiedTimerRef = useRef<number | null>(null);
+  const openDeleteModal =
+    useEntityHeaderActionsContextOptional()?.openDeleteModal;
 
   useEffect(() => {
     return () => {
@@ -111,58 +126,94 @@ export function ChatMessageHoverActions({
   const iso = createdAt?.trim() || "";
   const showDelete = typeof onDelete === "function";
 
+  const timestamp: ReactNode = statusLabel ? (
+    <time className="chat-ui-message__timestamp is-status">{statusLabel}</time>
+  ) : iso ? (
+    <time
+      className="chat-ui-message__timestamp"
+      dateTime={iso}
+      title={formatFullTooltip(iso)}
+    >
+      {formatShortTime(iso)}
+    </time>
+  ) : null;
+
+  const moreMenu: ReactNode = showDelete ? (
+    <EntityActionsMenu
+      ariaLabel="Message actions"
+      triggerAriaLabel="Message actions"
+      triggerClassName="chat-ui-message__more-btn"
+      className="chat-ui-message__more"
+      items={[
+        {
+          id: "delete",
+          label: "Delete message",
+          danger: true,
+          onSelect: () => {
+            if (!openDeleteModal) {
+              void onDelete?.();
+              return;
+            }
+            openDeleteModal({
+              entityLabel: "this message",
+              confirmLabel: "Delete",
+              actionVerb: "Delete",
+              onDelete: async () => {
+                try {
+                  await onDelete?.();
+                  return { ok: true };
+                } catch (error) {
+                  return {
+                    ok: false,
+                    error:
+                      error instanceof Error
+                        ? error.message
+                        : "Could not delete message",
+                  };
+                }
+              },
+            });
+          },
+        },
+      ]}
+    />
+  ) : null;
+
+  const copyButton: ReactNode = (
+    <button
+      type="button"
+      className={[
+        "chat-ui-message__copy-btn",
+        copied ? "is-copied" : "",
+      ]
+        .filter(Boolean)
+        .join(" ")}
+      aria-label={copyLabel}
+      title={copyLabel}
+      onClick={copy}
+    >
+      {copied ? <CopiedIcon /> : <CopyIcon />}
+      {copied ? (
+        <span className="chat-ui-message__copy-label">Copied</span>
+      ) : null}
+    </button>
+  );
+
   return (
     <div className="chat-ui-message__hover-row">
-      {statusLabel ? (
-        <time className="chat-ui-message__timestamp is-status">{statusLabel}</time>
-      ) : iso ? (
-        <time
-          className="chat-ui-message__timestamp"
-          dateTime={iso}
-          title={formatFullTooltip(iso)}
-        >
-          {formatShortTime(iso)}
-        </time>
-      ) : null}
-      {showDelete ? (
-        <EntityActionsMenu
-          ariaLabel="Message actions"
-          triggerAriaLabel="Message actions"
-          triggerClassName="chat-ui-message__more-btn"
-          className="chat-ui-message__more"
-          items={[
-            {
-              id: "delete",
-              label: "Delete message",
-              danger: true,
-              onSelect: () => {
-                if (
-                  typeof window !== "undefined" &&
-                  !window.confirm("Delete this message?")
-                ) {
-                  return;
-                }
-                onDelete?.();
-              },
-            },
-          ]}
-        />
-      ) : null}
-      <button
-        type="button"
-        className={[
-          "chat-ui-message__copy-btn",
-          copied ? "is-copied" : "",
-        ]
-          .filter(Boolean)
-          .join(" ")}
-        aria-label={copyLabel}
-        title={copyLabel}
-        onClick={copy}
-      >
-        {copied ? <CopiedIcon /> : <CopyIcon />}
-        {copied ? <span className="chat-ui-message__copy-label">Copied</span> : null}
-      </button>
+      {ownMessage ? (
+        <>
+          {moreMenu}
+          {copyButton}
+          {timestamp}
+        </>
+      ) : (
+        <>
+          {timestamp}
+          {copyButton}
+          {moreMenu}
+        </>
+      )}
     </div>
   );
 }

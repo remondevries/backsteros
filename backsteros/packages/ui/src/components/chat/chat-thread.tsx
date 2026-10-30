@@ -69,6 +69,7 @@ import {
   isChatMessageSelectable,
   toggleChatMessageSelection,
 } from "../../chat/chat-select-mode.js";
+import { useEntityHeaderActionsContextOptional } from "../entity-actions/entity-header-actions-context.js";
 
 /** Window when the thread is long enough that DOM cost matters. */
 export const CHAT_THREAD_VIRTUALIZE_THRESHOLD = 48;
@@ -478,7 +479,7 @@ function ChatThreadComposer({
 
 type ChatMessagesRenderProps = {
   messages: readonly ChatUiMessage[];
-  onDelete?: ((messageId: string) => void) | null;
+  onDelete?: ((messageId: string) => void | Promise<void>) | null;
   selectMode?: boolean;
   selectedIds?: ReadonlySet<string>;
   onToggleSelect?: ((messageId: string) => void) | null;
@@ -580,6 +581,8 @@ export function ChatThread({
   const threadRootRef = useRef<HTMLDivElement | null>(null);
   const [selectMode, setSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
+  const openDeleteModal =
+    useEntityHeaderActionsContextOptional()?.openDeleteModal;
 
   const exitSelectMode = useCallback(() => {
     setSelectMode(false);
@@ -597,7 +600,7 @@ export function ChatThread({
 
   const deleteOne = useCallback(
     (messageId: string) => {
-      void onDeleteMessages?.([messageId]);
+      return Promise.resolve(onDeleteMessages?.([messageId]));
     },
     [onDeleteMessages],
   );
@@ -610,20 +613,44 @@ export function ChatThread({
       ),
     );
     if (ids.length === 0) return;
-    if (
-      typeof window !== "undefined" &&
-      !window.confirm(
-        ids.length === 1
-          ? "Delete this message?"
-          : `Delete ${ids.length} messages?`,
-      )
-    ) {
+
+    const runDelete = async () => {
+      await onDeleteMessages?.(ids);
+      exitSelectMode();
+    };
+
+    if (!openDeleteModal) {
+      void runDelete();
       return;
     }
-    void Promise.resolve(onDeleteMessages?.(ids)).finally(() => {
-      exitSelectMode();
+
+    openDeleteModal({
+      entityLabel:
+        ids.length === 1 ? "this message" : `${ids.length} messages`,
+      confirmLabel: "Delete",
+      actionVerb: "Delete",
+      onDelete: async () => {
+        try {
+          await runDelete();
+          return { ok: true };
+        } catch (error) {
+          return {
+            ok: false,
+            error:
+              error instanceof Error
+                ? error.message
+                : "Could not delete messages",
+          };
+        }
+      },
     });
-  }, [exitSelectMode, messages, onDeleteMessages, selectedIds]);
+  }, [
+    exitSelectMode,
+    messages,
+    onDeleteMessages,
+    openDeleteModal,
+    selectedIds,
+  ]);
 
   useEffect(() => {
     if (!selectMode) return;
