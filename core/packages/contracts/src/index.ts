@@ -17,6 +17,7 @@ export * from "./inbox-meetings.js";
 export * from "./tracked-time.js";
 export * from "./activity-feed.js";
 export * from "./penpot-design-link.js";
+export * from "./chat-ui.js";
 export * from "./client-logic/task-due-date.js";
 export * from "./client-logic/task-waiting.js";
 export * from "./client-logic/task-involves-contact.js";

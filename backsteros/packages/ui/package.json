@@ -59,6 +59,7 @@
     }
   },
   "dependencies": {
+    "@assistant-ui/react": "^0.15.32",
     "@backsteros/contracts": "workspace:*",
     "@codemirror/lang-css": "^6.3.1",
     "@codemirror/lang-html": "^6.4.9",

@@ -5443,3 +5443,38 @@ export {
   isCodebaseDetailHotkeysActive,
   setCodebaseDetailHotkeysActive,
 } from "./codebase/codebase-detail-hotkeys.js";
+
+export {
+  chatMessageToChatUiMessage,
+  chatMessagesToChatUiMessages,
+} from "./chat/messages-chat-ui-adapter.js";
+
+export { chatUiMessageToThreadMessageLike } from "./chat/chat-ui-to-thread-message.js";
+
+export { buildChatUiDemoMessages } from "./chat/chat-ui-demo-fixture.js";
+
+export {
+  ChatThread,
+  CHAT_THREAD_VIRTUALIZE_THRESHOLD,
+  type ChatThreadProps,
+} from "./components/chat/chat-thread.js";
+
+export {
+  ChatUiDevPreview,
+} from "./components/chat/chat-ui-dev-preview.js";
+
+export {
+  ChatCardRegistryProvider,
+  ChatTaskCard,
+  DEFAULT_CHAT_CARD_REGISTRY,
+  mergeChatCardRegistry,
+  useChatCardRegistry,
+  type ChatCardRegistry,
+  type ChatCardRenderer,
+  type ChatCardRendererProps,
+} from "./components/chat/chat-card-registry.js";
+
+export {
+  ChatUiMessageBody,
+  ChatUiPartView,
+} from "./components/chat/chat-message-parts.js";

@@ -21,6 +21,7 @@ import {
   CalendarPage,
   CalendarScopedMeetingDetailPage,
   CalendarScopedTaskDetailPage,
+  ChatUiDevPage,
   CommunicationPage,
   ContactScopedLetterPage,
   ContactScopedMeetingDetailPage,
@@ -769,6 +770,17 @@ const communicationDetailRoute = createRoute({
   ),
 });
 
+/** Dev-only ChatThread foundation preview (guarded in the page). */
+const chatUiDevRoute = createRoute({
+  getParentRoute: () => shellRoute,
+  path: "dev/chat-ui",
+  component: () => (
+    <LazyRoute>
+      <ChatUiDevPage />
+    </LazyRoute>
+  ),
+});
+
 const contactsRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: "contacts",
@@ -949,6 +961,7 @@ export const routeTree = rootRoute.addChildren([
     socialDetailRoute,
     communicationRoute,
     communicationDetailRoute,
+    chatUiDevRoute,
     contactsRoute,
     contactTaskDetailRoute,
     contactLetterDetailRoute,

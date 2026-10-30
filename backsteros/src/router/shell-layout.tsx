@@ -39,6 +39,7 @@ import {
 } from "../lib/shell-route-keep-alive";
 import {
   calendarPage,
+  chatUiDevPage,
   communicationPage,
   contactsPage,
   catalogPage,
@@ -87,6 +88,7 @@ const SettingsPage = settingsPage.Page;
 const SocialPage = socialPage.Page;
 const CalendarPage = calendarPage.Page;
 const CommunicationPage = communicationPage.Page;
+const ChatUiDevPage = chatUiDevPage.Page;
 const MeetingDetailPage = meetingDetailPage.Page;
 const TaskDetailPage = taskDetailPage.Page;
 const InboxPage = inboxPage.Page;
@@ -572,6 +574,7 @@ export function OrgContactScopedMeetingDetailPage() {
 
 export {
   CalendarPage,
+  ChatUiDevPage,
   CommunicationPage,
   ContactsPage,
   CatalogPage,

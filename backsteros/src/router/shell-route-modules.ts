@@ -92,6 +92,10 @@ export const communicationPage = createSharedLazyPage(
   () => import("../screens/communication-page"),
   "CommunicationPage",
 );
+export const chatUiDevPage = createSharedLazyPage(
+  () => import("../screens/chat-ui-dev-page"),
+  "ChatUiDevPage",
+);
 export const organizationsPage = createSharedLazyPage(
   () => import("../screens/organizations-page"),
   "OrganizationsPage",
