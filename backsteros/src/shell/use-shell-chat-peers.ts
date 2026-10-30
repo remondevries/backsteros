@@ -85,6 +85,8 @@ export function useShellChatPeers(): readonly ChatThreadPeer[] {
     const ordered: ContactListItem[] = [];
     const seen = new Set<string>();
 
+    // Judith first (general default). Niels is included when he exists as a
+    // real contact/agent — the chat UI only shows him while in a project room.
     for (const preferred of [judith, niels]) {
       if (!preferred || seen.has(preferred.id)) continue;
       ordered.push(preferred);
@@ -112,28 +114,14 @@ export function useShellChatPeers(): readonly ChatThreadPeer[] {
       contactToPeer(contact, contactAvatarSrc),
     );
     if (peers.length === 0) {
-      return [
-        { id: "judith-fallback", kind: "contact", name: "Judith" },
-        { id: "niels-fallback", kind: "contact", name: "Niels" },
-      ];
+      return [{ id: "judith-fallback", kind: "contact", name: "Judith" }];
     }
-    const names = new Set(
-      peers.map((peer) => peer.name.trim().toLowerCase().split(/\s+/)[0] ?? ""),
-    );
-    if (!names.has("judith")) {
+    const hasJudith = peers.some((peer) => {
+      const first = peer.name.trim().toLowerCase().split(/\s+/)[0] ?? "";
+      return first === "judith";
+    });
+    if (!hasJudith) {
       peers.unshift({ id: "judith-fallback", kind: "contact", name: "Judith" });
-    }
-    if (!names.has("niels")) {
-      // Keep Judith first when present; insert Niels after her.
-      const judithIndex = peers.findIndex((peer) =>
-        peer.name.trim().toLowerCase().startsWith("judith"),
-      );
-      const insertAt = judithIndex >= 0 ? judithIndex + 1 : 0;
-      peers.splice(insertAt, 0, {
-        id: "niels-fallback",
-        kind: "contact",
-        name: "Niels",
-      });
     }
     return peers;
   }, [peerContacts, contactAvatarSrc]);

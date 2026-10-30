@@ -22,35 +22,20 @@ const projects: ChatProjectOption[] = [
 ];
 
 describe("buildChatSlashMenu", () => {
-  it("pins /exit above agents and projects when in a project room", () => {
+  it("lists agents then projects (recent first)", () => {
     const sections = buildChatSlashMenu({
       text: "/",
       peers,
       projects,
       recentProjectIds: ["p3"],
-      showExit: true,
-    });
-    assert.deepEqual(
-      sections.map((section) => section.id),
-      ["commands", "agents", "projects"],
-    );
-    assert.equal(sections[0]?.items[0]?.kind, "exit");
-    assert.deepEqual(
-      sections[2]?.items.map((item) => item.id),
-      ["p3", "p1", "p2"],
-    );
-  });
-
-  it("omits /exit on bare / outside a project room", () => {
-    const sections = buildChatSlashMenu({
-      text: "/",
-      peers,
-      projects,
-      showExit: false,
     });
     assert.deepEqual(
       sections.map((section) => section.id),
       ["agents", "projects"],
+    );
+    assert.deepEqual(
+      sections[1]?.items.map((item) => item.id),
+      ["p3", "p1", "p2"],
     );
   });
 
@@ -63,26 +48,15 @@ describe("buildChatSlashMenu", () => {
       ["p1"],
     );
   });
-
-  it("hides /exit when showExit is false", () => {
-    const sections = buildChatSlashMenu({
-      text: "/",
-      peers,
-      projects,
-      showExit: false,
-    });
-    assert.equal(
-      sections.some((section) => section.id === "commands"),
-      false,
-    );
-  });
 });
 
 describe("resolveChatSlashCommand", () => {
-  it("reserves /exit even when a project key is EXIT", () => {
-    assert.deepEqual(resolveChatSlashCommand({ text: "/exit", peers, projects }), {
-      type: "exit",
-    });
+  it("resolves a project whose key is EXIT (no reserved /exit)", () => {
+    const result = resolveChatSlashCommand({ text: "/exit", peers, projects });
+    assert.equal(result?.type, "project");
+    if (result?.type === "project") {
+      assert.equal(result.project.id, "p2");
+    }
   });
 
   it("resolves agents and projects", () => {

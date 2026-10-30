@@ -42,36 +42,48 @@ type ScrollAnimation = {
   frame: number;
 };
 
+/** Minimum slide so adjacent ⌥J/K steps still read as motion. */
+const REEL_MIN_NUDGE_PX = 40;
+const REEL_MIN_DURATION_MS = 560;
+const REEL_MAX_DURATION_MS = 980;
+
 function easeOutCubic(t: number): number {
   return 1 - (1 - t) ** 3;
 }
 
 /**
  * Always-animated horizontal scroll (ignores prefers-reduced-motion / CSS
- * scroll-behavior). Duration scales with distance for a reel / slot feel.
+ * scroll-behavior). Duration scales with distance for a reel / slot feel, with
+ * a floor so nearby peers (⌥J/K) never snap.
  */
 function animateScrollLeft(
   element: HTMLElement,
   to: number,
   onUpdate: () => void,
   animation: ScrollAnimation,
+  nudgeDirection: 1 | -1 = 1,
 ): void {
   const from = element.scrollLeft;
-  const delta = to - from;
-  if (Math.abs(delta) < 0.5) {
-    element.scrollLeft = to;
-    onUpdate();
-    return;
+  let startLeft = from;
+  let delta = to - from;
+
+  if (Math.abs(delta) < REEL_MIN_NUDGE_PX) {
+    const dir = Math.abs(delta) < 0.5 ? nudgeDirection : (Math.sign(delta) as 1 | -1);
+    startLeft = to - dir * REEL_MIN_NUDGE_PX;
+    element.scrollLeft = startLeft;
+    delta = to - startLeft;
   }
 
-  const distance = Math.abs(delta);
-  const duration = Math.min(920, Math.max(380, distance * 0.7));
+  const duration = Math.min(
+    REEL_MAX_DURATION_MS,
+    Math.max(REEL_MIN_DURATION_MS, Math.abs(delta) * 0.9),
+  );
   const start = performance.now();
 
   const tick = (now: number) => {
     if (animation.cancelled) return;
     const t = Math.min(1, (now - start) / duration);
-    element.scrollLeft = from + delta * easeOutCubic(t);
+    element.scrollLeft = startLeft + delta * easeOutCubic(t);
     onUpdate();
     if (t < 1) {
       animation.frame = requestAnimationFrame(tick);
@@ -108,37 +120,34 @@ function ChatThreadPeerAvatar({ peer }: { peer: ChatThreadPeer }) {
 export type ChatThreadActiveProject = {
   id: string;
   name: string;
+  icon?: string | null;
+  type?: string | null;
 };
 
 export type ChatThreadHeaderProps = {
   peers: readonly ChatThreadPeer[];
   activePeerId: string | null;
   onSelectPeer?: (peerId: string) => void;
-  /**
-   * When set, fade in under the *active* agent name only (project room badge).
-   * Hover reveals a leave control.
-   */
-  activeProject?: ChatThreadActiveProject | null;
-  onLeaveProject?: () => void;
 };
 
 /**
  * iMessage-style peer chrome — centered avatar(s) with names underneath.
  * Switching peers animates the strip like a slot reel into center and lights
- * up the focused agent.
+ * up the focused agent. Switch projects or agents anytime from the strip.
  */
 export function ChatThreadHeader({
   peers,
   activePeerId,
   onSelectPeer,
-  activeProject = null,
-  onLeaveProject,
 }: ChatThreadHeaderProps) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const trackRef = useRef<HTMLDivElement | null>(null);
   const peerRefs = useRef(new Map<string, HTMLElement>());
   const animationRef = useRef<ScrollAnimation | null>(null);
   const didInitialCenterRef = useRef(false);
+  const lastScrollTargetRef = useRef(0);
+  const activePeerIdRef = useRef(activePeerId);
+  activePeerIdRef.current = activePeerId;
   const [fadeLeft, setFadeLeft] = useState(false);
   const [fadeRight, setFadeRight] = useState(false);
 
@@ -192,60 +201,79 @@ export function ChatThreadHeader({
     track.style.paddingInline = `${edgePad}px`;
   }, []);
 
-  const targetScrollLeftForActive = useCallback((): number | null => {
-    const scroller = scrollRef.current;
-    const activeEl = activePeerId
-      ? peerRefs.current.get(activePeerId)
-      : null;
-    if (!scroller || !activeEl) return null;
-    return Math.max(
-      0,
-      activeEl.offsetLeft - (scroller.clientWidth - activeEl.offsetWidth) / 2,
-    );
-  }, [activePeerId]);
+  const targetScrollLeftForPeer = useCallback(
+    (peerId: string | null): number | null => {
+      const scroller = scrollRef.current;
+      const activeEl = peerId ? peerRefs.current.get(peerId) : null;
+      if (!scroller || !activeEl) return null;
+      return Math.max(
+        0,
+        activeEl.offsetLeft - (scroller.clientWidth - activeEl.offsetWidth) / 2,
+      );
+    },
+    [],
+  );
 
   const centerActivePeer = useCallback(
-    (mode: "instant" | "reel") => {
+    (mode: "instant" | "reel", peerId: string | null = activePeerIdRef.current) => {
       const scroller = scrollRef.current;
       if (!scroller) return;
       ensureEdgePadding();
-      const left = targetScrollLeftForActive();
+      const left = targetScrollLeftForPeer(peerId);
       if (left == null) return;
 
       cancelAnimation();
       if (mode === "instant") {
         scroller.scrollLeft = left;
+        lastScrollTargetRef.current = left;
         updateSpotlight();
         return;
       }
 
+      const nudgeDirection: 1 | -1 =
+        left >= lastScrollTargetRef.current ? 1 : -1;
+      lastScrollTargetRef.current = left;
       const animation: ScrollAnimation = { cancelled: false, frame: 0 };
       animationRef.current = animation;
-      animateScrollLeft(scroller, left, updateSpotlight, animation);
+      animateScrollLeft(
+        scroller,
+        left,
+        updateSpotlight,
+        animation,
+        nudgeDirection,
+      );
     },
-    [
-      cancelAnimation,
-      ensureEdgePadding,
-      targetScrollLeftForActive,
-      updateSpotlight,
-    ],
+    [cancelAnimation, ensureEdgePadding, targetScrollLeftForPeer, updateSpotlight],
   );
 
+  const centerActivePeerRef = useRef(centerActivePeer);
+  centerActivePeerRef.current = centerActivePeer;
+  const updateSpotlightRef = useRef(updateSpotlight);
+  updateSpotlightRef.current = updateSpotlight;
+
+  // Mount / peer-list changes: listen once; keep handlers via refs so peer
+  // switches do not rebind ResizeObserver (which was snapping the reel).
   useLayoutEffect(() => {
     const scroller = scrollRef.current;
     if (!scroller) return;
 
     if (!didInitialCenterRef.current) {
-      centerActivePeer("instant");
+      centerActivePeerRef.current("instant");
       didInitialCenterRef.current = true;
+    } else {
+      // Peer list changed (e.g. entered a project room) — keep active centered.
+      centerActivePeerRef.current("instant");
     }
 
-    const onScroll = () => updateSpotlight();
+    const onScroll = () => updateSpotlightRef.current();
     scroller.addEventListener("scroll", onScroll, { passive: true });
 
     const resizeObserver =
       typeof ResizeObserver !== "undefined"
-        ? new ResizeObserver(() => centerActivePeer("instant"))
+        ? new ResizeObserver(() => {
+            if (animationRef.current) return;
+            centerActivePeerRef.current("instant");
+          })
         : null;
     resizeObserver?.observe(scroller);
     if (trackRef.current) resizeObserver?.observe(trackRef.current);
@@ -255,11 +283,11 @@ export function ChatThreadHeader({
       resizeObserver?.disconnect();
       cancelAnimation();
     };
-  }, [cancelAnimation, centerActivePeer, peers, updateSpotlight]);
+  }, [cancelAnimation, peers]);
 
   useLayoutEffect(() => {
     if (!didInitialCenterRef.current) return;
-    centerActivePeer("reel");
+    centerActivePeer("reel", activePeerId);
   }, [activePeerId, centerActivePeer]);
 
   if (peers.length === 0) return null;
@@ -285,39 +313,13 @@ export function ChatThreadHeader({
             const active = peer.id === activePeerId;
             const selectable = Boolean(onSelectPeer) && peers.length > 1;
             const subtitle = peer.subtitle?.trim() || null;
-            const showProjectBadge =
-              active && Boolean(activeProject?.name?.trim());
             const className = [
               "chat-ui-thread__peer",
               active ? "is-active" : "is-inactive",
               selectable ? "is-selectable" : "",
-              showProjectBadge ? "has-project-badge" : "",
             ]
               .filter(Boolean)
               .join(" ");
-
-            const projectBadge = showProjectBadge && activeProject ? (
-              <span className="chat-ui-thread__project-badge">
-                <span className="chat-ui-thread__project-badge-label">
-                  {activeProject.name}
-                </span>
-                {onLeaveProject ? (
-                  <button
-                    type="button"
-                    className="chat-ui-thread__project-badge-leave"
-                    aria-label={`Leave ${activeProject.name}`}
-                    title="Leave project"
-                    onClick={(event) => {
-                      event.preventDefault();
-                      event.stopPropagation();
-                      onLeaveProject();
-                    }}
-                  >
-                    ×
-                  </button>
-                ) : null}
-              </span>
-            ) : null;
 
             if (selectable) {
               return (
@@ -332,8 +334,7 @@ export function ChatThreadHeader({
                 >
                   <ChatThreadPeerAvatar peer={peer} />
                   <span className="chat-ui-thread__peer-name">{peer.name}</span>
-                  {projectBadge}
-                  {!showProjectBadge && subtitle ? (
+                  {subtitle ? (
                     <span className="chat-ui-thread__peer-subtitle">
                       {subtitle}
                     </span>
@@ -350,8 +351,7 @@ export function ChatThreadHeader({
               >
                 <ChatThreadPeerAvatar peer={peer} />
                 <div className="chat-ui-thread__peer-name">{peer.name}</div>
-                {projectBadge}
-                {!showProjectBadge && subtitle ? (
+                {subtitle ? (
                   <div className="chat-ui-thread__peer-subtitle">{subtitle}</div>
                 ) : null}
               </div>

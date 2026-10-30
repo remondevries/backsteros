@@ -34,6 +34,11 @@ import {
   type PendingChatImage,
 } from "../../chat/chat-composer-images.js";
 import type { ChatProjectOption } from "../../chat/chat-project-option.js";
+import {
+  isShellChatPanelCollapsed,
+  resolveAdjacentChatPeerId,
+  resolveChatPeerNavShortcut,
+} from "../../chat/chat-peer-nav-shortcut.js";
 import { parsePeerSlashCommand } from "../../chat/chat-peer-slash-command.js";
 import {
   buildChatSlashMenu,
@@ -54,11 +59,11 @@ import {
 import { ChatUiMessageBody } from "./chat-message-parts.js";
 import {
   ChatThreadHeader,
-  type ChatThreadActiveProject,
   type ChatThreadPeer,
 } from "./chat-thread-header.js";
 import { ProjectOcticon } from "../projects/project-octicon.js";
 import { AssigneeListMark } from "../tasks/assignee-list-mark.js";
+import { isBlockingModalOpen } from "../../shortcuts/shortcut-guards.js";
 
 /** Window when the thread is long enough that DOM cost matters. */
 export const CHAT_THREAD_VIRTUALIZE_THRESHOLD = 48;
@@ -106,12 +111,8 @@ export type ChatThreadProps = {
   projects?: readonly ChatProjectOption[];
   /** MRU project ids — recent first in the Projects group. */
   recentProjectIds?: readonly string[];
-  /** Active project room (badge under the focused agent). */
-  activeProject?: ChatThreadActiveProject | null;
   /** Enter a project room from the `/` menu. */
   onSelectProject?: (projectId: string) => void;
-  /** Leave the project room (`/exit` or badge ×). */
-  onLeaveProject?: () => void;
   /** Composer placeholder. */
   placeholder?: string;
   /** Disable composer (e.g. while detail loading). */
@@ -140,13 +141,6 @@ function readAppendText(message: AppendMessage): string {
 }
 
 function ChatSlashOptionIcon({ item }: { item: ChatSlashMenuItem }) {
-  if (item.kind === "exit") {
-    return (
-      <span className="chat-ui-composer__slash-option-icon is-command" aria-hidden="true">
-        ⌘
-      </span>
-    );
-  }
   if (item.kind === "project") {
     return (
       <span className="chat-ui-composer__slash-option-icon is-project" aria-hidden="true">
@@ -185,9 +179,7 @@ function ChatThreadComposer({
   onSelectPeer,
   projects,
   recentProjectIds,
-  inProject,
   onSelectProject,
-  onLeaveProject,
   pendingImages,
   onPendingImagesChange,
   onSendAttachmentsOnly,
@@ -198,9 +190,7 @@ function ChatThreadComposer({
   onSelectPeer?: (peerId: string) => void;
   projects: readonly ChatProjectOption[];
   recentProjectIds: readonly string[];
-  inProject: boolean;
   onSelectProject?: (projectId: string) => void;
-  onLeaveProject?: () => void;
   pendingImages: readonly PendingChatImage[];
   onPendingImagesChange: (next: PendingChatImage[]) => void;
   /** Flush image-only sends (assistant-ui skips empty text). */
@@ -217,13 +207,8 @@ function ChatThreadComposer({
       peers,
       projects,
       recentProjectIds,
-      // Pin `/exit` while in a project; also surface it when typing an exit prefix
-      // so the reserved command never loses to a project name.
-      showExit:
-        inProject ||
-        (slashQuery.length > 0 && "exit".startsWith(slashQuery)),
     });
-  }, [inProject, peers, projects, recentProjectIds, slashQuery, value]);
+  }, [peers, projects, recentProjectIds, slashQuery, value]);
   const slashItems = useMemo(
     () => flattenChatSlashMenu(slashSections),
     [slashSections],
@@ -239,17 +224,13 @@ function ChatThreadComposer({
   const applySlashItem = useCallback(
     (item: ChatSlashMenuItem) => {
       setText("");
-      if (item.kind === "exit") {
-        onLeaveProject?.();
-        return;
-      }
       if (item.kind === "project") {
         onSelectProject?.(item.project.id);
         return;
       }
       onSelectPeer?.(item.peer.id);
     },
-    [onLeaveProject, onSelectPeer, onSelectProject, setText],
+    [onSelectPeer, onSelectProject, setText],
   );
 
   const addImagesFromDataTransfer = useCallback(
@@ -330,15 +311,6 @@ function ChatThreadComposer({
         projects,
         recentProjectIds,
       });
-      if (resolved?.type === "exit") {
-        applySlashItem({
-          kind: "exit",
-          id: "exit",
-          label: "Exit project",
-          command: "exit",
-        });
-        return;
-      }
       if (resolved?.type === "peer") {
         applySlashItem({
           kind: "peer",
@@ -555,10 +527,8 @@ export function ChatThread({
   peer = null,
   projects = [],
   recentProjectIds = [],
-  activeProject = null,
   onSelectProject,
-  onLeaveProject,
-  placeholder = "Write a message…",
+  placeholder = "Message…",
   composerDisabled = false,
   emptyState = null,
   className,
@@ -567,6 +537,7 @@ export function ChatThread({
   const [pendingImages, setPendingImages] = useState<PendingChatImage[]>([]);
   const pendingImagesRef = useRef(pendingImages);
   pendingImagesRef.current = pendingImages;
+  const threadRootRef = useRef<HTMLDivElement | null>(null);
 
   const registry = useMemo(
     () => mergeChatCardRegistry(cardRegistry),
@@ -585,6 +556,36 @@ export function ChatThread({
       revokePendingChatImages(pendingImagesRef.current);
     };
   }, []);
+
+  // ⌥J / ⌥K — previous / next peer while focus is in this chat thread.
+  useEffect(() => {
+    if (!onPeerChange || resolvedPeers.length < 2) return;
+
+    function handleKeyDown(event: globalThis.KeyboardEvent) {
+      const direction = resolveChatPeerNavShortcut(event);
+      if (!direction) return;
+      if (isBlockingModalOpen()) return;
+      if (isShellChatPanelCollapsed()) return;
+
+      const target = event.target;
+      const root = threadRootRef.current;
+      if (!(target instanceof Node) || !root?.contains(target)) return;
+
+      const nextId = resolveAdjacentChatPeerId(
+        resolvedPeers,
+        resolvedActivePeerId,
+        direction,
+      );
+      if (!nextId || nextId === resolvedActivePeerId) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+      onPeerChange?.(nextId);
+    }
+
+    window.addEventListener("keydown", handleKeyDown, true);
+    return () => window.removeEventListener("keydown", handleKeyDown, true);
+  }, [onPeerChange, resolvedActivePeerId, resolvedPeers]);
 
   const clearPendingImages = useCallback(() => {
     revokePendingChatImages(pendingImagesRef.current);
@@ -619,7 +620,7 @@ export function ChatThread({
       const hasAttachments = pendingImagesRef.current.length > 0;
       if (!text && !hasAttachments) return;
 
-      // `/exit`, `/jaap`, `/bsh` — room / peer / project commands, not messages.
+      // `/jaap`, `/bsh` — peer / project switch commands, not messages.
       if (text && !hasAttachments) {
         const resolved = resolveChatSlashCommand({
           text,
@@ -627,10 +628,6 @@ export function ChatThread({
           projects,
           recentProjectIds,
         });
-        if (resolved?.type === "exit") {
-          onLeaveProject?.();
-          return;
-        }
         if (resolved?.type === "peer") {
           onPeerChange?.(resolved.peer.id);
           return;
@@ -646,7 +643,6 @@ export function ChatThread({
     [
       composerDisabled,
       flushSend,
-      onLeaveProject,
       onPeerChange,
       onSelectProject,
       projects,
@@ -682,6 +678,7 @@ export function ChatThread({
       <ChatCardRegistryProvider registry={registry}>
         <AssistantRuntimeProvider runtime={runtime}>
           <div
+            ref={threadRootRef}
             className={["chat-ui-thread", className].filter(Boolean).join(" ")}
           >
             <ThreadPrimitive.Root
@@ -696,8 +693,6 @@ export function ChatThread({
                 peers={resolvedPeers}
                 activePeerId={resolvedActivePeerId}
                 onSelectPeer={onPeerChange}
-                activeProject={activeProject}
-                onLeaveProject={onLeaveProject}
               />
               <ThreadPrimitive.Viewport
                 className={[
@@ -761,9 +756,7 @@ export function ChatThread({
                     onSelectPeer={onPeerChange}
                     projects={projects}
                     recentProjectIds={recentProjectIds}
-                    inProject={Boolean(activeProject)}
                     onSelectProject={onSelectProject}
-                    onLeaveProject={onLeaveProject}
                     pendingImages={pendingImages}
                     onPendingImagesChange={setPendingImages}
                     onSendAttachmentsOnly={() => {

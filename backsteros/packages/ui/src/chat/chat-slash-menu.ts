@@ -1,6 +1,5 @@
 import type { ChatThreadPeer } from "../components/chat/chat-thread-header.js";
 import {
-  CHAT_EXIT_COMMAND,
   matchProjectsBySlashQuery,
   projectCommandSlug,
   type ChatProjectOption,
@@ -12,7 +11,6 @@ import {
 } from "./chat-peer-slash-command.js";
 
 export type ChatSlashMenuItem =
-  | { kind: "exit"; id: "exit"; label: string; command: string }
   | {
       kind: "peer";
       id: string;
@@ -29,19 +27,14 @@ export type ChatSlashMenuItem =
     };
 
 export type ChatSlashMenuSection = {
-  id: "commands" | "agents" | "projects";
+  id: "agents" | "projects";
   label: string;
   items: ChatSlashMenuItem[];
 };
 
 export type ChatSlashResolveResult =
-  | { type: "exit" }
   | { type: "peer"; peer: ChatThreadPeer }
   | { type: "project"; project: ChatProjectOption };
-
-function exitMatchesQuery(query: string): boolean {
-  return CHAT_EXIT_COMMAND.startsWith(query);
-}
 
 function projectCommandLabel(project: ChatProjectOption): string {
   const slug = projectCommandSlug(project);
@@ -53,22 +46,21 @@ function peerCommandLabel(peer: ChatThreadPeer): string {
 }
 
 /**
- * Build the composer `/` menu: reserved `/exit` (when it matches), then
- * Agents, then Projects (recent first, then filtered).
+ * Build the composer `/` menu: Agents, then Projects (recent first, then filtered).
+ * Switch rooms by picking a peer or project — no leave/exit command.
  */
 export function buildChatSlashMenu(input: {
   text: string;
   peers: readonly ChatThreadPeer[];
   projects: readonly ChatProjectOption[];
   recentProjectIds?: readonly string[];
-  /** When false, `/exit` is omitted from the menu (command still reserved). */
-  showExit?: boolean;
 }): ChatSlashMenuSection[] {
   const query = parsePeerSlashCommand(input.text);
   if (query == null) return [];
 
-  const showExit = input.showExit !== false && exitMatchesQuery(query);
-  const peers = matchPeersBySlashQuery(input.peers, query).slice(0, 8);
+  // Header strip may include project rooms; Agents group is contacts only.
+  const agentPeers = input.peers.filter((peer) => peer.kind === "contact");
+  const peers = matchPeersBySlashQuery(agentPeers, query).slice(0, 8);
   const projects = matchProjectsBySlashQuery(
     input.projects,
     query,
@@ -76,20 +68,6 @@ export function buildChatSlashMenu(input: {
   ).slice(0, 8);
 
   const sections: ChatSlashMenuSection[] = [];
-  if (showExit) {
-    sections.push({
-      id: "commands",
-      label: "Commands",
-      items: [
-        {
-          kind: "exit",
-          id: "exit",
-          label: "Exit project",
-          command: CHAT_EXIT_COMMAND,
-        },
-      ],
-    });
-  }
   if (peers.length > 0) {
     sections.push({
       id: "agents",
@@ -126,8 +104,8 @@ export function flattenChatSlashMenu(
 }
 
 /**
- * Resolve a submitted `/command`. `/exit` is reserved. Peers win exact ties
- * over projects; otherwise unique prefix matches resolve.
+ * Resolve a submitted `/command`. Peers win exact ties over projects;
+ * otherwise unique prefix matches resolve.
  */
 export function resolveChatSlashCommand(input: {
   text: string;
@@ -138,11 +116,8 @@ export function resolveChatSlashCommand(input: {
   const query = parsePeerSlashCommand(input.text);
   if (query == null || query.length === 0) return null;
 
-  if (query === CHAT_EXIT_COMMAND) {
-    return { type: "exit" };
-  }
-
-  const peers = matchPeersBySlashQuery(input.peers, query);
+  const agentPeers = input.peers.filter((peer) => peer.kind === "contact");
+  const peers = matchPeersBySlashQuery(agentPeers, query);
   const projects = matchProjectsBySlashQuery(
     input.projects,
     query,

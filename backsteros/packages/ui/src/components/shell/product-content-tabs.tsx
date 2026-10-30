@@ -150,8 +150,8 @@ export function ProductContentTabs({
         </div>
       </div>
       <div className="content-tabs-trailing">
-        {chatPanelToggle ? <ChatPanelToggleButton {...chatPanelToggle} /> : null}
         <ContentTabsTimer />
+        {chatPanelToggle ? <ChatPanelToggleButton {...chatPanelToggle} /> : null}
       </div>
     </header>
   );
