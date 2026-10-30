@@ -117,7 +117,11 @@ export type ChatThreadProps = {
   placeholder?: string;
   /** Disable composer (e.g. while detail loading). */
   composerDisabled?: boolean;
-  /** Optional empty state when there are no messages. */
+  /**
+   * Optional empty state when there are no messages.
+   * Pass `null` to show no empty-state copy (composer only).
+   * Omit to use the default “No messages yet.” label.
+   */
   emptyState?: ReactNode;
   className?: string;
 };
@@ -530,7 +534,7 @@ export function ChatThread({
   onSelectProject,
   placeholder = "Message…",
   composerDisabled = false,
-  emptyState = null,
+  emptyState,
   className,
 }: ChatThreadProps) {
   const [isRunning, setIsRunning] = useState(false);
@@ -707,9 +711,11 @@ export function ChatThread({
                 scrollToBottomOnRunStart={!virtualize}
               >
                 {messages.length === 0 ? (
-                  <div className="chat-ui-thread__empty">
-                    {emptyState ?? <p>No messages yet.</p>}
-                  </div>
+                  emptyState === null ? null : (
+                    <div className="chat-ui-thread__empty">
+                      {emptyState ?? <p>No messages yet.</p>}
+                    </div>
+                  )
                 ) : virtualize ? (
                   <VirtualizedChatMessages messages={messages} />
                 ) : (
