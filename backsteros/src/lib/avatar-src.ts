@@ -1,4 +1,4 @@
-import { startTransition, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { resolveOrganizationAvatarSrc } from "@backsteros/ui";
 
 import { useDesktopApi } from "./api-context";
@@ -12,7 +12,13 @@ type AvatarEntity = {
 
 type AvatarKind = "contact" | "avatar_portal" | "organization" | "bank_account";
 
+type AvatarClient = {
+  downloadAvatar: (kind: string, id: string) => Promise<Blob>;
+};
+
 const avatarObjectUrlCache = new Map<string, string>();
+/** In-flight downloads so parallel hooks share one request per avatar. */
+const avatarInflight = new Map<string, Promise<string | null>>();
 
 function avatarCacheKey(kind: AvatarKind, entry: AvatarEntity): string {
   return `${kind}:${entry.id}:${entry.avatarStorageKey}:${entry.avatarUpdatedAt ?? 0}`;
@@ -28,22 +34,54 @@ function urlsEqual(
   return leftKeys.every((key) => left[key] === right[key]);
 }
 
-function cachedAvatarUrls(
+/** Sync read of whatever is already in the session cache (partial OK). */
+function peekCachedAvatarUrls(
   kind: AvatarKind,
   targets: AvatarEntity[],
-): Record<string, string> | null {
+): Record<string, string> {
   const next: Record<string, string> = {};
   for (const entry of targets) {
     const url = avatarObjectUrlCache.get(avatarCacheKey(kind, entry));
-    if (!url) return null;
-    next[entry.id] = url;
+    if (url) next[entry.id] = url;
   }
   return next;
+}
+
+async function resolveAvatarObjectUrl(
+  client: AvatarClient,
+  kind: AvatarKind,
+  entry: AvatarEntity,
+): Promise<string | null> {
+  const key = avatarCacheKey(kind, entry);
+  const cached = avatarObjectUrlCache.get(key);
+  if (cached) return cached;
+
+  let pending = avatarInflight.get(key);
+  if (!pending) {
+    pending = (async () => {
+      try {
+        const blob = await client.downloadAvatar(kind, entry.id);
+        const url = URL.createObjectURL(blob);
+        avatarObjectUrlCache.set(key, url);
+        return url;
+      } catch {
+        return null;
+      } finally {
+        avatarInflight.delete(key);
+      }
+    })();
+    avatarInflight.set(key, pending);
+  }
+  return pending;
 }
 
 /**
  * Resolve avatar blob URLs for contacts/orgs that have `avatarStorageKey`.
  * Object URLs are cached for the session so task switches do not re-download.
+ *
+ * Cached hits are returned synchronously. Missing avatars resolve one-by-one
+ * (no wait-for-all, no startTransition) so notification cards can paint the
+ * photo as soon as its blob lands.
  */
 export function useDesktopAvatarSrcMap(
   kind: AvatarKind,
@@ -62,65 +100,55 @@ export function useDesktopAvatarSrcMap(
         .join("|"),
     [entities],
   );
-  const cached = useMemo(() => {
-    const currentTargets = entities.filter((entry) => entry.avatarStorageKey);
-    return currentTargets.length === 0
-      ? {}
-      : cachedAvatarUrls(kind, currentTargets);
-    // fingerprint covers entity identity; entities is read for cache lookup.
+  const targets = useMemo(() => {
+    return entities.filter((entry) => entry.avatarStorageKey);
+    // fingerprint covers entity identity
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fingerprint, kind]);
-  const [urls, setUrls] = useState<Record<string, string>>(() => cached ?? {});
+  }, [fingerprint]);
+
+  const peeked = useMemo(
+    () => peekCachedAvatarUrls(kind, targets),
+    [kind, targets],
+  );
+  const [urls, setUrls] = useState<Record<string, string>>(() => peeked);
 
   useEffect(() => {
-    const targets = entities.filter((entry) => entry.avatarStorageKey);
     if (targets.length === 0) {
       setUrls((current) => (Object.keys(current).length === 0 ? current : {}));
       return;
     }
-    const fromCache = cachedAvatarUrls(kind, targets);
-    if (fromCache) {
-      setUrls((current) => (urlsEqual(current, fromCache) ? current : fromCache));
-      return;
-    }
+
+    const seeded = peekCachedAvatarUrls(kind, targets);
+    setUrls((current) => (urlsEqual(current, seeded) ? current : seeded));
+
+    const missing = targets.filter(
+      (entry) => !avatarObjectUrlCache.has(avatarCacheKey(kind, entry)),
+    );
+    if (missing.length === 0) return;
 
     let cancelled = false;
-    void (async () => {
-      const next: Record<string, string> = {};
-      await Promise.all(
-        targets.map(async (entry) => {
-          const key = avatarCacheKey(kind, entry);
-          const existing = avatarObjectUrlCache.get(key);
-          if (existing) {
-            next[entry.id] = existing;
-            return;
-          }
-          try {
-            const blob = await client.downloadAvatar(kind, entry.id);
-            if (cancelled) return;
-            const url = URL.createObjectURL(blob);
-            avatarObjectUrlCache.set(key, url);
-            next[entry.id] = url;
-          } catch {
-            // Missing/unauthorized avatar — keep fallback icon.
-          }
-        }),
-      );
-      if (!cancelled) {
-        startTransition(() => {
-          setUrls((current) => (urlsEqual(current, next) ? current : next));
+    for (const entry of missing) {
+      void resolveAvatarObjectUrl(client, kind, entry).then((url) => {
+        if (cancelled || !url) return;
+        // Apply each avatar as it arrives — do not wait for the rest.
+        setUrls((current) => {
+          if (current[entry.id] === url) return current;
+          return { ...current, [entry.id]: url };
         });
-      }
-    })();
+      });
+    }
 
     return () => {
       cancelled = true;
     };
-    // fingerprint encodes the entity set we care about
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [client, fingerprint, kind]);
+  }, [client, fingerprint, kind, targets]);
 
-  return cached ?? urls;
+  // Prefer live cache peek over state so a sibling hook that finished first
+  // is visible on the next render without waiting for our effect.
+  return useMemo(() => {
+    if (Object.keys(peeked).length === 0) return urls;
+    return { ...urls, ...peeked };
+  }, [peeked, urls]);
 }
 
 export function withAvatarSrc<T extends { id: string; avatarSrc?: string | null }>(
