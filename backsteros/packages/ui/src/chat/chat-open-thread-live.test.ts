@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 
 import {
   isOpenChatThreadEvent,
+  shouldApplyOpenLiveThreadFetch,
   shouldRefreshOpenChatThreadOnPush,
 } from "./chat-open-thread-live.js";
 
@@ -54,6 +55,29 @@ describe("shouldRefreshOpenChatThreadOnPush", () => {
         openThreadId: "th_1",
         eventThreadId: "th_other",
         kind: "message",
+      }),
+      false,
+    );
+  });
+});
+
+describe("shouldApplyOpenLiveThreadFetch", () => {
+  it("applies only when generation still matches the open thread", () => {
+    assert.equal(
+      shouldApplyOpenLiveThreadFetch({
+        startedGen: 3,
+        currentGen: 3,
+        openThreadId: "th_1",
+        fetchedThreadId: "th_1",
+      }),
+      true,
+    );
+    assert.equal(
+      shouldApplyOpenLiveThreadFetch({
+        startedGen: 3,
+        currentGen: 4,
+        openThreadId: "th_1",
+        fetchedThreadId: "th_1",
       }),
       false,
     );

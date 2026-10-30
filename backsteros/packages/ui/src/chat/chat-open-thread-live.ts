@@ -28,3 +28,17 @@ export function shouldRefreshOpenChatThreadOnPush(input: {
   if (input.kind === "message") return true;
   return input.status === "idle";
 }
+
+/**
+ * Drop stale getThread / openThread results after a newer SSE push bumped the
+ * generation (e.g. thinking-poll fetch that started before the reply landed).
+ */
+export function shouldApplyOpenLiveThreadFetch(input: {
+  startedGen: number;
+  currentGen: number;
+  openThreadId: string | null | undefined;
+  fetchedThreadId: string | null | undefined;
+}): boolean {
+  if (input.currentGen !== input.startedGen) return false;
+  return isOpenChatThreadEvent(input.openThreadId, input.fetchedThreadId);
+}

@@ -24,6 +24,7 @@ import {
 import { applyAssistantShellChatPush } from "../../chat/chat-apply-shell-push.js";
 import {
   isOpenChatThreadEvent,
+  shouldApplyOpenLiveThreadFetch,
   shouldRefreshOpenChatThreadOnPush,
 } from "../../chat/chat-open-thread-live.js";
 import {
@@ -413,9 +414,21 @@ export function ChatUiDevPreview({
     const threadId = liveThreadIdRef.current;
     const chat = liveAgentChatRef.current;
     if (!threadId || !chat) return;
+    // Capture generation so a slower in-flight poll/open cannot clobber a
+    // newer SSE message apply (thinking poll every 2.5s was winning the race).
+    const gen = pollGen.current;
     try {
       const thread = await chat.getThread(threadId);
-      if (liveThreadIdRef.current !== threadId) return;
+      if (
+        !shouldApplyOpenLiveThreadFetch({
+          startedGen: gen,
+          currentGen: pollGen.current,
+          openThreadId: liveThreadIdRef.current,
+          fetchedThreadId: thread.id,
+        })
+      ) {
+        return;
+      }
       const now = Date.now();
       applyLiveThread(
         thread,
