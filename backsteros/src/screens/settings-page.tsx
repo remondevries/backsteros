@@ -107,8 +107,9 @@ function toAgentWebhookSettings(agent: Agent): AgentWebhookSettings {
 }
 
 /**
- * Settings → API: agents (+ linked keys) live on cloud-core via the agents door.
- * Shell chat reads the same store — local-core agents are not the chat roster.
+ * Settings → API: API keys stay on local-core (agents door blocks `/api-keys`).
+ * Chat agents/webhooks go through the cloud agents door so the shell roster
+ * matches. Key ids are replicated, so linking `apiKeyId` on a cloud agent works.
  */
 function SettingsApiTab({
   title,
@@ -117,6 +118,7 @@ function SettingsApiTab({
   title: string;
   description: string;
 }) {
+  const { client } = useDesktopApi();
   const { contacts } = useDesktopWorkspacePeople();
   const contactAvatarSrc = useDesktopAvatarSrcMap("contact", contacts);
   const contactsWithAvatars = useMemo(
@@ -145,26 +147,42 @@ function SettingsApiTab({
     setLoading(true);
     setErrorMessage(null);
     try {
-      const [keysBody, auditBody, requestBody, agentsBody] = await Promise.all([
-        cloudCoreRequestJson<{ apiKeys: ApiKey[] }>("/api/v1/api-keys"),
-        cloudCoreRequestJson<{ auditLogs: ApiKeyAuditLog[] }>(
-          "/api/v1/api-keys/audit-logs?limit=100",
-        ),
-        cloudCoreRequestJson<{ requestLogs: ApiKeyRequestLog[] }>(
-          "/api/v1/api-keys/request-logs?limit=200",
-        ),
-        cloudCoreRequestJson<{ agents: Agent[] }>("/api/v1/agents"),
-      ]);
+      const [keysBody, auditBody, requestBody, agentsResult] =
+        await Promise.all([
+          client.requestJson<{ apiKeys: ApiKey[] }>("/api/v1/api-keys"),
+          client.requestJson<{ auditLogs: ApiKeyAuditLog[] }>(
+            "/api/v1/api-keys/audit-logs?limit=100",
+          ),
+          client.requestJson<{ requestLogs: ApiKeyRequestLog[] }>(
+            "/api/v1/api-keys/request-logs?limit=200",
+          ),
+          cloudCoreRequestJson<{ agents: Agent[] }>("/api/v1/agents").then(
+            (body) => ({ ok: true as const, body }),
+            (error: unknown) => ({ ok: false as const, error }),
+          ),
+        ]);
       setApiKeys(keysBody.apiKeys.map(toSettingsApiKey));
       setAuditLogs(auditBody.auditLogs.map(toSettingsAuditLog));
       setRequestLogs(requestBody.requestLogs.map(toSettingsRequestLog));
-      setAgents(agentsBody.agents);
+      if (agentsResult.ok) {
+        setAgents(agentsResult.body.agents);
+      } else {
+        setAgents([]);
+        setErrorMessage(
+          cloudSettingsErrorMessage(
+            agentsResult.error,
+            "Could not load cloud agents",
+          ),
+        );
+      }
     } catch (error) {
-      setErrorMessage(cloudSettingsErrorMessage(error, "Could not load API keys"));
+      setErrorMessage(
+        error instanceof Error ? error.message : "Could not load API keys",
+      );
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [client]);
 
   useEffect(() => {
     void loadKeys();
@@ -175,10 +193,11 @@ function SettingsApiTab({
     body: Record<string, unknown>,
   ): Promise<boolean> {
     try {
-      const updated = await cloudCoreRequestJson<ApiKey>(
+      const updated = await client.requestJson<ApiKey>(
         `/api/v1/api-keys/${encodeURIComponent(id)}`,
         {
           method: "PATCH",
+          headers: { "content-type": "application/json" },
           body: JSON.stringify(body),
         },
       );
@@ -190,7 +209,7 @@ function SettingsApiTab({
       return true;
     } catch (error) {
       setErrorMessage(
-        cloudSettingsErrorMessage(error, "Could not update API key"),
+        error instanceof Error ? error.message : "Could not update API key",
       );
       return false;
     }
@@ -285,7 +304,7 @@ function SettingsApiTab({
       onTestAgentWebhook={testAgentWebhook}
       onRevealSecret={async (id) => {
         try {
-          const body = await cloudCoreRequestJson<{ secret: string }>(
+          const body = await client.requestJson<{ secret: string }>(
             `/api/v1/api-keys/${encodeURIComponent(id)}/secret`,
           );
           return body.secret;
@@ -295,10 +314,11 @@ function SettingsApiTab({
       }}
       onCreate={async (name, contactId, expiresAt, scopes, kind) => {
         try {
-          const result = await cloudCoreRequestJson<CreateApiKeyResponse>(
+          const result = await client.requestJson<CreateApiKeyResponse>(
             "/api/v1/api-keys",
             {
               method: "POST",
+              headers: { "content-type": "application/json" },
               body: JSON.stringify({
                 name,
                 kind,
@@ -316,7 +336,7 @@ function SettingsApiTab({
           return { id: result.apiKey.id, secret: result.secret };
         } catch (error) {
           setErrorMessage(
-            cloudSettingsErrorMessage(error, "Could not create API key"),
+            error instanceof Error ? error.message : "Could not create API key",
           );
           return null;
         }
@@ -326,7 +346,7 @@ function SettingsApiTab({
       onSetExpiry={(id, expiresAt) => patchApiKey(id, { expiresAt })}
       onRotate={async (id) => {
         try {
-          const result = await cloudCoreRequestJson<CreateApiKeyResponse>(
+          const result = await client.requestJson<CreateApiKeyResponse>(
             `/api/v1/api-keys/${encodeURIComponent(id)}/rotate`,
             { method: "POST" },
           );
@@ -341,22 +361,32 @@ function SettingsApiTab({
           return result.secret;
         } catch (error) {
           setErrorMessage(
-            cloudSettingsErrorMessage(error, "Could not rotate API key"),
+            error instanceof Error ? error.message : "Could not rotate API key",
           );
           return null;
         }
       }}
       onRevoke={async (id) => {
         try {
-          await cloudCoreRequestJson(
-            `/api/v1/api-keys/${encodeURIComponent(id)}`,
-            { method: "DELETE" },
-          );
+          const linked = agents.filter((agent) => agent.apiKeyId === id);
+          await client.requestJson(`/api/v1/api-keys/${encodeURIComponent(id)}`, {
+            method: "DELETE",
+          });
+          for (const agent of linked) {
+            try {
+              await cloudCoreRequestJson(
+                `/api/v1/agents/${encodeURIComponent(agent.id)}`,
+                { method: "DELETE" },
+              );
+            } catch {
+              // Key revoke still succeeds; cloud agent cleanup is best-effort.
+            }
+          }
           setApiKeys((current) => current.filter((entry) => entry.id !== id));
           setAgents((current) =>
             current.filter((agent) => agent.apiKeyId !== id),
           );
-          notifyShellAgentRosterChanged();
+          if (linked.length > 0) notifyShellAgentRosterChanged();
           void loadKeys();
           return true;
         } catch {
