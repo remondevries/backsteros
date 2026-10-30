@@ -2169,7 +2169,6 @@ export {
   APPLICATION_API_KEY_SCOPE,
   ApiKeysSettingsSectionView,
   CARDDAV_API_KEY_SCOPE,
-  PARKED_API_KEY_TABS,
   TV_API_KEY_SCOPE,
   classifyApiKeyType,
   expiryPresetToIso,
@@ -2186,15 +2185,9 @@ export {
 
 export {
   ApiKeyDetailView,
+  type AgentWebhookSettings,
   type ApiKeyDetailViewProps,
 } from "./components/settings/api-key-detail-view.js";
-
-export {
-  AgentsSettingsSectionView,
-  type AgentsSettingsSectionViewProps,
-  type SettingsAgentApiKeyOption,
-  type SettingsAgentItem,
-} from "./components/settings/agents-settings-section-view.js";
 
 export {
   APP_TIMEZONE_OPTIONS,

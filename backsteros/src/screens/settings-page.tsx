@@ -10,20 +10,18 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Navigate, useParams } from "@tanstack/react-router";
 
 import {
-  AgentsSettingsSectionView,
   ApiKeysSettingsSectionView,
   IntegrationConnectionSettingsView,
   SettingsContentHeader,
   SettingsDetailLayout,
-  classifyApiKeyType,
   getSettingsTabMeta,
   isLegacyIntegrationSettingsTab,
   isSettingsTabId,
   normalizeAppTimezone,
+  type AgentWebhookSettings,
   type SettingsApiKeyAuditLogItem,
   type SettingsApiKeyItem,
   type SettingsApiKeyRequestLogItem,
-  type SettingsAgentItem,
   type SettingsTabId,
 } from "@backsteros/ui";
 import { useDesktopApi } from "../lib/api-context";
@@ -86,31 +84,13 @@ function toSettingsRequestLog(
   };
 }
 
-function toSettingsAgent(agent: Agent): SettingsAgentItem {
-  return {
-    id: agent.id,
-    name: agent.name,
-    contactId: agent.contactId,
-    apiKeyId: agent.apiKeyId,
-    avatarUrl: agent.avatarUrl,
-    role: agent.role,
-    enabled: agent.enabled,
-    webhookUrl: agent.webhookUrl,
-    webhookSecretConfigured: agent.webhookSecretConfigured,
-    createdAt: agent.createdAt,
-    updatedAt: agent.updatedAt,
-  };
-}
-
 function SettingsApiTab({
-  title: _title,
-  description: _description,
+  title,
+  description,
 }: {
   title: string;
   description: string;
 }) {
-  void _title;
-  void _description;
   const { client } = useDesktopApi();
   const { contacts } = useDesktopWorkspacePeople();
   const contactAvatarSrc = useDesktopAvatarSrcMap("contact", contacts);
@@ -119,14 +99,26 @@ function SettingsApiTab({
     [contactAvatarSrc, contacts],
   );
   const [apiKeys, setApiKeys] = useState<SettingsApiKeyItem[]>([]);
-  const [rawApiKeys, setRawApiKeys] = useState<ApiKey[]>([]);
-  const [agents, setAgents] = useState<SettingsAgentItem[]>([]);
+  const [agents, setAgents] = useState<Agent[]>([]);
   const [auditLogs, setAuditLogs] = useState<SettingsApiKeyAuditLogItem[]>([]);
   const [requestLogs, setRequestLogs] = useState<
     SettingsApiKeyRequestLogItem[]
   >([]);
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  const agentWebhookByApiKeyId = useMemo(() => {
+    const map = new Map<string, AgentWebhookSettings>();
+    for (const agent of agents) {
+      if (!agent.apiKeyId) continue;
+      map.set(agent.apiKeyId, {
+        agentId: agent.id,
+        webhookUrl: agent.webhookUrl,
+        webhookSecretConfigured: agent.webhookSecretConfigured,
+      });
+    }
+    return map;
+  }, [agents]);
 
   const loadKeys = useCallback(async () => {
     setLoading(true);
@@ -142,14 +134,13 @@ function SettingsApiTab({
         ),
         client.requestJson<{ agents: Agent[] }>("/api/v1/agents"),
       ]);
-      setRawApiKeys(keysBody.apiKeys);
       setApiKeys(keysBody.apiKeys.map(toSettingsApiKey));
       setAuditLogs(auditBody.auditLogs.map(toSettingsAuditLog));
       setRequestLogs(requestBody.requestLogs.map(toSettingsRequestLog));
-      setAgents(agentsBody.agents.map(toSettingsAgent));
+      setAgents(agentsBody.agents);
     } catch (error) {
       setErrorMessage(
-        error instanceof Error ? error.message : "Could not load API settings",
+        error instanceof Error ? error.message : "Could not load API keys",
       );
     } finally {
       setLoading(false);
@@ -159,20 +150,6 @@ function SettingsApiTab({
   useEffect(() => {
     void loadKeys();
   }, [loadKeys]);
-
-  const agentKeyOptions = useMemo(
-    () =>
-      rawApiKeys
-        .filter((key) => classifyApiKeyType(key) === "agent")
-        .map((key) => ({
-          id: key.id,
-          name: key.name,
-          contactId: key.contactId ?? null,
-          expiresAt: key.expiresAt ?? null,
-          scopes: key.scopes,
-        })),
-    [rawApiKeys],
-  );
 
   async function patchApiKey(
     id: string,
@@ -201,171 +178,150 @@ function SettingsApiTab({
     }
   }
 
+  async function saveAgentWebhook(
+    apiKeyId: string,
+    input: { webhookUrl?: string | null; webhookSecret?: string },
+  ): Promise<boolean> {
+    const existing = agents.find((agent) => agent.apiKeyId === apiKeyId);
+    const apiKey = apiKeys.find((entry) => entry.id === apiKeyId);
+    try {
+      if (existing) {
+        const updated = await client.requestJson<Agent>(
+          `/api/v1/agents/${encodeURIComponent(existing.id)}`,
+          {
+            method: "PATCH",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify(input),
+          },
+        );
+        setAgents((current) =>
+          current.map((entry) => (entry.id === updated.id ? updated : entry)),
+        );
+        return true;
+      }
+      if (!apiKey) {
+        setErrorMessage("API key not found for agent webhook.");
+        return false;
+      }
+      const created = await client.requestJson<Agent>("/api/v1/agents", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          name: apiKey.name,
+          contactId: apiKey.contactId,
+          apiKeyId,
+          webhookUrl: input.webhookUrl ?? null,
+          ...(input.webhookSecret !== undefined
+            ? { webhookSecret: input.webhookSecret }
+            : {}),
+        }),
+      });
+      setAgents((current) => [created, ...current]);
+      return true;
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : "Could not save agent webhook",
+      );
+      return false;
+    }
+  }
+
   return (
-    <div className="settings-api-tab">
-      <AgentsSettingsSectionView
-        title="Agents"
-        description="Chat agents with per-agent webhook URL and secret. Secrets are write-only and never shown again."
-        agents={agents}
-        contacts={contactsWithAvatars}
-        apiKeys={agentKeyOptions}
-        loading={loading}
-        errorMessage={errorMessage}
-        onRetry={() => void loadKeys()}
-        onCreate={async (input) => {
-          try {
-            const created = await client.requestJson<Agent>("/api/v1/agents", {
+    <ApiKeysSettingsSectionView
+      title={title}
+      description={description}
+      apiKeys={apiKeys}
+      auditLogs={auditLogs}
+      requestLogs={requestLogs}
+      contacts={contactsWithAvatars}
+      loading={loading}
+      errorMessage={errorMessage}
+      onRetry={() => void loadKeys()}
+      agentWebhookByApiKeyId={agentWebhookByApiKeyId}
+      onSaveAgentWebhook={saveAgentWebhook}
+      onRevealSecret={async (id) => {
+        try {
+          const body = await client.requestJson<{ secret: string }>(
+            `/api/v1/api-keys/${encodeURIComponent(id)}/secret`,
+          );
+          return body.secret;
+        } catch {
+          return null;
+        }
+      }}
+      onCreate={async (name, contactId, expiresAt, scopes, kind) => {
+        try {
+          const result = await client.requestJson<CreateApiKeyResponse>(
+            "/api/v1/api-keys",
+            {
               method: "POST",
               headers: { "content-type": "application/json" },
-              body: JSON.stringify(input),
-            });
-            setAgents((current) => [toSettingsAgent(created), ...current]);
-            return true;
-          } catch (error) {
-            setErrorMessage(
-              error instanceof Error ? error.message : "Could not create agent",
-            );
-            return false;
-          }
-        }}
-        onUpdate={async (id, patch) => {
-          try {
-            const updated = await client.requestJson<Agent>(
-              `/api/v1/agents/${encodeURIComponent(id)}`,
-              {
-                method: "PATCH",
-                headers: { "content-type": "application/json" },
-                body: JSON.stringify(patch),
-              },
-            );
-            setAgents((current) =>
-              current.map((entry) =>
-                entry.id === updated.id ? toSettingsAgent(updated) : entry,
-              ),
-            );
-            return true;
-          } catch (error) {
-            setErrorMessage(
-              error instanceof Error ? error.message : "Could not update agent",
-            );
-            return false;
-          }
-        }}
-        onDelete={async (id) => {
-          try {
-            await client.requestJson(
-              `/api/v1/agents/${encodeURIComponent(id)}`,
-              { method: "DELETE" },
-            );
-            setAgents((current) => current.filter((entry) => entry.id !== id));
-            return true;
-          } catch {
-            return false;
-          }
-        }}
-      />
-      {/*
-        OS-154 interim home for non-agent keys + logs until Remon picks a
-        permanent place (proposal: Settings → Developer or /settings/api-keys).
-      */}
-      <div className="settings-api-tab__parked-keys">
-        <ApiKeysSettingsSectionView
-          title="API keys & logs"
-          description="Access, Applications, TV, and Contacts sync keys — parked here until their final Settings home is chosen. Create, rotate, and revoke still work."
-          flattenChrome
-          apiKeys={apiKeys}
-          auditLogs={auditLogs}
-          requestLogs={requestLogs}
-          contacts={contactsWithAvatars}
-          loading={loading}
-          errorMessage={null}
-          onRetry={() => void loadKeys()}
-          onRevealSecret={async (id) => {
-            try {
-              const body = await client.requestJson<{ secret: string }>(
-                `/api/v1/api-keys/${encodeURIComponent(id)}/secret`,
-              );
-              return body.secret;
-            } catch {
-              return null;
-            }
-          }}
-          onCreate={async (name, contactId, expiresAt, scopes, kind) => {
-            try {
-              const result = await client.requestJson<CreateApiKeyResponse>(
-                "/api/v1/api-keys",
-                {
-                  method: "POST",
-                  headers: { "content-type": "application/json" },
-                  body: JSON.stringify({
-                    name,
-                    kind,
-                    scopes,
-                    contactId,
-                    expiresAt,
-                  }),
-                },
-              );
-              setApiKeys((current) => [
-                toSettingsApiKey(result.apiKey),
-                ...current,
-              ]);
-              void loadKeys();
-              return { id: result.apiKey.id, secret: result.secret };
-            } catch (error) {
-              setErrorMessage(
-                error instanceof Error
-                  ? error.message
-                  : "Could not create API key",
-              );
-              return null;
-            }
-          }}
-          onRename={(id, name) => patchApiKey(id, { name })}
-          onSetContact={(id, contactId) => patchApiKey(id, { contactId })}
-          onSetExpiry={(id, expiresAt) => patchApiKey(id, { expiresAt })}
-          onRotate={async (id) => {
-            try {
-              const result = await client.requestJson<CreateApiKeyResponse>(
-                `/api/v1/api-keys/${encodeURIComponent(id)}/rotate`,
-                { method: "POST" },
-              );
-              setApiKeys((current) =>
-                current.map((entry) =>
-                  entry.id === result.apiKey.id
-                    ? toSettingsApiKey(result.apiKey)
-                    : entry,
-                ),
-              );
-              void loadKeys();
-              return result.secret;
-            } catch (error) {
-              setErrorMessage(
-                error instanceof Error
-                  ? error.message
-                  : "Could not rotate API key",
-              );
-              return null;
-            }
-          }}
-          onRevoke={async (id) => {
-            try {
-              await client.requestJson(
-                `/api/v1/api-keys/${encodeURIComponent(id)}`,
-                { method: "DELETE" },
-              );
-              setApiKeys((current) =>
-                current.filter((entry) => entry.id !== id),
-              );
-              void loadKeys();
-              return true;
-            } catch {
-              return false;
-            }
-          }}
-        />
-      </div>
-    </div>
+              body: JSON.stringify({
+                name,
+                kind,
+                scopes,
+                contactId,
+                expiresAt,
+              }),
+            },
+          );
+          setApiKeys((current) => [
+            toSettingsApiKey(result.apiKey),
+            ...current,
+          ]);
+          void loadKeys();
+          return { id: result.apiKey.id, secret: result.secret };
+        } catch (error) {
+          setErrorMessage(
+            error instanceof Error ? error.message : "Could not create API key",
+          );
+          return null;
+        }
+      }}
+      onRename={(id, name) => patchApiKey(id, { name })}
+      onSetContact={(id, contactId) => patchApiKey(id, { contactId })}
+      onSetExpiry={(id, expiresAt) => patchApiKey(id, { expiresAt })}
+      onRotate={async (id) => {
+        try {
+          const result = await client.requestJson<CreateApiKeyResponse>(
+            `/api/v1/api-keys/${encodeURIComponent(id)}/rotate`,
+            { method: "POST" },
+          );
+          setApiKeys((current) =>
+            current.map((entry) =>
+              entry.id === result.apiKey.id
+                ? toSettingsApiKey(result.apiKey)
+                : entry,
+            ),
+          );
+          void loadKeys();
+          return result.secret;
+        } catch (error) {
+          setErrorMessage(
+            error instanceof Error ? error.message : "Could not rotate API key",
+          );
+          return null;
+        }
+      }}
+      onRevoke={async (id) => {
+        try {
+          await client.requestJson(
+            `/api/v1/api-keys/${encodeURIComponent(id)}`,
+            { method: "DELETE" },
+          );
+          setApiKeys((current) => current.filter((entry) => entry.id !== id));
+          setAgents((current) =>
+            current.filter((agent) => agent.apiKeyId !== id),
+          );
+          void loadKeys();
+          return true;
+        } catch {
+          return false;
+        }
+      }}
+    />
   );
 }
 
