@@ -64,6 +64,8 @@ export const REPLICATED_TABLES = [
   "chat_conversations",
   "chat_messages",
   "chat_webhook_events",
+  // agents / chat_threads / chat_thread_messages (OS-150/151): local-first for
+  // now — twin after cloud-core ships migration 0174 (avoid pull 400 noise).
 ] as const;
 
 export type ReplicatedTable = (typeof REPLICATED_TABLES)[number];

@@ -3043,6 +3043,129 @@ export const chatMessages = pgTable(
 
 export type DbChatMessage = typeof chatMessages.$inferSelect;
 
+/**
+ * Chat agents (OS-151) — Remon ↔ Grok Bot personas with per-agent webhooks.
+ * Webhook secret ciphertext is never returned to clients or PowerSynced.
+ */
+export const agents = pgTable(
+  "agents",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    /** CRM contact this agent persona maps to (optional). */
+    contactId: text("contact_id").references(() => contacts.id, {
+      onDelete: "set null",
+    }),
+    /**
+     * Agent's own API key used to POST replies
+     * (`POST /api/v1/chat/threads/:id/messages`).
+     */
+    apiKeyId: text("api_key_id").references(() => apiKeys.id, {
+      onDelete: "set null",
+    }),
+    name: text("name").notNull(),
+    /** Optional avatar URL (or desktop avatar route). */
+    avatarUrl: text("avatar_url"),
+    /** Short role label shown in settings / chat. */
+    role: text("role"),
+    enabled: boolean("enabled").notNull().default(true),
+    /** Outbound webhook for human → agent messages. Empty until configured. */
+    webhookUrl: text("webhook_url"),
+    /** AES-GCM ciphertext — never returned to the frontend or PowerSync. */
+    webhookSecretCiphertext: text("webhook_secret_ciphertext"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("agents_workspace_id_idx").on(table.workspaceId),
+    index("agents_workspace_contact_idx").on(table.workspaceId, table.contactId),
+    index("agents_api_key_id_idx").on(table.apiKeyId),
+  ],
+);
+
+export type DbAgent = typeof agents.$inferSelect;
+
+/**
+ * Shell / Grok Bot chat threads (OS-150). Separate from Chatwoot
+ * `chat_conversations`. Tier C — REST (+ twin); not PowerSynced.
+ */
+export const chatThreads = pgTable(
+  "chat_threads",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    agentId: text("agent_id")
+      .notNull()
+      .references(() => agents.id, { onDelete: "cascade" }),
+    /**
+     * When set, Remon is waiting for an agent reply ("Sander is thinking…").
+     * Cleared when an assistant message lands or the webhook is missing/fails.
+     */
+    pendingReplyAt: timestamp("pending_reply_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("chat_threads_workspace_agent_uidx").on(
+      table.workspaceId,
+      table.agentId,
+    ),
+    index("chat_threads_workspace_id_idx").on(table.workspaceId),
+    index("chat_threads_agent_id_idx").on(table.agentId),
+  ],
+);
+
+export type DbChatThread = typeof chatThreads.$inferSelect;
+
+export const chatThreadMessages = pgTable(
+  "chat_thread_messages",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    threadId: text("thread_id")
+      .notNull()
+      .references(() => chatThreads.id, { onDelete: "cascade" }),
+    /** user | assistant | system */
+    role: text("role").notNull(),
+    authorContactId: text("author_contact_id").references(() => contacts.id, {
+      onDelete: "set null",
+    }),
+    authorName: text("author_name"),
+    body: text("body").notNull().default(""),
+    /** pending | streaming | done | error */
+    status: text("status").notNull().default("done"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("chat_thread_messages_thread_created_idx").on(
+      table.threadId,
+      table.createdAt,
+    ),
+    index("chat_thread_messages_workspace_id_idx").on(table.workspaceId),
+  ],
+);
+
+export type DbChatThreadMessage = typeof chatThreadMessages.$inferSelect;
+
 export const chatWebhookEvents = pgTable(
   "chat_webhook_events",
   {

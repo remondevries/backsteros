@@ -926,3 +926,31 @@ export type {
   WhoopDayResult,
   WhoopSettingsStatus,
 } from "./schemas/meetings-habits.js";
+export {
+  agentSchema,
+  agentsListSchema,
+  createAgentInputSchema,
+  updateAgentInputSchema,
+  chatThreadMessageRoleSchema,
+  chatThreadMessageStatusSchema,
+  chatThreadMessageSchema,
+  chatThreadSchema,
+  chatThreadWithMessagesSchema,
+  chatThreadsListSchema,
+  chatThreadMessagesListSchema,
+  getOrCreateChatThreadInputSchema,
+  createChatThreadMessageInputSchema,
+  createChatThreadMessageResultSchema,
+} from "./schemas/agents-chat.js";
+export type {
+  Agent,
+  AgentsList,
+  CreateAgentInput,
+  UpdateAgentInput,
+  ChatThread,
+  ChatThreadMessage,
+  ChatThreadWithMessages,
+  GetOrCreateChatThreadInput,
+  CreateChatThreadMessageInput,
+  CreateChatThreadMessageResult,
+} from "./schemas/agents-chat.js";

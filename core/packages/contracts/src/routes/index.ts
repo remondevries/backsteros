@@ -9,6 +9,7 @@ import { financeRoutes } from "./finance.js";
 import { emailRoutes } from "./email.js";
 import { integrationsRoutes } from "./integrations.js";
 import { meetingsHabitsRoutes } from "./meetings-habits.js";
+import { agentsChatRoutes } from "./agents-chat.js";
 
 const c = initContract();
 
@@ -24,6 +25,7 @@ export const apiContract: AppRouter = c.router(
     ...emailRoutes,
     ...integrationsRoutes,
     ...meetingsHabitsRoutes,
+    ...agentsChatRoutes,
   },
   {
     pathPrefix: "",
@@ -39,3 +41,4 @@ export { financeRoutes } from "./finance.js";
 export { emailRoutes } from "./email.js";
 export { integrationsRoutes } from "./integrations.js";
 export { meetingsHabitsRoutes } from "./meetings-habits.js";
+export { agentsChatRoutes } from "./agents-chat.js";

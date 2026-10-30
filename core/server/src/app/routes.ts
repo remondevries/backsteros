@@ -16,6 +16,8 @@ import { registerFinanceRoutes } from "./finance-routes.js";
 import { registerAgentAiRoutes } from "./agent-ai-routes.js";
 import { registerApiKeyRoutes } from "./api-key-routes.js";
 import { registerAgentMessageWebhookRoutes } from "./agent-message-webhook-routes.js";
+import { registerAgentRoutes } from "./agent-routes.js";
+import { registerAgentChatRoutes } from "./agent-chat-routes.js";
 import { forbidden, getAuth, isAgentPersonaAuth } from "./route-helpers.js";
 
 export function registerApiRoutes(app: Hono) {
@@ -38,6 +40,8 @@ export function registerApiRoutes(app: Hono) {
   registerEmailRoutes(app);
   registerChatRoutes(app);
   registerAgentMessageWebhookRoutes(app);
+  registerAgentRoutes(app);
+  registerAgentChatRoutes(app);
   registerSocialRoutes(app);
   registerFinanceRoutes(app);
   registerAgentAiRoutes(app);
