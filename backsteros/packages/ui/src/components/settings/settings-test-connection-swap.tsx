@@ -18,6 +18,8 @@ export type SettingsTestConnectionSwapProps = {
   failureLabel?: string;
   /** When set, keep a label during the working phase instead of folding to a spinner. */
   pendingLabel?: string;
+  /** Default true (green check only). Set false to keep the success label visible. */
+  successIconOnly?: boolean;
   size?: ActionSwapProps["size"];
   className?: string;
 };
@@ -33,6 +35,7 @@ export function SettingsTestConnectionSwap({
   successLabel = "Connected",
   failureLabel = "Connection failed",
   pendingLabel,
+  successIconOnly = true,
   size = "sm",
   className,
 }: SettingsTestConnectionSwapProps) {
@@ -48,12 +51,12 @@ export function SettingsTestConnectionSwap({
         label: successLabel,
         icon: <ActionSwapSuccessIconSwap />,
         tone: "success",
-        iconOnly: true,
+        iconOnly: successIconOnly,
         repeatable: true,
         pendingLabel,
       },
     ],
-    [idleLabel, pendingLabel, successLabel],
+    [idleLabel, pendingLabel, successIconOnly, successLabel],
   );
 
   return (

@@ -1,23 +1,28 @@
 /**
  * Dev-only outbound webhook probe for Settings → Agent Test connection.
- * Cloud does not yet expose POST /agents/:id/webhook/test; Vite can POST the
- * same synthetic payload from Node (no browser CORS) using the secret the UI
- * just saved. Never logs URL or secret.
+ * Cloud may not yet expose POST /agents/:id/webhook/test; Vite can POST the
+ * same `agent.webhook.test` payload from Node (no browser CORS) using the
+ * secret the UI just saved. Never logs URL or secret.
  */
 import type { Plugin } from "vite";
 import { randomUUID } from "node:crypto";
 
 const PROBE_PATH = "/__webhook_probe__";
-const EVENT = "agent.chat.message";
+const EVENT = "agent.webhook.test";
 const SECRET_HEADER = "x-backsteros-webhook-secret";
 const DELIVERY_HEADER = "x-backsteros-delivery-id";
 const TIMEOUT_MS = 10_000;
+const DEFAULT_REPLY_BASE = "https://agent.backsteros.com";
 
 type ProbeBody = {
   url?: unknown;
   secret?: unknown;
   agentId?: unknown;
   agentName?: unknown;
+  workspaceId?: unknown;
+  threadId?: unknown;
+  replyUrl?: unknown;
+  testId?: unknown;
 };
 
 function readJson(req: {
@@ -49,6 +54,12 @@ function isHttpsUrl(value: string): boolean {
   }
 }
 
+function optionalString(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed || null;
+}
+
 export function backsterosWebhookProbePlugin(): Plugin {
   return {
     name: "backsteros-webhook-probe",
@@ -64,14 +75,16 @@ export function backsterosWebhookProbePlugin(): Plugin {
           const url = typeof body.url === "string" ? body.url.trim() : "";
           const secret =
             typeof body.secret === "string" ? body.secret.trim() : "";
-          const agentId =
-            typeof body.agentId === "string" && body.agentId.trim()
-              ? body.agentId.trim()
-              : "test";
-          const agentName =
-            typeof body.agentName === "string" && body.agentName.trim()
-              ? body.agentName.trim()
-              : "Agent";
+          const agentId = optionalString(body.agentId) ?? "test";
+          const agentName = optionalString(body.agentName) ?? "Agent";
+          const workspaceId = optionalString(body.workspaceId) ?? "test";
+          const threadId = optionalString(body.threadId);
+          const testId = optionalString(body.testId) ?? randomUUID();
+          const replyUrl =
+            optionalString(body.replyUrl) ??
+            (threadId
+              ? `${DEFAULT_REPLY_BASE}/api/v1/chat/threads/${encodeURIComponent(threadId)}/messages`
+              : `${DEFAULT_REPLY_BASE}/api/v1/chat/threads/test/messages`);
           if (!isHttpsUrl(url)) {
             res.statusCode = 400;
             res.end(
@@ -79,6 +92,8 @@ export function backsterosWebhookProbePlugin(): Plugin {
                 ok: false,
                 error: "Webhook URL must be https.",
                 deliveryId: null,
+                threadId: null,
+                testId: null,
               }),
             );
             return;
@@ -90,6 +105,22 @@ export function backsterosWebhookProbePlugin(): Plugin {
                 ok: false,
                 error: "Save the webhook secret, then Test again.",
                 deliveryId: null,
+                threadId: null,
+                testId: null,
+              }),
+            );
+            return;
+          }
+          if (!threadId) {
+            res.statusCode = 400;
+            res.end(
+              JSON.stringify({
+                ok: false,
+                error:
+                  "Open a chat thread for this agent first, then Test again.",
+                deliveryId: null,
+                threadId: null,
+                testId: null,
               }),
             );
             return;
@@ -97,17 +128,19 @@ export function backsterosWebhookProbePlugin(): Plugin {
           const deliveryId = randomUUID();
           const now = new Date().toISOString();
           const message = {
-            id: "test",
+            id: testId,
             role: "user",
-            text: "BacksterOS webhook test",
+            text: "BacksterOS webhook test — reply with a short welcome in this thread.",
             createdAt: now,
           };
           const payload = {
             event: EVENT,
-            workspaceId: "test",
+            testId,
+            workspaceId,
             agentId,
             agentName,
-            threadId: "test",
+            threadId,
+            replyUrl,
             message,
             context: [message],
             deliveryId,
@@ -134,12 +167,22 @@ export function backsterosWebhookProbePlugin(): Plugin {
                   ok: false,
                   error: `Webhook returned HTTP ${response.status}`,
                   deliveryId,
+                  threadId,
+                  testId,
                 }),
               );
               return;
             }
             res.statusCode = 200;
-            res.end(JSON.stringify({ ok: true, error: null, deliveryId }));
+            res.end(
+              JSON.stringify({
+                ok: true,
+                error: null,
+                deliveryId,
+                threadId,
+                testId,
+              }),
+            );
           } catch (error) {
             const messageText =
               error instanceof Error ? error.message : "Webhook delivery failed";
@@ -149,6 +192,8 @@ export function backsterosWebhookProbePlugin(): Plugin {
                 ok: false,
                 error: messageText,
                 deliveryId,
+                threadId,
+                testId,
               }),
             );
           } finally {
@@ -161,6 +206,8 @@ export function backsterosWebhookProbePlugin(): Plugin {
               ok: false,
               error: "Invalid probe payload",
               deliveryId: null,
+              threadId: null,
+              testId: null,
             }),
           );
         }

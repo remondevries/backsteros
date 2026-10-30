@@ -521,6 +521,61 @@ agents door allowlist also refuses `/api/v1/settings/*`. Older skill text that
 only said the proxy “403s settings” was incomplete — update the shared
 `backsteros-tasks` / agent skill copy accordingly.
 
+### Shell agent chat webhooks (OS-150 / OS-151)
+
+Settings → API → Agent stores a per-agent HTTPS webhook + write-only secret.
+Outbound POSTs use `x-backsteros-webhook-secret` (and `Authorization: Bearer …`)
+plus `x-backsteros-delivery-id`. Agents reply with their own API key:
+
+```http
+POST /api/v1/chat/threads/{threadId}/messages
+```
+
+**Human message** (`event` must be matched exactly):
+
+```json
+{
+  "event": "agent.chat.message",
+  "workspaceId": "…",
+  "agentId": "…",
+  "agentName": "Sander",
+  "threadId": "…",
+  "replyUrl": "https://agent.backsteros.com/api/v1/chat/threads/{threadId}/messages",
+  "message": { "id": "…", "role": "user", "text": "…", "createdAt": "…" },
+  "context": [ /* last ~10 messages, oldest → newest */ ],
+  "deliveryId": "…",
+  "timestamp": "…"
+}
+```
+
+**Settings Test connection** — never treat this as a normal chat turn. Match on
+`event == "agent.webhook.test"` only (ignore message text). Payload uses a real
+direct (no-project) thread so a welcome reply via `replyUrl` appears in chat:
+
+```json
+{
+  "event": "agent.webhook.test",
+  "testId": "…",
+  "workspaceId": "…",
+  "agentId": "…",
+  "agentName": "Sander",
+  "threadId": "…",
+  "replyUrl": "https://agent.backsteros.com/api/v1/chat/threads/{threadId}/messages",
+  "message": { "id": "…", "role": "user", "text": "…", "createdAt": "…" },
+  "context": [ /* prior thread messages + synthetic test message */ ],
+  "deliveryId": "…",
+  "timestamp": "…"
+}
+```
+
+```http
+POST /api/v1/agents/{agentId}/webhook/test
+```
+
+Returns `{ ok, error, deliveryId, threadId, testId }`. Settings marks Connected
+on HTTP 2xx from the agent webhook; it may also show Reply received after an
+assistant message lands on that thread.
+
 ### Agent message webhooks (OS-146)
 
 Register push endpoints without settings access:

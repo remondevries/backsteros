@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 
 import { PolishedCheckbox } from "../shared/polished-checkbox.js";
 import type { SettingsApiKeyItem } from "./api-keys-settings-section-view.js";
@@ -53,7 +54,7 @@ export type ApiKeyDetailViewProps = {
   onTestAgentWebhook?: (
     agentId: string,
     input: AgentWebhookTestInput,
-  ) => Promise<void>;
+  ) => Promise<void | { replyReceived?: boolean }>;
 };
 
 export function ApiKeyDetailView({
@@ -97,6 +98,7 @@ export function ApiKeyDetailView({
   const [webhookError, setWebhookError] = useState<string | null>(null);
   /** Remount Test swap after URL/secret changes so a prior green check resets. */
   const [testSwapKey, setTestSwapKey] = useState(0);
+  const [testSuccessLabel, setTestSuccessLabel] = useState("Connected");
   /** Kept only in memory after Save — secrets are write-only on the server. */
   const lastSavedSecretRef = useRef<string | null>(null);
 
@@ -106,6 +108,7 @@ export function ApiKeyDetailView({
     setLinkedAgentId(agentWebhook?.agentId ?? null);
     setWebhookError(null);
     lastSavedSecretRef.current = null;
+    setTestSuccessLabel("Connected");
     setTestSwapKey((key) => key + 1);
   }, [
     agentWebhook?.agentId,
@@ -186,7 +189,8 @@ export function ApiKeyDetailView({
                 key={testSwapKey}
                 disabled={!canTest || savingWebhook}
                 idleLabel="Test"
-                successLabel="Connected"
+                successLabel={testSuccessLabel}
+                successIconOnly={false}
                 failureLabel="Webhook failed"
                 onTest={async () => {
                   if (!linkedAgentId) {
@@ -201,12 +205,23 @@ export function ApiKeyDetailView({
                       "Re-save the webhook secret, then click Test.",
                     );
                   }
-                  await onTestAgentWebhook(linkedAgentId, {
+                  flushSync(() => setTestSuccessLabel("Connected"));
+                  const outcome = await onTestAgentWebhook(linkedAgentId, {
                     webhookUrl: url,
                     webhookSecret: lastSavedSecretRef.current,
                     agentName: apiKey.name,
                   });
+                  const replyReceived =
+                    Boolean(outcome) &&
+                    typeof outcome === "object" &&
+                    Boolean(outcome.replyReceived);
+                  flushSync(() =>
+                    setTestSuccessLabel(
+                      replyReceived ? "Reply received" : "Connected",
+                    ),
+                  );
                 }}
+                pendingLabel="Testing…"
               />
             ) : null
           }

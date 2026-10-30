@@ -5,6 +5,8 @@ import type {
   ApiKey,
   ApiKeyAuditLog,
   ApiKeyRequestLog,
+  ChatThreadMessage,
+  ChatThreadWithMessages,
   CreateApiKeyResponse,
 } from "@backsteros/contracts";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -282,6 +284,10 @@ function SettingsApiTab({
     webhookUrl: string;
     webhookSecret: string;
     agentName: string;
+    workspaceId: string;
+    threadId: string;
+    replyUrl: string;
+    testId: string;
   }): Promise<AgentWebhookTestResult> {
     const res = await fetch("/__webhook_probe__", {
       method: "POST",
@@ -291,6 +297,10 @@ function SettingsApiTab({
         secret: input.webhookSecret,
         agentId: input.agentId,
         agentName: input.agentName,
+        workspaceId: input.workspaceId,
+        threadId: input.threadId,
+        replyUrl: input.replyUrl,
+        testId: input.testId,
       }),
     });
     if (!res.ok) {
@@ -300,6 +310,32 @@ function SettingsApiTab({
     return (await res.json()) as AgentWebhookTestResult;
   }
 
+  async function waitForAgentReply(
+    threadId: string,
+    startedAtMs: number,
+  ): Promise<boolean> {
+    const deadline = Date.now() + 12_000;
+    while (Date.now() < deadline) {
+      try {
+        const body = await cloudCoreRequestJson<{
+          messages: ChatThreadMessage[];
+        }>(
+          `/api/v1/chat/threads/${encodeURIComponent(threadId)}/messages`,
+        );
+        const reply = body.messages.find((message) => {
+          if (message.role !== "assistant") return false;
+          const created = Date.parse(message.createdAt);
+          return Number.isFinite(created) && created >= startedAtMs - 2_000;
+        });
+        if (reply) return true;
+      } catch {
+        // Keep waiting — reply may still land.
+      }
+      await new Promise((resolve) => setTimeout(resolve, 750));
+    }
+    return false;
+  }
+
   async function testAgentWebhook(
     agentId: string,
     input: {
@@ -307,7 +343,8 @@ function SettingsApiTab({
       webhookSecret: string | null;
       agentName: string;
     },
-  ): Promise<void> {
+  ): Promise<{ replyReceived: boolean }> {
+    const startedAtMs = Date.now();
     let result: AgentWebhookTestResult;
     try {
       result = await cloudCoreRequestJson<AgentWebhookTestResult>(
@@ -319,11 +356,24 @@ function SettingsApiTab({
         isCloudCoreApiError(error) &&
         (error.status === 404 || error.status === 0);
       if (missingOnCloud && input.webhookSecret?.trim()) {
+        const thread = await cloudCoreRequestJson<ChatThreadWithMessages>(
+          "/api/v1/chat/threads",
+          {
+            method: "POST",
+            body: JSON.stringify({ agentId }),
+          },
+        );
+        const testId = crypto.randomUUID();
+        const replyUrl = `https://agent.backsteros.com/api/v1/chat/threads/${encodeURIComponent(thread.id)}/messages`;
         result = await probeWebhookViaVite({
           agentId,
           webhookUrl: input.webhookUrl,
           webhookSecret: input.webhookSecret.trim(),
           agentName: input.agentName,
+          workspaceId: thread.workspaceId,
+          threadId: thread.id,
+          replyUrl,
+          testId,
         });
       } else if (missingOnCloud) {
         throw new Error(
@@ -342,6 +392,12 @@ function SettingsApiTab({
     }
     markAgentWebhookVerified(agentId);
     notifyShellAgentRosterChanged();
+
+    const threadId = result.threadId?.trim() || null;
+    if (!threadId) return { replyReceived: false };
+    const replyReceived = await waitForAgentReply(threadId, startedAtMs);
+    if (replyReceived) notifyShellAgentRosterChanged();
+    return { replyReceived };
   }
 
   async function reorderAgentKeys(orderedApiKeyIds: string[]): Promise<void> {

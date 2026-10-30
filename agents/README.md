@@ -83,6 +83,19 @@ Attach a **contact** to each agent’s API key in Settings so comments and
 activity show that person. Agent keys never hold `settings:read` /
 `settings:write`; use `chat:*` and `email:*` for messaging.
 
+## Shell chat webhooks (desktop chat column)
+
+Settings → API → Agent configures an outbound HTTPS webhook. Core POSTs JSON;
+reply with the agent’s API key to `replyUrl` (same as
+`POST /api/v1/chat/threads/{threadId}/messages`).
+
+| `event` | When | Handler rule |
+| --- | --- | --- |
+| `agent.chat.message` | Remon sent a chat message | Normal chat turn |
+| `agent.webhook.test` | Settings → Test connection | Match **only** on `event`; never on message text. Optional short welcome via `replyUrl` |
+
+Full shapes: `docs/04-api-and-sync.md` (Shell agent chat webhooks).
+
 ## Agents: start a conversation (OS-146)
 
 Required scopes on the agent persona key: `chat:read` / `chat:write` and/or

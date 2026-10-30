@@ -134,6 +134,10 @@ export const agentWebhookTestResultSchema = z.object({
   ok: z.boolean(),
   error: z.string().nullable(),
   deliveryId: z.string().nullable(),
+  /** Real direct chat thread used for the test (and welcome reply). */
+  threadId: z.string().nullable().optional(),
+  /** Correlates the outbound `agent.webhook.test` payload. */
+  testId: z.string().nullable().optional(),
 });
 
 export type Agent = z.infer<typeof agentSchema>;

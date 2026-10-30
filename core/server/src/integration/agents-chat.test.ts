@@ -280,8 +280,43 @@ test("OS-151/150 agents + chat loop: secret write-only, webhook fire, agent repl
   };
   assert.equal(payload.event, "agent.chat.message");
   assert.equal(payload.threadId, threadId);
+  assert.equal(
+    (payload as { replyUrl?: string }).replyUrl,
+    `https://agent.backsteros.com/api/v1/chat/threads/${threadId}/messages`,
+  );
   assert.equal(payload.message.text, "hello sander");
   assert.ok(payload.context.length >= 1);
+  assert.equal(webhookHit.body.includes(webhookPlain), false);
+
+  webhookHit = null;
+  const tested = await json(
+    app,
+    `/api/v1/agents/${agentId}/webhook/test`,
+    ownerSecret,
+    { method: "POST", body: "{}" },
+  );
+  assert.equal(tested.status, 200);
+  assert.equal(tested.body?.ok, true);
+  assert.equal(tested.body?.threadId, threadId);
+  assert.ok(typeof tested.body?.testId === "string");
+  assert.ok(webhookHit);
+  const testPayload = JSON.parse(webhookHit.body) as {
+    event: string;
+    testId: string;
+    threadId: string;
+    replyUrl: string;
+    workspaceId: string;
+    agentId: string;
+  };
+  assert.equal(testPayload.event, "agent.webhook.test");
+  assert.equal(testPayload.testId, tested.body?.testId);
+  assert.equal(testPayload.threadId, threadId);
+  assert.equal(testPayload.workspaceId, workspaceId);
+  assert.equal(testPayload.agentId, agentId);
+  assert.equal(
+    testPayload.replyUrl,
+    `https://agent.backsteros.com/api/v1/chat/threads/${threadId}/messages`,
+  );
   assert.equal(webhookHit.body.includes(webhookPlain), false);
 
   // Agent replies with its own API key.

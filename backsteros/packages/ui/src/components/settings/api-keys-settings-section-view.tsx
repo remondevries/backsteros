@@ -132,7 +132,7 @@ export type ApiKeysSettingsSectionViewProps = {
       webhookSecret: string | null;
       agentName: string;
     },
-  ) => Promise<void>;
+  ) => Promise<void | { replyReceived?: boolean }>;
   /**
    * Persist Agent-tab row order (api key ids, top → bottom). Also drives
    * shell chat peer strip order via linked agents.
@@ -546,7 +546,7 @@ function ApiKeyRow({
       webhookSecret: string | null;
       agentName: string;
     },
-  ) => Promise<void>;
+  ) => Promise<void | { replyReceived?: boolean }>;
   canMoveUp?: boolean;
   canMoveDown?: boolean;
   onMoveUp?: () => void;

@@ -9,8 +9,17 @@ import {
   encryptWebhookSecret,
   validateAutoReviewWebhookUrl,
 } from "./auto-review-webhook.js";
+import { resolveAgentsPublicBase } from "./agents-public-url.js";
 
+/** Human message in an existing shell chat thread. */
 export const AGENT_CHAT_WEBHOOK_EVENT = "agent.chat.message" as const;
+
+/**
+ * Settings → Test connection ping. Agents must match on this event name —
+ * never on message text — and may POST a welcome reply to `replyUrl`.
+ */
+export const AGENT_WEBHOOK_TEST_EVENT = "agent.webhook.test" as const;
+
 export const AGENT_CHAT_WEBHOOK_TIMEOUT_MS = 10_000;
 
 /** Auth secret header Grok Bot verifies on inbound POSTs. */
@@ -37,18 +46,38 @@ export type AgentChatWebhookMessage = {
   createdAt: string;
 };
 
-export type AgentChatWebhookPayload = {
-  event: typeof AGENT_CHAT_WEBHOOK_EVENT;
+type AgentWebhookPayloadBase = {
   workspaceId: string;
   agentId: string;
   agentName: string;
   threadId: string;
+  /** Absolute URL for the agent to POST a reply message (Bearer = agent API key). */
+  replyUrl: string;
   message: AgentChatWebhookMessage;
   /** Last ~10 messages including the new one (oldest → newest). */
   context: AgentChatWebhookMessage[];
   deliveryId: string;
   timestamp: string;
 };
+
+export type AgentChatWebhookPayload = AgentWebhookPayloadBase & {
+  event: typeof AGENT_CHAT_WEBHOOK_EVENT;
+};
+
+export type AgentWebhookTestPayload = AgentWebhookPayloadBase & {
+  event: typeof AGENT_WEBHOOK_TEST_EVENT;
+  /** Unique id for this test ping — correlate logs; do not treat as a chat message id. */
+  testId: string;
+};
+
+export type AgentOutboundWebhookPayload =
+  | AgentChatWebhookPayload
+  | AgentWebhookTestPayload;
+
+export function buildAgentChatReplyUrl(threadId: string): string {
+  const base = resolveAgentsPublicBase();
+  return `${base}/api/v1/chat/threads/${encodeURIComponent(threadId)}/messages`;
+}
 
 export function buildAgentChatWebhookHeaders(input: {
   secret: string | null;

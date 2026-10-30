@@ -18,8 +18,12 @@ import { logger } from "../lib/logger.js";
 import {
   AGENT_CHAT_WEBHOOK_EVENT,
   AGENT_CHAT_WEBHOOK_TIMEOUT_MS,
+  AGENT_WEBHOOK_TEST_EVENT,
   type AgentChatWebhookMessage,
   type AgentChatWebhookPayload,
+  type AgentOutboundWebhookPayload,
+  type AgentWebhookTestPayload,
+  buildAgentChatReplyUrl,
   buildAgentChatWebhookHeaders,
   decryptAgentChatWebhookSecret,
 } from "../lib/agent-chat-webhook.js";
@@ -260,8 +264,9 @@ async function recentContext(
 }
 
 /**
- * One-shot Settings test: POST a synthetic chat webhook payload.
- * Does not create threads/messages. Never returns the webhook URL or secret.
+ * Settings → Test connection: POST `agent.webhook.test` against a real
+ * direct chat thread (created if missing) so a welcome reply can land in chat.
+ * Never returns the webhook URL or secret.
  */
 export async function testAgentWebhook(
   workspaceId: string,
@@ -275,6 +280,8 @@ export async function testAgentWebhook(
       ok: false,
       error: "Save a webhook URL before testing.",
       deliveryId: null,
+      threadId: null,
+      testId: null,
     };
   }
   if (!agent.webhookSecretCiphertext?.trim()) {
@@ -282,24 +289,50 @@ export async function testAgentWebhook(
       ok: false,
       error: "Save a webhook secret before testing.",
       deliveryId: null,
+      threadId: null,
+      testId: null,
     };
   }
+
+  let thread;
+  try {
+    thread = await getOrCreateChatThread(workspaceId, agentId);
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Could not open chat thread";
+    return {
+      ok: false,
+      error: message,
+      deliveryId: null,
+      threadId: null,
+      testId: null,
+    };
+  }
+
   const deliveryId = newId();
-  const now = new Date().toISOString();
+  const testId = newId();
+  const now = (deps.now?.() ?? new Date()).toISOString();
   const message: AgentChatWebhookMessage = {
-    id: "test",
+    id: testId,
     role: "user",
-    text: "BacksterOS webhook test",
+    text: "BacksterOS webhook test — reply with a short welcome in this thread.",
     createdAt: now,
   };
-  const payload: AgentChatWebhookPayload = {
-    event: AGENT_CHAT_WEBHOOK_EVENT,
+  const prior = await recentContext(
+    workspaceId,
+    thread.id,
+    CONTEXT_MESSAGE_LIMIT,
+  );
+  const payload: AgentWebhookTestPayload = {
+    event: AGENT_WEBHOOK_TEST_EVENT,
+    testId,
     workspaceId,
     agentId: agent.id,
     agentName: agent.name,
-    threadId: "test",
+    threadId: thread.id,
+    replyUrl: buildAgentChatReplyUrl(thread.id),
     message,
-    context: [message],
+    context: [...prior, message],
     deliveryId,
     timestamp: now,
   };
@@ -315,11 +348,13 @@ export async function testAgentWebhook(
     ok: result.ok,
     error: result.error,
     deliveryId,
+    threadId: thread.id,
+    testId,
   };
 }
 
 export async function deliverAgentChatWebhook(
-  payload: AgentChatWebhookPayload,
+  payload: AgentOutboundWebhookPayload,
   agent: {
     webhookUrl: string;
     webhookSecretCiphertext: string | null;
@@ -476,6 +511,7 @@ export async function postChatThreadMessage(
       agentId: agent.id,
       agentName: agent.name,
       threadId,
+      replyUrl: buildAgentChatReplyUrl(threadId),
       message: {
         id: messageRow!.id,
         role: "user",

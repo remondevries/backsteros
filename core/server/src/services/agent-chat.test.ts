@@ -25,6 +25,8 @@ describe("OS-150 agent chat webhook delivery", () => {
         agentId: "ag_sander",
         agentName: "Sander",
         threadId: "th_1",
+        replyUrl:
+          "https://agent.backsteros.com/api/v1/chat/threads/th_1/messages",
         message: {
           id: "msg_new",
           role: "user",
@@ -75,11 +77,16 @@ describe("OS-150 agent chat webhook delivery", () => {
     const parsed = JSON.parse(posted.body) as {
       event: string;
       threadId: string;
+      replyUrl: string;
       message: { text: string };
       context: unknown[];
     };
     assert.equal(parsed.event, "agent.chat.message");
     assert.equal(parsed.threadId, "th_1");
+    assert.equal(
+      parsed.replyUrl,
+      "https://agent.backsteros.com/api/v1/chat/threads/th_1/messages",
+    );
     assert.equal(parsed.message.text, "hello");
     assert.equal(parsed.context.length, 2);
     // Ciphertext must never appear in the outbound body.
@@ -95,6 +102,8 @@ describe("OS-150 agent chat webhook delivery", () => {
         agentId: "ag_1",
         agentName: "Sander",
         threadId: "th_1",
+        replyUrl:
+          "https://agent.backsteros.com/api/v1/chat/threads/th_1/messages",
         message: {
           id: "m1",
           role: "user",
