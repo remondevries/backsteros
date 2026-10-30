@@ -41,11 +41,18 @@ export type SettingsSecretFieldProps = {
   editLabel?: string;
   saveLabel?: string;
   className?: string;
+  /**
+   * Skip Edit/Save — keep the field editable and persist on blur / Enter when
+   * the draft is dirty (Agent webhook + Test control).
+   */
+  autoSave?: boolean;
 };
 
 /**
  * Locked secret input + single Edit/Save control.
  * Configured secrets stay read-only until Edit; dirty drafts morph Edit → Save.
+ * With {@link SettingsSecretFieldProps.autoSave}, there is no Edit/Save button —
+ * typing a new value and blurring (or pressing Enter) persists it.
  */
 export function SettingsSecretField({
   configured,
@@ -60,6 +67,7 @@ export function SettingsSecretField({
   editLabel = "Edit",
   saveLabel = "Save",
   className,
+  autoSave = false,
 }: SettingsSecretFieldProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const inputId = useId();
@@ -70,7 +78,7 @@ export function SettingsSecretField({
     if (!configured) setEditing(false);
   }, [configured]);
 
-  const locked = configured && !editing;
+  const locked = !autoSave && configured && !editing;
   const dirty = draft.trim().length > 0;
   // No stored secret → Save (disabled until dirty). Stored → Edit until dirty.
   const mode: SettingsSecretEditSaveMode = dirty
@@ -82,6 +90,7 @@ export function SettingsSecretField({
 
   async function handleSave() {
     const value = draft.trim();
+    if (!value && !configured) return;
     await onSave(value);
     setDraft("");
     setEditing(false);
@@ -96,6 +105,11 @@ export function SettingsSecretField({
     }
     setEditing(false);
     setDraft("");
+  }
+
+  function handleAutoSave() {
+    if (!autoSave || !dirty || disabled || saving) return;
+    void handleSave();
   }
 
   return (
@@ -126,16 +140,24 @@ export function SettingsSecretField({
           }
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
+          onBlur={() => handleAutoSave()}
+          onKeyDown={(event) => {
+            if (event.key !== "Enter") return;
+            event.preventDefault();
+            handleAutoSave();
+          }}
         />
         {trailing}
-        <SettingsSecretEditSaveSwap
-          mode={mode}
-          disabled={buttonDisabled}
-          editLabel={editLabel}
-          saveLabel={saveLabel}
-          onEdit={handleEdit}
-          onSave={handleSave}
-        />
+        {autoSave ? null : (
+          <SettingsSecretEditSaveSwap
+            mode={mode}
+            disabled={buttonDisabled}
+            editLabel={editLabel}
+            saveLabel={saveLabel}
+            onEdit={handleEdit}
+            onSave={handleSave}
+          />
+        )}
       </div>
     </div>
   );

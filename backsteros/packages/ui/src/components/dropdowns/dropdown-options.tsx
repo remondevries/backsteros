@@ -31,6 +31,8 @@ export type AssigneeDropdownContact = {
   name: string;
   firstName?: string | null;
   lastName?: string | null;
+  /** Job title / role (shown muted next to the name on Agent keys). */
+  title?: string | null;
   email?: string | null;
   emails?:
     | Array<{ label?: string | null; address?: string | null } | string>

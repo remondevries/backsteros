@@ -180,6 +180,7 @@ export function ApiKeyDetailView({
           saving={savingWebhook}
           disabled={savingWebhook}
           autoComplete="new-password"
+          autoSave
           onSave={async (value) => {
             await persistWebhook({ webhookSecret: value });
           }}
@@ -200,9 +201,9 @@ export function ApiKeyDetailView({
                   if (!url) {
                     throw new Error("Save a webhook URL before testing.");
                   }
-                  if (!lastSavedSecretRef.current) {
+                  if (!lastSavedSecretRef.current && !secretConfigured) {
                     throw new Error(
-                      "Re-save the webhook secret, then click Test.",
+                      "Paste a webhook secret, then click Test.",
                     );
                   }
                   flushSync(() => setTestSuccessLabel("Connected"));

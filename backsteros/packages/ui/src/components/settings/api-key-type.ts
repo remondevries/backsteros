@@ -15,6 +15,20 @@ export type ApiKeyTypeTab =
   | "tv"
   | "carddav";
 
+const API_KEY_TYPE_TABS = [
+  "agent",
+  "access",
+  "applications",
+  "tv",
+  "carddav",
+] as const satisfies readonly ApiKeyTypeTab[];
+
+export function isApiKeyTypeTab(value: unknown): value is ApiKeyTypeTab {
+  return (
+    typeof value === "string" &&
+    (API_KEY_TYPE_TABS as readonly string[]).includes(value)
+  );
+}
 export const TV_API_KEY_SCOPE = "tv.today_counts" as const satisfies ApiKeyScope;
 export const CARDDAV_API_KEY_SCOPE = "carddav" as const satisfies ApiKeyScope;
 export const APPLICATION_API_KEY_SCOPE =

@@ -51,8 +51,17 @@ export {
   CARDDAV_API_KEY_SCOPE,
   TV_API_KEY_SCOPE,
   classifyApiKeyType,
+  isApiKeyTypeTab,
   type ApiKeyTypeTab,
 } from "./api-key-type.js";
+
+export type ApiKeysSettingsPanel = "keys" | "logs";
+
+export function isApiKeysSettingsPanel(
+  value: unknown,
+): value is ApiKeysSettingsPanel {
+  return value === "keys" || value === "logs";
+}
 
 export type SettingsApiKeyItem = {
   id: string;
@@ -96,8 +105,6 @@ type SettingsApiKeyActivityItem =
 export type SettingsApiKeyContactOption = AssigneeDropdownContact;
 
 export type ApiKeyExpiryPreset = "never" | "30d" | "90d" | "1y";
-
-export type ApiKeysSettingsPanel = "keys" | "logs";
 
 export type ApiKeysSettingsSectionViewProps = {
   title?: string;
@@ -146,25 +153,35 @@ export type ApiKeysSettingsSectionViewProps = {
    * shell chat peer strip order via linked agents.
    */
   onReorderAgentKeys?: (orderedApiKeyIds: string[]) => Promise<void>;
+  /**
+   * Sticky Agent-tab order (api key ids). Survives drag preview clear and
+   * works for keys that do not have a cloud agent row yet.
+   */
+  agentKeyOrderIds?: readonly string[] | null;
+  /** Controlled key-type tab (Access / Agent / …). Defaults to Access. */
+  typeTab?: ApiKeyTypeTab;
+  onTypeTabChange?: (tab: ApiKeyTypeTab) => void;
+  /** Controlled Keys / Logs panel. Defaults to Keys. */
+  panelView?: ApiKeysSettingsPanel;
+  onPanelViewChange?: (panel: ApiKeysSettingsPanel) => void;
 };
 
-function ApiKeyGripIcon({ size = 14 }: { size?: number }) {
+function ApiKeyGripIcon({ size = 16 }: { size?: number }) {
   return (
     <svg
       width={size}
       height={size}
-      fill="currentColor"
-      viewBox="0 0 24 24"
+      viewBox="0 0 25 25"
       xmlns="http://www.w3.org/2000/svg"
       aria-hidden="true"
       focusable="false"
     >
-      <circle cx="9" cy="6" r="1.5" />
-      <circle cx="15" cy="6" r="1.5" />
-      <circle cx="9" cy="12" r="1.5" />
-      <circle cx="15" cy="12" r="1.5" />
-      <circle cx="9" cy="18" r="1.5" />
-      <circle cx="15" cy="18" r="1.5" />
+      <path
+        fillRule="evenodd"
+        clipRule="evenodd"
+        d="M9.5 8C10.3284 8 11 7.32843 11 6.5C11 5.67157 10.3284 5 9.5 5C8.67157 5 8 5.67157 8 6.5C8 7.32843 8.67157 8 9.5 8ZM9.5 14C10.3284 14 11 13.3284 11 12.5C11 11.6716 10.3284 11 9.5 11C8.67157 11 8 11.6716 8 12.5C8 13.3284 8.67157 14 9.5 14ZM11 18.5C11 19.3284 10.3284 20 9.5 20C8.67157 20 8 19.3284 8 18.5C8 17.6716 8.67157 17 9.5 17C10.3284 17 11 17.6716 11 18.5ZM15.5 8C16.3284 8 17 7.32843 17 6.5C17 5.67157 16.3284 5 15.5 5C14.6716 5 14 5.67157 14 6.5C14 7.32843 14.6716 8 15.5 8ZM17 12.5C17 13.3284 16.3284 14 15.5 14C14.6716 14 14 13.3284 14 12.5C14 11.6716 14.6716 11 15.5 11C16.3284 11 17 11.6716 17 12.5ZM15.5 20C16.3284 20 17 19.3284 17 18.5C17 17.6716 16.3284 17 15.5 17C14.6716 17 14 17.6716 14 18.5C14 19.3284 14.6716 20 15.5 20Z"
+        fill="#fff"
+      />
     </svg>
   );
 }
@@ -857,7 +874,12 @@ function ApiKeyRow({
                 </div>
               ) : (
                 <strong className="api-key-name">
-                  {apiKey.name}
+                  <span className="api-key-name-label">{apiKey.name}</span>
+                  {contact?.title?.trim() ? (
+                    <span className="api-key-name-title">
+                      {contact.title.trim()}
+                    </span>
+                  ) : null}
                   {expired ? (
                     <span className="api-key-expired-badge">Expired</span>
                   ) : null}
@@ -1111,9 +1133,27 @@ export function ApiKeysSettingsSectionView({
   onSaveAgentWebhook,
   onTestAgentWebhook,
   onReorderAgentKeys,
+  agentKeyOrderIds = null,
+  typeTab: typeTabProp,
+  onTypeTabChange,
+  panelView: panelViewProp,
+  onPanelViewChange,
 }: ApiKeysSettingsSectionViewProps) {
-  const [panel, setPanel] = useState<ApiKeysSettingsPanel>("keys");
-  const [tab, setTab] = useState<ApiKeyTypeTab>("access");
+  const [panelState, setPanelState] = useState<ApiKeysSettingsPanel>("keys");
+  const [tabState, setTabState] = useState<ApiKeyTypeTab>("access");
+  const panel = panelViewProp ?? panelState;
+  const tab = typeTabProp ?? tabState;
+
+  function setPanel(next: ApiKeysSettingsPanel) {
+    if (panelViewProp === undefined) setPanelState(next);
+    onPanelViewChange?.(next);
+  }
+
+  function setTab(next: ApiKeyTypeTab) {
+    if (typeTabProp === undefined) setTabState(next);
+    onTypeTabChange?.(next);
+  }
+
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [draft, setDraft] = useState("");
@@ -1133,12 +1173,17 @@ export function ApiKeysSettingsSectionView({
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dragOrderIds, setDragOrderIds] = useState<string[] | null>(null);
   const agentTableRef = useRef<HTMLTableElement | null>(null);
+  const reorderingRef = useRef(false);
+  const onReorderAgentKeysRef = useRef(onReorderAgentKeys);
+  onReorderAgentKeysRef.current = onReorderAgentKeys;
   const dragSessionRef = useRef<{
     id: string;
     startY: number;
     moved: boolean;
     orderIds: string[];
     initialOrderIds: string[];
+    /** Frozen row midpoints from drag start — avoids snap-back when live-reordering DOM. */
+    slotMids: number[];
   } | null>(null);
 
   const contactOptions = useMemo(
@@ -1162,7 +1207,27 @@ export function ApiKeysSettingsSectionView({
   }, [apiKeys]);
 
   const agentSortedKeys = useMemo(() => {
-    return [...keysByTab.agent].sort((a, b) => {
+    const keys = [...keysByTab.agent];
+    const preferred = dragOrderIds ?? agentKeyOrderIds ?? null;
+    if (preferred && preferred.length > 0) {
+      const index = new Map(preferred.map((id, i) => [id, i]));
+      if (keys.some((key) => index.has(key.id))) {
+        return keys.sort((a, b) => {
+          const ai = index.has(a.id) ? index.get(a.id)! : Number.MAX_SAFE_INTEGER;
+          const bi = index.has(b.id) ? index.get(b.id)! : Number.MAX_SAFE_INTEGER;
+          if (ai !== bi) return ai - bi;
+          const ao =
+            agentWebhookByApiKeyId?.get(a.id)?.sortOrder ??
+            Number.MAX_SAFE_INTEGER;
+          const bo =
+            agentWebhookByApiKeyId?.get(b.id)?.sortOrder ??
+            Number.MAX_SAFE_INTEGER;
+          if (ao !== bo) return ao - bo;
+          return a.name.localeCompare(b.name);
+        });
+      }
+    }
+    return keys.sort((a, b) => {
       const ao =
         agentWebhookByApiKeyId?.get(a.id)?.sortOrder ?? Number.MAX_SAFE_INTEGER;
       const bo =
@@ -1170,35 +1235,33 @@ export function ApiKeysSettingsSectionView({
       if (ao !== bo) return ao - bo;
       return a.name.localeCompare(b.name);
     });
-  }, [agentWebhookByApiKeyId, keysByTab.agent]);
+  }, [agentKeyOrderIds, agentWebhookByApiKeyId, dragOrderIds, keysByTab.agent]);
 
   const filteredKeys = useMemo(() => {
     if (tab !== "agent") return keysByTab[tab];
-    if (!dragOrderIds) return agentSortedKeys;
-    const byId = new Map(agentSortedKeys.map((key) => [key.id, key]));
-    const ordered: SettingsApiKeyItem[] = [];
-    for (const id of dragOrderIds) {
-      const key = byId.get(id);
-      if (!key) continue;
-      ordered.push(key);
-      byId.delete(id);
-    }
-    for (const key of byId.values()) ordered.push(key);
-    return ordered;
-  }, [agentSortedKeys, dragOrderIds, keysByTab, tab]);
+    return agentSortedKeys;
+  }, [agentSortedKeys, keysByTab, tab]);
 
   async function saveAgentOrder(orderedIds: string[]) {
-    if (!onReorderAgentKeys || reordering || tab !== "agent") return;
+    const reorder = onReorderAgentKeysRef.current;
+    if (!reorder || reorderingRef.current || tab !== "agent") return;
+    reorderingRef.current = true;
     setReordering(true);
     try {
-      await onReorderAgentKeys(orderedIds);
+      await reorder(orderedIds);
     } finally {
+      reorderingRef.current = false;
       setReordering(false);
     }
   }
 
   async function moveAgentKey(apiKeyId: string, direction: -1 | 1) {
-    if (!onReorderAgentKeys || reordering || tab !== "agent" || draggingId) {
+    if (
+      !onReorderAgentKeysRef.current ||
+      reorderingRef.current ||
+      tab !== "agent" ||
+      draggingId
+    ) {
       return;
     }
     const from = filteredKeys.findIndex((key) => key.id === apiKeyId);
@@ -1217,8 +1280,8 @@ export function ApiKeysSettingsSectionView({
     event: ReactPointerEvent<HTMLButtonElement>,
   ) {
     if (
-      !onReorderAgentKeys ||
-      reordering ||
+      !onReorderAgentKeysRef.current ||
+      reorderingRef.current ||
       tab !== "agent" ||
       event.button !== 0
     ) {
@@ -1227,13 +1290,28 @@ export function ApiKeysSettingsSectionView({
     event.preventDefault();
     event.stopPropagation();
     const handle = event.currentTarget;
-    const initialOrderIds = filteredKeys.map((key) => key.id);
+    const table = agentTableRef.current;
+    const rows = table
+      ? Array.from(
+          table.querySelectorAll<HTMLElement>("tbody tr[data-agent-key-id]"),
+        )
+      : [];
+    const initialOrderIds =
+      rows.length > 0
+        ? rows.map((row) => row.dataset.agentKeyId!).filter(Boolean)
+        : filteredKeys.map((key) => key.id);
+    if (!initialOrderIds.includes(apiKeyId)) return;
+    const slotMids = rows.map((row) => {
+      const rect = row.getBoundingClientRect();
+      return rect.top + rect.height / 2;
+    });
     dragSessionRef.current = {
       id: apiKeyId,
       startY: event.clientY,
       moved: false,
       orderIds: initialOrderIds,
       initialOrderIds,
+      slotMids,
     };
     setDraggingId(apiKeyId);
     setDragOrderIds(initialOrderIds);
@@ -1244,22 +1322,24 @@ export function ApiKeysSettingsSectionView({
       if (!session || session.id !== apiKeyId) return;
       if (!session.moved && Math.abs(ev.clientY - session.startY) < 4) return;
       session.moved = true;
-      const table = agentTableRef.current;
-      if (!table) return;
-      const rows = Array.from(
-        table.querySelectorAll<HTMLElement>("tbody tr[data-agent-key-id]"),
-      );
-      if (rows.length === 0) return;
-      let toIndex = rows.length - 1;
-      for (let i = 0; i < rows.length; i += 1) {
-        const rect = rows[i]!.getBoundingClientRect();
-        if (ev.clientY < rect.top + rect.height / 2) {
+      const mids = session.slotMids;
+      if (mids.length === 0) return;
+      let toIndex = mids.length - 1;
+      for (let i = 0; i < mids.length; i += 1) {
+        if (ev.clientY < mids[i]!) {
           toIndex = i;
           break;
         }
       }
-      const next = moveIdToIndex(session.orderIds, session.id, toIndex);
-      if (next === session.orderIds) return;
+      // Always map onto the frozen start order — measuring live DOM after a
+      // reorder made the row fight the pointer and snap back.
+      const next = moveIdToIndex(session.initialOrderIds, session.id, toIndex);
+      if (
+        next.length === session.orderIds.length &&
+        next.every((id, index) => id === session.orderIds[index])
+      ) {
+        return;
+      }
       session.orderIds = next;
       setDragOrderIds(next);
     };
@@ -1287,9 +1367,11 @@ export function ApiKeysSettingsSectionView({
         setDragOrderIds(null);
         return;
       }
+      const orderedIds = session.orderIds;
+      // Keep preview order until parent commits agentKeyOrderIds, then clear.
       void (async () => {
         try {
-          await saveAgentOrder(session.orderIds);
+          await saveAgentOrder(orderedIds);
         } finally {
           setDragOrderIds(null);
         }

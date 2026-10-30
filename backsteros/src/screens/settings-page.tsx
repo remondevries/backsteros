@@ -10,7 +10,12 @@ import type {
   CreateApiKeyResponse,
 } from "@backsteros/contracts";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Navigate, useParams } from "@tanstack/react-router";
+import {
+  Navigate,
+  useNavigate,
+  useParams,
+  useRouterState,
+} from "@tanstack/react-router";
 
 import {
   ApiKeysSettingsSectionView,
@@ -18,10 +23,14 @@ import {
   SettingsContentHeader,
   SettingsDetailLayout,
   getSettingsTabMeta,
+  isApiKeyTypeTab,
+  isApiKeysSettingsPanel,
   isLegacyIntegrationSettingsTab,
   isSettingsTabId,
   normalizeAppTimezone,
   type AgentWebhookSettings,
+  type ApiKeyTypeTab,
+  type ApiKeysSettingsPanel,
   type SettingsApiKeyAuditLogItem,
   type SettingsApiKeyItem,
   type SettingsApiKeyRequestLogItem,
@@ -33,7 +42,9 @@ import {
   isCloudCoreApiError,
 } from "../lib/cloud-core-api";
 import {
+  readAgentApiKeySortOrderIds,
   sortAgentsForDisplay,
+  writeAgentApiKeySortOrderIds,
   writeAgentSortOrderIds,
 } from "../lib/shell-agent-order";
 import { notifyShellAgentRosterChanged } from "../lib/shell-agent-roster";
@@ -122,6 +133,21 @@ function toAgentWebhookSettings(agent: Agent): AgentWebhookSettings {
  * Chat agents/webhooks go through the cloud agents door so the shell roster
  * matches. Key ids are replicated, so linking `apiKeyId` on a cloud agent works.
  */
+function parseApiKeysSearch(searchStr: string): {
+  typeTab: ApiKeyTypeTab;
+  panelView: ApiKeysSettingsPanel;
+} {
+  const params = new URLSearchParams(
+    searchStr.startsWith("?") ? searchStr.slice(1) : searchStr,
+  );
+  const typeRaw = params.get("type");
+  const panelRaw = params.get("panel");
+  return {
+    typeTab: isApiKeyTypeTab(typeRaw) ? typeRaw : "access",
+    panelView: isApiKeysSettingsPanel(panelRaw) ? panelRaw : "keys",
+  };
+}
+
 function SettingsApiTab({
   title,
   description,
@@ -130,6 +156,12 @@ function SettingsApiTab({
   description: string;
 }) {
   const { client } = useDesktopApi();
+  const navigate = useNavigate();
+  const searchStr = useRouterState({ select: (s) => s.location.searchStr });
+  const { typeTab, panelView } = useMemo(
+    () => parseApiKeysSearch(searchStr),
+    [searchStr],
+  );
   const { contacts } = useDesktopWorkspacePeople();
   const contactAvatarSrc = useDesktopAvatarSrcMap("contact", contacts);
   const contactsWithAvatars = useMemo(
@@ -138,12 +170,43 @@ function SettingsApiTab({
   );
   const [apiKeys, setApiKeys] = useState<SettingsApiKeyItem[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
+  const [agentKeyOrderIds, setAgentKeyOrderIds] = useState<string[]>(() =>
+    readAgentApiKeySortOrderIds(),
+  );
   const [auditLogs, setAuditLogs] = useState<SettingsApiKeyAuditLogItem[]>([]);
   const [requestLogs, setRequestLogs] = useState<
     SettingsApiKeyRequestLogItem[]
   >([]);
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  const syncApiKeysSearch = useCallback(
+    (next: { typeTab: ApiKeyTypeTab; panelView: ApiKeysSettingsPanel }) => {
+      void navigate({
+        to: "/settings/$tab",
+        params: { tab: "api" },
+        search: {
+          type: next.typeTab,
+          ...(next.panelView === "logs" ? { panel: "logs" as const } : {}),
+        },
+        replace: true,
+      });
+    },
+    [navigate],
+  );
+
+  // Keep the address bar in sync so deep links like ?type=agent work and
+  // bare /settings/api still shows an explicit type.
+  useEffect(() => {
+    const params = new URLSearchParams(
+      searchStr.startsWith("?") ? searchStr.slice(1) : searchStr,
+    );
+    const typeOk = isApiKeyTypeTab(params.get("type"));
+    const panelRaw = params.get("panel");
+    const panelOk = panelRaw == null || isApiKeysSettingsPanel(panelRaw);
+    if (typeOk && panelOk) return;
+    syncApiKeysSearch({ typeTab, panelView });
+  }, [panelView, searchStr, syncApiKeysSearch, typeTab]);
 
   const agentWebhookByApiKeyId = useMemo(() => {
     const map = new Map<string, AgentWebhookSettings>();
@@ -162,43 +225,55 @@ function SettingsApiTab({
   const loadKeys = useCallback(async () => {
     setLoading(true);
     setErrorMessage(null);
+    // Local-core keys must not wait on the agents door — a hung
+    // agent.backsteros.com / __cloud_core__ fetch used to leave this tab on
+    // “Loading keys…” forever.
     try {
-      const [keysBody, auditBody, requestBody, agentsResult] =
-        await Promise.all([
-          client.requestJson<{ apiKeys: ApiKey[] }>("/api/v1/api-keys"),
-          client.requestJson<{ auditLogs: ApiKeyAuditLog[] }>(
-            "/api/v1/api-keys/audit-logs?limit=100",
-          ),
-          client.requestJson<{ requestLogs: ApiKeyRequestLog[] }>(
-            "/api/v1/api-keys/request-logs?limit=200",
-          ),
-          cloudCoreRequestJson<{ agents: Agent[] }>("/api/v1/agents").then(
-            (body) => ({ ok: true as const, body }),
-            (error: unknown) => ({ ok: false as const, error }),
-          ),
-        ]);
+      const [keysBody, auditBody, requestBody] = await Promise.all([
+        client.requestJson<{ apiKeys: ApiKey[] }>("/api/v1/api-keys"),
+        client.requestJson<{ auditLogs: ApiKeyAuditLog[] }>(
+          "/api/v1/api-keys/audit-logs?limit=100",
+        ),
+        client.requestJson<{ requestLogs: ApiKeyRequestLog[] }>(
+          "/api/v1/api-keys/request-logs?limit=200",
+        ),
+      ]);
       setApiKeys(keysBody.apiKeys.map(toSettingsApiKey));
       setAuditLogs(auditBody.auditLogs.map(toSettingsAuditLog));
       setRequestLogs(requestBody.requestLogs.map(toSettingsRequestLog));
-      if (agentsResult.ok) {
-        const ordered = sortAgentsForDisplay(agentsResult.body.agents);
-        setAgents(ordered);
-        writeAgentSortOrderIds(ordered.map((agent) => agent.id));
-      } else {
-        setAgents([]);
-        setErrorMessage(
-          cloudSettingsErrorMessage(
-            agentsResult.error,
-            "Could not load cloud agents",
-          ),
-        );
-      }
     } catch (error) {
       setErrorMessage(
         error instanceof Error ? error.message : "Could not load API keys",
       );
-    } finally {
       setLoading(false);
+      return;
+    }
+    setLoading(false);
+
+    let timeoutId: number | undefined;
+    try {
+      const agentsBody = await Promise.race([
+        cloudCoreRequestJson<{ agents: Agent[] }>("/api/v1/agents"),
+        new Promise<never>((_, reject) => {
+          timeoutId = window.setTimeout(() => {
+            reject(
+              new Error(
+                "Cloud agents timed out (agent.backsteros.com). Keys still loaded from local-core.",
+              ),
+            );
+          }, 8_000);
+        }),
+      ]);
+      const ordered = sortAgentsForDisplay(agentsBody.agents);
+      setAgents(ordered);
+      writeAgentSortOrderIds(ordered.map((agent) => agent.id));
+    } catch (error) {
+      setAgents([]);
+      setErrorMessage(
+        cloudSettingsErrorMessage(error, "Could not load cloud agents"),
+      );
+    } finally {
+      if (timeoutId !== undefined) window.clearTimeout(timeoutId);
     }
   }, [client]);
 
@@ -401,10 +476,12 @@ function SettingsApiTab({
       } else if (missingOnCloud) {
         throw new Error(
           "Re-save the webhook secret, then click Test (cloud test route is not deployed yet).",
+          { cause: error },
         );
       } else {
         throw new Error(
           cloudSettingsErrorMessage(error, "Webhook test failed"),
+          { cause: error },
         );
       }
     }
@@ -424,6 +501,11 @@ function SettingsApiTab({
   }
 
   async function reorderAgentKeys(orderedApiKeyIds: string[]): Promise<void> {
+    // Commit table order locally first so the drag preview can clear without
+    // snapping back (many Agent-tab keys have no cloud agent row yet).
+    writeAgentApiKeySortOrderIds(orderedApiKeyIds);
+    setAgentKeyOrderIds(orderedApiKeyIds);
+
     const agentIds: string[] = [];
     const seen = new Set<string>();
     for (const apiKeyId of orderedApiKeyIds) {
@@ -437,36 +519,38 @@ function SettingsApiTab({
       seen.add(agent.id);
       agentIds.push(agent.id);
     }
+
+    if (agentIds.length > 0) {
+      writeAgentSortOrderIds(agentIds);
+      setAgents((current) =>
+        sortAgentsForDisplay(
+          current.map((agent) => {
+            const index = agentIds.indexOf(agent.id);
+            return index >= 0 ? { ...agent, sortOrder: index } : agent;
+          }),
+          agentIds,
+        ),
+      );
+      notifyShellAgentRosterChanged();
+    }
+
     if (agentIds.length === 0) return;
 
-    writeAgentSortOrderIds(agentIds);
-    setAgents((current) =>
-      sortAgentsForDisplay(
-        current.map((agent) => {
-          const index = agentIds.indexOf(agent.id);
-          return index >= 0 ? { ...agent, sortOrder: index } : agent;
-        }),
-        agentIds,
-      ),
-    );
-    notifyShellAgentRosterChanged();
-
-    try {
-      const body = await cloudCoreRequestJson<{ agents: Agent[] }>(
-        "/api/v1/agents/reorder",
-        {
-          method: "PUT",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ agentIds }),
-        },
-      );
-      const ordered = sortAgentsForDisplay(body.agents);
-      setAgents(ordered);
-      writeAgentSortOrderIds(ordered.map((agent) => agent.id));
-      notifyShellAgentRosterChanged();
-    } catch {
-      // localStorage + optimistic state keep order until cloud migrates.
-    }
+    // Cloud sync in the background — do not block the table on the door.
+    void cloudCoreRequestJson<{ agents: Agent[] }>("/api/v1/agents/reorder", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ agentIds }),
+    })
+      .then((body) => {
+        const ordered = sortAgentsForDisplay(body.agents);
+        setAgents(ordered);
+        writeAgentSortOrderIds(ordered.map((agent) => agent.id));
+        notifyShellAgentRosterChanged();
+      })
+      .catch(() => {
+        // localStorage + optimistic state keep order until cloud migrates.
+      });
   }
 
   return (
@@ -480,10 +564,19 @@ function SettingsApiTab({
       loading={loading}
       errorMessage={errorMessage}
       onRetry={() => void loadKeys()}
+      typeTab={typeTab}
+      panelView={panelView}
+      onTypeTabChange={(next) =>
+        syncApiKeysSearch({ typeTab: next, panelView: "keys" })
+      }
+      onPanelViewChange={(next) =>
+        syncApiKeysSearch({ typeTab, panelView: next })
+      }
       agentWebhookByApiKeyId={agentWebhookByApiKeyId}
       onSaveAgentWebhook={saveAgentWebhook}
       onTestAgentWebhook={testAgentWebhook}
       onReorderAgentKeys={reorderAgentKeys}
+      agentKeyOrderIds={agentKeyOrderIds}
       onRevealSecret={async (id) => {
         try {
           const body = await client.requestJson<{ secret: string }>(

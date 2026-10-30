@@ -5,11 +5,13 @@
  */
 
 const STORAGE_KEY = "backsteros:agent-sort-order";
+/** Settings → API → Agent table order (api key ids). Chat strip uses agent ids above. */
+const API_KEY_STORAGE_KEY = "backsteros:agent-api-key-sort-order";
 
-export function readAgentSortOrderIds(): string[] {
+function readIdList(storageKey: string): string[] {
   if (typeof window === "undefined") return [];
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
+    const raw = window.localStorage.getItem(storageKey);
     if (!raw) return [];
     const parsed: unknown = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
@@ -21,16 +23,32 @@ export function readAgentSortOrderIds(): string[] {
   }
 }
 
-export function writeAgentSortOrderIds(agentIds: readonly string[]): void {
+function writeIdList(storageKey: string, ids: readonly string[]): void {
   if (typeof window === "undefined") return;
   try {
     window.localStorage.setItem(
-      STORAGE_KEY,
-      JSON.stringify(agentIds.map((id) => id.trim()).filter(Boolean)),
+      storageKey,
+      JSON.stringify(ids.map((id) => id.trim()).filter(Boolean)),
     );
   } catch {
     // ignore quota / private mode
   }
+}
+
+export function readAgentSortOrderIds(): string[] {
+  return readIdList(STORAGE_KEY);
+}
+
+export function writeAgentSortOrderIds(agentIds: readonly string[]): void {
+  writeIdList(STORAGE_KEY, agentIds);
+}
+
+export function readAgentApiKeySortOrderIds(): string[] {
+  return readIdList(API_KEY_STORAGE_KEY);
+}
+
+export function writeAgentApiKeySortOrderIds(apiKeyIds: readonly string[]): void {
+  writeIdList(API_KEY_STORAGE_KEY, apiKeyIds);
 }
 
 type OrderableAgent = {

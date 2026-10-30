@@ -855,9 +855,17 @@ const settingsRoute = createRoute({
 const settingsTabRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: "settings/$tab",
-  validateSearch: (search: Record<string, unknown>): { open?: string } => {
+  validateSearch: (
+    search: Record<string, unknown>,
+  ): { open?: string; type?: string; panel?: string } => {
     const open = typeof search.open === "string" ? search.open : undefined;
-    return open ? { open } : {};
+    const type = typeof search.type === "string" ? search.type : undefined;
+    const panel = typeof search.panel === "string" ? search.panel : undefined;
+    return {
+      ...(open ? { open } : {}),
+      ...(type ? { type } : {}),
+      ...(panel ? { panel } : {}),
+    };
   },
   component: () => (
     <LazyRoute>

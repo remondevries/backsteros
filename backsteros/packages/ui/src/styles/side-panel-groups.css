@@ -3551,43 +3551,87 @@ button.api-key-create-btn:disabled {
   min-width: 0;
 }
 
-.api-key-drag-handle {
+/* Beat `.settings-card button` chrome — grip only, no pad/bg/border. */
+.settings-card button.api-key-drag-handle,
+button.api-key-drag-handle {
   display: inline-flex;
   flex-shrink: 0;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: 28px;
+  width: 16px;
+  min-width: 16px;
+  height: 20px;
+  min-height: 0;
   margin: 0;
   padding: 0;
   border: 0;
-  border-radius: 6px;
+  border-radius: 0;
   background: transparent;
-  color: color-mix(in srgb, var(--muted) 85%, var(--foreground));
+  box-shadow: none;
+  color: #fff;
+  line-height: 0;
   cursor: grab;
   touch-action: none;
   user-select: none;
   -webkit-user-select: none;
+  outline: none;
+  opacity: 0;
+  transition: opacity 140ms ease;
 }
 
-.api-key-drag-handle:hover:not(:disabled) {
-  color: var(--foreground);
-  background: color-mix(in srgb, var(--foreground) 6%, transparent);
+.settings-card button.api-key-drag-handle svg,
+.settings-card button.api-key-drag-handle svg path,
+button.api-key-drag-handle svg,
+button.api-key-drag-handle svg path {
+  fill: #fff;
 }
 
-.api-key-drag-handle:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--foreground) 35%, transparent);
-  outline-offset: 1px;
+.api-key-table-row:hover .api-key-drag-handle,
+.api-key-table-row:focus-within .api-key-drag-handle,
+.api-key-table-row--dragging .api-key-drag-handle,
+.settings-card button.api-key-drag-handle:focus-visible,
+button.api-key-drag-handle:focus-visible,
+.settings-card button.api-key-drag-handle--dragging,
+button.api-key-drag-handle--dragging {
+  opacity: 1;
 }
 
-.api-key-drag-handle:active:not(:disabled),
-.api-key-drag-handle--dragging {
+.settings-card button.api-key-drag-handle:hover:not(:disabled),
+button.api-key-drag-handle:hover:not(:disabled) {
+  color: #fff;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+}
+
+.settings-card button.api-key-drag-handle:focus,
+.settings-card button.api-key-drag-handle:focus-visible,
+button.api-key-drag-handle:focus,
+button.api-key-drag-handle:focus-visible {
+  outline: none;
+  box-shadow: none;
+  background: transparent;
+}
+
+.settings-card button.api-key-drag-handle:active:not(:disabled),
+.settings-card button.api-key-drag-handle--dragging,
+button.api-key-drag-handle:active:not(:disabled),
+button.api-key-drag-handle--dragging {
   cursor: grabbing;
-  color: var(--foreground);
+  color: #fff;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
 }
 
-.api-key-drag-handle:disabled {
+.settings-card button.api-key-drag-handle:disabled,
+button.api-key-drag-handle:disabled {
   cursor: default;
+  opacity: 0;
+  background: transparent;
+}
+
+.api-key-table-row:hover .api-key-drag-handle:disabled {
   opacity: 0.45;
 }
 
@@ -3865,12 +3909,30 @@ button.api-key-prefix--fresh-secret {
 }
 
 .api-key-name {
-  display: block;
+  display: flex;
+  align-items: baseline;
+  gap: 0.4em;
+  min-width: 0;
   overflow: hidden;
   font-size: 14px;
   font-weight: 600;
-  text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.api-key-name-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.api-key-name-title {
+  flex-shrink: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: color-mix(in srgb, var(--muted) 88%, var(--foreground));
+  font-size: 12px;
+  font-weight: 450;
+  text-overflow: ellipsis;
 }
 
 .api-key-name-edit-row {
