@@ -9,6 +9,11 @@ import {
 } from "./cloud-core-api";
 
 export const AGENT_SHELL_CHAT_SSE_EVENT = "agent.chat.message" as const;
+export const AGENT_SHELL_CHAT_STATUS_SSE_EVENT = "agent.chat.status" as const;
+
+/** Window event so ChatUiDevPreview can drive the thinking indicator. */
+export const AGENT_SHELL_CHAT_STATUS_WINDOW_EVENT =
+  "backsteros:agent-shell-chat-status";
 
 export type AgentShellChatMessagePayload = {
   threadId: string;
@@ -19,6 +24,25 @@ export type AgentShellChatMessagePayload = {
     createdAt: string;
   };
 };
+
+export type AgentShellChatStatusPayload = {
+  threadId: string;
+  agentId: string;
+  state: "working" | "idle";
+  at: string;
+  pendingReplyAt: string | null;
+};
+
+export function dispatchAgentShellChatStatus(
+  payload: AgentShellChatStatusPayload,
+): void {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(
+    new CustomEvent(AGENT_SHELL_CHAT_STATUS_WINDOW_EVENT, {
+      detail: payload,
+    }),
+  );
+}
 
 function parseSseChunk(
   chunk: string,
@@ -77,9 +101,41 @@ export function parseAgentShellChatMessagePayload(
   }
 }
 
+export function parseAgentShellChatStatusPayload(
+  data: string,
+): AgentShellChatStatusPayload | null {
+  try {
+    const parsed = JSON.parse(data) as {
+      threadId?: unknown;
+      agentId?: unknown;
+      state?: unknown;
+      at?: unknown;
+      pendingReplyAt?: unknown;
+    };
+    const threadId =
+      typeof parsed.threadId === "string" ? parsed.threadId.trim() : "";
+    const agentId =
+      typeof parsed.agentId === "string" ? parsed.agentId.trim() : "";
+    const state =
+      parsed.state === "working" || parsed.state === "idle" ? parsed.state : null;
+    const at = typeof parsed.at === "string" ? parsed.at.trim() : "";
+    const pendingReplyAt =
+      parsed.pendingReplyAt == null
+        ? null
+        : typeof parsed.pendingReplyAt === "string"
+          ? parsed.pendingReplyAt.trim() || null
+          : null;
+    if (!threadId || !agentId || !state || !at) return null;
+    return { threadId, agentId, state, at, pendingReplyAt };
+  } catch {
+    return null;
+  }
+}
+
 export async function subscribeAgentShellChatEvents(input: {
   signal: AbortSignal;
   onMessage: (payload: AgentShellChatMessagePayload) => void;
+  onStatus?: (payload: AgentShellChatStatusPayload) => void;
   onConnection?: (status: "live") => void;
   requestStream?: (
     path: string,
@@ -129,10 +185,17 @@ export async function subscribeAgentShellChatEvents(input: {
       buffer = parts.pop() ?? "";
       for (const part of parts) {
         parseSseChunk(part, (event, data) => {
-          if (event !== AGENT_SHELL_CHAT_SSE_EVENT) return;
-          const payload = parseAgentShellChatMessagePayload(data);
-          if (!payload) return;
-          input.onMessage(payload);
+          if (event === AGENT_SHELL_CHAT_SSE_EVENT) {
+            const payload = parseAgentShellChatMessagePayload(data);
+            if (!payload) return;
+            input.onMessage(payload);
+            return;
+          }
+          if (event === AGENT_SHELL_CHAT_STATUS_SSE_EVENT) {
+            const payload = parseAgentShellChatStatusPayload(data);
+            if (!payload) return;
+            input.onStatus?.(payload);
+          }
         });
       }
     }
@@ -154,6 +217,7 @@ export async function subscribeAgentShellChatEvents(input: {
 export function startAgentShellChatEventsLoop(input: {
   signal: AbortSignal;
   onMessage: (payload: AgentShellChatMessagePayload) => void;
+  onStatus?: (payload: AgentShellChatStatusPayload) => void;
   /** Called when the stream becomes live (including after reconnect). */
   onLive?: () => void;
   requestStream?: (
@@ -168,6 +232,7 @@ export function startAgentShellChatEventsLoop(input: {
         await subscribeAgentShellChatEvents({
           signal: input.signal,
           onMessage: input.onMessage,
+          onStatus: input.onStatus,
           onConnection: () => {
             attempt = 0;
             input.onLive?.();

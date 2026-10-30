@@ -1,6 +1,7 @@
 /**
- * In-process fan-out for shell agent DM replies → owner SSE streams on cloud-core.
- * Distinct from Chatwoot {@link publishChatUpdated} and outbound webhook payloads.
+ * In-process fan-out for shell agent DM replies + status → owner SSE streams
+ * on cloud-core. Distinct from Chatwoot {@link publishChatUpdated} and
+ * outbound webhook payloads.
  */
 
 export type AgentShellChatMessageEvent = {
@@ -15,12 +16,26 @@ export type AgentShellChatMessageEvent = {
   };
 };
 
-/** SSE event name (also the outbound webhook event name — different transport). */
+export type AgentShellChatStatusEvent = {
+  workspaceId: string;
+  threadId: string;
+  agentId: string;
+  state: "working" | "idle";
+  at: string;
+  pendingReplyAt: string | null;
+};
+
+/** SSE event name for assistant DM pushes. */
 export const AGENT_SHELL_CHAT_SSE_EVENT = "agent.chat.message" as const;
 
-type Listener = (event: AgentShellChatMessageEvent) => void;
+/** SSE event name for agent working/idle presence on a thread. */
+export const AGENT_SHELL_CHAT_STATUS_SSE_EVENT = "agent.chat.status" as const;
 
-const listenersByWorkspace = new Map<string, Set<Listener>>();
+type MessageListener = (event: AgentShellChatMessageEvent) => void;
+type StatusListener = (event: AgentShellChatStatusEvent) => void;
+
+const messageListenersByWorkspace = new Map<string, Set<MessageListener>>();
+const statusListenersByWorkspace = new Map<string, Set<StatusListener>>();
 
 export function previewAgentChatMessageBody(body: string, max = 96): string {
   const flat = body.replace(/\s+/g, " ").trim();
@@ -30,26 +45,26 @@ export function previewAgentChatMessageBody(body: string, max = 96): string {
 
 export function subscribeAgentShellChatMessage(
   workspaceId: string,
-  listener: Listener,
+  listener: MessageListener,
 ): () => void {
   const id = workspaceId.trim();
   if (!id) return () => {};
-  let set = listenersByWorkspace.get(id);
+  let set = messageListenersByWorkspace.get(id);
   if (!set) {
     set = new Set();
-    listenersByWorkspace.set(id, set);
+    messageListenersByWorkspace.set(id, set);
   }
   set.add(listener);
   return () => {
     set!.delete(listener);
-    if (set!.size === 0) listenersByWorkspace.delete(id);
+    if (set!.size === 0) messageListenersByWorkspace.delete(id);
   };
 }
 
 export function publishAgentShellChatMessage(
   event: AgentShellChatMessageEvent,
 ): void {
-  const set = listenersByWorkspace.get(event.workspaceId);
+  const set = messageListenersByWorkspace.get(event.workspaceId);
   if (!set || set.size === 0) return;
   for (const listener of set) {
     try {
@@ -60,7 +75,40 @@ export function publishAgentShellChatMessage(
   }
 }
 
+export function subscribeAgentShellChatStatus(
+  workspaceId: string,
+  listener: StatusListener,
+): () => void {
+  const id = workspaceId.trim();
+  if (!id) return () => {};
+  let set = statusListenersByWorkspace.get(id);
+  if (!set) {
+    set = new Set();
+    statusListenersByWorkspace.set(id, set);
+  }
+  set.add(listener);
+  return () => {
+    set!.delete(listener);
+    if (set!.size === 0) statusListenersByWorkspace.delete(id);
+  };
+}
+
+export function publishAgentShellChatStatus(
+  event: AgentShellChatStatusEvent,
+): void {
+  const set = statusListenersByWorkspace.get(event.workspaceId);
+  if (!set || set.size === 0) return;
+  for (const listener of set) {
+    try {
+      listener(event);
+    } catch (error) {
+      console.error("agent.chat.status listener failed:", error);
+    }
+  }
+}
+
 /** Test helper — clear all subscribers. */
 export function clearAgentShellChatMessageListeners(): void {
-  listenersByWorkspace.clear();
+  messageListenersByWorkspace.clear();
+  statusListenersByWorkspace.clear();
 }

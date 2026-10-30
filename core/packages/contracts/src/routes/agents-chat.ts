@@ -15,10 +15,12 @@ import {
   chatThreadsListSchema,
   deleteChatThreadMessagesInputSchema,
   deleteChatThreadMessagesResultSchema,
+  chatThreadAgentStatusSchema,
   errorSchema,
   getOrCreateChatThreadInputSchema,
   reorderAgentsInputSchema,
   updateAgentInputSchema,
+  updateChatThreadAgentStatusInputSchema,
 } from "../schemas.js";
 
 const c = initContract();
@@ -203,5 +205,20 @@ export const agentsChatRoutes: AppRouter = c.router({
       404: errorSchema,
     },
     summary: "Soft-delete multiple chat messages (owner / Access keys only)",
+  },
+  updateChatThreadAgentStatus: {
+    method: "POST",
+    path: "/api/v1/chat/threads/:threadId/status",
+    pathParams: z.object({ threadId: z.string() }),
+    body: updateChatThreadAgentStatusInputSchema,
+    responses: {
+      200: chatThreadAgentStatusSchema,
+      400: badRequestSchema,
+      401: errorSchema,
+      403: errorSchema,
+      404: errorSchema,
+    },
+    summary:
+      "Agent reports working/idle for its own shell DM thread (agent API key only)",
   },
 });

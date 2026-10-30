@@ -2,6 +2,8 @@ import { and, asc, desc, eq, inArray, isNull } from "drizzle-orm";
 import type {
   AgentWebhookTestResult,
   ChatThread,
+  ChatThreadAgentStatus,
+  ChatThreadAgentStatusState,
   ChatThreadListItem,
   ChatThreadMessage,
   ChatThreadWithMessages,
@@ -33,9 +35,70 @@ import { getAgentRowForWebhook } from "./agents.js";
 import {
   previewAgentChatMessageBody,
   publishAgentShellChatMessage,
+  publishAgentShellChatStatus,
 } from "../lib/agent-shell-chat-events.js";
 
 const CONTEXT_MESSAGE_LIMIT = 10;
+
+/** Clear stuck `pending_reply_at` after this long without an agent status/reply. */
+export const CHAT_THREAD_WORKING_STALE_MS = 120_000;
+
+export function isChatThreadPendingReplyStale(
+  pendingReplyAt: Date | null,
+  now: Date = new Date(),
+): boolean {
+  if (!pendingReplyAt) return false;
+  return now.getTime() - pendingReplyAt.getTime() > CHAT_THREAD_WORKING_STALE_MS;
+}
+
+async function clearStalePendingReplyAt(
+  thread: {
+    id: string;
+    workspaceId: string;
+    agentId: string;
+    pendingReplyAt: Date | null;
+    createdAt: Date;
+    updatedAt: Date;
+  },
+  now: Date = new Date(),
+): Promise<typeof thread> {
+  if (!isChatThreadPendingReplyStale(thread.pendingReplyAt, now)) {
+    return thread;
+  }
+  const [updated] = await db
+    .update(chatThreads)
+    .set({ pendingReplyAt: null, updatedAt: now })
+    .where(
+      and(
+        eq(chatThreads.workspaceId, thread.workspaceId),
+        eq(chatThreads.id, thread.id),
+      ),
+    )
+    .returning();
+  return updated ?? { ...thread, pendingReplyAt: null, updatedAt: now };
+}
+
+function publishStatusEvent(input: {
+  workspaceId: string;
+  threadId: string;
+  agentId: string;
+  state: ChatThreadAgentStatusState;
+  at: Date;
+  pendingReplyAt: Date | null;
+}): ChatThreadAgentStatus {
+  const payload: ChatThreadAgentStatus = {
+    threadId: input.threadId,
+    agentId: input.agentId,
+    state: input.state,
+    at: input.at.toISOString(),
+    pendingReplyAt: input.pendingReplyAt?.toISOString() ?? null,
+  };
+  publishAgentShellChatStatus({
+    workspaceId: input.workspaceId,
+    ...payload,
+  });
+  return payload;
+}
 
 function toThread(row: {
   id: string;
@@ -187,9 +250,10 @@ export async function getChatThreadWithMessages(
     )
     .limit(1);
   if (!row) return null;
+  const thread = await clearStalePendingReplyAt(row.thread);
   const messages = await loadMessages(workspaceId, threadId);
   return {
-    ...toThread(row.thread),
+    ...toThread(thread),
     agentName: row.agentName,
     messages,
   };
@@ -235,9 +299,10 @@ export async function getOrCreateChatThread(
     thread = created!;
   }
 
-  const messages = await loadMessages(workspaceId, thread.id);
+  const freshThread = await clearStalePendingReplyAt(thread);
+  const messages = await loadMessages(workspaceId, freshThread.id);
   return {
-    ...toThread(thread),
+    ...toThread(freshThread),
     agentName: agent.name,
     messages,
   };
@@ -518,6 +583,15 @@ export async function postChatThreadMessage(
         createdAt: message.createdAt,
       },
     });
+    // Posting a reply implicitly marks the agent idle.
+    publishStatusEvent({
+      workspaceId,
+      threadId,
+      agentId: agent.id,
+      state: "idle",
+      at: now,
+      pendingReplyAt: null,
+    });
 
     return {
       message,
@@ -599,12 +673,12 @@ export async function postChatThreadMessage(
     }
   }
 
+  // Do not set pendingReplyAt here — durable thinking comes from the agent
+  // status API. `thinking` only signals that the webhook was accepted so the
+  // client can show a short provisional indicator.
   const [updatedThread] = await db
     .update(chatThreads)
-    .set({
-      pendingReplyAt: thinking ? now : null,
-      updatedAt: now,
-    })
+    .set({ updatedAt: now })
     .where(eq(chatThreads.id, threadId))
     .returning();
 
@@ -614,6 +688,62 @@ export async function postChatThreadMessage(
     thinking,
     webhookError,
   };
+}
+
+type StatusAuth = {
+  apiKeyId: string;
+};
+
+/**
+ * Agent reports working/idle for its own shell DM thread.
+ * Owner keys cannot call this — only the agent's API key for that agent.
+ */
+export async function setChatThreadAgentStatus(
+  workspaceId: string,
+  threadId: string,
+  state: ChatThreadAgentStatusState,
+  auth: StatusAuth,
+): Promise<ChatThreadAgentStatus> {
+  const [row] = await db
+    .select({
+      thread: chatThreads,
+      agent: agents,
+    })
+    .from(chatThreads)
+    .innerJoin(agents, eq(agents.id, chatThreads.agentId))
+    .where(
+      and(
+        eq(chatThreads.workspaceId, workspaceId),
+        eq(chatThreads.id, threadId),
+      ),
+    )
+    .limit(1);
+  if (!row) throw notFound("Thread");
+
+  const { thread, agent } = row;
+  if (!agent.apiKeyId || agent.apiKeyId !== auth.apiKeyId) {
+    throw Object.assign(
+      new Error("This API key cannot update status for this agent thread"),
+      { status: 403, code: "forbidden" },
+    );
+  }
+
+  const now = new Date();
+  const pendingReplyAt = state === "working" ? now : null;
+  const [updated] = await db
+    .update(chatThreads)
+    .set({ pendingReplyAt, updatedAt: now })
+    .where(eq(chatThreads.id, threadId))
+    .returning();
+
+  return publishStatusEvent({
+    workspaceId,
+    threadId,
+    agentId: agent.id,
+    state,
+    at: now,
+    pendingReplyAt: updated?.pendingReplyAt ?? pendingReplyAt,
+  });
 }
 
 /**

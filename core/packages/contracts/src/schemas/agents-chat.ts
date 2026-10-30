@@ -128,7 +128,11 @@ export const createChatThreadMessageInputSchema = z.object({
 export const createChatThreadMessageResultSchema = z.object({
   message: chatThreadMessageSchema,
   thread: chatThreadSchema,
-  /** True while waiting for the agent webhook reply. */
+  /**
+   * True when the outbound agent webhook was accepted. The desktop may show a
+   * short provisional “thinking” indicator; durable thinking comes from the
+   * agent status API (`working` / `idle`), not this flag alone.
+   */
   thinking: z.boolean(),
   /**
    * Present when the user message was stored but the outbound webhook could
@@ -144,6 +148,22 @@ export const deleteChatThreadMessagesInputSchema = z.object({
 
 export const deleteChatThreadMessagesResultSchema = z.object({
   deletedIds: z.array(z.string()),
+});
+
+/** Agent-reported working/idle presence for a shell DM thread. */
+export const chatThreadAgentStatusStateSchema = z.enum(["working", "idle"]);
+
+export const updateChatThreadAgentStatusInputSchema = z.object({
+  state: chatThreadAgentStatusStateSchema,
+});
+
+export const chatThreadAgentStatusSchema = z.object({
+  threadId: z.string(),
+  agentId: z.string(),
+  state: chatThreadAgentStatusStateSchema,
+  /** ISO timestamp of this status update. */
+  at: z.string().datetime(),
+  pendingReplyAt: z.string().datetime().nullable(),
 });
 
 /** Result of POSTing a one-shot test delivery to the agent's webhook URL. */
@@ -187,3 +207,10 @@ export type DeleteChatThreadMessagesInput = z.infer<
 export type DeleteChatThreadMessagesResult = z.infer<
   typeof deleteChatThreadMessagesResultSchema
 >;
+export type ChatThreadAgentStatusState = z.infer<
+  typeof chatThreadAgentStatusStateSchema
+>;
+export type UpdateChatThreadAgentStatusInput = z.infer<
+  typeof updateChatThreadAgentStatusInputSchema
+>;
+export type ChatThreadAgentStatus = z.infer<typeof chatThreadAgentStatusSchema>;

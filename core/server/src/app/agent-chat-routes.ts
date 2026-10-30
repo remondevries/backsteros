@@ -7,12 +7,15 @@ import {
   createChatThreadMessageInputSchema,
   deleteChatThreadMessagesInputSchema,
   getOrCreateChatThreadInputSchema,
+  updateChatThreadAgentStatusInputSchema,
 } from "@backsteros/contracts";
 
 import * as agentChat from "../services/agent-chat.js";
 import {
   AGENT_SHELL_CHAT_SSE_EVENT,
+  AGENT_SHELL_CHAT_STATUS_SSE_EVENT,
   subscribeAgentShellChatMessage,
+  subscribeAgentShellChatStatus,
 } from "../lib/agent-shell-chat-events.js";
 import {
   can,
@@ -80,32 +83,49 @@ export function registerAgentChatRoutes(app: Hono) {
       let closed = false;
       let pendingWrites = 0;
       const MAX_PENDING_WRITES = 16;
-      const unsubscribe = subscribeAgentShellChatMessage(
+      const writeEvent = (event: string, data: unknown) => {
+        if (closed || pendingWrites >= MAX_PENDING_WRITES) return;
+        pendingWrites += 1;
+        void stream
+          .writeSSE({
+            event,
+            data: JSON.stringify(data),
+          })
+          .catch(() => {
+            closed = true;
+            unsubscribeMessage();
+            unsubscribeStatus();
+          })
+          .finally(() => {
+            pendingWrites = Math.max(0, pendingWrites - 1);
+          });
+      };
+      const unsubscribeMessage = subscribeAgentShellChatMessage(
         workspaceId,
         (event) => {
-          if (closed || pendingWrites >= MAX_PENDING_WRITES) return;
-          pendingWrites += 1;
-          void stream
-            .writeSSE({
-              event: AGENT_SHELL_CHAT_SSE_EVENT,
-              data: JSON.stringify({
-                threadId: event.threadId,
-                agentId: event.agentId,
-                message: event.message,
-              }),
-            })
-            .catch(() => {
-              closed = true;
-              unsubscribe();
-            })
-            .finally(() => {
-              pendingWrites = Math.max(0, pendingWrites - 1);
-            });
+          writeEvent(AGENT_SHELL_CHAT_SSE_EVENT, {
+            threadId: event.threadId,
+            agentId: event.agentId,
+            message: event.message,
+          });
+        },
+      );
+      const unsubscribeStatus = subscribeAgentShellChatStatus(
+        workspaceId,
+        (event) => {
+          writeEvent(AGENT_SHELL_CHAT_STATUS_SSE_EVENT, {
+            threadId: event.threadId,
+            agentId: event.agentId,
+            state: event.state,
+            at: event.at,
+            pendingReplyAt: event.pendingReplyAt,
+          });
         },
       );
       stream.onAbort(() => {
         closed = true;
-        unsubscribe();
+        unsubscribeMessage();
+        unsubscribeStatus();
       });
       await stream.writeSSE({
         event: "ready",
@@ -121,7 +141,8 @@ export function registerAgentChatRoutes(app: Hono) {
           break;
         }
       }
-      unsubscribe();
+      unsubscribeMessage();
+      unsubscribeStatus();
     });
   });
 
@@ -278,6 +299,44 @@ export function registerAgentChatRoutes(app: Hono) {
       const status = errorStatus(error);
       const message =
         error instanceof Error ? error.message : "Could not delete messages";
+      return c.json({ error: message, code: errorCode(status) }, status);
+    }
+  });
+
+  /**
+   * Agent working/idle presence for a shell DM thread.
+   * Only the agent's own API key for that thread's agent.
+   */
+  app.post("/api/v1/chat/threads/:threadId/status", async (c) => {
+    const auth = getAuth(c);
+    if (!canWriteAgentReply(auth) || !auth.apiKeyId) {
+      return c.json(forbidden(), 403);
+    }
+    let body: unknown;
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ error: "Invalid JSON body", code: "bad_request" }, 400);
+    }
+    const parsed = updateChatThreadAgentStatusInputSchema.safeParse(body);
+    if (!parsed.success) {
+      return c.json(
+        { error: "Invalid status payload", code: "bad_request" },
+        400,
+      );
+    }
+    try {
+      const result = await agentChat.setChatThreadAgentStatus(
+        auth.workspaceId,
+        c.req.param("threadId"),
+        parsed.data.state,
+        { apiKeyId: auth.apiKeyId },
+      );
+      return c.json(result);
+    } catch (error) {
+      const status = errorStatus(error);
+      const message =
+        error instanceof Error ? error.message : "Could not update status";
       return c.json({ error: message, code: errorCode(status) }, status);
     }
   });

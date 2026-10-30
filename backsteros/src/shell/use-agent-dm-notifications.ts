@@ -14,6 +14,7 @@ import {
   markAgentDmSeen,
 } from "../lib/agent-dm-seen";
 import {
+  dispatchAgentShellChatStatus,
   startAgentShellChatEventsLoop,
   type AgentShellChatMessagePayload,
 } from "../lib/agent-shell-chat-events";
@@ -142,6 +143,14 @@ export function useAgentDmNotifications(): UseAgentDmNotificationsResult {
       },
       onMessage: (payload) => {
         if (!readyAgentIds.has(payload.agentId)) return;
+        // Reply implies idle for the open chat thinking indicator.
+        dispatchAgentShellChatStatus({
+          threadId: payload.threadId,
+          agentId: payload.agentId,
+          state: "idle",
+          at: payload.message.createdAt,
+          pendingReplyAt: null,
+        });
         setThreads((prev) => {
           const { threads: next, found } = applyShellChatPush(prev, payload);
           if (!found) {
@@ -150,6 +159,10 @@ export function useAgentDmNotifications(): UseAgentDmNotificationsResult {
           }
           return next;
         });
+      },
+      onStatus: (payload) => {
+        if (!readyAgentIds.has(payload.agentId)) return;
+        dispatchAgentShellChatStatus(payload);
       },
     });
     return () => controller.abort();

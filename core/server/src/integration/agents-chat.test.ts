@@ -267,6 +267,12 @@ test("OS-151/150 agents + chat loop: secret write-only, webhook fire, agent repl
   assert.equal(sent.status, 201);
   assert.equal(sent.body?.thinking, true);
   assert.equal(sent.body?.webhookError, null);
+  // Durable thinking is agent-status driven — webhook accept alone does not stick.
+  assert.equal(
+    (sent.body?.thread as { pendingReplyAt?: string | null } | undefined)
+      ?.pendingReplyAt ?? null,
+    null,
+  );
   assert.ok(webhookHit);
   assert.equal(
     webhookHit.headers[AGENT_CHAT_WEBHOOK_SECRET_HEADER],
@@ -381,8 +387,14 @@ test("OS-151/150 agents + chat loop: secret write-only, webhook fire, agent repl
   assert.equal((reply.body?.message as { role?: string } | undefined)?.role, "assistant");
   assert.equal(reply.body?.thinking, false);
 
-  await readUntil(() =>
-    sseEvents.some((e) => e.event === "agent.chat.message"),
+  await readUntil(
+    () =>
+      sseEvents.some((e) => e.event === "agent.chat.message") &&
+      sseEvents.some(
+        (e) =>
+          e.event === "agent.chat.status" &&
+          e.data.includes('"state":"idle"'),
+      ),
   );
   const dmEvent = sseEvents.find((e) => e.event === "agent.chat.message");
   assert.ok(dmEvent);
@@ -396,6 +408,55 @@ test("OS-151/150 agents + chat loop: secret write-only, webhook fire, agent repl
   assert.ok(dmPayload.message.id);
   assert.match(dmPayload.message.body, /got it/i);
   assert.ok(dmPayload.message.createdAt);
+
+  // Owner cannot set agent status; agent can.
+  const ownerStatusDenied = await json(
+    app,
+    `/api/v1/chat/threads/${threadId}/status`,
+    ownerSecret,
+    {
+      method: "POST",
+      body: JSON.stringify({ state: "working" }),
+    },
+  );
+  assert.equal(ownerStatusDenied.status, 403);
+
+  const working = await json(
+    app,
+    `/api/v1/chat/threads/${threadId}/status`,
+    agentSecret,
+    {
+      method: "POST",
+      body: JSON.stringify({ state: "working" }),
+    },
+  );
+  assert.equal(working.status, 200);
+  assert.equal(working.body?.state, "working");
+  assert.equal(working.body?.threadId, threadId);
+  assert.equal(working.body?.agentId, agentId);
+  assert.ok(typeof working.body?.pendingReplyAt === "string");
+
+  await readUntil(() =>
+    sseEvents.some(
+      (e) =>
+        e.event === "agent.chat.status" &&
+        e.data.includes('"state":"working"'),
+    ),
+  );
+
+  const idle = await json(
+    app,
+    `/api/v1/chat/threads/${threadId}/status`,
+    agentSecret,
+    {
+      method: "POST",
+      body: JSON.stringify({ state: "idle" }),
+    },
+  );
+  assert.equal(idle.status, 200);
+  assert.equal(idle.body?.state, "idle");
+  assert.equal(idle.body?.pendingReplyAt, null);
+
   void reader.cancel().catch(() => {});
 
   const thread = await json(

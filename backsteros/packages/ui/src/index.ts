@@ -5601,6 +5601,18 @@ export {
 } from "./chat/agent-chat-message-adapter.js";
 
 export {
+  CHAT_THINKING_OFF,
+  CHAT_THINKING_PROVISIONAL_MS,
+  CHAT_THINKING_WORKING_STALE_MS,
+  chatThinkingAfterSend,
+  chatThinkingAfterStatus,
+  chatThinkingFromPendingReplyAt,
+  chatThinkingIsActive,
+  type ChatThinkingMode,
+  type ChatThinkingState,
+} from "./chat/chat-thinking-state.js";
+
+export {
   ChatCardRegistryProvider,
   ChatTaskCard,
   DEFAULT_CHAT_CARD_REGISTRY,

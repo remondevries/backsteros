@@ -22,7 +22,8 @@ const PANEL_MIN_WIDTH = 168;
 export type EntityActionsMenuSubItem = {
   id: string;
   label: string;
-  onSelect: () => void;
+  /** Return `false` to keep the menu open. */
+  onSelect: () => void | false;
   selected?: boolean;
   disabled?: boolean;
 };

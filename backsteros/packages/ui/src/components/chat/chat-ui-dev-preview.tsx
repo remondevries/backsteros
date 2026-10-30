@@ -21,9 +21,22 @@ import {
   resolveRecentChatProjectsForStrip,
   type ChatProjectOption,
 } from "../../chat/chat-project-option.js";
+import {
+  CHAT_THINKING_OFF,
+  chatThinkingAfterSend,
+  chatThinkingAfterStatus,
+  chatThinkingFromPendingReplyAt,
+  chatThinkingIsActive,
+  chatThinkingRemainingMs,
+  type ChatThinkingState,
+} from "../../chat/chat-thinking-state.js";
 import type { ChatCardNavigate } from "./chat-card-navigate.js";
 import { ChatThread } from "./chat-thread.js";
 import type { ChatThreadPeer } from "./chat-thread-header.js";
+
+/** Dispatched by desktop shell when cloud SSE pushes agent.chat.status / reply. */
+export const AGENT_SHELL_CHAT_STATUS_WINDOW_EVENT =
+  "backsteros:agent-shell-chat-status";
 
 export type LiveAgentChatHandlers = {
   /** contactId → agent id for peers that have an agents record. */
@@ -43,12 +56,29 @@ export type LiveAgentChatHandlers = {
 function messagesFromThread(
   thread: ChatThreadWithMessages,
   agentName: string,
+  thinkingActive: boolean,
 ): ChatUiMessage[] {
   const mapped = thread.messages.map(chatThreadMessageToUi);
-  if (thread.pendingReplyAt) {
+  if (thinkingActive) {
     return [...mapped, thinkingStatusMessage(agentName)];
   }
   return mapped;
+}
+
+function stripThinkingMessages(
+  messages: readonly ChatUiMessage[],
+): ChatUiMessage[] {
+  return messages.filter((message) => !message.id.startsWith("thinking-"));
+}
+
+function withThinkingMessage(
+  messages: readonly ChatUiMessage[],
+  agentName: string,
+  thinkingActive: boolean,
+): ChatUiMessage[] {
+  const base = stripThinkingMessages(messages);
+  if (!thinkingActive) return base;
+  return [...base, thinkingStatusMessage(agentName)];
 }
 
 const FALLBACK_JUDITH: ChatThreadPeer = {
@@ -339,8 +369,11 @@ export function ChatUiDevPreview({
   const [liveMessages, setLiveMessages] = useState<ChatUiMessage[] | null>(
     null,
   );
-  const [liveThinking, setLiveThinking] = useState(false);
+  const [thinkingState, setThinkingState] =
+    useState<ChatThinkingState>(CHAT_THINKING_OFF);
   const pollGen = useRef(0);
+  const liveThreadIdRef = useRef<string | null>(null);
+  liveThreadIdRef.current = liveThreadId;
 
   useEffect(() => {
     if (!projectId || !activeProject) return;
@@ -356,7 +389,7 @@ export function ChatUiDevPreview({
     if (!liveAgentId || !liveAgentChat) {
       setLiveThreadId(null);
       setLiveMessages(null);
-      setLiveThinking(false);
+      setThinkingState(CHAT_THINKING_OFF);
       return;
     }
     let cancelled = false;
@@ -365,11 +398,20 @@ export function ChatUiDevPreview({
       try {
         const thread = await liveAgentChat.openThread(liveAgentId);
         if (cancelled || pollGen.current !== gen) return;
-        setLiveThreadId(thread.id);
-        setLiveMessages(
-          messagesFromThread(thread, thread.agentName ?? threadAgent.name),
+        const now = Date.now();
+        const nextThinking = chatThinkingFromPendingReplyAt(
+          thread.pendingReplyAt,
+          now,
         );
-        setLiveThinking(Boolean(thread.pendingReplyAt));
+        setLiveThreadId(thread.id);
+        setThinkingState(nextThinking);
+        setLiveMessages(
+          messagesFromThread(
+            thread,
+            thread.agentName ?? threadAgent.name,
+            chatThinkingIsActive(nextThinking, now),
+          ),
+        );
       } catch {
         if (cancelled || pollGen.current !== gen) return;
         setLiveThreadId(null);
@@ -378,7 +420,7 @@ export function ChatUiDevPreview({
             `Could not open chat with ${threadAgent.name}.`,
           ),
         ]);
-        setLiveThinking(false);
+        setThinkingState(CHAT_THINKING_OFF);
       }
     })();
     return () => {
@@ -386,25 +428,84 @@ export function ChatUiDevPreview({
     };
   }, [liveAgentChat, liveAgentId, threadAgent.name]);
 
-  // Poll while waiting for the agent reply.
+  // Expire provisional / working timers without polling the thread.
   useEffect(() => {
-    if (!liveThinking || !liveThreadId || !liveAgentChat) return;
+    const remaining = chatThinkingRemainingMs(thinkingState, Date.now());
+    if (remaining == null) return;
+    const handle = window.setTimeout(() => {
+      const now = Date.now();
+      if (!chatThinkingIsActive(thinkingState, now)) {
+        setThinkingState(CHAT_THINKING_OFF);
+        setLiveMessages((prev) =>
+          prev ? withThinkingMessage(prev, threadAgent.name, false) : prev,
+        );
+      }
+    }, remaining + 25);
+    return () => window.clearTimeout(handle);
+  }, [thinkingState, threadAgent.name]);
+
+  // Agent status / reply presence from cloud SSE (via desktop shell).
+  useEffect(() => {
+    const onStatus = (event: Event) => {
+      const detail = (event as CustomEvent<{
+        threadId?: string;
+        state?: "working" | "idle";
+      }>).detail;
+      const threadId = detail?.threadId?.trim() || "";
+      if (!threadId || threadId !== liveThreadIdRef.current) return;
+      if (detail.state !== "working" && detail.state !== "idle") return;
+      const now = Date.now();
+      const next = chatThinkingAfterStatus(detail.state, now);
+      setThinkingState(next);
+      setLiveMessages((prev) =>
+        prev
+          ? withThinkingMessage(
+              prev,
+              threadAgent.name,
+              chatThinkingIsActive(next, now),
+            )
+          : prev,
+      );
+    };
+    window.addEventListener(AGENT_SHELL_CHAT_STATUS_WINDOW_EVENT, onStatus);
+    return () =>
+      window.removeEventListener(AGENT_SHELL_CHAT_STATUS_WINDOW_EVENT, onStatus);
+  }, [threadAgent.name]);
+
+  // Light poll only while agent has reported working (catch reply without SSE).
+  useEffect(() => {
+    if (
+      thinkingState.mode !== "working" ||
+      !liveThreadId ||
+      !liveAgentChat
+    ) {
+      return;
+    }
     const agentName = threadAgent.name;
     const handle = window.setInterval(() => {
       void (async () => {
         try {
           const thread = await liveAgentChat.getThread(liveThreadId);
-          setLiveMessages(
-            messagesFromThread(thread, thread.agentName ?? agentName),
+          const now = Date.now();
+          const next = chatThinkingFromPendingReplyAt(
+            thread.pendingReplyAt,
+            now,
           );
-          if (!thread.pendingReplyAt) setLiveThinking(false);
+          setThinkingState(next);
+          setLiveMessages(
+            messagesFromThread(
+              thread,
+              thread.agentName ?? agentName,
+              chatThinkingIsActive(next, now),
+            ),
+          );
         } catch {
-          /* keep polling */
+          /* keep waiting */
         }
       })();
-    }, 1500);
+    }, 2500);
     return () => window.clearInterval(handle);
-  }, [liveAgentChat, liveThinking, liveThreadId, threadAgent.name]);
+  }, [liveAgentChat, liveThreadId, thinkingState.mode, threadAgent.name]);
 
   const onSelectProject = useCallback(
     (nextProjectId: string) => {
@@ -459,25 +560,24 @@ export function ChatUiDevPreview({
             text.trim(),
           );
           const thread = await liveAgentChat.getThread(liveThreadId);
+          const clock = Date.now();
+          const nextThinking =
+            result.webhookError || !result.thinking
+              ? CHAT_THINKING_OFF
+              : chatThinkingAfterSend(clock);
+          setThinkingState(nextThinking);
           let mapped = messagesFromThread(
-            {
-              ...thread,
-              pendingReplyAt: result.thinking
-                ? (thread.pendingReplyAt ?? now)
-                : null,
-            },
+            thread,
             thread.agentName ?? threadAgent.name,
+            chatThinkingIsActive(nextThinking, clock),
           );
           if (result.webhookError) {
             mapped = [
-              ...mapped.filter(
-                (message) => !message.id.startsWith("thinking-"),
-              ),
+              ...stripThinkingMessages(mapped),
               webhookErrorStatusMessage(result.webhookError),
             ];
           }
           setLiveMessages(mapped);
-          setLiveThinking(Boolean(result.thinking));
         } catch (error) {
           setLiveMessages((prev) => [
             ...(prev ?? []).filter((message) => message.id !== pendingId),
@@ -487,7 +587,7 @@ export function ChatUiDevPreview({
                 : `Could not send to ${threadAgent.name}.`,
             ),
           ]);
-          setLiveThinking(false);
+          setThinkingState(CHAT_THINKING_OFF);
         }
         return;
       }
@@ -540,13 +640,19 @@ export function ChatUiDevPreview({
           await liveAgentChat.deleteMessages(liveThreadId, messageIds);
           const thread = await liveAgentChat.getThread(liveThreadId);
           // Keep locally removed ids out even if the server lag/filters miss one.
+          const clock = Date.now();
+          const nextThinking = chatThinkingFromPendingReplyAt(
+            thread.pendingReplyAt,
+            clock,
+          );
+          setThinkingState(nextThinking);
           setLiveMessages(
             messagesFromThread(
               thread,
               thread.agentName ?? threadAgent.name,
+              chatThinkingIsActive(nextThinking, clock),
             ).filter((message) => !ids.has(message.id)),
           );
-          setLiveThinking(Boolean(thread.pendingReplyAt));
         } catch (error) {
           console.warn("[chat] delete messages failed; restoring", error);
           setLiveMessages(previous);
