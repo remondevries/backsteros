@@ -21,19 +21,25 @@ export function chatThreadMessageToUi(
   };
 }
 
+/**
+ * Status-line while the agent is working.
+ * Prefer an explicit step `label`; otherwise “{name} is thinking…”.
+ */
 export function thinkingStatusMessage(
   agentName: string,
-  id = `thinking-${agentName}`,
+  options?: { label?: string | null; id?: string },
 ): ChatUiMessage {
+  const label = options?.label?.trim() || "";
+  const text = label.length > 0 ? label : `${agentName} is thinking…`;
   return {
-    id,
+    id: options?.id ?? `thinking-${agentName}`,
     role: "system",
     status: "streaming",
     createdAt: new Date().toISOString(),
     parts: [
       {
         type: "status-line",
-        text: `${agentName} is thinking…`,
+        text,
       },
     ],
   };

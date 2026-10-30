@@ -63,6 +63,7 @@ function ensureShellChatLiveLoop(): void {
         state: "idle",
         at: payload.message.createdAt,
         pendingReplyAt: null,
+        label: null,
       });
       for (const listener of shellChatLive.subscribers) {
         listener(payload);

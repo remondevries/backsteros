@@ -1,5 +1,5 @@
 /**
- * Client-side “Sander is thinking…” state for shell agent DMs.
+ * Client-side “Sander is thinking…” / step-label state for shell agent DMs.
  * Durable thinking comes from agent status SSE (`working` / `idle`);
  * after Remon sends we only show a short provisional wait.
  */
@@ -16,11 +16,17 @@ export type ChatThinkingState = {
   mode: ChatThinkingMode;
   /** Epoch ms when this mode should clear if no further signal. */
   expiresAt: number | null;
+  /**
+   * Optional step label from `POST …/status` while working.
+   * Shown instead of “Thinking…” when non-empty; cleared on idle/reply.
+   */
+  label: string | null;
 };
 
 export const CHAT_THINKING_OFF: ChatThinkingState = {
   mode: "off",
   expiresAt: null,
+  label: null,
 };
 
 export function chatThinkingIsActive(
@@ -37,6 +43,7 @@ export function chatThinkingAfterSend(nowMs: number): ChatThinkingState {
   return {
     mode: "provisional",
     expiresAt: nowMs + CHAT_THINKING_PROVISIONAL_MS,
+    label: null,
   };
 }
 
@@ -44,21 +51,25 @@ export function chatThinkingAfterSend(nowMs: number): ChatThinkingState {
 export function chatThinkingAfterStatus(
   state: "working" | "idle",
   nowMs: number,
+  label: string | null = null,
 ): ChatThinkingState {
   if (state === "idle") return CHAT_THINKING_OFF;
+  const trimmed = label?.trim() || null;
   return {
     mode: "working",
     expiresAt: nowMs + CHAT_THINKING_WORKING_STALE_MS,
+    label: trimmed,
   };
 }
 
 /**
  * Hydrate from thread.pendingReplyAt (set only while agent reports working).
- * Stale values are ignored.
+ * Stale values are ignored. Preserves a prior step label across refetches.
  */
 export function chatThinkingFromPendingReplyAt(
   pendingReplyAt: string | null | undefined,
   nowMs: number,
+  previousLabel: string | null = null,
 ): ChatThinkingState {
   const raw = pendingReplyAt?.trim() || "";
   if (!raw) return CHAT_THINKING_OFF;
@@ -66,7 +77,11 @@ export function chatThinkingFromPendingReplyAt(
   if (Number.isNaN(at)) return CHAT_THINKING_OFF;
   const expiresAt = at + CHAT_THINKING_WORKING_STALE_MS;
   if (nowMs >= expiresAt) return CHAT_THINKING_OFF;
-  return { mode: "working", expiresAt };
+  return {
+    mode: "working",
+    expiresAt,
+    label: previousLabel?.trim() || null,
+  };
 }
 
 /** Remaining ms until expiry, or null when inactive / no timer. */

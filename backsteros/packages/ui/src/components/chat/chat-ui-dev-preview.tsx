@@ -66,10 +66,11 @@ function messagesFromThread(
   thread: ChatThreadWithMessages,
   agentName: string,
   thinkingActive: boolean,
+  label: string | null = null,
 ): ChatUiMessage[] {
   const mapped = thread.messages.map(chatThreadMessageToUi);
   if (thinkingActive) {
-    return [...mapped, thinkingStatusMessage(agentName)];
+    return [...mapped, thinkingStatusMessage(agentName, { label })];
   }
   return mapped;
 }
@@ -84,10 +85,11 @@ function withThinkingMessage(
   messages: readonly ChatUiMessage[],
   agentName: string,
   thinkingActive: boolean,
+  label: string | null = null,
 ): ChatUiMessage[] {
   const base = stripThinkingMessages(messages);
   if (!thinkingActive) return base;
-  return [...base, thinkingStatusMessage(agentName)];
+  return [...base, thinkingStatusMessage(agentName, { label })];
 }
 
 const FALLBACK_JUDITH: ChatThreadPeer = {
@@ -384,9 +386,11 @@ export function ChatUiDevPreview({
   const liveThreadIdRef = useRef<string | null>(null);
   const liveAgentChatRef = useRef(liveAgentChat);
   const threadAgentNameRef = useRef(threadAgent.name);
+  const thinkingStateRef = useRef<ChatThinkingState>(CHAT_THINKING_OFF);
   liveThreadIdRef.current = liveThreadId;
   liveAgentChatRef.current = liveAgentChat;
   threadAgentNameRef.current = threadAgent.name;
+  thinkingStateRef.current = thinkingState;
 
   const applyLiveThread = useCallback(
     (thread: ChatThreadWithMessages, thinking: ChatThinkingState) => {
@@ -398,6 +402,7 @@ export function ChatUiDevPreview({
           thread,
           thread.agentName ?? threadAgentNameRef.current,
           active,
+          thinking.label,
         ),
       );
     },
@@ -414,7 +419,11 @@ export function ChatUiDevPreview({
       const now = Date.now();
       applyLiveThread(
         thread,
-        chatThinkingFromPendingReplyAt(thread.pendingReplyAt, now),
+        chatThinkingFromPendingReplyAt(
+          thread.pendingReplyAt,
+          now,
+          thinkingStateRef.current.label,
+        ),
       );
     } catch {
       /* keep current messages */
@@ -534,6 +543,7 @@ export function ChatUiDevPreview({
       const detail = (event as CustomEvent<{
         threadId?: string;
         state?: "working" | "idle";
+        label?: string | null;
       }>).detail;
       const state = detail?.state;
       if (state !== "working" && state !== "idle") return;
@@ -546,6 +556,7 @@ export function ChatUiDevPreview({
         console.info("[shell-chat] status push", {
           openThreadId: liveThreadIdRef.current,
           state,
+          label: detail?.label ?? null,
         });
       }
       if (
@@ -561,9 +572,13 @@ export function ChatUiDevPreview({
         void refreshOpenLiveThread();
         return;
       }
-      // working: show thinking without refetching yet
+      // working: show step label (or Thinking…) without refetching yet
       const now = Date.now();
-      const next = chatThinkingAfterStatus("working", now);
+      const next = chatThinkingAfterStatus(
+        "working",
+        now,
+        detail?.label ?? null,
+      );
       setThinkingState(next);
       setLiveMessages((prev) =>
         prev
@@ -571,6 +586,7 @@ export function ChatUiDevPreview({
               prev,
               threadAgentNameRef.current,
               chatThinkingIsActive(next, now),
+              next.label,
             )
           : prev,
       );
@@ -665,6 +681,7 @@ export function ChatUiDevPreview({
             thread,
             thread.agentName ?? threadAgent.name,
             chatThinkingIsActive(nextThinking, clock),
+            nextThinking.label,
           );
           if (result.webhookError) {
             mapped = [
@@ -739,6 +756,7 @@ export function ChatUiDevPreview({
           const nextThinking = chatThinkingFromPendingReplyAt(
             thread.pendingReplyAt,
             clock,
+            thinkingStateRef.current.label,
           );
           setThinkingState(nextThinking);
           setLiveMessages(
@@ -746,6 +764,7 @@ export function ChatUiDevPreview({
               thread,
               thread.agentName ?? threadAgent.name,
               chatThinkingIsActive(nextThinking, clock),
+              nextThinking.label,
             ).filter((message) => !ids.has(message.id)),
           );
         } catch (error) {

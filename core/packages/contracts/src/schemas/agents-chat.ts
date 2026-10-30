@@ -153,9 +153,44 @@ export const deleteChatThreadMessagesResultSchema = z.object({
 /** Agent-reported working/idle presence for a shell DM thread. */
 export const chatThreadAgentStatusStateSchema = z.enum(["working", "idle"]);
 
-export const updateChatThreadAgentStatusInputSchema = z.object({
-  state: chatThreadAgentStatusStateSchema,
-});
+/** Max length for a working step label after sanitize. */
+export const CHAT_THREAD_STATUS_LABEL_MAX = 60;
+
+/**
+ * Trim, strip controls / non-plain chars, collapse whitespace, cap length.
+ * Empty → null.
+ */
+export function sanitizeChatThreadStatusLabel(
+  raw: string | null | undefined,
+): string | null {
+  if (raw == null) return null;
+  const plain = raw
+    // Newlines / tabs → space so multi-line agent copy stays readable.
+    .replace(/[\t\n\r\f\v]+/g, " ")
+    // Drop other controls / C1 so the label stays plain text.
+    .replace(/[\u0000-\u0008\u000E-\u001F\u007F-\u009F]/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, CHAT_THREAD_STATUS_LABEL_MAX);
+  return plain.length > 0 ? plain : null;
+}
+
+export const updateChatThreadAgentStatusInputSchema = z
+  .object({
+    state: chatThreadAgentStatusStateSchema,
+    /**
+     * Optional step label while `working` (shown instead of “Thinking…”).
+     * Ignored when `idle`. Plain text; trimmed and capped at 60 chars.
+     */
+    label: z.string().max(200).nullable().optional(),
+  })
+  .transform((value) => ({
+    state: value.state,
+    label:
+      value.state === "working"
+        ? sanitizeChatThreadStatusLabel(value.label)
+        : null,
+  }));
 
 export const chatThreadAgentStatusSchema = z.object({
   threadId: z.string(),
@@ -164,6 +199,8 @@ export const chatThreadAgentStatusSchema = z.object({
   /** ISO timestamp of this status update. */
   at: z.string().datetime(),
   pendingReplyAt: z.string().datetime().nullable(),
+  /** Step label while working; null when idle or unset. */
+  label: z.string().nullable(),
 });
 
 /** Result of POSTing a one-shot test delivery to the agent's webhook URL. */

@@ -119,6 +119,7 @@ export function registerAgentChatRoutes(app: Hono) {
             state: event.state,
             at: event.at,
             pendingReplyAt: event.pendingReplyAt,
+            label: event.label,
           });
         },
       );
@@ -331,6 +332,7 @@ export function registerAgentChatRoutes(app: Hono) {
         c.req.param("threadId"),
         parsed.data.state,
         { apiKeyId: auth.apiKeyId },
+        parsed.data.label,
       );
       return c.json(result);
     } catch (error) {

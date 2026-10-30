@@ -3,6 +3,8 @@
  * Goes through the agents door / Vite `__cloud_core__` proxy.
  */
 
+import { sanitizeChatThreadStatusLabel } from "@backsteros/contracts";
+
 import {
   cloudCoreRequestStream,
   isCloudCoreApiError,
@@ -35,6 +37,8 @@ export type AgentShellChatStatusPayload = {
   state: "working" | "idle";
   at: string;
   pendingReplyAt: string | null;
+  /** Step label while working; null when idle or unset. */
+  label: string | null;
 };
 
 export function dispatchAgentShellChatStatus(
@@ -126,6 +130,7 @@ export function parseAgentShellChatStatusPayload(
       state?: unknown;
       at?: unknown;
       pendingReplyAt?: unknown;
+      label?: unknown;
     };
     const threadId =
       typeof parsed.threadId === "string" ? parsed.threadId.trim() : "";
@@ -140,8 +145,12 @@ export function parseAgentShellChatStatusPayload(
         : typeof parsed.pendingReplyAt === "string"
           ? parsed.pendingReplyAt.trim() || null
           : null;
+    const label =
+      state === "working" && typeof parsed.label === "string"
+        ? sanitizeChatThreadStatusLabel(parsed.label)
+        : null;
     if (!threadId || !agentId || !state || !at) return null;
-    return { threadId, agentId, state, at, pendingReplyAt };
+    return { threadId, agentId, state, at, pendingReplyAt, label };
   } catch {
     return null;
   }

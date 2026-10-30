@@ -85,13 +85,17 @@ function publishStatusEvent(input: {
   state: ChatThreadAgentStatusState;
   at: Date;
   pendingReplyAt: Date | null;
+  label?: string | null;
 }): ChatThreadAgentStatus {
+  const label =
+    input.state === "working" ? (input.label?.trim() || null) : null;
   const payload: ChatThreadAgentStatus = {
     threadId: input.threadId,
     agentId: input.agentId,
     state: input.state,
     at: input.at.toISOString(),
     pendingReplyAt: input.pendingReplyAt?.toISOString() ?? null,
+    label,
   };
   publishAgentShellChatStatus({
     workspaceId: input.workspaceId,
@@ -583,7 +587,7 @@ export async function postChatThreadMessage(
         createdAt: message.createdAt,
       },
     });
-    // Posting a reply implicitly marks the agent idle.
+    // Posting a reply implicitly marks the agent idle (clears step label).
     publishStatusEvent({
       workspaceId,
       threadId,
@@ -591,6 +595,7 @@ export async function postChatThreadMessage(
       state: "idle",
       at: now,
       pendingReplyAt: null,
+      label: null,
     });
 
     return {
@@ -703,6 +708,7 @@ export async function setChatThreadAgentStatus(
   threadId: string,
   state: ChatThreadAgentStatusState,
   auth: StatusAuth,
+  label: string | null = null,
 ): Promise<ChatThreadAgentStatus> {
   const [row] = await db
     .select({
@@ -720,7 +726,7 @@ export async function setChatThreadAgentStatus(
     .limit(1);
   if (!row) throw notFound("Thread");
 
-  const { thread, agent } = row;
+  const { agent } = row;
   if (!agent.apiKeyId || agent.apiKeyId !== auth.apiKeyId) {
     throw Object.assign(
       new Error("This API key cannot update status for this agent thread"),
@@ -743,6 +749,7 @@ export async function setChatThreadAgentStatus(
     state,
     at: now,
     pendingReplyAt: updated?.pendingReplyAt ?? pendingReplyAt,
+    label: state === "working" ? label : null,
   });
 }
 

@@ -947,6 +947,8 @@ export {
   deleteChatThreadMessagesInputSchema,
   deleteChatThreadMessagesResultSchema,
   chatThreadAgentStatusStateSchema,
+  CHAT_THREAD_STATUS_LABEL_MAX,
+  sanitizeChatThreadStatusLabel,
   updateChatThreadAgentStatusInputSchema,
   chatThreadAgentStatusSchema,
 } from "./schemas/agents-chat.js";

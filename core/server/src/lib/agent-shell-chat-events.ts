@@ -23,6 +23,8 @@ export type AgentShellChatStatusEvent = {
   state: "working" | "idle";
   at: string;
   pendingReplyAt: string | null;
+  /** Step label while working; null when idle or unset. */
+  label: string | null;
 };
 
 /** SSE event name for assistant DM pushes. */

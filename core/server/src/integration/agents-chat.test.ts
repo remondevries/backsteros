@@ -427,22 +427,39 @@ test("OS-151/150 agents + chat loop: secret write-only, webhook fire, agent repl
     agentSecret,
     {
       method: "POST",
-      body: JSON.stringify({ state: "working" }),
+      body: JSON.stringify({
+        state: "working",
+        label: "  Searching inbox…  ",
+      }),
     },
   );
   assert.equal(working.status, 200);
   assert.equal(working.body?.state, "working");
   assert.equal(working.body?.threadId, threadId);
   assert.equal(working.body?.agentId, agentId);
+  assert.equal(working.body?.label, "Searching inbox…");
   assert.ok(typeof working.body?.pendingReplyAt === "string");
 
   await readUntil(() =>
     sseEvents.some(
       (e) =>
         e.event === "agent.chat.status" &&
-        e.data.includes('"state":"working"'),
+        e.data.includes('"state":"working"') &&
+        e.data.includes("Searching inbox"),
     ),
   );
+
+  const workingRelabel = await json(
+    app,
+    `/api/v1/chat/threads/${threadId}/status`,
+    agentSecret,
+    {
+      method: "POST",
+      body: JSON.stringify({ state: "working", label: "Drafting reply" }),
+    },
+  );
+  assert.equal(workingRelabel.status, 200);
+  assert.equal(workingRelabel.body?.label, "Drafting reply");
 
   const idle = await json(
     app,
@@ -450,12 +467,13 @@ test("OS-151/150 agents + chat loop: secret write-only, webhook fire, agent repl
     agentSecret,
     {
       method: "POST",
-      body: JSON.stringify({ state: "idle" }),
+      body: JSON.stringify({ state: "idle", label: "ignored" }),
     },
   );
   assert.equal(idle.status, 200);
   assert.equal(idle.body?.state, "idle");
   assert.equal(idle.body?.pendingReplyAt, null);
+  assert.equal(idle.body?.label, null);
 
   void reader.cancel().catch(() => {});
 

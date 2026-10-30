@@ -47,6 +47,7 @@ describe("parseAgentShellChatStatusPayload", () => {
           state: "working",
           at: "2026-10-30T12:00:00.000Z",
           pendingReplyAt: "2026-10-30T12:00:00.000Z",
+          label: "  Searching inbox…  ",
         }),
       ),
       {
@@ -55,6 +56,27 @@ describe("parseAgentShellChatStatusPayload", () => {
         state: "working",
         at: "2026-10-30T12:00:00.000Z",
         pendingReplyAt: "2026-10-30T12:00:00.000Z",
+        label: "Searching inbox…",
+      },
+    );
+    assert.deepEqual(
+      parseAgentShellChatStatusPayload(
+        JSON.stringify({
+          threadId: "th_1",
+          agentId: "ag_1",
+          state: "idle",
+          at: "2026-10-30T12:00:00.000Z",
+          pendingReplyAt: null,
+          label: "ignored",
+        }),
+      ),
+      {
+        threadId: "th_1",
+        agentId: "ag_1",
+        state: "idle",
+        at: "2026-10-30T12:00:00.000Z",
+        pendingReplyAt: null,
+        label: null,
       },
     );
     assert.equal(parseAgentShellChatStatusPayload("{}"), null);
