@@ -459,12 +459,27 @@ body.is-resizing .desktop-chat-panel__resize::after {
   outline: 2px solid #0a0a0a;
 }
 
+.sidebar-footer-banner {
+  position: relative;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  padding-top: 8px;
+  overflow: visible;
+}
+
 .sidebar-footer {
   display: flex;
   flex-direction: column;
   gap: 2px;
   padding-top: 8px;
   border-top: 0.5px solid var(--border);
+}
+
+.sidebar-footer-banner + .sidebar-footer {
+  margin-top: 8px;
 }
 
 .sidebar-footer a,
@@ -504,7 +519,146 @@ body.is-resizing .desktop-chat-panel__resize::after {
   min-width: 0;
 }
 
-/* Agent DM notification card (sidebar footer, above Cursor credits). */
+/* Agent DM notification stack (above footer separator / Cursor credits). */
+.agent-dm-stack {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  width: 100%;
+}
+
+.agent-dm-stack__loose {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.agent-dm-stack__nav-fade {
+  position: absolute;
+  left: -12px;
+  right: -12px;
+  bottom: 100%;
+  height: 88px;
+  pointer-events: none;
+  background: linear-gradient(
+    to top,
+    var(--background) 0%,
+    color-mix(in srgb, var(--background) 82%, transparent) 42%,
+    transparent 100%
+  );
+  z-index: 0;
+  opacity: 0;
+  transition: opacity 280ms ease;
+}
+
+.agent-dm-stack.is-expanded .agent-dm-stack__nav-fade {
+  opacity: 1;
+}
+
+.agent-dm-stack__bundle {
+  position: relative;
+  z-index: 1;
+  min-width: 0;
+}
+
+.agent-dm-stack__bundle-list {
+  --peek-offset: 9px;
+  --peek-count: 1;
+  --stack-count: 1;
+  --agent-dm-card-height: 44px;
+  --agent-dm-stack-gap: 6px;
+  --agent-dm-stack-duration: 320ms;
+  --agent-dm-stack-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  min-width: 0;
+  max-height: calc(
+    var(--agent-dm-card-height) + (var(--peek-count) - 1) * var(--peek-offset)
+  );
+  overflow: hidden;
+  transition:
+    max-height var(--agent-dm-stack-duration) var(--agent-dm-stack-ease),
+    gap var(--agent-dm-stack-duration) var(--agent-dm-stack-ease);
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--foreground) 28%, transparent)
+    transparent;
+}
+
+.agent-dm-stack.is-expanded .agent-dm-stack__bundle-list {
+  gap: var(--agent-dm-stack-gap);
+  max-height: min(52vh, 480px);
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.agent-dm-stack__scroll-fade {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  flex-shrink: 0;
+  height: 0;
+  margin: 0;
+  pointer-events: none;
+  opacity: 0;
+  background: linear-gradient(
+    to bottom,
+    var(--background) 0%,
+    transparent 100%
+  );
+  transition: opacity var(--agent-dm-stack-duration) var(--agent-dm-stack-ease);
+}
+
+.agent-dm-stack.is-expanded .agent-dm-stack__scroll-fade {
+  height: 20px;
+  margin-bottom: -20px;
+  opacity: 1;
+}
+
+.agent-dm-stack__bundle-item {
+  position: relative;
+  z-index: calc(20 - var(--stack-i, 0));
+  flex-shrink: 0;
+  min-width: 0;
+  transform-origin: top center;
+  transition:
+    margin-top var(--agent-dm-stack-duration) var(--agent-dm-stack-ease),
+    transform var(--agent-dm-stack-duration) var(--agent-dm-stack-ease),
+    opacity var(--agent-dm-stack-duration) var(--agent-dm-stack-ease),
+    filter var(--agent-dm-stack-duration) var(--agent-dm-stack-ease);
+}
+
+.agent-dm-stack:not(.is-expanded) .agent-dm-stack__bundle-item:not([data-front]) {
+  margin-top: calc(
+    (var(--agent-dm-card-height) - var(--peek-offset)) * -1
+  );
+  transform: scale(calc(1 - min(var(--stack-i, 0), 3) * 0.022));
+  opacity: calc(1 - min(var(--stack-i, 0), 3) * 0.09);
+  pointer-events: none;
+  filter: brightness(calc(1 - min(var(--stack-i, 0), 3) * 0.03));
+}
+
+.agent-dm-stack:not(.is-expanded) .agent-dm-stack__bundle-item[data-tucked] {
+  margin-top: calc(var(--agent-dm-card-height) * -1);
+  opacity: 0;
+  transform: scale(0.96);
+  pointer-events: none;
+}
+
+.agent-dm-stack.is-expanded .agent-dm-stack__bundle-item {
+  margin-top: 0;
+  transform: none;
+  opacity: 1;
+  filter: none;
+  pointer-events: auto;
+}
+
+/* Agent DM notification card. */
 .agent-dm-card-wrap {
   min-width: 0;
   width: 100%;
@@ -519,12 +673,13 @@ body.is-resizing .desktop-chat-panel__resize::after {
   padding: 6px 8px;
   border: 0.5px solid color-mix(in srgb, var(--foreground) 12%, transparent);
   border-radius: 10px;
-  background: color-mix(in srgb, var(--faint) 60%, transparent);
+  /* Match the sidebar panel so stacked peeks read as solid cards. */
+  background: var(--background);
   color: var(--foreground);
 }
 
-.sidebar-footer .agent-dm-card__hit,
-.sidebar-footer button.agent-dm-card__hit {
+.agent-dm-card__hit,
+button.agent-dm-card__hit {
   position: absolute;
   inset: 0;
   z-index: 0;
@@ -538,8 +693,8 @@ body.is-resizing .desktop-chat-panel__resize::after {
   cursor: pointer;
 }
 
-.sidebar-footer .agent-dm-card__hit:hover,
-.sidebar-footer button.agent-dm-card__hit:hover {
+.agent-dm-card__hit:hover,
+button.agent-dm-card__hit:hover {
   background: transparent;
   color: inherit;
 }
@@ -559,17 +714,6 @@ body.is-resizing .desktop-chat-panel__resize::after {
   width: 20px;
   height: 20px;
   border-radius: 999px;
-}
-
-.agent-dm-card__unread-dot {
-  position: absolute;
-  top: -2px;
-  right: -2px;
-  width: 8px;
-  height: 8px;
-  border-radius: 999px;
-  background: #22c55e;
-  box-shadow: 0 0 0 2px var(--sidebar-bg, #0a0a0a);
 }
 
 .agent-dm-card__copy {
@@ -612,8 +756,8 @@ body.is-resizing .desktop-chat-panel__resize::after {
   pointer-events: none;
 }
 
-.sidebar-footer .agent-dm-card__dismiss,
-.sidebar-footer button.agent-dm-card__dismiss {
+.agent-dm-card__dismiss,
+button.agent-dm-card__dismiss {
   position: relative;
   z-index: 1;
   display: inline-flex;
@@ -633,8 +777,8 @@ body.is-resizing .desktop-chat-panel__resize::after {
   cursor: pointer;
 }
 
-.sidebar-footer .agent-dm-card__dismiss:hover,
-.sidebar-footer button.agent-dm-card__dismiss:hover {
+.agent-dm-card__dismiss:hover,
+button.agent-dm-card__dismiss:hover {
   background: color-mix(in srgb, var(--foreground) 8%, transparent);
   color: var(--foreground);
 }

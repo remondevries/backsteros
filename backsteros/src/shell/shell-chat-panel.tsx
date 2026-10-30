@@ -6,11 +6,25 @@ import {
   type LiveAgentChatHandlers,
 } from "@backsteros/ui";
 
+import { markAgentDmSeen } from "../lib/agent-dm-seen";
 import { useDesktopAvatarSrcMap } from "../lib/avatar-src";
 import { useDesktopWorkspacePeople } from "../lib/workspace-data";
 import { navigateToHref } from "../router/navigate-href";
 import { useShellAgentChat } from "./use-shell-agent-chat";
 import { useShellChatProjects } from "./use-shell-chat-projects";
+
+function markLatestAssistantSeen(thread: {
+  id: string;
+  messages: ReadonlyArray<{ id: string; role: string }>;
+}): void {
+  for (let index = thread.messages.length - 1; index >= 0; index -= 1) {
+    const message = thread.messages[index];
+    if (message?.role === "assistant") {
+      markAgentDmSeen(thread.id, message.id);
+      return;
+    }
+  }
+}
 
 /**
  * Persistent shell-level ChatThread host. Mounted once outside routed content
@@ -61,9 +75,17 @@ export function ShellChatPanel() {
     }
     return {
       agentIdByContactId,
-      openThread: agentChat.openThread,
+      openThread: async (agentId) => {
+        const thread = await agentChat.openThread(agentId);
+        markLatestAssistantSeen(thread);
+        return thread;
+      },
       sendMessage: agentChat.sendMessage,
-      getThread: agentChat.getThread,
+      getThread: async (threadId) => {
+        const thread = await agentChat.getThread(threadId);
+        markLatestAssistantSeen(thread);
+        return thread;
+      },
     };
   }, [agentChat]);
 
@@ -74,7 +96,7 @@ export function ShellChatPanel() {
       onNavigate={onNavigate}
       liveAgentChat={liveAgentChat}
       allowEmptyPeers
-      webhookSetupHref="/settings/api"
+      webhookSetupHref="/settings/api?type=agent"
       webhookSetupMessage={agentChat.agentsLoadError}
     />
   );

@@ -1,7 +1,8 @@
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import type {
   AgentWebhookTestResult,
   ChatThread,
+  ChatThreadListItem,
   ChatThreadMessage,
   ChatThreadWithMessages,
   CreateChatThreadMessageResult,
@@ -98,15 +99,49 @@ function notFound(message: string): Error {
 export async function listChatThreads(
   workspaceId: string,
   agentId?: string,
-): Promise<ChatThread[]> {
+): Promise<ChatThreadListItem[]> {
   const conditions = [eq(chatThreads.workspaceId, workspaceId)];
   if (agentId) conditions.push(eq(chatThreads.agentId, agentId));
   const rows = await db
-    .select()
+    .select({
+      thread: chatThreads,
+      agentName: agents.name,
+      agentAvatarUrl: agents.avatarUrl,
+      agentContactId: agents.contactId,
+    })
     .from(chatThreads)
+    .innerJoin(agents, eq(agents.id, chatThreads.agentId))
     .where(and(...conditions))
     .orderBy(desc(chatThreads.updatedAt));
-  return rows.map(toThread);
+
+  if (rows.length === 0) return [];
+
+  const threadIds = rows.map((row) => row.thread.id);
+  const assistantRows = await db
+    .select()
+    .from(chatThreadMessages)
+    .where(
+      and(
+        eq(chatThreadMessages.workspaceId, workspaceId),
+        inArray(chatThreadMessages.threadId, threadIds),
+        eq(chatThreadMessages.role, "assistant"),
+      ),
+    )
+    .orderBy(desc(chatThreadMessages.createdAt));
+
+  const lastAssistantByThread = new Map<string, ChatThreadMessage>();
+  for (const message of assistantRows) {
+    if (lastAssistantByThread.has(message.threadId)) continue;
+    lastAssistantByThread.set(message.threadId, toMessage(message));
+  }
+
+  return rows.map((row) => ({
+    ...toThread(row.thread),
+    agentName: row.agentName,
+    agentAvatarUrl: row.agentAvatarUrl,
+    agentContactId: row.agentContactId,
+    lastAssistantMessage: lastAssistantByThread.get(row.thread.id) ?? null,
+  }));
 }
 
 async function loadMessages(

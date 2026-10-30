@@ -170,7 +170,7 @@ export type ChatUiDevPreviewProps = {
    * show the webhook setup empty state instead.
    */
   allowEmptyPeers?: boolean;
-  /** Settings href for the webhook setup empty state (default `/settings/api`). */
+  /** Settings href for the webhook setup empty state (default Agent tab). */
   webhookSetupHref?: string;
   /** Optional body copy when the webhook setup empty state is shown. */
   webhookSetupMessage?: string | null;
@@ -186,7 +186,7 @@ export function ChatUiDevPreview({
   onNavigate = null,
   liveAgentChat = null,
   allowEmptyPeers = false,
-  webhookSetupHref = "/settings/api",
+  webhookSetupHref = "/settings/api?type=agent",
   webhookSetupMessage = null,
 }: ChatUiDevPreviewProps) {
   const resolvedPeers = useMemo(() => {
@@ -224,6 +224,22 @@ export function ChatUiDevPreview({
       };
     },
   );
+
+  // Sidebar DM card / external “open this agent” requests.
+  useEffect(() => {
+    const onOpenPeer = (event: Event) => {
+      const detail = (event as CustomEvent<{ contactId?: string }>).detail;
+      const contactId = detail?.contactId?.trim();
+      if (!contactId) return;
+      if (!resolvedPeers.some((peer) => peer.id === contactId)) return;
+      setProjectId(null);
+      setActivePeerId(contactId);
+    };
+    window.addEventListener("backsteros:shell-chat-open-peer", onOpenPeer);
+    return () => {
+      window.removeEventListener("backsteros:shell-chat-open-peer", onOpenPeer);
+    };
+  }, [resolvedPeers]);
 
   // When desktop finishes loading agent contacts, merge peers without wiping
   // threads the user already typed into.

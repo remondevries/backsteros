@@ -66,6 +66,11 @@ export type ProductSidebarProps = {
   inboxIndicatorTone?: InboxSidebarIndicatorTone;
   /** @deprecated Prefer {@link inboxIndicatorTone}. */
   inboxHasItems?: boolean;
+  /**
+   * Content above the footer separator (e.g. agent DM notification).
+   * Stays visually separate from {@link footer}.
+   */
+  footerBanner?: ReactNode;
   /** Bottom-left footer (e.g. Cursor credits). Replaces the old search button. */
   footer?: ReactNode;
 };
@@ -141,6 +146,7 @@ export function ProductSidebar({
   onSelectRecentPage,
   inboxIndicatorTone = "none",
   inboxHasItems = false,
+  footerBanner,
   footer,
 }: ProductSidebarProps) {
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
@@ -269,6 +275,9 @@ export function ProductSidebar({
         }
       />
 
+      {footerBanner ? (
+        <div className="sidebar-footer-banner">{footerBanner}</div>
+      ) : null}
       {footer ? <div className="sidebar-footer">{footer}</div> : null}
     </div>
   );

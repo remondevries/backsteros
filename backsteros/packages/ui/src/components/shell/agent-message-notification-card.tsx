@@ -12,7 +12,7 @@ export type AgentMessageNotificationCardProps = {
   /** Message preview — truncated to one line in the card. */
   preview: string;
   timestamp: string;
-  /** When true, the ocean border beam runs. */
+  /** When true, the mono border beam runs. */
   unread?: boolean;
   onOpen?: () => void;
   onDismiss?: () => void;
@@ -28,7 +28,7 @@ function cardInner({
   onOpen,
   onDismiss,
 }: AgentMessageNotificationCardProps): ReactNode {
-  const title = `${agentName.trim() || "Agent"} sent you a message`;
+  const title = `${agentName.trim() || "Agent"} said`;
 
   return (
     <div
@@ -45,7 +45,6 @@ function cardInner({
       />
       <span className="agent-dm-card__avatar" aria-hidden="true">
         <EntityAvatarIcon src={avatarSrc} size={20} kind="contact" />
-        {unread ? <span className="agent-dm-card__unread-dot" /> : null}
       </span>
       <div className="agent-dm-card__copy">
         <div
@@ -95,8 +94,8 @@ export function AgentMessageNotificationCard(
     <div className={className}>
       <BorderBeam
         size="sm"
-        colorVariant="ocean"
-        strength={0.7}
+        colorVariant="mono"
+        strength={0.85}
         theme="auto"
         borderRadius={10}
         active

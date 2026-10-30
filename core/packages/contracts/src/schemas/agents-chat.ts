@@ -101,8 +101,16 @@ export const chatThreadWithMessagesSchema = chatThreadSchema.extend({
   messages: z.array(chatThreadMessageSchema),
 });
 
+/** List row for shell DM notifications — thread + agent + latest assistant msg. */
+export const chatThreadListItemSchema = chatThreadSchema.extend({
+  agentName: z.string(),
+  agentAvatarUrl: z.string().nullable(),
+  agentContactId: z.string().nullable(),
+  lastAssistantMessage: chatThreadMessageSchema.nullable(),
+});
+
 export const chatThreadsListSchema = z.object({
-  threads: z.array(chatThreadSchema),
+  threads: z.array(chatThreadListItemSchema),
 });
 
 export const chatThreadMessagesListSchema = z.object({
@@ -153,6 +161,8 @@ export type ChatThreadMessage = z.infer<typeof chatThreadMessageSchema>;
 export type ChatThreadWithMessages = z.infer<
   typeof chatThreadWithMessagesSchema
 >;
+export type ChatThreadListItem = z.infer<typeof chatThreadListItemSchema>;
+export type ChatThreadsList = z.infer<typeof chatThreadsListSchema>;
 export type GetOrCreateChatThreadInput = z.infer<
   typeof getOrCreateChatThreadInputSchema
 >;

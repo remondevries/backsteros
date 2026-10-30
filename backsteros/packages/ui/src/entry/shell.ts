@@ -80,6 +80,12 @@ export {
 } from "../components/shell/agent-message-notification-card.js";
 
 export {
+  AgentMessageNotificationStack,
+  type AgentMessageNotificationItem,
+  type AgentMessageNotificationStackProps,
+} from "../components/shell/agent-message-notification-stack.js";
+
+export {
   CONTEXT_PANEL_COLLAPSE_DURATION_MS,
   ResizableContextPanel,
   type ResizableContextPanelProps,

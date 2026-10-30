@@ -181,6 +181,11 @@ export {
   AgentMessageNotificationCard,
   type AgentMessageNotificationCardProps,
 } from "./components/shell/agent-message-notification-card.js";
+export {
+  AgentMessageNotificationStack,
+  type AgentMessageNotificationItem,
+  type AgentMessageNotificationStackProps,
+} from "./components/shell/agent-message-notification-stack.js";
 
 export {
   ProductHistoryToolbar,

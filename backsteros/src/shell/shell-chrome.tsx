@@ -2,7 +2,6 @@ import { createElement, memo, type ReactNode } from "react";
 import { useNavigate } from "@tanstack/react-router";
 
 import {
-  AgentMessageNotificationCard,
   BreadcrumbChromeSkeleton,
   HistoryEntryIcon,
   ProductAppShell,
@@ -22,6 +21,7 @@ import { useWindowChromeDrag } from "../lib/window-drag";
 import { navigateToHref } from "../router/navigate-href";
 import { RouterLink } from "./app-shell-links";
 import { renderAppShellTabIcon } from "./app-shell-tab-icon";
+import { ShellAgentDmBanner } from "./shell-agent-dm-banner";
 import { ShellChatPanel } from "./shell-chat-panel";
 import type { useShellTabs } from "./use-shell-tabs";
 import type { resolveInboxSidebarIndicatorTone } from "@backsteros/ui/inbox";
@@ -101,22 +101,13 @@ function ShellChromeInner({
       onForward={history.goForward}
       canGoBack={history.canGoBack}
       canGoForward={history.canGoForward}
+      footerBanner={<ShellAgentDmBanner />}
       footer={
-        <div className="sidebar-footer-status-stack">
-          <AgentMessageNotificationCard
-            agentName="Ralph"
-            preview="Can you approve the October VAT return?"
-            timestamp="2m"
-            unread
-            onOpen={() => {}}
-            onDismiss={() => {}}
-          />
-          <CursorCreditsUsageBar
-            onOpenSyncingSettings={() =>
-              openHrefInNewTab(SETTINGS_SYNCING_HREF)
-            }
-          />
-        </div>
+        <CursorCreditsUsageBar
+          onOpenSyncingSettings={() =>
+            openHrefInNewTab(SETTINGS_SYNCING_HREF)
+          }
+        />
       }
       inboxIndicatorTone={inboxSidebarIndicator}
       recentPages={history.recentPages.map((page): ProductSidebarRecentPage => {

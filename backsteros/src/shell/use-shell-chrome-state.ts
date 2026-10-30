@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useShellLocation } from "../lib/shell-route-keep-alive";
+import { SHELL_CHAT_OPEN_PEER_EVENT } from "../lib/shell-chat-open-peer";
 
 import {
   CONTEXT_PANEL_COLLAPSE_DURATION_MS,
@@ -326,6 +327,17 @@ export function useShellChromeState() {
       clearPersonalAssistantDoubleA();
     };
   }, [toggleChatPanelCollapsed]);
+
+  useEffect(() => {
+    const onOpenPeer = () => {
+      setChatPanelCollapsedPreferring(false);
+      scheduleFocusShellChatComposer();
+    };
+    window.addEventListener(SHELL_CHAT_OPEN_PEER_EVENT, onOpenPeer);
+    return () => {
+      window.removeEventListener(SHELL_CHAT_OPEN_PEER_EVENT, onOpenPeer);
+    };
+  }, [setChatPanelCollapsedPreferring]);
 
   useEffect(() => {
     const listener = (event: KeyboardEvent) => {
