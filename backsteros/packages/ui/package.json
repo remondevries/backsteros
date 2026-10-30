@@ -92,6 +92,7 @@
     "@react-spring/web": "^10.1.2",
     "@replit/codemirror-vim": "^6.3.0",
     "@uiw/react-codemirror": "^4.25.4",
+    "border-beam": "^1.4.1",
     "canvas-confetti": "^1.9.4",
     "chrono-node": "^2.10.0",
     "cmdk": "^1.1.1",

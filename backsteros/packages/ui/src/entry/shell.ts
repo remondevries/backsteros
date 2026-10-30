@@ -75,6 +75,11 @@ export {
 } from "../components/shell/product-sidebar.js";
 
 export {
+  AgentMessageNotificationCard,
+  type AgentMessageNotificationCardProps,
+} from "../components/shell/agent-message-notification-card.js";
+
+export {
   CONTEXT_PANEL_COLLAPSE_DURATION_MS,
   ResizableContextPanel,
   type ResizableContextPanelProps,

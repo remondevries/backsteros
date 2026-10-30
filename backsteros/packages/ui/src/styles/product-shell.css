@@ -504,6 +504,178 @@ body.is-resizing .desktop-chat-panel__resize::after {
   min-width: 0;
 }
 
+/* Agent DM notification card (sidebar footer, above Cursor credits). */
+.agent-dm-card-wrap {
+  min-width: 0;
+  width: 100%;
+}
+
+.agent-dm-card {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 6px 8px;
+  border: 0.5px solid color-mix(in srgb, var(--foreground) 12%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--faint) 60%, transparent);
+  color: var(--foreground);
+}
+
+.sidebar-footer .agent-dm-card__hit,
+.sidebar-footer button.agent-dm-card__hit {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  display: block;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.sidebar-footer .agent-dm-card__hit:hover,
+.sidebar-footer button.agent-dm-card__hit:hover {
+  background: transparent;
+  color: inherit;
+}
+
+.agent-dm-card__avatar {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  pointer-events: none;
+}
+
+.agent-dm-card__avatar img,
+.agent-dm-card__avatar svg {
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+}
+
+.agent-dm-card__unread-dot {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #22c55e;
+  box-shadow: 0 0 0 2px var(--sidebar-bg, #0a0a0a);
+}
+
+.agent-dm-card__copy {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  flex: 1 1 auto;
+  gap: 1px;
+  min-width: 0;
+  pointer-events: none;
+}
+
+.agent-dm-card__title {
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 550;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-dm-card__preview {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 450;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-dm-card__time {
+  position: relative;
+  z-index: 1;
+  flex-shrink: 0;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 450;
+  line-height: 1;
+  pointer-events: none;
+}
+
+.sidebar-footer .agent-dm-card__dismiss,
+.sidebar-footer button.agent-dm-card__dismiss {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  min-width: 24px;
+  height: 24px;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.sidebar-footer .agent-dm-card__dismiss:hover,
+.sidebar-footer button.agent-dm-card__dismiss:hover {
+  background: color-mix(in srgb, var(--foreground) 8%, transparent);
+  color: var(--foreground);
+}
+
+@keyframes live-status-shine {
+  from {
+    background-position:
+      -4.5rem 0,
+      0 0;
+  }
+  to {
+    background-position:
+      calc(100% + 4.5rem) 0,
+      0 0;
+  }
+}
+
+.live-status-shine {
+  color: transparent;
+  background-image:
+    linear-gradient(
+      to right,
+      transparent,
+      var(--foreground),
+      transparent
+    ),
+    linear-gradient(var(--muted), var(--muted));
+  background-size:
+    4.5rem 100%,
+    100% 100%;
+  background-repeat: no-repeat;
+  background-clip: text;
+  -webkit-background-clip: text;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .live-status-shine {
+    animation: live-status-shine 2.2s steps(30) infinite;
+  }
+}
+
 .sidebar-agentmail-degraded {
   padding: 6px 9px;
   border-radius: 7px;

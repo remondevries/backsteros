@@ -2,6 +2,7 @@ import { createElement, memo, type ReactNode } from "react";
 import { useNavigate } from "@tanstack/react-router";
 
 import {
+  AgentMessageNotificationCard,
   BreadcrumbChromeSkeleton,
   HistoryEntryIcon,
   ProductAppShell,
@@ -101,11 +102,21 @@ function ShellChromeInner({
       canGoBack={history.canGoBack}
       canGoForward={history.canGoForward}
       footer={
-        <CursorCreditsUsageBar
-          onOpenSyncingSettings={() =>
-            openHrefInNewTab(SETTINGS_SYNCING_HREF)
-          }
-        />
+        <div className="sidebar-footer-status-stack">
+          <AgentMessageNotificationCard
+            agentName="Ralph"
+            preview="Can you approve the October VAT return?"
+            timestamp="2m"
+            unread
+            onOpen={() => {}}
+            onDismiss={() => {}}
+          />
+          <CursorCreditsUsageBar
+            onOpenSyncingSettings={() =>
+              openHrefInNewTab(SETTINGS_SYNCING_HREF)
+            }
+          />
+        </div>
       }
       inboxIndicatorTone={inboxSidebarIndicator}
       recentPages={history.recentPages.map((page): ProductSidebarRecentPage => {

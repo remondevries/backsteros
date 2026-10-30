@@ -116,6 +116,7 @@ export default defineConfig(async ({ command }) => {
       "@backsteros/ui > @assistant-ui/react > radix-ui",
       "@backsteros/ui > @assistant-ui/react > react-textarea-autosize",
       "@backsteros/ui > @assistant-ui/react > safe-content-frame",
+      "@backsteros/ui > border-beam",
       "@legendapp/list/react",
       "@backsteros/ui > @legendapp/list/react",
     ],

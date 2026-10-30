@@ -178,6 +178,11 @@ export {
 } from "./components/shell/product-sidebar.js";
 
 export {
+  AgentMessageNotificationCard,
+  type AgentMessageNotificationCardProps,
+} from "./components/shell/agent-message-notification-card.js";
+
+export {
   ProductHistoryToolbar,
   type ProductHistoryToolbarProps,
   type ProductHistoryRecentPage,
@@ -2203,6 +2208,8 @@ export {
   classifyApiKeyType,
   expiryPresetToIso,
   formatMaskedApiKey,
+  isApiKeyTypeTab,
+  isApiKeysSettingsPanel,
   type ApiKeyExpiryPreset,
   type ApiKeyTypeTab,
   type ApiKeysSettingsPanel,
