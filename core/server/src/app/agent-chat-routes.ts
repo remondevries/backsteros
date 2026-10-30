@@ -2,12 +2,17 @@
  * Shell chat threads (OS-150) — Remon sends; agent API key replies.
  */
 import type { Hono } from "hono";
+import { streamSSE } from "hono/streaming";
 import {
   createChatThreadMessageInputSchema,
   getOrCreateChatThreadInputSchema,
 } from "@backsteros/contracts";
 
 import * as agentChat from "../services/agent-chat.js";
+import {
+  AGENT_SHELL_CHAT_SSE_EVENT,
+  subscribeAgentShellChatMessage,
+} from "../lib/agent-shell-chat-events.js";
 import {
   can,
   forbidden,
@@ -22,6 +27,14 @@ function canReadChat(auth: ReturnType<typeof getAuth>): boolean {
     can(auth, "chat:write") ||
     can(auth, "settings:read")
   );
+}
+
+/** Owner / Access door keys only — never agent persona keys. */
+function canSubscribeShellChatEvents(
+  auth: ReturnType<typeof getAuth>,
+): boolean {
+  if (isAgentPersonaAuth(auth)) return false;
+  return canReadChat(auth);
 }
 
 function canWriteUserMessage(auth: ReturnType<typeof getAuth>): boolean {
@@ -54,6 +67,63 @@ function errorCode(status: 400 | 403 | 404): string {
 }
 
 export function registerAgentChatRoutes(app: Hono) {
+  /**
+   * Live shell DM hints for the desktop sidebar (owner SSE via agents door).
+   * Agents posting replies cannot subscribe.
+   */
+  app.get("/api/v1/chat/threads/events", async (c) => {
+    const auth = getAuth(c);
+    if (!canSubscribeShellChatEvents(auth)) return c.json(forbidden(), 403);
+    const workspaceId = auth.workspaceId;
+    return streamSSE(c, async (stream) => {
+      let closed = false;
+      let pendingWrites = 0;
+      const MAX_PENDING_WRITES = 16;
+      const unsubscribe = subscribeAgentShellChatMessage(
+        workspaceId,
+        (event) => {
+          if (closed || pendingWrites >= MAX_PENDING_WRITES) return;
+          pendingWrites += 1;
+          void stream
+            .writeSSE({
+              event: AGENT_SHELL_CHAT_SSE_EVENT,
+              data: JSON.stringify({
+                threadId: event.threadId,
+                agentId: event.agentId,
+                message: event.message,
+              }),
+            })
+            .catch(() => {
+              closed = true;
+              unsubscribe();
+            })
+            .finally(() => {
+              pendingWrites = Math.max(0, pendingWrites - 1);
+            });
+        },
+      );
+      stream.onAbort(() => {
+        closed = true;
+        unsubscribe();
+      });
+      await stream.writeSSE({
+        event: "ready",
+        data: JSON.stringify({ ok: true }),
+      });
+      while (!closed) {
+        await stream.sleep(15_000);
+        if (closed) break;
+        try {
+          await stream.writeSSE({ event: "ping", data: "{}" });
+        } catch {
+          closed = true;
+          break;
+        }
+      }
+      unsubscribe();
+    });
+  });
+
   app.get("/api/v1/chat/threads", async (c) => {
     const auth = getAuth(c);
     if (!canReadChat(auth)) return c.json(forbidden(), 403);

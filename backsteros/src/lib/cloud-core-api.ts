@@ -113,3 +113,40 @@ export async function cloudCoreRequestJson<T>(
   if (!text) return undefined as T;
   return JSON.parse(text) as T;
 }
+
+/**
+ * Streaming GET against cloud-core (SSE) with the owner API key.
+ * Used for shell agent DM push (`/api/v1/chat/threads/events`).
+ */
+export async function cloudCoreRequestStream(
+  path: string,
+  init?: RequestInit,
+): Promise<Response> {
+  const token = await loadDesktopOwnerToken();
+  if (!token) {
+    throw new CloudCoreApiError(
+      401,
+      "Owner API key required for cloud-core (agent.backsteros.com)",
+    );
+  }
+  const normalized = path.startsWith("/") ? path : `/${path}`;
+  const url = `${trimSlash(cloudCoreApiBaseUrl())}${normalized}`;
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      ...init,
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "text/event-stream",
+        ...(init?.headers ?? {}),
+      },
+    });
+  } catch (error) {
+    const message =
+      error instanceof Error && error.message.trim()
+        ? error.message
+        : "Network error talking to cloud-core";
+    throw new CloudCoreApiError(0, message);
+  }
+  return res;
+}

@@ -231,6 +231,9 @@ export default defineConfig(async ({ command }) => {
         changeOrigin: true,
         secure: true,
         rewrite: (p: string) => p.replace(/^\/__cloud_core__/, "") || "/",
+        // Long-lived SSE (shell agent DM events) must not idle-timeout.
+        timeout: 0,
+        proxyTimeout: 0,
       },
       // SSE through Vite so browser streams do not fight REST for the
       // HTTP/1.1 6-connection cap on local-core :8788 (presence/email banners).

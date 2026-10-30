@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { ChatThreadListItem, ChatThreadsList } from "@backsteros/contracts";
+import type {
+  ChatThreadListItem,
+  ChatThreadMessage,
+  ChatThreadsList,
+} from "@backsteros/contracts";
 import type { AgentMessageNotificationItem } from "@backsteros/ui/shell";
 
 import {
@@ -9,13 +13,18 @@ import {
   markAgentDmSeen,
 } from "../lib/agent-dm-seen";
 import {
+  startAgentShellChatEventsLoop,
+  type AgentShellChatMessagePayload,
+} from "../lib/agent-shell-chat-events";
+import {
   cloudCoreRequestJson,
   isCloudCoreApiError,
 } from "../lib/cloud-core-api";
 import { openShellChatPeer } from "../lib/shell-chat-open-peer";
 import { useShellAgentChat } from "./use-shell-agent-chat";
 
-const POLL_MS = 12_000;
+/** Slow catch-up; live updates come from cloud SSE. */
+const POLL_MS = 60_000;
 
 function formatShortRelative(iso: string, nowMs = Date.now()): string {
   const epoch = Date.parse(iso);
@@ -36,13 +45,40 @@ function previewFromBody(body: string): string {
   return flat.length > 96 ? `${flat.slice(0, 95)}…` : flat;
 }
 
+function applyShellChatPush(
+  threads: ChatThreadListItem[],
+  payload: AgentShellChatMessagePayload,
+): { threads: ChatThreadListItem[]; found: boolean } {
+  const index = threads.findIndex((thread) => thread.id === payload.threadId);
+  if (index < 0) return { threads, found: false };
+  const existing = threads[index]!;
+  const last: ChatThreadMessage = {
+    id: payload.message.id,
+    threadId: payload.threadId,
+    role: "assistant",
+    authorContactId: existing.agentContactId,
+    authorName: existing.agentName,
+    body: payload.message.body,
+    status: "done",
+    createdAt: payload.message.createdAt,
+    updatedAt: payload.message.createdAt,
+  };
+  const next = threads.slice();
+  next[index] = {
+    ...existing,
+    updatedAt: payload.message.createdAt,
+    lastAssistantMessage: last,
+  };
+  return { threads: next, found: true };
+}
+
 export type UseAgentDmNotificationsResult = {
   items: AgentMessageNotificationItem[];
 };
 
 /**
  * Unseen assistant replies on cloud chat threads → sidebar DM cards.
- * Seen state is local (open or dismiss).
+ * Push via cloud SSE; 60s poll + reconnect refetch as fallback.
  */
 export function useAgentDmNotifications(): UseAgentDmNotificationsResult {
   const { webhookReadyAgents } = useShellAgentChat();
@@ -94,6 +130,29 @@ export function useAgentDmNotifications(): UseAgentDmNotificationsResult {
       window.removeEventListener("focus", onFocus);
     };
   }, [reload]);
+
+  useEffect(() => {
+    if (readyAgentIds.size === 0) return;
+    const controller = new AbortController();
+    startAgentShellChatEventsLoop({
+      signal: controller.signal,
+      onLive: () => {
+        void reload();
+      },
+      onMessage: (payload) => {
+        if (!readyAgentIds.has(payload.agentId)) return;
+        setThreads((prev) => {
+          const { threads: next, found } = applyShellChatPush(prev, payload);
+          if (!found) {
+            void reload();
+            return prev;
+          }
+          return next;
+        });
+      },
+    });
+    return () => controller.abort();
+  }, [readyAgentIds, reload]);
 
   useEffect(() => {
     const onSeen = () => setSeenTick((value) => value + 1);

@@ -319,6 +319,54 @@ test("OS-151/150 agents + chat loop: secret write-only, webhook fire, agent repl
   );
   assert.equal(webhookHit.body.includes(webhookPlain), false);
 
+  // Agent persona cannot subscribe to owner DM SSE.
+  const agentSseDenied = await app.request("/api/v1/chat/threads/events", {
+    headers: { authorization: `Bearer ${agentSecret}` },
+  });
+  assert.equal(agentSseDenied.status, 403);
+
+  // Owner SSE should receive agent.chat.message when the agent replies.
+  const sseResponse = await app.request("/api/v1/chat/threads/events", {
+    headers: { authorization: `Bearer ${ownerSecret}` },
+  });
+  assert.equal(sseResponse.status, 200);
+  assert.match(
+    sseResponse.headers.get("content-type") ?? "",
+    /text\/event-stream/,
+  );
+  assert.ok(sseResponse.body);
+  const reader = sseResponse.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  const sseEvents: { event: string; data: string }[] = [];
+  const readUntil = async (predicate: () => boolean, timeoutMs = 5_000) => {
+    const deadline = Date.now() + timeoutMs;
+    while (!predicate() && Date.now() < deadline) {
+      const result = await Promise.race([
+        reader.read(),
+        new Promise<{ done: true; value: undefined }>((resolve) =>
+          setTimeout(() => resolve({ done: true, value: undefined }), 250),
+        ),
+      ]);
+      if (result.done && result.value === undefined) continue;
+      if (result.done) break;
+      buffer += decoder.decode(result.value, { stream: true });
+      const chunks = buffer.split("\n\n");
+      buffer = chunks.pop() ?? "";
+      for (const chunk of chunks) {
+        const lines = chunk.split("\n");
+        let event = "message";
+        let data = "";
+        for (const line of lines) {
+          if (line.startsWith("event:")) event = line.slice(6).trim();
+          if (line.startsWith("data:")) data += line.slice(5).trim();
+        }
+        if (data) sseEvents.push({ event, data });
+      }
+    }
+  };
+  await readUntil(() => sseEvents.some((e) => e.event === "ready"));
+
   // Agent replies with its own API key.
   const reply = await json(
     app,
@@ -332,6 +380,23 @@ test("OS-151/150 agents + chat loop: secret write-only, webhook fire, agent repl
   assert.equal(reply.status, 201);
   assert.equal((reply.body?.message as { role?: string } | undefined)?.role, "assistant");
   assert.equal(reply.body?.thinking, false);
+
+  await readUntil(() =>
+    sseEvents.some((e) => e.event === "agent.chat.message"),
+  );
+  const dmEvent = sseEvents.find((e) => e.event === "agent.chat.message");
+  assert.ok(dmEvent);
+  const dmPayload = JSON.parse(dmEvent.data) as {
+    threadId: string;
+    agentId: string;
+    message: { id: string; body: string; createdAt: string };
+  };
+  assert.equal(dmPayload.threadId, threadId);
+  assert.equal(dmPayload.agentId, agentId);
+  assert.ok(dmPayload.message.id);
+  assert.match(dmPayload.message.body, /got it/i);
+  assert.ok(dmPayload.message.createdAt);
+  void reader.cancel().catch(() => {});
 
   const thread = await json(
     app,

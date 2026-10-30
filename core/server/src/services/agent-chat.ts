@@ -29,6 +29,10 @@ import {
   decryptAgentChatWebhookSecret,
 } from "../lib/agent-chat-webhook.js";
 import { getAgentRowForWebhook } from "./agents.js";
+import {
+  previewAgentChatMessageBody,
+  publishAgentShellChatMessage,
+} from "../lib/agent-shell-chat-events.js";
 
 const CONTEXT_MESSAGE_LIMIT = 10;
 
@@ -499,8 +503,20 @@ export async function postChatThreadMessage(
       .where(eq(chatThreads.id, threadId))
       .returning();
 
+    const message = toMessage(messageRow!);
+    publishAgentShellChatMessage({
+      workspaceId,
+      threadId,
+      agentId: agent.id,
+      message: {
+        id: message.id,
+        body: previewAgentChatMessageBody(message.body),
+        createdAt: message.createdAt,
+      },
+    });
+
     return {
-      message: toMessage(messageRow!),
+      message,
       thread: toThread(updatedThread!),
       thinking: false,
       webhookError: null,
