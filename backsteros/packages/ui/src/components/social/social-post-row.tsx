@@ -1,16 +1,25 @@
 "use client";
 
 import { useEffect, useState, type ReactNode } from "react";
+
+type ReactionMenuAnchor = "filing" | "card" | null;
 import {
   PencilIcon,
   TrashIcon,
   UploadIcon,
 } from "@primer/octicons-react";
 
+import type { LinkedInReactionType } from "@backsteros/contracts";
+
 import {
   isLiveSocialFeedPostId,
   type SocialFeedPostsClient,
 } from "../../social/social-feed-posts.js";
+import {
+  LINKEDIN_REACTION_OPTIONS,
+  linkedInReactionGlyph,
+  linkedInReactionLabel,
+} from "../../social/linkedin-reactions.js";
 import {
   getSocialPostExternalReplyUrl,
   type SocialMockPost,
@@ -23,7 +32,7 @@ import {
   type SocialFeedTabId,
   type SocialPlatformNavId,
 } from "../../social/social-nav.js";
-import { SocialArchiveIcon } from "../icons/social-archive-icon.js";
+import { ClientLink } from "../../shared/client-link.js";
 import { SocialLikeIcon } from "../icons/social-like-icon.js";
 import { SocialReplyIcon } from "../icons/social-reply-icon.js";
 import { SocialRepostIcon } from "../icons/social-repost-icon.js";
@@ -37,6 +46,7 @@ export type SocialPostFilingActionId =
   | "unsave"
   | "reply"
   | "archive"
+  | "delete"
   | "like"
   | "unlike"
   | "repost"
@@ -54,16 +64,15 @@ type FilingAction = {
   disabledReason?: string;
 };
 
-/** Inbox only lists our own posts — resharing / hiding / saving them isn’t useful yet. */
-const REPOST_DISABLED_REASON =
-  "Repost isn’t available here yet — this feed only shows your own posts.";
-const ARCHIVE_DISABLED_REASON =
-  "Archive isn’t needed here — this feed only shows your own posts.";
 const SAVE_DISABLED_REASON =
   "Save isn’t needed here — this feed only shows your own posts.";
+const REPOST_DISABLED_REASON =
+  "Repost needs a LinkedIn post URL — open the post on LinkedIn first.";
 
 const EDIT_DISABLED_REASON =
   "Only posts published through Network can be edited here.";
+const DELETE_DISABLED_REASON =
+  "Only posts published through Network can be deleted here.";
 
 const FILING_ACTIONS: readonly FilingAction[] = [
   {
@@ -88,10 +97,9 @@ const FILING_ACTIONS: readonly FilingAction[] = [
     disabledReason: SAVE_DISABLED_REASON,
   },
   {
-    id: "archive",
-    label: "Archive",
-    icon: <SocialArchiveIcon size={18} />,
-    disabledReason: ARCHIVE_DISABLED_REASON,
+    id: "delete",
+    label: "Delete",
+    icon: <TrashIcon size={18} />,
   },
   {
     id: "url",
@@ -103,7 +111,6 @@ const FILING_ACTIONS: readonly FilingAction[] = [
     id: "repost",
     label: "Repost",
     icon: <SocialRepostIcon size={18} />,
-    disabledReason: REPOST_DISABLED_REASON,
   },
 ];
 
@@ -135,7 +142,6 @@ const LIKED_FILING_ACTIONS: readonly FilingAction[] = [
     id: "repost",
     label: "Repost",
     icon: <SocialRepostIcon size={18} />,
-    disabledReason: REPOST_DISABLED_REASON,
   },
 ];
 
@@ -167,7 +173,6 @@ const SAVED_FILING_ACTIONS: readonly FilingAction[] = [
     id: "repost",
     label: "Repost",
     icon: <SocialRepostIcon size={18} />,
-    disabledReason: REPOST_DISABLED_REASON,
   },
 ];
 
@@ -209,6 +214,8 @@ export type SocialPostRowProps = {
   feedAccountKind?: SocialFeedAccountKind;
   feedPlatform?: SocialFeedPlatformFilterId;
   feedTab?: SocialFeedTabId;
+  /** Called after a live Network post is unpublished/deleted. */
+  onPostDeleted?: (postId: string) => void;
 };
 
 function postAbsoluteUrl(
@@ -240,6 +247,7 @@ export function SocialPostRow({
   feedAccountKind,
   feedPlatform,
   feedTab,
+  onPostDeleted,
 }: SocialPostRowProps) {
   const isDraft = variant === "draft";
   const postHref = getSocialPostHref(post.id, {
@@ -255,16 +263,30 @@ export function SocialPostRow({
     post.platform === "linkedin" &&
     post.id.startsWith("zernio-post:") &&
     feedPostsClient != null;
+  const canDeleteLive = canEditLive;
+  const canRepostLive =
+    post.platform === "linkedin" &&
+    Boolean(post.permalink?.trim()) &&
+    feedPostsClient != null;
   const [likedByMe, setLikedByMe] = useState(variant === "liked");
   const [likeCount, setLikeCount] = useState(post.likeCount);
   const [likeBusy, setLikeBusy] = useState(false);
   const [likeError, setLikeError] = useState<string | null>(null);
+  const [reactionType, setReactionType] = useState<LinkedInReactionType | null>(
+    variant === "liked" ? "LIKE" : null,
+  );
+  const [reactionMenuAnchor, setReactionMenuAnchor] =
+    useState<ReactionMenuAnchor>(null);
   const [urlCopied, setUrlCopied] = useState(false);
   const [editing, setEditing] = useState(false);
   const [editBody, setEditBody] = useState(post.body);
   const [displayBody, setDisplayBody] = useState(post.body);
   const [editBusy, setEditBusy] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [repostBusy, setRepostBusy] = useState(false);
+  const [repostError, setRepostError] = useState<string | null>(null);
 
   // Sync from props only when the feed row identity/body changes — not when
   // leaving edit mode, or an optimistic save would snap back to the old text.
@@ -276,12 +298,26 @@ export function SocialPostRow({
   const postFilingActions = filingActionsFor(variant).map((action) => {
     if (action.id === "edit") {
       if (canEditLive) return action;
-      if (post.platform === "linkedin" && isLiveSocialFeedPostId(post.id)) {
-        return { ...action, disabledReason: EDIT_DISABLED_REASON };
-      }
       return { ...action, disabledReason: EDIT_DISABLED_REASON };
     }
-    if (!canLikeLive) return action;
+    if (action.id === "delete") {
+      if (canDeleteLive) return action;
+      return { ...action, disabledReason: DELETE_DISABLED_REASON };
+    }
+    if (action.id === "repost") {
+      if (canRepostLive) return action;
+      return { ...action, disabledReason: REPOST_DISABLED_REASON };
+    }
+    // LinkedIn live: keep `like` so the right-nav always opens the reaction menu.
+    if (canLikeLive && (action.id === "like" || action.id === "unlike")) {
+      return {
+        ...action,
+        id: "like" as const,
+        label: likedByMe
+          ? linkedInReactionLabel(reactionType)
+          : "Like",
+      };
+    }
     if (action.id === "like" && likedByMe) {
       return {
         ...action,
@@ -298,7 +334,13 @@ export function SocialPostRow({
     }
     return action;
   });
-  const externalReplyUrl = getSocialPostExternalReplyUrl(post);
+  // Company-page comments are in-app; personal LinkedIn still opens the network.
+  const replyInApp =
+    (feedAccountKind ?? post.accountKind) === "business";
+  const externalReplyUrl = replyInApp
+    ? null
+    : getSocialPostExternalReplyUrl(post);
+  const inAppReplyHref = replyInApp ? `${postHref}#comments` : null;
   const externalReplyLabel =
     post.platform === "linkedin"
       ? "Reply on LinkedIn"
@@ -309,31 +351,87 @@ export function SocialPostRow({
           : post.platform === "instagram"
             ? "Reply on Instagram"
             : "Reply on the network";
+  const replyLabel = replyInApp ? "Open comments" : externalReplyLabel;
 
-  async function setLiked(nextLiked: boolean) {
+  async function setLiked(
+    nextLiked: boolean,
+    nextReaction: LinkedInReactionType = "LIKE",
+  ) {
     if (!canLikeLive || !feedPostsClient || likeBusy) return;
-    if (nextLiked === likedByMe) return;
+    if (nextLiked && likedByMe && reactionType === nextReaction) {
+      setReactionMenuAnchor(null);
+      return;
+    }
+    if (!nextLiked && !likedByMe) return;
 
     const previousLiked = likedByMe;
     const previousCount = likeCount;
-    // Optimistic — flip UI immediately, roll back if the network call fails.
+    const previousReaction = reactionType;
+    // Optimistic — flip UI immediately (card heart + right-nav), roll back if
+    // the network call fails.
+    const countDelta = nextLiked && !previousLiked ? 1 : !nextLiked ? -1 : 0;
     setLikedByMe(nextLiked);
-    setLikeCount((count) =>
-      nextLiked ? count + 1 : Math.max(0, count - 1),
-    );
+    setReactionType(nextLiked ? nextReaction : null);
+    if (countDelta !== 0) {
+      setLikeCount((count) => Math.max(0, count + countDelta));
+    }
     setLikeBusy(true);
     setLikeError(null);
+    setReactionMenuAnchor(null);
+
+    // LinkedIn cannot change a reaction in place — Zernio returns 409 (or
+    // alreadyReacted with the old type). Remove first, then create the new one.
+    const replacingReaction =
+      nextLiked && previousLiked && previousReaction !== nextReaction;
 
     try {
       if (nextLiked) {
+        if (replacingReaction) {
+          try {
+            await feedPostsClient.unlike({
+              platform: "linkedin",
+              accountKind: post.accountKind,
+              postId: post.id,
+            });
+          } catch {
+            // Already cleared on LinkedIn — still try to create the new type.
+          }
+        }
         const result = await feedPostsClient.like({
           platform: "linkedin",
           accountKind: post.accountKind,
           postId: post.id,
+          reactionType: nextReaction,
         });
-        if (result.alreadyReacted) {
+        if (result.alreadyReacted && countDelta !== 0) {
           setLikeCount(previousCount);
         }
+        // If Zernio still reports a different type (stale alreadyReacted),
+        // force one more remove + create cycle before giving up.
+        const echoed =
+          typeof result.reactionType === "string" ? result.reactionType : null;
+        if (
+          result.alreadyReacted &&
+          echoed != null &&
+          echoed !== nextReaction
+        ) {
+          try {
+            await feedPostsClient.unlike({
+              platform: "linkedin",
+              accountKind: post.accountKind,
+              postId: post.id,
+            });
+          } catch {
+            // ignore
+          }
+          await feedPostsClient.like({
+            platform: "linkedin",
+            accountKind: post.accountKind,
+            postId: post.id,
+            reactionType: nextReaction,
+          });
+        }
+        setReactionType(nextReaction);
       } else {
         await feedPostsClient.unlike({
           platform: "linkedin",
@@ -342,17 +440,106 @@ export function SocialPostRow({
         });
       }
     } catch (error) {
+      // Best-effort restore if we cleared the old reaction before failing.
+      if (replacingReaction && previousReaction) {
+        try {
+          await feedPostsClient.like({
+            platform: "linkedin",
+            accountKind: post.accountKind,
+            postId: post.id,
+            reactionType: previousReaction,
+          });
+        } catch {
+          // ignore — UI rolls back either way
+        }
+      }
       setLikedByMe(previousLiked);
       setLikeCount(previousCount);
+      setReactionType(previousReaction);
       const message =
         error instanceof Error && error.message.trim()
           ? error.message.trim()
           : nextLiked
-            ? "Couldn’t like this post."
+            ? "Couldn’t update this reaction."
             : "Couldn’t unlike this post.";
       setLikeError(message);
     } finally {
       setLikeBusy(false);
+    }
+  }
+
+  const linkedInReactionMenu =
+    canLikeLive && reactionMenuAnchor ? (
+      <div
+        className={[
+          "social-post-row__reaction-menu",
+          reactionMenuAnchor === "card"
+            ? "social-post-row__reaction-menu--card"
+            : null,
+        ]
+          .filter(Boolean)
+          .join(" ")}
+        role="menu"
+        aria-label="LinkedIn reactions"
+      >
+        {LINKEDIN_REACTION_OPTIONS.map((option) => (
+          <button
+            key={option.id}
+            type="button"
+            role="menuitem"
+            className={[
+              "social-post-row__reaction-option",
+              likedByMe && reactionType === option.id
+                ? "social-post-row__reaction-option--active"
+                : null,
+            ]
+              .filter(Boolean)
+              .join(" ")}
+            disabled={likeBusy}
+            onClick={() => {
+              void setLiked(true, option.id);
+            }}
+          >
+            <span aria-hidden="true">{option.glyph}</span> {option.label}
+          </button>
+        ))}
+        {likedByMe ? (
+          <button
+            type="button"
+            role="menuitem"
+            className="social-post-row__reaction-option social-post-row__reaction-option--remove"
+            disabled={likeBusy}
+            onClick={() => {
+              void setLiked(false);
+            }}
+          >
+            Remove reaction
+          </button>
+        ) : null}
+      </div>
+    ) : null;
+
+  async function repostLive() {
+    if (!canRepostLive || !feedPostsClient || repostBusy) return;
+    const reshareUrl = post.permalink?.trim();
+    if (!reshareUrl) return;
+    setRepostBusy(true);
+    setRepostError(null);
+    try {
+      await feedPostsClient.publish({
+        platform: "linkedin",
+        accountKind: feedAccountKind ?? post.accountKind,
+        body: "",
+        reshareUrl,
+      });
+    } catch (error) {
+      setRepostError(
+        error instanceof Error && error.message.trim()
+          ? error.message.trim()
+          : "Couldn’t repost this.",
+      );
+    } finally {
+      setRepostBusy(false);
     }
   }
 
@@ -412,13 +599,61 @@ export function SocialPostRow({
     setEditError(null);
   }
 
+  async function deleteLivePost() {
+    if (!canDeleteLive || !feedPostsClient || deleteBusy) return;
+    const confirmed =
+      typeof window === "undefined"
+        ? true
+        : window.confirm(
+            "Delete this LinkedIn post from Network? It will be unpublished via Zernio.",
+          );
+    if (!confirmed) return;
+    setDeleteBusy(true);
+    setDeleteError(null);
+    try {
+      await feedPostsClient.deletePost({
+        platform: "linkedin",
+        accountKind: post.accountKind,
+        postId: post.id,
+      });
+      onPostDeleted?.(post.id);
+    } catch (error) {
+      setDeleteError(
+        error instanceof Error && error.message.trim()
+          ? error.message.trim()
+          : "Couldn’t delete this post.",
+      );
+    } finally {
+      setDeleteBusy(false);
+    }
+  }
+
   async function onFilingAction(id: SocialPostFilingActionId) {
     if (id === "edit") {
       beginEdit();
       return;
     }
-    if (id === "like" || id === "unlike") {
-      await setLiked(id === "like");
+    if (id === "delete") {
+      await deleteLivePost();
+      return;
+    }
+    if (id === "like") {
+      // LinkedIn: reaction picker (also on the card heart under the post).
+      if (canLikeLive) {
+        setReactionMenuAnchor((current) =>
+          current === "filing" ? null : "filing",
+        );
+        return;
+      }
+      await setLiked(true);
+      return;
+    }
+    if (id === "unlike") {
+      await setLiked(false);
+      return;
+    }
+    if (id === "repost") {
+      await repostLive();
       return;
     }
     if (id !== "url") return;
@@ -458,12 +693,19 @@ export function SocialPostRow({
             liked={likedByMe}
             likeBusy={likeBusy}
             likeCount={likeCount}
-            onToggleLike={
+            reactionType={reactionType}
+            onOpenReactionMenu={
               canLikeLive
                 ? () => {
-                    void setLiked(!likedByMe);
+                    setReactionMenuAnchor((current) =>
+                      current === "card" ? null : "card",
+                    );
                   }
                 : undefined
+            }
+            reactionMenuOpen={reactionMenuAnchor === "card"}
+            reactionMenu={
+              reactionMenuAnchor === "card" ? linkedInReactionMenu : null
             }
             editing={editing}
             editBody={editBody}
@@ -477,6 +719,16 @@ export function SocialPostRow({
           {editError ? (
             <p className="social-post-row__edit-error" role="alert">
               {editError}
+            </p>
+          ) : null}
+          {deleteError ? (
+            <p className="social-post-row__edit-error" role="alert">
+              {deleteError}
+            </p>
+          ) : null}
+          {repostError ? (
+            <p className="social-post-row__edit-error" role="alert">
+              {repostError}
             </p>
           ) : null}
         </div>
@@ -537,14 +789,33 @@ export function SocialPostRow({
                       aria-hidden="true"
                     />
                   ) : null}
-                  {action.id === "reply" && externalReplyUrl ? (
+                  {action.id === "reply" && inAppReplyHref ? (
+                    <ClientLink
+                      className="social-post-row__filing-action"
+                      href={inAppReplyHref}
+                      title={replyLabel}
+                      aria-label={replyLabel}
+                    >
+                      {action.icon ? (
+                        <span
+                          className="social-post-row__filing-icon"
+                          aria-hidden="true"
+                        >
+                          {action.icon}
+                        </span>
+                      ) : null}
+                      <span className="social-post-row__filing-label">
+                        {action.label}
+                      </span>
+                    </ClientLink>
+                  ) : action.id === "reply" && externalReplyUrl ? (
                     <a
                       className="social-post-row__filing-action"
                       href={externalReplyUrl}
                       target="_blank"
                       rel="noreferrer"
-                      title={externalReplyLabel}
-                      aria-label={externalReplyLabel}
+                      title={replyLabel}
+                      aria-label={replyLabel}
                     >
                       {action.icon ? (
                         <span
@@ -559,63 +830,100 @@ export function SocialPostRow({
                       </span>
                     </a>
                   ) : (
-                    <button
-                      type="button"
-                      className={[
-                        "social-post-row__filing-action",
-                        action.id === "unlike" || action.id === "unsave"
-                          ? "social-post-row__filing-action--danger"
-                          : null,
-                        action.id === "like" && likedByMe
-                          ? "social-post-row__filing-action--active"
-                          : null,
-                      ]
-                        .filter(Boolean)
-                        .join(" ")}
-                      disabled={
-                        Boolean(action.disabledReason) ||
-                        ((action.id === "like" || action.id === "unlike") &&
-                          likeBusy) ||
-                        (action.id === "edit" && (editBusy || editing))
-                      }
-                      title={
-                        action.disabledReason ??
-                        (action.id === "url"
-                          ? urlCopied
+                    <div className="social-post-row__filing-action-wrap">
+                      <button
+                        type="button"
+                        className={[
+                          "social-post-row__filing-action",
+                          action.id === "unlike" ||
+                            action.id === "unsave" ||
+                            action.id === "delete"
+                            ? "social-post-row__filing-action--danger"
+                            : null,
+                          (action.id === "like" || action.id === "unlike") &&
+                            likedByMe
+                            ? "social-post-row__filing-action--active"
+                            : null,
+                        ]
+                          .filter(Boolean)
+                          .join(" ")}
+                        disabled={
+                          Boolean(action.disabledReason) ||
+                          ((action.id === "like" || action.id === "unlike") &&
+                            likeBusy) ||
+                          (action.id === "edit" && (editBusy || editing)) ||
+                          (action.id === "delete" && deleteBusy) ||
+                          (action.id === "repost" && repostBusy)
+                        }
+                        title={
+                          action.disabledReason ??
+                          (action.id === "url"
+                            ? urlCopied
+                              ? "Copied"
+                              : post.permalink?.trim()
+                                ? "Copy post URL"
+                                : "Copy BacksterOS URL"
+                            : action.id === "like"
+                              ? (likeError ??
+                                (canLikeLive
+                                  ? likedByMe
+                                    ? `${linkedInReactionLabel(reactionType)} — change or remove`
+                                    : "Choose a LinkedIn reaction"
+                                  : undefined))
+                              : action.id === "unlike"
+                                ? (likeError ?? "Unlike")
+                              : action.id === "edit"
+                                ? (editError ?? "Edit post text")
+                                : action.id === "delete"
+                                  ? (deleteError ?? "Delete post")
+                                  : action.id === "repost"
+                                    ? (repostError ?? "Repost on LinkedIn")
+                                    : undefined)
+                        }
+                        aria-busy={
+                          ((action.id === "like" || action.id === "unlike") &&
+                            likeBusy) ||
+                          (action.id === "delete" && deleteBusy) ||
+                          (action.id === "repost" && repostBusy)
+                            ? true
+                            : undefined
+                        }
+                        aria-expanded={
+                          action.id === "like" && canLikeLive
+                            ? reactionMenuAnchor === "filing"
+                            : undefined
+                        }
+                        onClick={() => {
+                          void onFilingAction(action.id);
+                        }}
+                      >
+                        {action.icon ||
+                        (action.id === "like" &&
+                          canLikeLive &&
+                          likedByMe &&
+                          linkedInReactionGlyph(reactionType)) ? (
+                          <span
+                            className="social-post-row__filing-icon"
+                            aria-hidden="true"
+                          >
+                            {action.id === "like" &&
+                            canLikeLive &&
+                            likedByMe &&
+                            linkedInReactionGlyph(reactionType)
+                              ? linkedInReactionGlyph(reactionType)
+                              : action.icon}
+                          </span>
+                        ) : null}
+                        <span className="social-post-row__filing-label">
+                          {action.id === "url" && urlCopied
                             ? "Copied"
-                            : post.permalink?.trim()
-                              ? "Copy post URL"
-                              : "Copy BacksterOS URL"
-                          : action.id === "like" || action.id === "unlike"
-                            ? (likeError ?? undefined)
-                            : action.id === "edit"
-                              ? (editError ?? "Edit post text")
-                              : undefined)
-                      }
-                      aria-busy={
-                        (action.id === "like" || action.id === "unlike") &&
-                        likeBusy
-                          ? true
-                          : undefined
-                      }
-                      onClick={() => {
-                        void onFilingAction(action.id);
-                      }}
-                    >
-                      {action.icon ? (
-                        <span
-                          className="social-post-row__filing-icon"
-                          aria-hidden="true"
-                        >
-                          {action.icon}
+                            : action.label}
                         </span>
-                      ) : null}
-                      <span className="social-post-row__filing-label">
-                        {action.id === "url" && urlCopied
-                          ? "Copied"
-                          : action.label}
-                      </span>
-                    </button>
+                      </button>
+                      {action.id === "like" && reactionMenuAnchor === "filing"
+                        ? linkedInReactionMenu
+                        : null}
+                    </div>
                   )}
                 </div>
               ))}

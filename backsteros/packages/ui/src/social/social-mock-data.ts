@@ -53,8 +53,9 @@ export const SOCIAL_LINKEDIN_FEED_FALLBACK_URL =
   "https://www.linkedin.com/feed/";
 
 /**
- * Where to leave a reply on the network itself (apps can’t post LinkedIn
- * comments). Prefer the post permalink; LinkedIn falls back to the feed.
+ * Where to leave a reply on the network itself. Used for personal LinkedIn
+ * (org/company comments are in-app). Prefer the post permalink; LinkedIn
+ * falls back to the feed.
  */
 export function getSocialPostExternalReplyUrl(
   post: Pick<SocialMockPost, "permalink" | "platform">,

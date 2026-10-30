@@ -7,11 +7,19 @@ import type { Context, Hono } from "hono";
 import {
   createSocialPlannedPostSchema,
   editSocialFeedPostInputSchema,
+  likeSocialFeedCommentInputSchema,
   likeSocialFeedPostInputSchema,
   publishSocialPostInputSchema,
+  resolveSocialLinkedInMentionQuerySchema,
   socialConnectAccountInputSchema,
+  createSocialFeedCommentInputSchema,
+  deleteSocialFeedCommentInputSchema,
+  deleteSocialFeedPostInputSchema,
+  socialAnalyticsQuerySchema,
   socialFeedCommentsQuerySchema,
+  socialFeedPostReactionsQuerySchema,
   socialFeedQuerySchema,
+  unlikeSocialFeedCommentInputSchema,
   unlikeSocialFeedPostInputSchema,
   updateSocialPlannedPostSchema,
   updateSocialSettingsSchema,
@@ -25,18 +33,26 @@ import {
   updateSocialPlannedPost,
 } from "../social/planned-posts.js";
 import {
+  createSocialFeedComment,
+  deleteSocialFeedComment,
+  deleteSocialFeedPost,
   disconnectSocialAccount,
   editSocialFeedPost,
+  getSocialAnalytics,
   getSocialSettings,
   handleZernioWebhookDelivery,
+  likeSocialFeedComment,
   likeSocialFeedPost,
   listSocialFeedComments,
+  listSocialFeedPostReactions,
   listSocialFeedPosts,
   listZernioWebhookSecrets,
   publishSocialPost,
+  resolveSocialLinkedInMention,
   startSocialAccountConnect,
   syncSocialAccounts,
   testSocialConnection,
+  unlikeSocialFeedComment,
   unlikeSocialFeedPost,
   updateSocialSettings,
   zernioHeadersFromRequest,
@@ -138,6 +154,27 @@ export function registerSocialRoutes(app: Hono) {
     }
   });
 
+  app.get("/api/v1/social/analytics", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "social:read")) return c.json(forbidden(), 403);
+    const parsed = socialAnalyticsQuerySchema.safeParse({
+      accountKind: c.req.query("accountKind"),
+      period: c.req.query("period") ?? undefined,
+      platform: c.req.query("platform") ?? undefined,
+    });
+    if (!parsed.success) {
+      return c.json(
+        { error: "Invalid social analytics query", code: "bad_request" },
+        400,
+      );
+    }
+    try {
+      return c.json(await getSocialAnalytics(auth.workspaceId, parsed.data));
+    } catch (error) {
+      return socialError(c, error);
+    }
+  });
+
   app.get("/api/v1/social/feed/comments", async (c) => {
     const auth = getAuth(c);
     if (!can(auth, "social:read")) return c.json(forbidden(), 403);
@@ -214,6 +251,80 @@ export function registerSocialRoutes(app: Hono) {
     }
   });
 
+  app.post("/api/v1/social/feed/comments", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "social:write")) return c.json(forbidden(), 403);
+    let body: unknown;
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ error: "Invalid JSON body", code: "bad_request" }, 400);
+    }
+    const parsed = createSocialFeedCommentInputSchema.safeParse(body);
+    if (!parsed.success) {
+      return c.json(
+        { error: "Invalid social comment", code: "bad_request" },
+        400,
+      );
+    }
+    try {
+      return c.json(
+        await createSocialFeedComment(auth.workspaceId, parsed.data),
+        201,
+      );
+    } catch (error) {
+      return socialError(c, error);
+    }
+  });
+
+  app.post("/api/v1/social/feed/comments/delete", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "social:write")) return c.json(forbidden(), 403);
+    let body: unknown;
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ error: "Invalid JSON body", code: "bad_request" }, 400);
+    }
+    const parsed = deleteSocialFeedCommentInputSchema.safeParse(body);
+    if (!parsed.success) {
+      return c.json(
+        { error: "Invalid social comment delete", code: "bad_request" },
+        400,
+      );
+    }
+    try {
+      return c.json(
+        await deleteSocialFeedComment(auth.workspaceId, parsed.data),
+      );
+    } catch (error) {
+      return socialError(c, error);
+    }
+  });
+
+  app.post("/api/v1/social/feed/delete", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "social:write")) return c.json(forbidden(), 403);
+    let body: unknown;
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ error: "Invalid JSON body", code: "bad_request" }, 400);
+    }
+    const parsed = deleteSocialFeedPostInputSchema.safeParse(body);
+    if (!parsed.success) {
+      return c.json(
+        { error: "Invalid social post delete", code: "bad_request" },
+        400,
+      );
+    }
+    try {
+      return c.json(await deleteSocialFeedPost(auth.workspaceId, parsed.data));
+    } catch (error) {
+      return socialError(c, error);
+    }
+  });
+
   app.post("/api/v1/social/feed/edit", async (c) => {
     const auth = getAuth(c);
     if (!can(auth, "social:write")) return c.json(forbidden(), 403);
@@ -226,6 +337,93 @@ export function registerSocialRoutes(app: Hono) {
     }
     try {
       return c.json(await editSocialFeedPost(auth.workspaceId, parsed.data));
+    } catch (error) {
+      return socialError(c, error);
+    }
+  });
+
+  app.post("/api/v1/social/feed/comments/like", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "social:write")) return c.json(forbidden(), 403);
+    const parsed = likeSocialFeedCommentInputSchema.safeParse(
+      await c.req.json(),
+    );
+    if (!parsed.success) {
+      return c.json(
+        { error: "Invalid comment like request", code: "bad_request" },
+        400,
+      );
+    }
+    try {
+      return c.json(await likeSocialFeedComment(auth.workspaceId, parsed.data));
+    } catch (error) {
+      return socialError(c, error);
+    }
+  });
+
+  app.post("/api/v1/social/feed/comments/unlike", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "social:write")) return c.json(forbidden(), 403);
+    const parsed = unlikeSocialFeedCommentInputSchema.safeParse(
+      await c.req.json(),
+    );
+    if (!parsed.success) {
+      return c.json(
+        { error: "Invalid comment unlike request", code: "bad_request" },
+        400,
+      );
+    }
+    try {
+      return c.json(
+        await unlikeSocialFeedComment(auth.workspaceId, parsed.data),
+      );
+    } catch (error) {
+      return socialError(c, error);
+    }
+  });
+
+  app.get("/api/v1/social/feed/reactions", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "social:read")) return c.json(forbidden(), 403);
+    const parsed = socialFeedPostReactionsQuerySchema.safeParse({
+      platform: c.req.query("platform"),
+      accountKind: c.req.query("accountKind"),
+      postId: c.req.query("postId"),
+      limit: c.req.query("limit") ?? undefined,
+    });
+    if (!parsed.success) {
+      return c.json(
+        { error: "Invalid social feed reactions query", code: "bad_request" },
+        400,
+      );
+    }
+    try {
+      return c.json(
+        await listSocialFeedPostReactions(auth.workspaceId, parsed.data),
+      );
+    } catch (error) {
+      return socialError(c, error);
+    }
+  });
+
+  app.get("/api/v1/social/linkedin/mentions", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "social:read")) return c.json(forbidden(), 403);
+    const parsed = resolveSocialLinkedInMentionQuerySchema.safeParse({
+      platform: c.req.query("platform"),
+      accountKind: c.req.query("accountKind"),
+      url: c.req.query("url"),
+    });
+    if (!parsed.success) {
+      return c.json(
+        { error: "Invalid LinkedIn mention query", code: "bad_request" },
+        400,
+      );
+    }
+    try {
+      return c.json(
+        await resolveSocialLinkedInMention(auth.workspaceId, parsed.data),
+      );
     } catch (error) {
       return socialError(c, error);
     }

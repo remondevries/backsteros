@@ -33,6 +33,7 @@ import {
   useKeepAliveActive,
   useShellLocation,
 } from "../lib/shell-route-keep-alive";
+import { createSocialAnalyticsClient } from "../lib/social/social-analytics-client";
 import { createSocialFeedPostsClient } from "../lib/social/social-feed-posts-client";
 import { createSocialPlannedPostsClient } from "../lib/social/social-planned-posts-client";
 import { useDesktopSectionBreadcrumb } from "../lib/use-desktop-breadcrumb";
@@ -57,6 +58,10 @@ function SocialPageBody() {
   );
   const feedPostsClient = useMemo(
     () => createSocialFeedPostsClient(client),
+    [client],
+  );
+  const analyticsClient = useMemo(
+    () => createSocialAnalyticsClient(client),
     [client],
   );
   const [discoverCollapsed, setDiscoverCollapsed] = useState(false);
@@ -239,6 +244,7 @@ function SocialPageBody() {
         onNavigateHref={handleNavigateHref}
         plannedPostsClient={plannedPostsClient}
         feedPostsClient={feedPostsClient}
+        analyticsClient={analyticsClient}
         connectedAccounts={connectedAccounts}
         discoverCollapsed={discoverHidden || discoverCollapsed}
         discoverPanel={
@@ -258,12 +264,15 @@ function SocialPageBody() {
                   post={inspectPost}
                   layout="panel"
                   onClose={clearInspectPost}
+                  accountKind={accountKind}
+                  feedPostsClient={feedPostsClient}
                 />
               ) : (
                 <SocialDiscoverPanel
                   platform={platform}
                   accountKind={accountKind}
                   connectedAccounts={connectedAccounts}
+                  analyticsClient={analyticsClient}
                 />
               )}
             </EntityDetailOverlay>

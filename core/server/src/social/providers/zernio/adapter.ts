@@ -420,18 +420,50 @@ export class ZernioOwnedAccountAdapter implements OwnedAccountAdapter {
         );
       }
     }
+    const linkedIn = post.linkedIn;
+    const platformSpecificData: Record<string, unknown> = {};
+    if (linkedIn?.firstComment?.trim()) {
+      platformSpecificData.firstComment = linkedIn.firstComment.trim();
+    }
+    if (linkedIn?.reshareUrl?.trim()) {
+      platformSpecificData.reshareUrl = linkedIn.reshareUrl.trim();
+    }
+    if (linkedIn?.poll) {
+      platformSpecificData.poll = {
+        question: linkedIn.poll.question,
+        options: linkedIn.poll.options,
+        ...(linkedIn.poll.duration
+          ? { duration: linkedIn.poll.duration }
+          : {}),
+      };
+    }
+    if (linkedIn?.geoCountries?.length) {
+      platformSpecificData.geoRestriction = {
+        countries: linkedIn.geoCountries.map((c) => c.toUpperCase()),
+      };
+    }
+    const hasPlatformSpecific = Object.keys(platformSpecificData).length > 0;
     const platforms = accounts.map((account) => ({
       platform: toZernioConnectPlatform(account.platform),
       accountId: account.externalId,
+      ...(hasPlatformSpecific &&
+      (account.platform === "linkedin_personal" ||
+        account.platform === "linkedin_org")
+        ? { platformSpecificData }
+        : {}),
     }));
+    const useMedia =
+      post.media?.length &&
+      !linkedIn?.reshareUrl?.trim() &&
+      !linkedIn?.poll;
     const body: Record<string, unknown> = {
       content: post.text,
       platforms,
-      ...(post.media?.length
+      ...(useMedia
         ? {
-            mediaItems: post.media.map((m) => ({
+            mediaItems: post.media!.map((m) => ({
               url: m.url,
-              type: m.kind,
+              type: m.kind === "gif" ? "image" : m.kind,
             })),
           }
         : {}),
@@ -439,10 +471,22 @@ export class ZernioOwnedAccountAdapter implements OwnedAccountAdapter {
       ...(timing.scheduledFor ? { scheduledFor: timing.scheduledFor } : {}),
     };
     const payload = await this.client.createPost(body);
+    // Zernio wraps creates as `{ post: { _id } }` — do not fall back to a
+    // local nanoid or Planned reschedule/unschedule will PATCH a fake id.
+    const root = asRecord(payload);
+    const nested = asRecord(root?.post);
     const externalId =
-      asString(asRecord(payload)?.id) ??
-      asString(asRecord(payload)?._id) ??
-      newId();
+      asString(nested?.id) ??
+      asString(nested?._id) ??
+      asString(root?.id) ??
+      asString(root?._id);
+    if (!externalId) {
+      throw new ZernioApiError(
+        502,
+        "",
+        "Zernio create post response did not include an id",
+      );
+    }
     return accounts.map((account) => ({
       id: `zernio-post:${externalId}:${account.externalId}`,
       workspaceId: this.workspaceId,

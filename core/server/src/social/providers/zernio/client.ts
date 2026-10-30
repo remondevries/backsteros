@@ -383,6 +383,31 @@ export class ZernioClient {
     );
   }
 
+  /** React to a comment (`POST /v1/inbox/comments/{postId}/{commentId}/like`). */
+  async likeComment(
+    postId: string,
+    commentId: string,
+    body: { accountId: string; reactionType?: string },
+  ): Promise<unknown> {
+    return this.requestJson(
+      `/v1/inbox/comments/${encodeURIComponent(postId)}/${encodeURIComponent(commentId)}/like`,
+      { method: "POST", body },
+    );
+  }
+
+  /** Remove a comment reaction (`DELETE …/like?accountId=`). */
+  async unlikeComment(
+    postId: string,
+    commentId: string,
+    accountId: string,
+  ): Promise<unknown> {
+    const params = new URLSearchParams({ accountId });
+    return this.requestJson(
+      `/v1/inbox/comments/${encodeURIComponent(postId)}/${encodeURIComponent(commentId)}/like?${params}`,
+      { method: "DELETE" },
+    );
+  }
+
   /**
    * Per-post LinkedIn stats (includes saves on personal accounts).
    * `GET /v1/accounts/{accountId}/linkedin-post-analytics?urn=`
@@ -397,6 +422,38 @@ export class ZernioClient {
       { analytics: true },
     );
     return parseLinkedInPostAnalytics(payload);
+  }
+
+  /**
+   * Individual reactors on an org post.
+   * `GET /v1/accounts/{accountId}/linkedin-post-reactions?urn=`
+   */
+  async getLinkedInPostReactions(
+    accountId: string,
+    urn: string,
+    options?: { limit?: number; cursor?: number },
+  ): Promise<unknown> {
+    const params = new URLSearchParams({ urn });
+    if (options?.limit != null) params.set("limit", String(options.limit));
+    if (options?.cursor != null) params.set("cursor", String(options.cursor));
+    return this.requestJson(
+      `/v1/accounts/${encodeURIComponent(accountId)}/linkedin-post-reactions?${params}`,
+      { analytics: true },
+    );
+  }
+
+  /**
+   * Resolve a LinkedIn profile/company URL to mention markup.
+   * `GET /v1/accounts/{accountId}/linkedin-mentions?url=`
+   */
+  async resolveLinkedInMention(
+    accountId: string,
+    url: string,
+  ): Promise<unknown> {
+    const params = new URLSearchParams({ url });
+    return this.requestJson(
+      `/v1/accounts/${encodeURIComponent(accountId)}/linkedin-mentions?${params}`,
+    );
   }
 
   async listConversations(options?: {

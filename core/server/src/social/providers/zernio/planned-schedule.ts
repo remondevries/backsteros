@@ -37,6 +37,17 @@ export type PlannedZernioSyncInput = {
   scheduledAt: string | null;
   /** Existing Zernio post id from `social_posts.engagement`, if any. */
   zernioPostId: string | null;
+  firstComment?: string | null;
+  poll?: {
+    question: string;
+    options: string[];
+    duration?:
+      | "ONE_DAY"
+      | "THREE_DAYS"
+      | "SEVEN_DAYS"
+      | "FOURTEEN_DAYS";
+  } | null;
+  geoCountries?: string[] | null;
 };
 
 /** True when this planned post should be mirrored to Zernio’s scheduler. */
@@ -78,7 +89,12 @@ function storedPlatformForAccountKind(
   return accountKind === "business" ? "linkedin_org" : "linkedin_personal";
 }
 
-function extractZernioPostId(payload: unknown): string | null {
+/** Zernio post ids are Mongo ObjectIds (24 hex). Local nanoids are not. */
+export function looksLikeZernioPostId(id: string): boolean {
+  return /^[a-f0-9]{24}$/i.test(id.trim());
+}
+
+export function extractZernioPostId(payload: unknown): string | null {
   if (!payload || typeof payload !== "object") return null;
   const root = payload as Record<string, unknown>;
   const post =
@@ -87,6 +103,18 @@ function extractZernioPostId(payload: unknown): string | null {
       : root;
   const id = post.id ?? post._id;
   return typeof id === "string" && id.trim() ? id.trim() : null;
+}
+
+function isInvalidZernioPostIdError(error: unknown): boolean {
+  if (!(error instanceof ZernioApiError)) return false;
+  if (error.status === 404) return true;
+  if (error.status !== 400) return false;
+  const blob = `${error.message} ${error.body ?? ""}`.toLowerCase();
+  return (
+    blob.includes("invalid post id") ||
+    blob.includes("invalid_field_value") ||
+    blob.includes("post id format")
+  );
 }
 
 async function resolveLinkedInExternalAccountId(
@@ -161,8 +189,8 @@ async function requireZernioClient(workspaceId: string): Promise<{
 async function uploadMediaForZernio(
   client: ZernioClient,
   media: readonly StoredSocialPostMedia[],
-): Promise<Array<{ url: string; type: "image" | "video" }>> {
-  const out: Array<{ url: string; type: "image" | "video" }> = [];
+): Promise<Array<{ url: string; type: "image" | "video" | "document" }>> {
+  const out: Array<{ url: string; type: "image" | "video" | "document" }> = [];
   for (const item of media) {
     const bytes = await readSocialPostMediaBytes(media, item.id);
     if (!bytes) {
@@ -174,7 +202,13 @@ async function uploadMediaForZernio(
     }
     const filename =
       item.filename?.trim() ||
-      `${item.id}.${item.kind === "video" ? "mp4" : "jpg"}`;
+      `${item.id}.${
+        item.kind === "video"
+          ? "mp4"
+          : item.kind === "document"
+            ? "pdf"
+            : "jpg"
+      }`;
     const { uploadUrl, publicUrl } = await client.presignMedia({
       filename,
       contentType: item.contentType,
@@ -245,11 +279,12 @@ export async function syncPlannedPostScheduleToZernio(
 
   const scheduledFor = input.scheduledAt!;
   const text = input.body.trim();
-  if (!text && input.media.length === 0) {
+  const hasPoll = Boolean(input.poll?.question?.trim());
+  if (!text && input.media.length === 0 && !hasPoll) {
     throw new ZernioApiError(
       400,
       "",
-      "Body or media is required to schedule on LinkedIn.",
+      "Body, media, or poll is required to schedule on LinkedIn.",
     );
   }
 
@@ -260,33 +295,72 @@ export async function syncPlannedPostScheduleToZernio(
   );
 
   const mediaItems =
-    input.media.length > 0
+    !hasPoll && input.media.length > 0
       ? await uploadMediaForZernio(client, input.media)
       : [];
+
+  const linkedInExtras = {
+    firstComment: input.firstComment?.trim() || null,
+    poll: input.poll ?? null,
+    geoCountries:
+      input.accountKind === "business" && input.geoCountries?.length
+        ? input.geoCountries.map((c) => c.toUpperCase())
+        : null,
+  };
+
+  const platformSpecificData: Record<string, unknown> = {};
+  if (linkedInExtras.firstComment) {
+    platformSpecificData.firstComment = linkedInExtras.firstComment;
+  }
+  if (linkedInExtras.poll) {
+    platformSpecificData.poll = {
+      question: linkedInExtras.poll.question,
+      options: linkedInExtras.poll.options,
+      ...(linkedInExtras.poll.duration
+        ? { duration: linkedInExtras.poll.duration }
+        : {}),
+    };
+  }
+  if (linkedInExtras.geoCountries?.length) {
+    platformSpecificData.geoRestriction = {
+      countries: linkedInExtras.geoCountries,
+    };
+  }
 
   const platforms = [
     {
       platform: "linkedin",
       accountId: accountExternalId,
+      ...(Object.keys(platformSpecificData).length
+        ? { platformSpecificData }
+        : {}),
     },
   ];
 
-  if (input.zernioPostId) {
-    const payload = await client.updatePost(input.zernioPostId, {
-      content: text,
-      platforms,
-      scheduledFor,
-      isDraft: false,
-      ...(mediaItems.length
-        ? {
-            mediaItems: mediaItems.map((m) => ({
-              url: m.url,
-              type: m.type,
-            })),
-          }
-        : { mediaItems: [] }),
-    });
-    return extractZernioPostId(payload) ?? input.zernioPostId;
+  const canUpdateRemote =
+    Boolean(input.zernioPostId) && looksLikeZernioPostId(input.zernioPostId!);
+
+  if (canUpdateRemote) {
+    try {
+      const payload = await client.updatePost(input.zernioPostId!, {
+        content: text,
+        platforms,
+        scheduledFor,
+        isDraft: false,
+        ...(mediaItems.length
+          ? {
+              mediaItems: mediaItems.map((m) => ({
+                url: m.url,
+                type: m.type,
+              })),
+            }
+          : { mediaItems: [] }),
+      });
+      return extractZernioPostId(payload) ?? input.zernioPostId;
+    } catch (error) {
+      // Stale / fake ids from older creates — fall through to create.
+      if (!isInvalidZernioPostIdError(error)) throw error;
+    }
   }
 
   const created = await adapter.schedulePost(
@@ -301,6 +375,7 @@ export async function syncPlannedPostScheduleToZernio(
             })),
           }
         : {}),
+      linkedIn: linkedInExtras,
     },
     scheduledFor,
   );

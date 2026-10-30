@@ -1425,6 +1425,21 @@ html.is-calendar-external-dragging * {
   gap: 8px;
 }
 
+.social-feed__composer-kind-toggle {
+  margin-right: auto;
+  min-width: 0;
+}
+
+.social-feed__composer-kind-toggle .segmented-pill-toggle {
+  min-height: 30px;
+}
+
+.social-feed__composer-kind-toggle .segmented-pill-toggle-btn {
+  min-height: 28px;
+  padding: 0 12px;
+  font-size: 0.8125rem;
+}
+
 .social-feed__composer-error {
   margin: 8px 0 0;
   font-size: 0.75rem;
@@ -1535,6 +1550,12 @@ html.is-calendar-external-dragging * {
   cursor: default;
 }
 
+.social-feed__composer-submit-meta {
+  margin-left: 0.35em;
+  font-weight: 500;
+  opacity: 0.88;
+}
+
 .social-feed__composer-targets {
   position: absolute;
   right: 0;
@@ -1547,6 +1568,10 @@ html.is-calendar-external-dragging * {
   background: color-mix(in srgb, var(--background) 94%, var(--foreground));
   box-shadow: 0 12px 32px color-mix(in srgb, #000 28%, transparent);
   color: var(--foreground);
+}
+
+.social-feed__composer-targets--geo {
+  width: min(260px, calc(100vw - 32px));
 }
 
 .social-feed__composer-targets-hint {
@@ -1568,6 +1593,11 @@ html.is-calendar-external-dragging * {
   gap: 2px;
 }
 
+.social-feed__composer-targets-list--scroll {
+  max-height: min(280px, 50vh);
+  overflow: auto;
+}
+
 .social-feed__composer-target {
   display: grid;
   grid-template-columns: 18px minmax(0, 1fr) 16px;
@@ -1585,6 +1615,17 @@ html.is-calendar-external-dragging * {
   font-weight: 550;
   text-align: left;
   cursor: pointer;
+}
+
+.social-feed__composer-targets--geo .social-feed__composer-target {
+  grid-template-columns: 28px minmax(0, 1fr) 16px;
+}
+
+.social-feed__composer-target-code {
+  font-size: 0.6875rem;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
 }
 
 .social-feed__composer-target:hover {
@@ -1783,6 +1824,202 @@ html.is-calendar-external-dragging * {
 .social-post-row__filing-action:disabled {
   opacity: 0.45;
   cursor: default;
+}
+
+.social-post-row__filing-action-wrap {
+  position: relative;
+}
+
+.social-post-card__like-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.social-post-card__like-reaction-glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  font-size: 15px;
+  line-height: 1;
+  /* Emoji glyphs ignore `currentColor`; keep them vivid when liked. */
+  filter: none;
+  transform: translateZ(0);
+}
+
+.social-post-card__action--like.is-liked .social-post-card__like-reaction-glyph {
+  /* Override the red tint so reaction emoji stay readable. */
+  color: inherit;
+}
+
+.social-post-row__reaction-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  min-width: 9rem;
+  padding: 4px;
+  border: 0.5px solid var(--border);
+  border-radius: 8px;
+  background: var(--background);
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--foreground) 12%, transparent);
+}
+
+.social-post-row__reaction-menu--card {
+  left: 0;
+  right: auto;
+}
+
+.social-post-row__reaction-option {
+  display: block;
+  width: 100%;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--foreground);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.social-post-row__reaction-option:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--foreground) 6%, transparent);
+}
+
+.social-post-row__reaction-option--active {
+  background: color-mix(in srgb, var(--foreground) 8%, transparent);
+  font-weight: 600;
+}
+
+.social-post-row__reaction-option--remove {
+  margin-top: 2px;
+  border-top: 0.5px solid var(--border);
+  border-radius: 0 0 6px 6px;
+  color: #c9373b;
+}
+
+.social-feed__composer-extras {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 8px 0 2px;
+}
+
+.social-feed__composer-extra-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.social-feed__composer-extra-field--first-comment {
+  gap: 6px;
+}
+
+.social-feed__composer-extra-label {
+  font-size: 12px;
+  color: color-mix(in srgb, var(--foreground) 65%, transparent);
+}
+
+.social-feed__composer-plain-editor {
+  width: 100%;
+  min-height: 1.45em;
+  color: var(--foreground);
+  font: inherit;
+  font-size: 0.975rem;
+  line-height: 1.45;
+}
+
+.social-feed__composer-plain-editor .cm-editor {
+  background: transparent;
+}
+
+.social-feed__composer-plain-editor .cm-editor.cm-focused {
+  outline: none;
+}
+
+.social-feed__composer-extra-input,
+.social-feed__composer-extra-select {
+  width: 100%;
+  padding: 6px 8px;
+  border: 0.5px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--foreground);
+  font: inherit;
+  font-size: 13px;
+}
+
+.social-feed__composer-poll-options {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.social-post-detail__reactions-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: color-mix(in srgb, var(--foreground) 28%, transparent);
+}
+
+.social-post-detail__reactions-panel {
+  width: min(22rem, 100%);
+  max-height: min(70vh, 28rem);
+  overflow: auto;
+  padding: 16px;
+  border-radius: 12px;
+  background: var(--background);
+  border: 0.5px solid var(--border);
+}
+
+.social-post-detail__reactions-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.social-post-detail__reaction-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.social-post-detail__reaction-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  object-fit: cover;
+  background: color-mix(in srgb, var(--foreground) 8%, transparent);
+}
+
+.social-post-detail__reaction-meta {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.social-post-detail__reaction-name {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.social-post-detail__reaction-sub {
+  font-size: 12px;
+  color: color-mix(in srgb, var(--foreground) 60%, transparent);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .social-post-card {

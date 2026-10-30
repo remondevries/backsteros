@@ -3879,6 +3879,8 @@ export {
   type SocialFeedPostsClient,
 } from "./social/social-feed-posts.js";
 
+export type { SocialAnalyticsClient } from "./social/social-analytics.js";
+
 export {
   findSocialConnectedAccount,
   isPlausibleSocialHandle,

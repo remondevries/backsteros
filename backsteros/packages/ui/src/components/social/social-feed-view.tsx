@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   getSocialMockLikedPostsForAccount,
+  getSocialMockPlannedPostById,
   getSocialMockPlatformIdsForAccount,
   getSocialMockPostsForAccount,
   getSocialMockProfileForAccount,
@@ -28,6 +29,13 @@ import type {
   SocialPlannedPostRecord,
   SocialPlannedPostsClient,
 } from "../../social/social-planned-posts.js";
+import type { SocialAnalyticsClient } from "../../social/social-analytics.js";
+import type { LinkedInPollDuration } from "@backsteros/contracts";
+
+import {
+  extractLinkedInMentionCandidate,
+  wrapLinkedInMentionUrls,
+} from "../../social/linkedin-reactions.js";
 import {
   isLiveSocialFeedPlatform,
   isLiveSocialFeedPostId,
@@ -55,6 +63,7 @@ import {
 import { PillNav } from "../shared/pill-nav.js";
 import { EntityAvatarIcon } from "../entity/entity-avatar-icon.js";
 import { SocialAnalyticsView } from "./social-analytics-view.js";
+import { SocialComposerPlainEditor } from "./social-composer-plain-editor.js";
 import { SocialComposerPostButton } from "./social-composer-post-button.js";
 import { SocialMediaLightbox } from "./social-media-lightbox.js";
 import {
@@ -90,6 +99,8 @@ export type SocialFeedViewProps = {
   plannedPostsClient?: SocialPlannedPostsClient | null;
   /** Live inbox posts for platforms with a provider feed (LinkedIn first). */
   feedPostsClient?: SocialFeedPostsClient | null;
+  /** Live LinkedIn analytics (Zernio). */
+  analyticsClient?: SocialAnalyticsClient | null;
   /** Connected owned accounts (Zernio sync) — used for LinkedIn composer avatars. */
   connectedAccounts?: readonly SocialConnectedAccountAvatar[];
 };
@@ -105,6 +116,15 @@ const ACCOUNT_OPTIONS: readonly SegmentedPillToggleOption<SocialMockAccountKind>
   [
     { value: "personal", label: "Personal" },
     { value: "business", label: "Business" },
+  ];
+
+type ComposerPostKind = "normal" | "long" | "poll";
+
+const COMPOSER_KIND_OPTIONS: readonly SegmentedPillToggleOption<ComposerPostKind>[] =
+  [
+    { value: "normal", label: "Normal" },
+    { value: "long", label: "Long" },
+    { value: "poll", label: "Poll" },
   ];
 
 function platformOptionsFor(
@@ -248,6 +268,7 @@ export function SocialFeedView({
   onNavigateHref,
   plannedPostsClient = null,
   feedPostsClient = null,
+  analyticsClient = null,
   connectedAccounts = [],
 }: SocialFeedViewProps) {
   const postId = getSelectedSocialPostIdFromPathname(pathname);
@@ -288,6 +309,22 @@ export function SocialFeedView({
   );
   const [draft, setDraft] = useState("");
   const [draftMedia, setDraftMedia] = useState<SocialComposerDraftMedia[]>([]);
+  const [firstComment, setFirstComment] = useState("");
+  const [composerKind, setComposerKind] = useState<ComposerPostKind>("normal");
+  const pollEnabled = composerKind === "poll";
+  const longEnabled = composerKind === "long";
+
+  const [pollQuestion, setPollQuestion] = useState("");
+  const [pollOptions, setPollOptions] = useState<[string, string, string, string]>([
+    "",
+    "",
+    "",
+    "",
+  ]);
+  const [pollDuration, setPollDuration] =
+    useState<LinkedInPollDuration>("SEVEN_DAYS");
+  const [geoCountries, setGeoCountries] = useState<string[]>([]);
+  const [mentionHint, setMentionHint] = useState<string | null>(null);
   const [composerDropActive, setComposerDropActive] = useState(false);
   const [mediaLightbox, setMediaLightbox] =
     useState<SocialMediaLightboxState | null>(null);
@@ -346,6 +383,12 @@ export function SocialFeedView({
       setPlatform("all");
     }
   }, [ownedPlatforms, platform, setPlatform]);
+
+  useEffect(() => {
+    if (!isLiveSocialFeedPlatform(platform) && composerKind !== "normal") {
+      setComposerKind("normal");
+    }
+  }, [composerKind, platform]);
 
   useEffect(() => {
     setTabFallback(tabFromSearch);
@@ -580,7 +623,12 @@ export function SocialFeedView({
             id: item.id,
             kind: item.kind,
             url: item.previewUrl,
-            contentType: item.kind === "video" ? "video/mp4" : "image/jpeg",
+            contentType:
+              item.kind === "video"
+                ? "video/mp4"
+                : item.kind === "document"
+                  ? "application/pdf"
+                  : "image/jpeg",
           })),
           scheduledAt: iso,
           createdAt: iso,
@@ -680,10 +728,18 @@ export function SocialFeedView({
       ...current.filter((entry) => entry.id !== plan.id),
     ]);
     const client = plannedPostsClientRef.current;
-    if (!client) return;
+    // Demo calendar seeds never lived in core — tray-only, no PATCH.
+    if (!client || getSocialMockPlannedPostById(plan.id)) return;
     try {
       await client.update(plan.id, { scheduledAt: null });
     } catch (error) {
+      const notFound =
+        typeof error === "object" &&
+        error !== null &&
+        "status" in error &&
+        (error as { status?: number }).status === 404;
+      // Already gone remotely (stale tray id / prior create-on-schedule).
+      if (notFound) return;
       if (previous) {
         const restored = previous;
         setScheduledPlans((current) => [
@@ -815,13 +871,26 @@ export function SocialFeedView({
   }, [accountKind, feedPostsClient, livePosts, postId]);
 
   async function publishComposerPost() {
-    const body = draft.trim();
-    if (!body) return;
+    const body = wrapLinkedInMentionUrls(draft.trim());
+    const pollOptionsClean = pollOptions.map((o) => o.trim()).filter(Boolean);
+    const poll =
+      pollEnabled && pollQuestion.trim() && pollOptionsClean.length >= 2
+        ? {
+            question: pollQuestion.trim(),
+            options: pollOptionsClean.slice(0, 4),
+            duration: pollDuration,
+          }
+        : null;
+    if (!body && !poll) return;
     if (!isLiveSocialFeedPlatform(platform)) return;
     if (draftMedia.length > 0) {
       setPublishError(
-        "Text-only LinkedIn publish for now — remove media, or use Plan.",
+        "Attach media via Plan for LinkedIn — publish-now is text/poll only.",
       );
+      return;
+    }
+    if (poll && draftMedia.length > 0) {
+      setPublishError("A LinkedIn poll cannot include media.");
       return;
     }
     const client = feedPostsClient;
@@ -836,8 +905,21 @@ export function SocialFeedView({
         platform: "linkedin",
         accountKind,
         body,
+        firstComment:
+          longEnabled && firstComment.trim() ? firstComment.trim() : null,
+        geoCountries:
+          accountKind === "business" && geoCountries.length > 0
+            ? geoCountries
+            : null,
+        poll,
       });
       setDraft("");
+      setFirstComment("");
+      setComposerKind("normal");
+      setPollQuestion("");
+      setPollOptions(["", "", "", ""]);
+      setGeoCountries([]);
+      setMentionHint(null);
       clearDraftMedia();
       setLiveFeedNonce((value) => value + 1);
       if (tab !== "inbox") selectTab("inbox");
@@ -847,6 +929,45 @@ export function SocialFeedView({
       );
     } finally {
       setPublishing(false);
+    }
+  }
+
+  async function maybeResolveMention(nextDraft: string, caret: number) {
+    const client = feedPostsClient;
+    if (!client?.resolveMention || !isLiveSocialFeedPlatform(platform)) {
+      setMentionHint(null);
+      return;
+    }
+    const candidate = extractLinkedInMentionCandidate(nextDraft, caret);
+    if (!candidate || candidate.query.length < 20) {
+      setMentionHint(null);
+      return;
+    }
+    try {
+      const resolved = await client.resolveMention({
+        platform: "linkedin",
+        accountKind,
+        url: candidate.query,
+      });
+      if (resolved.mentionFormat) {
+        setMentionHint(
+          resolved.displayName
+            ? `Mention: ${resolved.displayName}`
+            : `Mention ready: ${resolved.mentionFormat}`,
+        );
+        const wrapped = `@[${candidate.query}]`;
+        if (!nextDraft.slice(candidate.start, candidate.end).startsWith("@[")) {
+          setDraft(
+            nextDraft.slice(0, candidate.start) +
+              wrapped +
+              nextDraft.slice(candidate.end),
+          );
+        }
+      } else {
+        setMentionHint(null);
+      }
+    } catch {
+      setMentionHint(null);
     }
   }
 
@@ -905,7 +1026,11 @@ export function SocialFeedView({
 
   if (navId === "analytics") {
     return (
-      <SocialAnalyticsView searchStr={searchStr} accountKind={accountKind} />
+      <SocialAnalyticsView
+        searchStr={searchStr}
+        accountKind={accountKind}
+        analyticsClient={analyticsClient}
+      />
     );
   }
 
@@ -987,6 +1112,7 @@ export function SocialFeedView({
                   setPostTargets([
                     ...getSocialMockPlatformIdsForAccount(next),
                   ]);
+                  if (next !== "business") setGeoCountries([]);
                 }}
                 ariaLabel="Account"
               />
@@ -1069,8 +1195,10 @@ export function SocialFeedView({
                 }
                 value={draft}
                 onChange={(event) => {
-                  setDraft(event.target.value);
+                  const next = event.target.value;
+                  setDraft(next);
                   if (publishError) setPublishError(null);
+                  void maybeResolveMention(next, event.target.selectionStart);
                 }}
                 onPaste={(event) => {
                   const files = collectSocialMediaFiles(event.clipboardData);
@@ -1085,6 +1213,9 @@ export function SocialFeedView({
                   tab === "planned" ? "Compose planned post" : "Compose post"
                 }
               />
+              {mentionHint ? (
+                <p className="social-feed__composer-extra-label">{mentionHint}</p>
+              ) : null}
               {draftMedia.length > 0 ? (
                 <ul
                   className="social-feed__composer-media"
@@ -1101,9 +1232,12 @@ export function SocialFeedView({
                         aria-label={
                           item.kind === "video"
                             ? "View video fullscreen"
-                            : "View image fullscreen"
+                            : item.kind === "document"
+                              ? "Document attachment"
+                              : "View image fullscreen"
                         }
                         onClick={(event) => {
+                          if (item.kind === "document") return;
                           const rect =
                             event.currentTarget.getBoundingClientRect();
                           setMediaLightbox({
@@ -1129,6 +1263,10 @@ export function SocialFeedView({
                             playsInline
                             preload="metadata"
                           />
+                        ) : item.kind === "document" ? (
+                          <span className="social-feed__composer-media-thumb">
+                            {item.file?.name || "Document"}
+                          </span>
                         ) : (
                           <img
                             className="social-feed__composer-media-thumb"
@@ -1162,16 +1300,112 @@ export function SocialFeedView({
                   ))}
                 </ul>
               ) : null}
+              {isLiveSocialFeedPlatform(platform) &&
+              (longEnabled || pollEnabled) ? (
+                <div className="social-feed__composer-extras">
+                  {longEnabled ? (
+                    <div className="social-feed__composer-extra-field social-feed__composer-extra-field--first-comment">
+                      <span className="social-feed__composer-extra-label">
+                        First comment
+                      </span>
+                      <SocialComposerPlainEditor
+                        value={firstComment}
+                        onChange={setFirstComment}
+                        placeholder="Links work better as a first comment"
+                        disabled={publishing}
+                        aria-label="First comment"
+                      />
+                    </div>
+                  ) : null}
+                  {pollEnabled ? (
+                    <div className="social-feed__composer-extra-field">
+                      <input
+                        className="social-feed__composer-extra-input"
+                        type="text"
+                        maxLength={140}
+                        value={pollQuestion}
+                        onChange={(event) =>
+                          setPollQuestion(event.target.value)
+                        }
+                        placeholder="Poll question"
+                        aria-label="Poll question"
+                      />
+                      <div className="social-feed__composer-poll-options">
+                        {pollOptions.map((option, index) => (
+                          <input
+                            key={`poll-opt-${index}`}
+                            className="social-feed__composer-extra-input"
+                            type="text"
+                            maxLength={30}
+                            value={option}
+                            onChange={(event) => {
+                              const value = event.target.value;
+                              setPollOptions((current) => {
+                                const next = [...current] as [
+                                  string,
+                                  string,
+                                  string,
+                                  string,
+                                ];
+                                next[index] = value;
+                                return next;
+                              });
+                            }}
+                            placeholder={`Option ${index + 1}${index < 2 ? "" : " (optional)"}`}
+                            aria-label={`Poll option ${index + 1}`}
+                          />
+                        ))}
+                      </div>
+                      <select
+                        className="social-feed__composer-extra-select"
+                        value={pollDuration}
+                        onChange={(event) =>
+                          setPollDuration(
+                            event.target.value as LinkedInPollDuration,
+                          )
+                        }
+                        aria-label="Poll duration"
+                      >
+                        <option value="ONE_DAY">1 day</option>
+                        <option value="THREE_DAYS">3 days</option>
+                        <option value="SEVEN_DAYS">7 days</option>
+                        <option value="FOURTEEN_DAYS">14 days</option>
+                      </select>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
               <div className="social-feed__composer-actions">
+                {isLiveSocialFeedPlatform(platform) ? (
+                  <div className="social-feed__composer-kind-toggle">
+                    <SegmentedPillToggle
+                      value={composerKind}
+                      options={COMPOSER_KIND_OPTIONS}
+                      onChange={setComposerKind}
+                      ariaLabel="Post type"
+                    />
+                  </div>
+                ) : null}
                 <SocialComposerPostButton
                   platform={platform}
                   accountKind={accountKind}
                   disabled={
-                    publishing || (!draft.trim() && draftMedia.length === 0)
+                    publishing ||
+                    (!draft.trim() &&
+                      draftMedia.length === 0 &&
+                      !(
+                        pollEnabled &&
+                        pollQuestion.trim() &&
+                        pollOptions.filter((o) => o.trim()).length >= 2
+                      ))
                   }
                   availablePlatforms={ownedPlatforms}
                   postTargets={postTargets}
                   onPostTargetsChange={setPostTargets}
+                  geoCountries={geoCountries}
+                  onGeoCountriesChange={(next) => {
+                    setGeoCountries([...next]);
+                  }}
                   action={
                     tab === "planned"
                       ? editingPlanId
@@ -1219,6 +1453,7 @@ export function SocialFeedView({
             platform={platform}
             pendingPlans={pendingPlans}
             scheduledPlans={scheduledPlans}
+            includeMockSeeds={!plannedPostsClient}
             selectedPendingPlanId={editingPlanId}
             onDismissPendingPlan={(id) => {
               void dismissPendingPlan(id);
@@ -1258,6 +1493,11 @@ export function SocialFeedView({
               feedAccountKind={accountKind}
               feedPlatform={platform}
               feedTab={tab}
+              onPostDeleted={(postId) => {
+                setLivePosts((current) =>
+                  current.filter((entry) => entry.id !== postId),
+                );
+              }}
             />
           ))}
         </div>

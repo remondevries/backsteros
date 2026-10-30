@@ -101,8 +101,40 @@ export const socialPlannedPostAccountKindSchema = z.enum([
   "business",
 ]);
 
+/** LinkedIn reaction types (Zernio / LinkedIn API names). */
+export const linkedInReactionTypeSchema = z.enum([
+  "LIKE",
+  "PRAISE",
+  "EMPATHY",
+  "INTEREST",
+  "APPRECIATION",
+  "ENTERTAINMENT",
+]);
+
+export type LinkedInReactionType = z.infer<typeof linkedInReactionTypeSchema>;
+
+export const linkedInPollDurationSchema = z.enum([
+  "ONE_DAY",
+  "THREE_DAYS",
+  "SEVEN_DAYS",
+  "FOURTEEN_DAYS",
+]);
+
+export const linkedInPollSchema = z.object({
+  question: z.string().trim().min(1).max(140),
+  options: z.array(z.string().trim().min(1).max(30)).min(2).max(4),
+  duration: linkedInPollDurationSchema.default("SEVEN_DAYS"),
+});
+
+export type LinkedInPoll = z.infer<typeof linkedInPollSchema>;
+export type LinkedInPollDuration = z.infer<typeof linkedInPollDurationSchema>;
+
 /** Canonical attachment on a planned post (platform adapters decide layout). */
-export const socialPlannedPostMediaKindSchema = z.enum(["image", "video"]);
+export const socialPlannedPostMediaKindSchema = z.enum([
+  "image",
+  "video",
+  "document",
+]);
 
 export const socialPlannedPostMediaSchema = z.object({
   id: z.string().min(1),
@@ -130,6 +162,12 @@ export const socialPlannedPostSchema = z.object({
   /** ISO timestamp when scheduled; null = unscheduled tray chip. */
   scheduledAt: z.string().datetime().nullable(),
   status: z.enum(["draft", "scheduled"]),
+  /** LinkedIn first comment after publish (stored in engagement). */
+  firstComment: z.string().nullable().optional(),
+  /** LinkedIn poll (mutually exclusive with media/reshare when scheduled). */
+  poll: linkedInPollSchema.nullable().optional(),
+  /** Org geo-restriction countries (ISO alpha-2). */
+  geoCountries: z.array(z.string()).nullable().optional(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
 });
@@ -148,11 +186,20 @@ export const createSocialPlannedPostSchema = z
       .array(socialPlannedPostMediaUploadSchema)
       .max(5)
       .optional(),
+    firstComment: z.string().trim().max(3000).nullable().optional(),
+    poll: linkedInPollSchema.nullable().optional(),
+    geoCountries: z
+      .array(z.string().trim().length(2))
+      .max(25)
+      .nullable()
+      .optional(),
   })
   .refine(
     (value) =>
-      value.body.trim().length > 0 || (value.mediaUploads?.length ?? 0) > 0,
-    { message: "Body or media is required" },
+      value.body.trim().length > 0 ||
+      (value.mediaUploads?.length ?? 0) > 0 ||
+      Boolean(value.poll),
+    { message: "Body, media, or poll is required" },
   );
 
 export const updateSocialPlannedPostSchema = z
@@ -166,6 +213,13 @@ export const updateSocialPlannedPostSchema = z
       .array(socialPlannedPostMediaUploadSchema)
       .max(5)
       .optional(),
+    firstComment: z.string().trim().max(3000).nullable().optional(),
+    poll: linkedInPollSchema.nullable().optional(),
+    geoCountries: z
+      .array(z.string().trim().length(2))
+      .max(25)
+      .nullable()
+      .optional(),
   })
   .refine(
     (value) =>
@@ -173,7 +227,10 @@ export const updateSocialPlannedPostSchema = z
       value.accountKind !== undefined ||
       value.platforms !== undefined ||
       value.scheduledAt !== undefined ||
-      value.mediaUploads !== undefined,
+      value.mediaUploads !== undefined ||
+      value.firstComment !== undefined ||
+      value.poll !== undefined ||
+      value.geoCountries !== undefined,
     { message: "At least one field is required" },
   );
 
@@ -281,12 +338,33 @@ export type SocialFeedCommentsList = z.infer<
   typeof socialFeedCommentsListSchema
 >;
 
-/** Publish now to a connected LinkedIn account via Zernio (text-first). */
-export const publishSocialPostInputSchema = z.object({
-  platform: z.literal("linkedin"),
-  accountKind: socialPlannedPostAccountKindSchema,
-  body: z.string().trim().min(1).max(3000),
-});
+/** Publish now to a connected LinkedIn account via Zernio. */
+export const publishSocialPostInputSchema = z
+  .object({
+    platform: z.literal("linkedin"),
+    accountKind: socialPlannedPostAccountKindSchema,
+    /** Caption / commentary. Empty allowed for pure reshare or poll-only. */
+    body: z.string().trim().max(3000).default(""),
+    /** Posted as the first comment after publish (links belong here). */
+    firstComment: z.string().trim().max(3000).nullable().optional(),
+    /** Organization pages only — ISO 3166-1 alpha-2, up to 25. */
+    geoCountries: z
+      .array(z.string().trim().length(2))
+      .max(25)
+      .nullable()
+      .optional(),
+    /** Repost an existing LinkedIn post (permalink or share/ugc URN). */
+    reshareUrl: z.string().trim().min(1).nullable().optional(),
+    /** Create a LinkedIn poll (mutually exclusive with reshare/media). */
+    poll: linkedInPollSchema.nullable().optional(),
+  })
+  .refine(
+    (value) =>
+      value.body.trim().length > 0 ||
+      Boolean(value.reshareUrl?.trim()) ||
+      Boolean(value.poll),
+    { message: "Body, reshare URL, or poll is required" },
+  );
 
 export const publishSocialPostResultSchema = z.object({
   posts: z.array(
@@ -305,15 +383,6 @@ export type PublishSocialPostInput = z.infer<typeof publishSocialPostInputSchema
 export type PublishSocialPostResult = z.infer<
   typeof publishSocialPostResultSchema
 >;
-
-const linkedInReactionTypeSchema = z.enum([
-  "LIKE",
-  "PRAISE",
-  "EMPATHY",
-  "INTEREST",
-  "APPRECIATION",
-  "ENTERTAINMENT",
-]);
 
 /** React to a live Network LinkedIn post (Zernio inbox like). */
 export const likeSocialFeedPostInputSchema = z.object({
@@ -370,6 +439,245 @@ export type EditSocialFeedPostInput = z.infer<
 >;
 export type EditSocialFeedPostResult = z.infer<
   typeof editSocialFeedPostResultSchema
+>;
+
+/**
+ * Post a comment (or reply to a comment) on a LinkedIn company-page post.
+ * Personal LinkedIn has no comments write API via Zernio.
+ */
+export const createSocialFeedCommentInputSchema = z.object({
+  platform: z.literal("linkedin"),
+  accountKind: z.literal("business"),
+  postId: z.string().min(1),
+  body: z.string().trim().min(1).max(3000),
+  /** When set, reply to this comment; otherwise top-level on the post. */
+  parentCommentId: z.string().min(1).nullable().optional(),
+});
+
+export const createSocialFeedCommentResultSchema = socialFeedCommentSchema;
+
+export const deleteSocialFeedCommentInputSchema = z.object({
+  platform: z.literal("linkedin"),
+  accountKind: z.literal("business"),
+  postId: z.string().min(1),
+  commentId: z.string().min(1),
+});
+
+export const deleteSocialFeedCommentResultSchema = z.object({
+  deleted: z.literal(true),
+});
+
+/** Unpublish/delete a Network-published LinkedIn post (Zernio `zernio-post:` id). */
+export const deleteSocialFeedPostInputSchema = z.object({
+  platform: z.literal("linkedin"),
+  accountKind: socialPlannedPostAccountKindSchema,
+  postId: z.string().min(1),
+});
+
+export const deleteSocialFeedPostResultSchema = z.object({
+  deleted: z.literal(true),
+});
+
+export type CreateSocialFeedCommentInput = z.infer<
+  typeof createSocialFeedCommentInputSchema
+>;
+export type CreateSocialFeedCommentResult = z.infer<
+  typeof createSocialFeedCommentResultSchema
+>;
+export type DeleteSocialFeedCommentInput = z.infer<
+  typeof deleteSocialFeedCommentInputSchema
+>;
+export type DeleteSocialFeedCommentResult = z.infer<
+  typeof deleteSocialFeedCommentResultSchema
+>;
+export type DeleteSocialFeedPostInput = z.infer<
+  typeof deleteSocialFeedPostInputSchema
+>;
+export type DeleteSocialFeedPostResult = z.infer<
+  typeof deleteSocialFeedPostResultSchema
+>;
+
+/** React to a LinkedIn company-page comment. */
+export const likeSocialFeedCommentInputSchema = z.object({
+  platform: z.literal("linkedin"),
+  accountKind: z.literal("business"),
+  postId: z.string().min(1),
+  commentId: z.string().min(1),
+  reactionType: linkedInReactionTypeSchema.optional(),
+});
+
+export const likeSocialFeedCommentResultSchema = z.object({
+  liked: z.boolean(),
+  reactionType: z.string().optional(),
+});
+
+export const unlikeSocialFeedCommentInputSchema = z.object({
+  platform: z.literal("linkedin"),
+  accountKind: z.literal("business"),
+  postId: z.string().min(1),
+  commentId: z.string().min(1),
+});
+
+export const unlikeSocialFeedCommentResultSchema = z.object({
+  liked: z.literal(false),
+});
+
+export type LikeSocialFeedCommentInput = z.infer<
+  typeof likeSocialFeedCommentInputSchema
+>;
+export type LikeSocialFeedCommentResult = z.infer<
+  typeof likeSocialFeedCommentResultSchema
+>;
+export type UnlikeSocialFeedCommentInput = z.infer<
+  typeof unlikeSocialFeedCommentInputSchema
+>;
+export type UnlikeSocialFeedCommentResult = z.infer<
+  typeof unlikeSocialFeedCommentResultSchema
+>;
+
+/** Individual reactors on a company-page post (org analytics only). */
+export const socialFeedPostReactionSchema = z.object({
+  id: z.string().min(1),
+  reactionType: z.string(),
+  name: z.string(),
+  headline: z.string().nullable().optional(),
+  profileUrl: z.string().nullable().optional(),
+  avatarUrl: z.string().nullable().optional(),
+});
+
+export const socialFeedPostReactionsQuerySchema = z.object({
+  platform: z.literal("linkedin"),
+  accountKind: z.literal("business"),
+  postId: z.string().min(1),
+  limit: z.coerce.number().int().min(1).max(100).optional(),
+});
+
+export const socialFeedPostReactionsListSchema = z.object({
+  source: z.literal("live"),
+  platform: z.literal("linkedin"),
+  accountKind: z.literal("business"),
+  postId: z.string(),
+  reactions: z.array(socialFeedPostReactionSchema),
+});
+
+export type SocialFeedPostReaction = z.infer<
+  typeof socialFeedPostReactionSchema
+>;
+export type SocialFeedPostReactionsQuery = z.infer<
+  typeof socialFeedPostReactionsQuerySchema
+>;
+export type SocialFeedPostReactionsList = z.infer<
+  typeof socialFeedPostReactionsListSchema
+>;
+
+/** Resolve a LinkedIn profile/company URL to mention markup. */
+export const resolveSocialLinkedInMentionQuerySchema = z.object({
+  platform: z.literal("linkedin"),
+  accountKind: socialPlannedPostAccountKindSchema,
+  url: z.string().trim().min(1).max(500),
+});
+
+export const resolveSocialLinkedInMentionResultSchema = z.object({
+  url: z.string(),
+  mentionFormat: z.string().nullable(),
+  displayName: z.string().nullable().optional(),
+});
+
+export type ResolveSocialLinkedInMentionQuery = z.infer<
+  typeof resolveSocialLinkedInMentionQuerySchema
+>;
+export type ResolveSocialLinkedInMentionResult = z.infer<
+  typeof resolveSocialLinkedInMentionResultSchema
+>;
+
+/** Network Analytics page — LinkedIn via Zernio (7d / 30d). */
+export const socialAnalyticsPeriodSchema = z.enum(["7d", "30d"]);
+export const socialAnalyticsPlatformFilterSchema = z.enum([
+  "all",
+  "linkedin",
+]);
+export const socialAnalyticsMetricIdSchema = z.enum([
+  "impressions",
+  "engagement",
+  "reach",
+  "followers",
+]);
+
+export const socialAnalyticsQuerySchema = z.object({
+  accountKind: socialPlannedPostAccountKindSchema,
+  period: socialAnalyticsPeriodSchema.default("7d"),
+  platform: socialAnalyticsPlatformFilterSchema.default("all"),
+});
+
+export const socialAnalyticsPointSchema = z.object({
+  date: z.string().min(1),
+  label: z.string().min(1),
+  value: z.number(),
+});
+
+export const socialAnalyticsMetricSchema = z.object({
+  id: socialAnalyticsMetricIdSchema,
+  label: z.string(),
+  valueLabel: z.string(),
+  deltaLabel: z.string(),
+  delta: z.enum(["up", "down", "flat"]),
+  valueFormat: z.enum(["count", "percent"]),
+  series: z.array(socialAnalyticsPointSchema),
+});
+
+export const socialAnalyticsPlatformBreakdownSchema = z.object({
+  id: z.literal("linkedin"),
+  label: z.string(),
+  impressionsLabel: z.string(),
+  engagementLabel: z.string(),
+  followersLabel: z.string(),
+  sharePercent: z.number().int().min(0).max(100),
+});
+
+export const socialAnalyticsTopPostSchema = z.object({
+  id: z.string().min(1),
+  postId: z.string().min(1),
+  title: z.string(),
+  platform: z.literal("linkedin"),
+  impressionsLabel: z.string(),
+  engagementLabel: z.string(),
+  engagementRateLabel: z.string(),
+});
+
+export const socialAnalyticsSnapshotSchema = z.object({
+  source: z.literal("live"),
+  accountKind: socialPlannedPostAccountKindSchema,
+  period: socialAnalyticsPeriodSchema,
+  platform: socialAnalyticsPlatformFilterSchema,
+  subtitle: z.string(),
+  periodLabel: z.string(),
+  hasAnalyticsAccess: z.boolean(),
+  metrics: z.array(socialAnalyticsMetricSchema),
+  platformBreakdown: z.array(socialAnalyticsPlatformBreakdownSchema),
+  topPosts: z.array(socialAnalyticsTopPostSchema),
+  /** Cumulative engagement series for the leading top post (chart “Top post”). */
+  topPostSeries: z.array(socialAnalyticsPointSchema),
+  topPostTitle: z.string().nullable(),
+});
+
+export type SocialAnalyticsPeriod = z.infer<typeof socialAnalyticsPeriodSchema>;
+export type SocialAnalyticsPlatformFilter = z.infer<
+  typeof socialAnalyticsPlatformFilterSchema
+>;
+export type SocialAnalyticsMetricId = z.infer<
+  typeof socialAnalyticsMetricIdSchema
+>;
+export type SocialAnalyticsQuery = z.infer<typeof socialAnalyticsQuerySchema>;
+export type SocialAnalyticsPoint = z.infer<typeof socialAnalyticsPointSchema>;
+export type SocialAnalyticsMetric = z.infer<typeof socialAnalyticsMetricSchema>;
+export type SocialAnalyticsPlatformBreakdown = z.infer<
+  typeof socialAnalyticsPlatformBreakdownSchema
+>;
+export type SocialAnalyticsTopPost = z.infer<
+  typeof socialAnalyticsTopPostSchema
+>;
+export type SocialAnalyticsSnapshot = z.infer<
+  typeof socialAnalyticsSnapshotSchema
 >;
 
 const c = initContract();
@@ -582,5 +890,105 @@ export const socialContract = c.router({
     },
     summary:
       "Edit text on a live Network LinkedIn post published through Zernio",
+  },
+  createSocialFeedComment: {
+    method: "POST",
+    path: "/api/v1/social/feed/comments",
+    body: createSocialFeedCommentInputSchema,
+    responses: {
+      201: createSocialFeedCommentResultSchema,
+      400: badRequestSchema,
+      401: errorSchema,
+      403: errorSchema,
+    },
+    summary:
+      "Comment or reply on a LinkedIn company-page post via Zernio inbox",
+  },
+  deleteSocialFeedComment: {
+    method: "POST",
+    path: "/api/v1/social/feed/comments/delete",
+    body: deleteSocialFeedCommentInputSchema,
+    responses: {
+      200: deleteSocialFeedCommentResultSchema,
+      400: badRequestSchema,
+      401: errorSchema,
+      403: errorSchema,
+    },
+    summary: "Delete a LinkedIn company-page comment via Zernio",
+  },
+  deleteSocialFeedPost: {
+    method: "POST",
+    path: "/api/v1/social/feed/delete",
+    body: deleteSocialFeedPostInputSchema,
+    responses: {
+      200: deleteSocialFeedPostResultSchema,
+      400: badRequestSchema,
+      401: errorSchema,
+      403: errorSchema,
+    },
+    summary:
+      "Unpublish/delete a Network-published LinkedIn post via Zernio",
+  },
+  getSocialAnalytics: {
+    method: "GET",
+    path: "/api/v1/social/analytics",
+    query: socialAnalyticsQuerySchema,
+    responses: {
+      200: socialAnalyticsSnapshotSchema,
+      400: badRequestSchema,
+      401: errorSchema,
+      403: errorSchema,
+    },
+    summary:
+      "LinkedIn analytics snapshot for Network Analytics (Zernio daily + post stats)",
+  },
+  likeSocialFeedComment: {
+    method: "POST",
+    path: "/api/v1/social/feed/comments/like",
+    body: likeSocialFeedCommentInputSchema,
+    responses: {
+      200: likeSocialFeedCommentResultSchema,
+      400: badRequestSchema,
+      401: errorSchema,
+      403: errorSchema,
+    },
+    summary: "React to a LinkedIn company-page comment via Zernio",
+  },
+  unlikeSocialFeedComment: {
+    method: "POST",
+    path: "/api/v1/social/feed/comments/unlike",
+    body: unlikeSocialFeedCommentInputSchema,
+    responses: {
+      200: unlikeSocialFeedCommentResultSchema,
+      400: badRequestSchema,
+      401: errorSchema,
+      403: errorSchema,
+    },
+    summary: "Remove a reaction from a LinkedIn company-page comment",
+  },
+  listSocialFeedPostReactions: {
+    method: "GET",
+    path: "/api/v1/social/feed/reactions",
+    query: socialFeedPostReactionsQuerySchema,
+    responses: {
+      200: socialFeedPostReactionsListSchema,
+      400: badRequestSchema,
+      401: errorSchema,
+      403: errorSchema,
+    },
+    summary:
+      "List reactors on a LinkedIn company-page post (org analytics only)",
+  },
+  resolveSocialLinkedInMention: {
+    method: "GET",
+    path: "/api/v1/social/linkedin/mentions",
+    query: resolveSocialLinkedInMentionQuerySchema,
+    responses: {
+      200: resolveSocialLinkedInMentionResultSchema,
+      400: badRequestSchema,
+      401: errorSchema,
+      403: errorSchema,
+    },
+    summary: "Resolve a LinkedIn profile/company URL to @mention markup",
   },
 });

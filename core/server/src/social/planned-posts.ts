@@ -61,6 +61,42 @@ async function loadStoredMedia(
   return parseStoredSocialPostMedia(row?.media);
 }
 
+function mergeLinkedInExtras(
+  engagement: unknown,
+  extras: {
+    firstComment?: string | null;
+    poll?: SocialPlannedPost["poll"];
+    geoCountries?: string[] | null;
+  },
+): Record<string, unknown> {
+  const base =
+    engagement && typeof engagement === "object" && !Array.isArray(engagement)
+      ? { ...(engagement as Record<string, unknown>) }
+      : {};
+  if (extras.firstComment !== undefined) {
+    if (extras.firstComment?.trim()) {
+      base.firstComment = extras.firstComment.trim();
+    } else {
+      delete base.firstComment;
+    }
+  }
+  if (extras.poll !== undefined) {
+    if (extras.poll) {
+      base.poll = extras.poll;
+    } else {
+      delete base.poll;
+    }
+  }
+  if (extras.geoCountries !== undefined) {
+    if (extras.geoCountries?.length) {
+      base.geoCountries = extras.geoCountries.map((c) => c.toUpperCase());
+    } else {
+      delete base.geoCountries;
+    }
+  }
+  return base;
+}
+
 async function syncAndBuildEngagement(input: {
   workspaceId: string;
   postId: string;
@@ -70,12 +106,20 @@ async function syncAndBuildEngagement(input: {
   media: readonly StoredSocialPostMedia[];
   scheduledAt: Date | null;
   engagement: unknown;
+  firstComment?: string | null;
+  poll?: SocialPlannedPost["poll"];
+  geoCountries?: string[] | null;
 }): Promise<Record<string, unknown> | null> {
-  const prevZernioId = parseZernioPostIdFromEngagement(input.engagement);
+  const withExtras = mergeLinkedInExtras(input.engagement, {
+    firstComment: input.firstComment,
+    poll: input.poll,
+    geoCountries: input.geoCountries,
+  });
+  const prevZernioId = parseZernioPostIdFromEngagement(withExtras);
   const needsRemote =
     plannedPostTargetsLinkedIn(input.platforms) || Boolean(prevZernioId);
   if (!needsRemote) {
-    return engagementWithZernioPostId(input.engagement, null);
+    return engagementWithZernioPostId(withExtras, null);
   }
   const nextZernioId = await syncPlannedPostScheduleToZernio({
     workspaceId: input.workspaceId,
@@ -86,8 +130,19 @@ async function syncAndBuildEngagement(input: {
     media: input.media,
     scheduledAt: input.scheduledAt ? input.scheduledAt.toISOString() : null,
     zernioPostId: prevZernioId,
+    firstComment:
+      typeof withExtras.firstComment === "string"
+        ? withExtras.firstComment
+        : null,
+    poll:
+      withExtras.poll && typeof withExtras.poll === "object"
+        ? (withExtras.poll as SocialPlannedPost["poll"])
+        : null,
+    geoCountries: Array.isArray(withExtras.geoCountries)
+      ? (withExtras.geoCountries as string[])
+      : null,
   });
-  return engagementWithZernioPostId(input.engagement, nextZernioId);
+  return engagementWithZernioPostId(withExtras, nextZernioId);
 }
 
 export async function listSocialPlannedPosts(
@@ -152,6 +207,9 @@ export async function createSocialPlannedPost(
     media,
     scheduledAt,
     engagement: null,
+    firstComment: input.firstComment ?? null,
+    poll: input.poll ?? null,
+    geoCountries: input.geoCountries ?? null,
   });
 
   await db.insert(socialPosts).values({
@@ -216,8 +274,19 @@ export async function updateSocialPlannedPost(
     media = await storeSocialPostMediaUploads(id, patch.mediaUploads, media);
   }
 
-  if (!body && media.length === 0) {
-    throw new Error("Body or media is required");
+  const firstComment =
+    patch.firstComment !== undefined
+      ? patch.firstComment
+      : existing.firstComment ?? null;
+  const poll =
+    patch.poll !== undefined ? patch.poll : existing.poll ?? null;
+  const geoCountries =
+    patch.geoCountries !== undefined
+      ? patch.geoCountries
+      : existing.geoCountries ?? null;
+
+  if (!body && media.length === 0 && !poll) {
+    throw new Error("Body, media, or poll is required");
   }
 
   const scheduleTouched =
@@ -225,7 +294,10 @@ export async function updateSocialPlannedPost(
     patch.body !== undefined ||
     patch.platforms !== undefined ||
     patch.accountKind !== undefined ||
-    Boolean(patch.mediaUploads?.length);
+    Boolean(patch.mediaUploads?.length) ||
+    patch.firstComment !== undefined ||
+    patch.poll !== undefined ||
+    patch.geoCountries !== undefined;
 
   let engagement = row.engagement as Record<string, unknown> | null;
   if (scheduleTouched) {
@@ -238,6 +310,9 @@ export async function updateSocialPlannedPost(
       media,
       scheduledAt,
       engagement: row.engagement,
+      firstComment,
+      poll,
+      geoCountries,
     });
   }
 

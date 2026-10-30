@@ -19,9 +19,21 @@ export {
 } from "./request-gate.js";
 export { listSocialFeedPosts } from "./feed.js";
 export { listSocialFeedComments } from "./feed-comments.js";
+export {
+  createSocialFeedComment,
+  deleteSocialFeedComment,
+} from "./feed-comment-write.js";
+export {
+  likeSocialFeedComment,
+  unlikeSocialFeedComment,
+} from "./feed-comment-like.js";
 export { likeSocialFeedPost, unlikeSocialFeedPost } from "./feed-like.js";
+export { listSocialFeedPostReactions } from "./feed-reactions.js";
+export { resolveSocialLinkedInMention } from "./feed-mentions.js";
 export { editSocialFeedPost } from "./feed-edit.js";
+export { deleteSocialFeedPost } from "./feed-delete.js";
 export { publishSocialPost } from "./publish.js";
+export { getSocialAnalytics } from "./analytics.js";
 export {
   engagementWithZernioPostId,
   parseZernioPostIdFromEngagement,

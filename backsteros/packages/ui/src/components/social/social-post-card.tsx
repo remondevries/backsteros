@@ -1,6 +1,11 @@
 "use client";
 
-import { useState, type KeyboardEvent, type MouseEvent } from "react";
+import {
+  useState,
+  type KeyboardEvent,
+  type MouseEvent,
+  type ReactNode,
+} from "react";
 import {
   HeartFillIcon,
   HeartIcon,
@@ -10,6 +15,10 @@ import {
 
 import { fireHabitCompleteConfetti } from "../../habits/habit-complete-confetti.js";
 import { formatRelativeAgeLabel } from "../../shared/format-relative-age.js";
+import {
+  linkedInReactionGlyph,
+  linkedInReactionLabel,
+} from "../../social/linkedin-reactions.js";
 import { SocialSaveIcon } from "../icons/social-save-icon.js";
 import {
   getSocialMockProfileByHandle,
@@ -115,7 +124,16 @@ export type SocialPostCardProps = {
   liked?: boolean;
   likeBusy?: boolean;
   likeCount?: number;
+  /** LinkedIn reaction in effect — swaps the heart for the matching glyph. */
+  reactionType?: string | null;
   onToggleLike?: () => void;
+  /**
+   * When set (LinkedIn reaction picker), the heart opens this menu instead of
+   * immediately toggling a plain like.
+   */
+  onOpenReactionMenu?: () => void;
+  reactionMenuOpen?: boolean;
+  reactionMenu?: ReactNode;
   /** Overrides default `/social/post/:id` (include feed filters for Back). */
   href?: string;
   /** Inline body edit (invisible CodeMirror) — replaces the static text. */
@@ -179,7 +197,11 @@ export function SocialPostCard({
   liked = false,
   likeBusy = false,
   likeCount,
+  reactionType = null,
   onToggleLike,
+  onOpenReactionMenu,
+  reactionMenuOpen = false,
+  reactionMenu = null,
   href,
   editing = false,
   editBody,
@@ -188,6 +210,16 @@ export function SocialPostCard({
   onEditSave,
   onEditCancel,
 }: SocialPostCardProps) {
+  const likeInteractive = Boolean(onToggleLike || onOpenReactionMenu);
+  // When reacted, always show the LinkedIn reaction glyph (👍 / 👏 / …)
+  // so the control under the post matches the right-nav filing icon.
+  const activeReaction = liked ? (reactionType ?? "LIKE") : null;
+  const reactionGlyph = activeReaction
+    ? linkedInReactionGlyph(activeReaction)
+    : null;
+  const reactionLabel = activeReaction
+    ? linkedInReactionLabel(activeReaction)
+    : "Like";
   /** After a click, ignore :hover solid until the pointer moves again. */
   const [suppressLikeHover, setSuppressLikeHover] = useState(false);
   const age = formatRelativeAgeLabel(post.createdAt);
@@ -392,56 +424,89 @@ export function SocialPostCard({
               <SyncIcon size={14} />
               <span>{formatCount(post.repostCount)}</span>
             </button>
-            <button
-              type="button"
-              className={[
-                "social-post-card__action",
-                "social-post-card__action--like",
-                liked ? "is-liked" : null,
-                suppressLikeHover ? "is-hover-suppressed" : null,
-              ]
-                .filter(Boolean)
-                .join(" ")}
-              disabled={likeBusy || !onToggleLike}
-              aria-pressed={liked}
-              aria-label={liked ? "Unlike" : "Like"}
-              title={
-                onToggleLike
-                  ? liked
-                    ? "Unlike"
-                    : "Like"
-                  : "Likes aren’t available for this post yet"
-              }
-              onPointerMove={() => {
-                if (suppressLikeHover) setSuppressLikeHover(false);
-              }}
-              onPointerLeave={() => {
-                if (suppressLikeHover) setSuppressLikeHover(false);
-              }}
-              onClick={(event) => {
-                stopCardNavigation(event);
-                if (!onToggleLike) return;
-                setSuppressLikeHover(true);
-                if (!liked) {
-                  // Match `.social-post-card__action--like` hover/liked red.
-                  fireHabitCompleteConfetti(event.currentTarget, null, {
-                    colors: ["#e5484d", "#ff6b6b", "#c9373b", "#fda4af"],
-                    scale: 0.5,
-                  });
+            <span className="social-post-card__like-wrap">
+              <button
+                type="button"
+                className={[
+                  "social-post-card__action",
+                  "social-post-card__action--like",
+                  liked ? "is-liked" : null,
+                  suppressLikeHover ? "is-hover-suppressed" : null,
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
+                disabled={likeBusy || !likeInteractive}
+                aria-pressed={liked}
+                aria-expanded={
+                  onOpenReactionMenu ? reactionMenuOpen : undefined
                 }
-                onToggleLike();
-              }}
-            >
-              <span className="social-post-card__like-icon" aria-hidden="true">
-                <span className="social-post-card__like-icon-outline">
-                  <HeartIcon size={14} />
-                </span>
-                <span className="social-post-card__like-icon-fill">
-                  <HeartFillIcon size={14} />
-                </span>
-              </span>
-              <span>{formatCount(likeCount ?? post.likeCount)}</span>
-            </button>
+                aria-label={
+                  onOpenReactionMenu
+                    ? liked
+                      ? `Change reaction (${reactionLabel})`
+                      : "Choose a reaction"
+                    : liked
+                      ? `Unlike (${reactionLabel})`
+                      : "Like"
+                }
+                title={
+                  likeInteractive
+                    ? onOpenReactionMenu
+                      ? liked
+                        ? `${reactionLabel} — change or remove`
+                        : "Choose a LinkedIn reaction"
+                      : liked
+                        ? reactionLabel
+                        : "Like"
+                    : "Likes aren’t available for this post yet"
+                }
+                onPointerMove={() => {
+                  if (suppressLikeHover) setSuppressLikeHover(false);
+                }}
+                onPointerLeave={() => {
+                  if (suppressLikeHover) setSuppressLikeHover(false);
+                }}
+                onClick={(event) => {
+                  stopCardNavigation(event);
+                  if (!likeInteractive) return;
+                  setSuppressLikeHover(true);
+                  if (onOpenReactionMenu) {
+                    onOpenReactionMenu();
+                    return;
+                  }
+                  if (!onToggleLike) return;
+                  if (!liked) {
+                    // Match `.social-post-card__action--like` hover/liked red.
+                    fireHabitCompleteConfetti(event.currentTarget, null, {
+                      colors: ["#e5484d", "#ff6b6b", "#c9373b", "#fda4af"],
+                      scale: 0.5,
+                    });
+                  }
+                  onToggleLike();
+                }}
+              >
+                {reactionGlyph ? (
+                  <span
+                    className="social-post-card__like-reaction-glyph"
+                    data-reaction={activeReaction ?? undefined}
+                    aria-hidden="true"
+                  >
+                    {reactionGlyph}
+                  </span>
+                ) : (
+                  <span className="social-post-card__like-icon" aria-hidden="true">
+                    <span className="social-post-card__like-icon-outline">
+                      <HeartIcon size={14} />
+                    </span>
+                    <span className="social-post-card__like-icon-fill">
+                      <HeartFillIcon size={14} />
+                    </span>
+                  </span>
+                )}
+                <span>{formatCount(likeCount ?? post.likeCount)}</span>
+              </button>
+              {reactionMenu}
+            </span>
             <button
               type="button"
               className="social-post-card__action social-post-card__action--save"

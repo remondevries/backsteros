@@ -47,10 +47,10 @@ type PendingTimePrompt = {
   dateYmd: string;
 };
 
-/** Attached image/video on a tray chip (blob preview or authenticated API path). */
+/** Attached image/video/document on a tray chip (blob preview or authenticated API path). */
 export type SocialPendingPlanMedia = {
   id: string;
-  kind: "image" | "video";
+  kind: "image" | "video" | "document";
   previewUrl: string;
 };
 
@@ -70,6 +70,11 @@ export type SocialPlannedViewProps = {
   pendingPlans?: readonly SocialPendingPlan[];
   /** Persisted scheduled posts from core (merged with mock seeds). */
   scheduledPlans?: readonly SocialPlannedPostRecord[];
+  /**
+   * When false, hide demo calendar seeds — live core Planned is the source of
+   * truth (avoids unscheduling mock ids → “Planned post not found”).
+   */
+  includeMockSeeds?: boolean;
   /** Tray chip currently loaded in the composer (stays visible, highlighted). */
   selectedPendingPlanId?: string | null;
   onDismissPendingPlan?: (id: string) => void;
@@ -404,7 +409,10 @@ function planToCalendarEventsAt(
         socialPlatforms: platforms,
         socialImageOnly: imageOnly,
         socialMediaPreviewUrl: firstMedia?.previewUrl ?? null,
-        socialMediaKind: firstMedia?.kind ?? null,
+        socialMediaKind:
+          firstMedia?.kind === "image" || firstMedia?.kind === "video"
+            ? firstMedia.kind
+            : null,
         socialHashtags: hashtags.length > 0 ? hashtags : null,
       },
     },
@@ -440,6 +448,7 @@ export function SocialPlannedView({
   platform = "all",
   pendingPlans = [],
   scheduledPlans = [],
+  includeMockSeeds = true,
   selectedPendingPlanId = null,
   onDismissPendingPlan,
   onEditPendingPlan,
@@ -463,7 +472,7 @@ export function SocialPlannedView({
   const [trayPanelOpen, setTrayPanelOpen] = useState(false);
   const [mediaLightbox, setMediaLightbox] = useState<{
     src: string;
-    kind: "image" | "video";
+    kind: "image" | "video" | "document";
     alt: string;
     sourceRect: DOMRect;
   } | null>(null);
@@ -472,9 +481,11 @@ export function SocialPlannedView({
   const [rangeTitle, setRangeTitle] = useState("");
 
   const seedEvents = useMemo(() => {
-    const mocks = getSocialMockPlannedPostsForAccount(accountKind, platform)
-      .filter((post) => !unscheduledSeedIds.has(post.id))
-      .map((post) => plannedPostToCalendarEvent(post));
+    const mocks = includeMockSeeds
+      ? getSocialMockPlannedPostsForAccount(accountKind, platform)
+          .filter((post) => !unscheduledSeedIds.has(post.id))
+          .map((post) => plannedPostToCalendarEvent(post))
+      : [];
     const persisted = scheduledPlans
       .filter((row) => {
         if (row.accountKind !== accountKind) return false;
@@ -499,7 +510,13 @@ export function SocialPlannedView({
     }
     const mockIds = new Set(mocks.map((event) => event.id));
     return [...mocks, ...persisted.filter((event) => !mockIds.has(event.id))];
-  }, [accountKind, platform, scheduledPlans, unscheduledSeedIds]);
+  }, [
+    accountKind,
+    includeMockSeeds,
+    platform,
+    scheduledPlans,
+    unscheduledSeedIds,
+  ]);
 
   const [events, setEvents] = useState<TaskCalendarEvent[]>(seedEvents);
   const seedKey = `${accountKind}:${platform}:${seedEvents.map((e) => e.id).join(",")}`;
@@ -939,6 +956,7 @@ export function SocialPlannedView({
               onClick={(event) => {
                 event.preventDefault();
                 event.stopPropagation();
+                if (firstMedia.kind === "document") return;
                 const rect = event.currentTarget.getBoundingClientRect();
                 setMediaLightbox({
                   src: firstMedia.previewUrl,
@@ -1156,7 +1174,7 @@ export function SocialPlannedView({
         onCancel={handleTimePromptCancel}
         onConfirm={handleTimePromptConfirm}
       />
-      {mediaLightbox ? (
+      {mediaLightbox && mediaLightbox.kind !== "document" ? (
         <SocialMediaLightbox
           src={mediaLightbox.src}
           kind={mediaLightbox.kind}

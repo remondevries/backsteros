@@ -3,6 +3,8 @@ import { describe, it } from "node:test";
 
 import {
   engagementWithZernioPostId,
+  extractZernioPostId,
+  looksLikeZernioPostId,
   parseZernioPostIdFromEngagement,
   plannedPostTargetsLinkedIn,
 } from "./planned-schedule.js";
@@ -47,5 +49,28 @@ describe("engagementWithZernioPostId", () => {
       engagementWithZernioPostId({ likes: 1, zernioPostId: "old" }, "new"),
       { likes: 1, zernioPostId: "new" },
     );
+  });
+});
+
+describe("extractZernioPostId", () => {
+  it("reads nested post._id from create responses", () => {
+    assert.equal(
+      extractZernioPostId({
+        post: { _id: "6ae3954e045b5bf01efaebe4" },
+        message: "Post scheduled successfully",
+      }),
+      "6ae3954e045b5bf01efaebe4",
+    );
+  });
+
+  it("reads top-level id", () => {
+    assert.equal(extractZernioPostId({ id: "abc" }), "abc");
+  });
+});
+
+describe("looksLikeZernioPostId", () => {
+  it("accepts Mongo ObjectIds and rejects local nanoids", () => {
+    assert.equal(looksLikeZernioPostId("6ae3954e045b5bf01efaebe4"), true);
+    assert.equal(looksLikeZernioPostId("FACBrLaRFnBwYQA5Fz-ke"), false);
   });
 });

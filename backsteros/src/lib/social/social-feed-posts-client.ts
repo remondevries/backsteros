@@ -1,10 +1,17 @@
 import type {
+  CreateSocialFeedCommentResult,
+  DeleteSocialFeedCommentResult,
+  DeleteSocialFeedPostResult,
   EditSocialFeedPostResult,
+  LikeSocialFeedCommentResult,
   LikeSocialFeedPostResult,
   PublishSocialPostResult,
+  ResolveSocialLinkedInMentionResult,
   SocialFeedCommentsList,
   SocialFeedList,
   SocialFeedPost,
+  SocialFeedPostReactionsList,
+  UnlikeSocialFeedCommentResult,
   UnlikeSocialFeedPostResult,
 } from "@backsteros/contracts";
 import type {
@@ -80,28 +87,50 @@ export function createSocialFeedPostsClient(
       );
       return body.comments.map(toMockReply);
     },
-    async publish({ platform, accountKind, body }) {
+    async publish({
+      platform,
+      accountKind,
+      body,
+      firstComment,
+      geoCountries,
+      reshareUrl,
+      poll,
+    }) {
       await client.requestJson<PublishSocialPostResult>(
         "/api/v1/social/publish",
         {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ platform, accountKind, body }),
+          body: JSON.stringify({
+            platform,
+            accountKind,
+            body,
+            firstComment: firstComment ?? null,
+            geoCountries: geoCountries ?? null,
+            reshareUrl: reshareUrl ?? null,
+            poll: poll ?? null,
+          }),
         },
       );
     },
-    async like({ platform, accountKind, postId }) {
+    async like({ platform, accountKind, postId, reactionType }) {
       const body = await client.requestJson<LikeSocialFeedPostResult>(
         "/api/v1/social/feed/like",
         {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ platform, accountKind, postId }),
+          body: JSON.stringify({
+            platform,
+            accountKind,
+            postId,
+            ...(reactionType ? { reactionType } : {}),
+          }),
         },
       );
       return {
         liked: body.liked,
         alreadyReacted: body.alreadyReacted,
+        reactionType: body.reactionType,
       };
     },
     async unlike({ platform, accountKind, postId }) {
@@ -123,6 +152,106 @@ export function createSocialFeedPostsClient(
           body: JSON.stringify({ platform, accountKind, postId, body }),
         },
       );
+    },
+    async createComment({
+      platform,
+      accountKind,
+      postId,
+      body,
+      parentCommentId,
+    }) {
+      const created = await client.requestJson<CreateSocialFeedCommentResult>(
+        "/api/v1/social/feed/comments",
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            platform,
+            accountKind,
+            postId,
+            body,
+            parentCommentId: parentCommentId ?? null,
+          }),
+        },
+      );
+      return toMockReply(created);
+    },
+    async deleteComment({ platform, accountKind, postId, commentId }) {
+      await client.requestJson<DeleteSocialFeedCommentResult>(
+        "/api/v1/social/feed/comments/delete",
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ platform, accountKind, postId, commentId }),
+        },
+      );
+    },
+    async likeComment({
+      platform,
+      accountKind,
+      postId,
+      commentId,
+      reactionType,
+    }) {
+      return client.requestJson<LikeSocialFeedCommentResult>(
+        "/api/v1/social/feed/comments/like",
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            platform,
+            accountKind,
+            postId,
+            commentId,
+            ...(reactionType ? { reactionType } : {}),
+          }),
+        },
+      );
+    },
+    async unlikeComment({ platform, accountKind, postId, commentId }) {
+      await client.requestJson<UnlikeSocialFeedCommentResult>(
+        "/api/v1/social/feed/comments/unlike",
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ platform, accountKind, postId, commentId }),
+        },
+      );
+    },
+    async deletePost({ platform, accountKind, postId }) {
+      await client.requestJson<DeleteSocialFeedPostResult>(
+        "/api/v1/social/feed/delete",
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ platform, accountKind, postId }),
+        },
+      );
+    },
+    async listReactions({ platform, accountKind, postId }) {
+      const params = new URLSearchParams({
+        platform,
+        accountKind,
+        postId,
+      });
+      const body = await client.requestJson<SocialFeedPostReactionsList>(
+        `/api/v1/social/feed/reactions?${params}`,
+      );
+      return body.reactions;
+    },
+    async resolveMention({ platform, accountKind, url }) {
+      const params = new URLSearchParams({
+        platform,
+        accountKind,
+        url,
+      });
+      const body = await client.requestJson<ResolveSocialLinkedInMentionResult>(
+        `/api/v1/social/linkedin/mentions?${params}`,
+      );
+      return {
+        mentionFormat: body.mentionFormat,
+        displayName: body.displayName,
+      };
     },
   };
 }

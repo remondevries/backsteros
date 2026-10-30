@@ -11,6 +11,7 @@ import { db } from "../../../db/index.js";
 import { socialAccounts } from "../../../db/schema.js";
 import { resolveZernioCommentPostId } from "./feed-comments.js";
 import { ZernioApiError, ZernioClient } from "./client.js";
+import { likePostReplacingConflict } from "./feed-like-replace.js";
 import { getZernioCredentials } from "./settings.js";
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -103,7 +104,7 @@ export async function likeSocialFeedPost(
     apiKey: creds.apiKey,
     rateKey: workspaceId,
   });
-  const payload = await client.likePost(zernioPostId, {
+  const payload = await likePostReplacingConflict(client, zernioPostId, {
     accountId,
     ...(input.reactionType ? { reactionType: input.reactionType } : {}),
   });

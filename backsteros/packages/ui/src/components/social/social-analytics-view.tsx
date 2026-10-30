@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 
+import type { SocialAnalyticsSnapshot } from "@backsteros/contracts";
+
 import {
   getSocialMockAnalyticsForAccount,
   getSocialMockAnalyticsMetrics,
@@ -13,10 +15,13 @@ import {
   SOCIAL_MOCK_ANALYTICS_PLATFORM_BREAKDOWN,
   SOCIAL_MOCK_ANALYTICS_TOP_POSTS,
   type SocialMockAccountKind,
+  type SocialMockAnalyticsMetric,
   type SocialMockAnalyticsPeriodId,
   type SocialMockAnalyticsPlatformFilterId,
   type SocialMockAnalyticsSelectionId,
+  type SocialMockPostPlatform,
 } from "../../social/social-mock-data.js";
+import type { SocialAnalyticsClient } from "../../social/social-analytics.js";
 import {
   getSocialAnalyticsHref,
   getSocialAnalyticsMetricFromSearch,
@@ -36,6 +41,8 @@ import { SocialAnalyticsTimelineChart } from "./social-analytics-timeline-chart.
 export type SocialAnalyticsViewProps = {
   searchStr?: string;
   accountKind?: SocialMockAccountKind;
+  /** Live LinkedIn analytics from core → Zernio. */
+  analyticsClient?: SocialAnalyticsClient | null;
 };
 
 const PERIOD_OPTIONS: readonly SegmentedPillToggleOption<SocialMockAnalyticsPeriodId>[] =
@@ -73,9 +80,44 @@ function platformLabel(platform: string): string {
   );
 }
 
+function livePlatformFilter(
+  platform: SocialMockAnalyticsPlatformFilterId,
+): "all" | "linkedin" {
+  return platform === "linkedin" ? "linkedin" : "all";
+}
+
+function snapshotMetricSelection(
+  snapshot: SocialAnalyticsSnapshot,
+  selectedId: SocialMockAnalyticsSelectionId,
+): {
+  title: string;
+  subtitle: string;
+  valueFormat: "count" | "percent";
+  series: SocialAnalyticsSnapshot["metrics"][number]["series"];
+} {
+  if (selectedId === "top-post") {
+    return {
+      title: snapshot.topPostTitle?.trim() || "Top post",
+      subtitle: "Engagement over the period",
+      valueFormat: "count",
+      series: snapshot.topPostSeries,
+    };
+  }
+  const metric =
+    snapshot.metrics.find((row) => row.id === selectedId) ??
+    snapshot.metrics.find((row) => row.id === "impressions")!;
+  return {
+    title: metric.label,
+    subtitle: snapshot.periodLabel,
+    valueFormat: metric.valueFormat,
+    series: metric.series,
+  };
+}
+
 export function SocialAnalyticsView({
   searchStr = "",
   accountKind = "personal",
+  analyticsClient = null,
 }: SocialAnalyticsViewProps) {
   const selectedId = resolveMetric(searchStr);
   const periodFromSearch = resolvePeriod(searchStr);
@@ -84,10 +126,13 @@ export function SocialAnalyticsView({
     useState<SocialMockAnalyticsPeriodId>(periodFromSearch);
   const [platform, setPlatform] =
     useState<SocialMockAnalyticsPlatformFilterId>(platformFromSearch);
-  const ownedPlatforms = useMemo(
-    () => getSocialMockPlatformIdsForAccount(accountKind),
-    [accountKind],
-  );
+  const live = analyticsClient != null;
+  const ownedPlatforms = useMemo((): SocialMockPostPlatform[] => {
+    if (live) return ["linkedin"];
+    return [...getSocialMockPlatformIdsForAccount(accountKind)];
+  }, [accountKind, live]);
+  const ownsPlatform = (id: string) =>
+    ownedPlatforms.some((platformId) => platformId === id);
   const platformTabs = useMemo(
     () => [
       { value: "all" as const, label: "All" },
@@ -101,6 +146,14 @@ export function SocialAnalyticsView({
   );
   const accountAnalytics = getSocialMockAnalyticsForAccount(accountKind);
 
+  const [snapshot, setSnapshot] = useState<SocialAnalyticsSnapshot | null>(
+    null,
+  );
+  const [loadStatus, setLoadStatus] = useState<
+    "idle" | "loading" | "ready" | "error"
+  >("idle");
+  const [loadError, setLoadError] = useState<string | null>(null);
+
   useEffect(() => {
     setPeriod(periodFromSearch);
   }, [periodFromSearch]);
@@ -110,38 +163,93 @@ export function SocialAnalyticsView({
   }, [platformFromSearch]);
 
   useEffect(() => {
-    if (platform !== "all" && !ownedPlatforms.includes(platform)) {
+    if (
+      platform !== "all" &&
+      !ownedPlatforms.some((platformId) => platformId === platform)
+    ) {
       setPlatform("all");
     }
   }, [ownedPlatforms, platform]);
 
-  const metrics = useMemo(
+  useEffect(() => {
+    if (!analyticsClient) {
+      setSnapshot(null);
+      setLoadStatus("idle");
+      setLoadError(null);
+      return;
+    }
+    let cancelled = false;
+    setLoadStatus("loading");
+    setLoadError(null);
+    void analyticsClient
+      .get({
+        accountKind,
+        period,
+        platform: livePlatformFilter(platform),
+      })
+      .then((next) => {
+        if (cancelled) return;
+        setSnapshot(next);
+        setLoadStatus("ready");
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        setSnapshot(null);
+        setLoadStatus("error");
+        setLoadError(
+          error instanceof Error
+            ? error.message
+            : "Could not load LinkedIn analytics.",
+        );
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [accountKind, analyticsClient, period, platform]);
+
+  const mockMetrics = useMemo(
     () => getSocialMockAnalyticsMetrics(period, platform),
     [period, platform],
   );
 
-  const selection = useMemo(
-    () =>
+  const metrics: readonly SocialMockAnalyticsMetric[] = snapshot
+    ? snapshot.metrics
+    : mockMetrics;
+
+  const selection = useMemo(() => {
+    if (snapshot) return snapshotMetricSelection(snapshot, selectedId);
+    return (
       getSocialMockAnalyticsSelection(selectedId, { period, platform }) ??
-      getSocialMockAnalyticsSelection("impressions", { period, platform })!,
-    [selectedId, period, platform],
-  );
+      getSocialMockAnalyticsSelection("impressions", { period, platform })!
+    );
+  }, [period, platform, selectedId, snapshot]);
 
-  const topPosts = SOCIAL_MOCK_ANALYTICS_TOP_POSTS.filter((post) => {
-    if (!ownedPlatforms.includes(post.platform)) return false;
-    if (platform !== "all" && post.platform !== platform) return false;
-    return true;
-  });
+  const topPosts = snapshot
+    ? snapshot.topPosts
+    : SOCIAL_MOCK_ANALYTICS_TOP_POSTS.filter((post) => {
+        if (!ownsPlatform(post.platform)) return false;
+        if (platform !== "all" && post.platform !== platform) return false;
+        return true;
+      });
 
-  const platformRows = SOCIAL_MOCK_ANALYTICS_PLATFORM_BREAKDOWN.filter((row) => {
-    if (!ownedPlatforms.includes(row.id)) return false;
-    if (platform !== "all" && row.id !== platform) return false;
-    return true;
-  });
+  const platformRows = snapshot
+    ? snapshot.platformBreakdown
+    : SOCIAL_MOCK_ANALYTICS_PLATFORM_BREAKDOWN.filter((row) => {
+        if (!ownsPlatform(row.id)) return false;
+        if (platform !== "all" && row.id !== platform) return false;
+        return true;
+      });
 
-  const periodLabel = period === "7d" ? "Last 7 days" : "Last 30 days";
-  const scopeLabel =
-    platform === "all" ? accountAnalytics.subtitle : platformLabel(platform);
+  const periodLabel = snapshot
+    ? snapshot.periodLabel
+    : period === "7d"
+      ? "Last 7 days"
+      : "Last 30 days";
+  const scopeLabel = snapshot
+    ? snapshot.subtitle
+    : platform === "all"
+      ? accountAnalytics.subtitle
+      : platformLabel(platform);
 
   return (
     <div className="social-feed social-analytics">
@@ -172,6 +280,17 @@ export function SocialAnalyticsView({
           slidingIndicator
         />
       </header>
+
+      {loadStatus === "loading" && live ? (
+        <p className="social-analytics__empty" role="status">
+          Loading LinkedIn analytics…
+        </p>
+      ) : null}
+      {loadError ? (
+        <p className="social-feed__composer-error" role="alert">
+          {loadError}
+        </p>
+      ) : null}
 
       <div className="social-analytics__scroll">
         <section
@@ -271,36 +390,42 @@ export function SocialAnalyticsView({
                 Share of impressions
               </p>
             </header>
-            <ul className="social-analytics__platform-list">
-              {platformRows.map((row) => (
-                <li key={row.id} className="social-analytics__platform-row">
-                  <button
-                    type="button"
-                    className="social-analytics__platform-link"
-                    onClick={() => setPlatform(row.id)}
-                  >
-                    <span className="social-analytics__platform-name">
-                      {row.label}
-                    </span>
-                    <span className="social-analytics__platform-stats">
-                      {row.impressionsLabel} · {row.engagementLabel}
-                    </span>
-                    <span
-                      className="social-analytics__platform-bar"
-                      role="presentation"
+            {platformRows.length === 0 ? (
+              <p className="social-analytics__empty">
+                Connect LinkedIn in Settings → Social to see platform stats.
+              </p>
+            ) : (
+              <ul className="social-analytics__platform-list">
+                {platformRows.map((row) => (
+                  <li key={row.id} className="social-analytics__platform-row">
+                    <button
+                      type="button"
+                      className="social-analytics__platform-link"
+                      onClick={() => setPlatform(row.id)}
                     >
+                      <span className="social-analytics__platform-name">
+                        {row.label}
+                      </span>
+                      <span className="social-analytics__platform-stats">
+                        {row.impressionsLabel} · {row.engagementLabel}
+                      </span>
                       <span
-                        className="social-analytics__platform-bar-fill"
-                        style={{ width: `${row.sharePercent}%` }}
-                      />
-                    </span>
-                    <span className="social-analytics__platform-share">
-                      {row.sharePercent}%
-                    </span>
-                  </button>
-                </li>
-              ))}
-            </ul>
+                        className="social-analytics__platform-bar"
+                        role="presentation"
+                      >
+                        <span
+                          className="social-analytics__platform-bar-fill"
+                          style={{ width: `${row.sharePercent}%` }}
+                        />
+                      </span>
+                      <span className="social-analytics__platform-share">
+                        {row.sharePercent}%
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
           </section>
 
           <section
@@ -313,7 +438,9 @@ export function SocialAnalyticsView({
             </header>
             {topPosts.length === 0 ? (
               <p className="social-analytics__empty">
-                No posts in this filter yet.
+                {live
+                  ? "No LinkedIn post analytics in this period yet. Publish from Network and check back after Zernio syncs stats."
+                  : "No posts in this filter yet."}
               </p>
             ) : (
               <div className="social-analytics__posts">

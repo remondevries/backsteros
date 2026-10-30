@@ -32,11 +32,25 @@ const VIDEO_TYPES = new Set([
   "video/quicktime",
 ]);
 
+const DOCUMENT_TYPES = new Set([
+  "application/pdf",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.ms-powerpoint",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+]);
+
 function normalizeMime(value: string | null | undefined): string | null {
   const mime = value?.split(";")[0]?.trim().toLowerCase() ?? "";
   if (!mime) return null;
   if (mime === "image/jpg" || mime === "image/pjpeg") return "image/jpeg";
-  if (IMAGE_TYPES.has(mime) || VIDEO_TYPES.has(mime)) return mime;
+  if (
+    IMAGE_TYPES.has(mime) ||
+    VIDEO_TYPES.has(mime) ||
+    DOCUMENT_TYPES.has(mime)
+  ) {
+    return mime;
+  }
   return null;
 }
 
@@ -56,6 +70,16 @@ function extensionForContentType(contentType: string): string {
       return "webm";
     case "video/quicktime":
       return "mov";
+    case "application/pdf":
+      return "pdf";
+    case "application/msword":
+      return "doc";
+    case "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+      return "docx";
+    case "application/vnd.ms-powerpoint":
+      return "ppt";
+    case "application/vnd.openxmlformats-officedocument.presentationml.presentation":
+      return "pptx";
     default:
       return "bin";
   }
@@ -63,11 +87,14 @@ function extensionForContentType(contentType: string): string {
 
 function kindForContentType(
   contentType: string,
-  declared?: "image" | "video",
-): "image" | "video" | null {
-  if (declared === "image" || declared === "video") return declared;
+  declared?: "image" | "video" | "document",
+): "image" | "video" | "document" | null {
+  if (declared === "image" || declared === "video" || declared === "document") {
+    return declared;
+  }
   if (IMAGE_TYPES.has(contentType)) return "image";
   if (VIDEO_TYPES.has(contentType)) return "video";
+  if (DOCUMENT_TYPES.has(contentType)) return "document";
   return null;
 }
 
@@ -93,7 +120,10 @@ export function parseStoredSocialPostMedia(
     if (!entry || typeof entry !== "object") continue;
     const row = entry as Record<string, unknown>;
     const id = typeof row.id === "string" ? row.id : null;
-    const kind = row.kind === "image" || row.kind === "video" ? row.kind : null;
+    const kind =
+      row.kind === "image" || row.kind === "video" || row.kind === "document"
+        ? row.kind
+        : null;
     const url = typeof row.url === "string" ? row.url : null;
     const contentType =
       typeof row.contentType === "string" ? row.contentType : null;
@@ -135,13 +165,13 @@ export async function storeSocialPostMediaUploads(
     const contentType = normalizeMime(upload.contentType);
     if (!contentType) {
       throw new Error(
-        "Media must be JPEG, PNG, WebP, GIF, MP4, WebM, or QuickTime",
+        "Media must be JPEG, PNG, WebP, GIF, MP4, WebM, QuickTime, PDF, DOC, DOCX, PPT, or PPTX",
       );
     }
     const kind = kindForContentType(contentType, upload.kind);
     if (!kind) {
       throw new Error(
-        "Media must be JPEG, PNG, WebP, GIF, MP4, WebM, or QuickTime",
+        "Media must be JPEG, PNG, WebP, GIF, MP4, WebM, QuickTime, PDF, DOC, DOCX, PPT, or PPTX",
       );
     }
     const mediaId = newId();

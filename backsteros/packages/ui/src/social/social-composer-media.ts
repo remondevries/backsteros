@@ -1,19 +1,36 @@
-/** Collect image/video files from paste or drop. */
+const DOCUMENT_MIME_PREFIXES = [
+  "application/pdf",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.ms-powerpoint",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+] as const;
+
+function isDocumentMime(type: string): boolean {
+  return DOCUMENT_MIME_PREFIXES.some(
+    (prefix) => type === prefix || type.startsWith(`${prefix};`),
+  );
+}
+
+/** Collect image/video/document files from paste or drop. */
 export function collectSocialMediaFiles(
   data: DataTransfer | null | undefined,
 ): File[] {
   if (!data) return [];
   return [...(data.files ?? [])].filter(
     (file) =>
-      file.type.startsWith("image/") || file.type.startsWith("video/"),
+      file.type.startsWith("image/") ||
+      file.type.startsWith("video/") ||
+      isDocumentMime(file.type),
   );
 }
 
 export function socialMediaKindForFile(
   file: File,
-): "image" | "video" | null {
+): "image" | "video" | "document" | null {
   if (file.type.startsWith("image/")) return "image";
   if (file.type.startsWith("video/")) return "video";
+  if (isDocumentMime(file.type)) return "document";
   return null;
 }
 
@@ -36,7 +53,7 @@ export function fileToBase64DataUrl(file: File): Promise<string> {
 export type SocialComposerDraftMedia = {
   /** Stable client id for React keys / remove. */
   localId: string;
-  kind: "image" | "video";
+  kind: "image" | "video" | "document";
   /** Present for newly pasted/dropped files; omitted for already-persisted media. */
   file?: File;
   /** Object URL or authenticated blob URL for preview. */

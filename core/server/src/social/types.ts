@@ -160,9 +160,27 @@ export type SocialPage<T> = {
   nextCursor: string | null;
 };
 
+export type PublishPostLinkedInExtras = {
+  firstComment?: string | null;
+  /** ISO 3166-1 alpha-2 country codes (org pages only). */
+  geoCountries?: string[] | null;
+  /** Permalink or share/ugc URN to reshare. */
+  reshareUrl?: string | null;
+  poll?: {
+    question: string;
+    options: string[];
+    duration?:
+      | "ONE_DAY"
+      | "THREE_DAYS"
+      | "SEVEN_DAYS"
+      | "FOURTEEN_DAYS";
+  } | null;
+};
+
 export type PublishPostInput = {
   text: string;
   media?: SocialMediaItem[];
+  linkedIn?: PublishPostLinkedInExtras;
 };
 
 export type SocialAnalyticsPoint = {

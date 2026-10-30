@@ -38,6 +38,9 @@ describe("rowToSocialPlannedPost", () => {
       media: [],
       scheduledAt: null,
       status: "draft",
+      firstComment: null,
+      poll: null,
+      geoCountries: null,
       createdAt: "2026-10-29T10:00:00.000Z",
       updatedAt: "2026-10-29T10:00:00.000Z",
     });

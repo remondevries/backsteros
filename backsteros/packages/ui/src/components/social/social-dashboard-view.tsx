@@ -8,6 +8,7 @@ import type {
   SocialMockPost,
 } from "../../social/social-mock-data.js";
 import type { SocialConnectedAccountAvatar } from "../../social/social-connected-account-avatar.js";
+import type { SocialAnalyticsClient } from "../../social/social-analytics.js";
 import type { SocialFeedPostsClient } from "../../social/social-feed-posts.js";
 import type { SocialPlannedPostsClient } from "../../social/social-planned-posts.js";
 import { SocialFeedView } from "./social-feed-view.js";
@@ -30,6 +31,8 @@ export type SocialDashboardViewProps = {
   plannedPostsClient?: SocialPlannedPostsClient | null;
   /** Live inbox posts (LinkedIn via Zernio). */
   feedPostsClient?: SocialFeedPostsClient | null;
+  /** Live LinkedIn analytics (Zernio). */
+  analyticsClient?: SocialAnalyticsClient | null;
   /** Connected owned accounts for composer avatars (LinkedIn, …). */
   connectedAccounts?: readonly SocialConnectedAccountAvatar[];
 };
@@ -50,6 +53,7 @@ export function SocialDashboardView({
   onNavigateHref,
   plannedPostsClient = null,
   feedPostsClient = null,
+  analyticsClient = null,
   connectedAccounts = [],
 }: SocialDashboardViewProps) {
   const railHidden = discoverCollapsed || discoverPanel == null;
@@ -80,6 +84,7 @@ export function SocialDashboardView({
           onNavigateHref={onNavigateHref}
           plannedPostsClient={plannedPostsClient}
           feedPostsClient={feedPostsClient}
+          analyticsClient={analyticsClient}
           connectedAccounts={connectedAccounts}
         />
       </div>

@@ -8,6 +8,7 @@ import type {
 import { db } from "../../../db/index.js";
 import { socialAccounts } from "../../../db/schema.js";
 import { ZernioApiError } from "./client.js";
+import { wrapLinkedInMentionUrls } from "./feed-mentions.js";
 import { createZernioAdapter } from "./settings.js";
 
 function storedPlatformForPublish(
@@ -18,7 +19,7 @@ function storedPlatformForPublish(
     : "linkedin_personal";
 }
 
-/** Publish text immediately to the connected LinkedIn personal/org account. */
+/** Publish immediately to the connected LinkedIn personal/org account. */
 export async function publishSocialPost(
   workspaceId: string,
   input: PublishSocialPostInput,
@@ -66,11 +67,34 @@ export async function publishSocialPost(
     );
   }
 
+  const text = wrapLinkedInMentionUrls(input.body.trim());
+  const firstComment = input.firstComment?.trim() || null;
+  const reshareUrl = input.reshareUrl?.trim() || null;
+  const poll = input.poll ?? null;
+  const geoCountries =
+    input.accountKind === "business" && input.geoCountries?.length
+      ? input.geoCountries.map((c) => c.toUpperCase())
+      : null;
+
+  if (poll && reshareUrl) {
+    throw new ZernioApiError(
+      400,
+      "",
+      "A LinkedIn poll cannot be combined with a repost.",
+    );
+  }
+
   // Adapter resolveAccount expects `zernio-account:<externalId>`, not the DB UUID.
   const published = await adapter.publishPost(
     [`zernio-account:${account.externalId}`],
     {
-      text: input.body,
+      text,
+      linkedIn: {
+        firstComment,
+        geoCountries,
+        reshareUrl,
+        poll,
+      },
     },
   );
 

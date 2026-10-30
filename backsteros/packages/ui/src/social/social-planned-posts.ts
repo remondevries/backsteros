@@ -3,7 +3,7 @@ import type {
   SocialMockPostPlatform,
 } from "./social-mock-data.js";
 
-export type SocialPlannedPostMediaKind = "image" | "video";
+export type SocialPlannedPostMediaKind = "image" | "video" | "document";
 
 export type SocialPlannedPostMedia = {
   id: string;

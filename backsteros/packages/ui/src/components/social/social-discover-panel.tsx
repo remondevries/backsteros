@@ -9,6 +9,8 @@ import {
   resolveSocialConnectedIdentity,
   type SocialConnectedAccountAvatar,
 } from "../../social/social-connected-account-avatar.js";
+import type { SocialAnalyticsSnapshot } from "@backsteros/contracts";
+
 import {
   getSocialMockAnalyticsForAccount,
   getSocialMockOwnedAccounts,
@@ -16,8 +18,10 @@ import {
   socialMockProfileDisplayName,
   type SocialMockAccountKind,
   type SocialMockAnalyticsPlatformFilterId,
+  type SocialMockAnalyticsSnapshot,
   type SocialMockProfile,
 } from "../../social/social-mock-data.js";
+import type { SocialAnalyticsClient } from "../../social/social-analytics.js";
 import {
   getSocialAnalyticsHref,
   SOCIAL_PLATFORM_NAV_ITEMS,
@@ -41,7 +45,32 @@ export type SocialDiscoverPanelProps = {
   accountKind?: SocialMockAccountKind;
   /** Connected owned accounts — LinkedIn (etc.) avatars for the mini-profile. */
   connectedAccounts?: readonly SocialConnectedAccountAvatar[];
+  /** Live LinkedIn analytics (Zernio) for the Discover widget. */
+  analyticsClient?: SocialAnalyticsClient | null;
 };
+
+function liveAnalyticsPlatform(
+  platform: SocialMockAnalyticsPlatformFilterId,
+): "all" | "linkedin" {
+  return platform === "linkedin" ? "linkedin" : "all";
+}
+
+function snapshotToDiscoverAnalytics(
+  snapshot: SocialAnalyticsSnapshot,
+): SocialMockAnalyticsSnapshot {
+  const leading = snapshot.topPosts[0] ?? null;
+  return {
+    periodLabel: snapshot.periodLabel,
+    subtitle: snapshot.subtitle,
+    metrics: snapshot.metrics,
+    topPostTitle: snapshot.topPostTitle ?? leading?.title ?? "No top post yet",
+    topPostPlatform: "linkedin",
+    topPostEngagementLabel: leading
+      ? `${leading.engagementLabel} engagements`
+      : "Waiting on LinkedIn stats",
+    topPostSeries: snapshot.topPostSeries,
+  };
+}
 
 type ProfileDraft = Pick<
   SocialMockProfile,
@@ -136,6 +165,7 @@ export function SocialDiscoverPanel({
   platform = "all",
   accountKind = "personal",
   connectedAccounts = [],
+  analyticsClient = null,
 }: SocialDiscoverPanelProps) {
   const [accounts, setAccounts] = useState<
     Record<SocialMockAccountKind, AccountDraftState>
@@ -145,6 +175,8 @@ export function SocialDiscoverPanel({
   }));
   const [pushing, setPushing] = useState(false);
   const [pushMessage, setPushMessage] = useState<string | null>(null);
+  const [liveAnalytics, setLiveAnalytics] =
+    useState<SocialMockAnalyticsSnapshot | null>(null);
 
   const profile = getSocialMockProfileForAccount(accountKind);
   const profileDisplayName = socialMockProfileDisplayName(profile);
@@ -179,14 +211,41 @@ export function SocialDiscoverPanel({
       profileDisplayName,
     ],
   );
-  const analytics = useMemo(
+  const mockAnalytics = useMemo(
     () => getSocialMockAnalyticsForAccount(accountKind, platform),
     [accountKind, platform],
   );
+  const analytics = liveAnalytics ?? mockAnalytics;
   const ownedAccounts = useMemo(
     () => getSocialMockOwnedAccounts(accountKind),
     [accountKind],
   );
+
+  useEffect(() => {
+    if (!analyticsClient) {
+      setLiveAnalytics(null);
+      return;
+    }
+    let cancelled = false;
+    void analyticsClient
+      .get({
+        accountKind,
+        period: "7d",
+        platform: liveAnalyticsPlatform(platform),
+      })
+      .then((snapshot) => {
+        if (cancelled) return;
+        setLiveAnalytics(snapshotToDiscoverAnalytics(snapshot));
+      })
+      .catch(() => {
+        if (cancelled) return;
+        // Keep mock/last snapshot on transient failure.
+        setLiveAnalytics(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [accountKind, analyticsClient, platform]);
 
   // Keep avatar in sync with connected account / mock when the user hasn't edited it.
   useEffect(() => {
