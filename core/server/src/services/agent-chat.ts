@@ -584,6 +584,7 @@ export async function postChatThreadMessage(
       message: {
         id: message.id,
         body: previewAgentChatMessageBody(message.body),
+        fullBody: message.body,
         createdAt: message.createdAt,
       },
     });

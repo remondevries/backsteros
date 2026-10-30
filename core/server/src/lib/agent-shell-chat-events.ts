@@ -12,6 +12,8 @@ export type AgentShellChatMessageEvent = {
     id: string;
     /** Truncated plain preview for the sidebar card. */
     body: string;
+    /** Full markdown body so the open thread can render without refetching. */
+    fullBody: string;
     createdAt: string;
   };
 };

@@ -26,9 +26,28 @@ describe("parseAgentShellChatMessagePayload", () => {
       message: {
         id: "m_1",
         body: "Hello",
+        fullBody: null,
         createdAt: "2026-10-30T12:00:00.000Z",
       },
     });
+  });
+
+  it("keeps the full markdown body when the server sends it", () => {
+    const full = `**Hello**\n\n${"x".repeat(200)}`;
+    const parsed = parseAgentShellChatMessagePayload(
+      JSON.stringify({
+        threadId: "th_1",
+        agentId: "ag_1",
+        message: {
+          id: "m_1",
+          body: "Hello x…",
+          fullBody: full,
+          createdAt: "2026-10-30T12:00:00.000Z",
+        },
+      }),
+    );
+    assert.equal(parsed?.message.fullBody, full);
+    assert.equal(parsed?.message.body, "Hello x…");
   });
 
   it("rejects incomplete payloads", () => {

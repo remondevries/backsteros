@@ -401,12 +401,13 @@ test("OS-151/150 agents + chat loop: secret write-only, webhook fire, agent repl
   const dmPayload = JSON.parse(dmEvent.data) as {
     threadId: string;
     agentId: string;
-    message: { id: string; body: string; createdAt: string };
+    message: { id: string; body: string; fullBody: string; createdAt: string };
   };
   assert.equal(dmPayload.threadId, threadId);
   assert.equal(dmPayload.agentId, agentId);
   assert.ok(dmPayload.message.id);
   assert.match(dmPayload.message.body, /got it/i);
+  assert.equal(dmPayload.message.fullBody, "Hey Remon — got it.");
   assert.ok(dmPayload.message.createdAt);
 
   // Owner cannot set agent status; agent can.

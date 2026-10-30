@@ -27,6 +27,8 @@ export type AgentShellChatMessagePayload = {
   message: {
     id: string;
     body: string;
+    /** Full markdown body; null from cloud-cores that only send the preview. */
+    fullBody: string | null;
     createdAt: string;
   };
 };
@@ -94,6 +96,7 @@ export function parseAgentShellChatMessagePayload(
       message?: {
         id?: unknown;
         body?: unknown;
+        fullBody?: unknown;
         createdAt?: unknown;
       };
     };
@@ -105,6 +108,11 @@ export function parseAgentShellChatMessagePayload(
       typeof parsed.message?.id === "string" ? parsed.message.id.trim() : "";
     const body =
       typeof parsed.message?.body === "string" ? parsed.message.body : "";
+    const fullBody =
+      typeof parsed.message?.fullBody === "string" &&
+      parsed.message.fullBody.trim()
+        ? parsed.message.fullBody
+        : null;
     const createdAt =
       typeof parsed.message?.createdAt === "string"
         ? parsed.message.createdAt.trim()
@@ -113,7 +121,7 @@ export function parseAgentShellChatMessagePayload(
     return {
       threadId,
       agentId,
-      message: { id: messageId, body, createdAt },
+      message: { id: messageId, body, fullBody, createdAt },
     };
   } catch {
     return null;

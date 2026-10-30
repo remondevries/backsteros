@@ -436,26 +436,32 @@ export function ChatUiDevPreview({
       const detail = (
         event as CustomEvent<{
           threadId?: string;
-          message?: { id?: string; body?: string; createdAt?: string };
+          message?: {
+            id?: string;
+            body?: string;
+            fullBody?: string | null;
+            createdAt?: string;
+          };
         }>
       ).detail;
       const threadId = detail?.threadId?.trim() || "";
       if (!threadId || threadId !== liveRef.current.threadId) return;
       const messageId = detail?.message?.id?.trim() || "";
       const createdAt = detail?.message?.createdAt?.trim() || "";
+      const fullBody = detail?.message?.fullBody || null;
       if (messageId && createdAt) {
         dispatchLive({
           type: "pushMessage",
           threadId,
           message: {
             id: messageId,
-            body: detail?.message?.body ?? "",
+            body: fullBody ?? detail?.message?.body ?? "",
             createdAt,
           },
         });
       }
-      // SSE carries a truncated preview body — fetch the full message.
-      void refreshOpenLiveThread();
+      // Older cloud-cores only send a truncated preview — fetch the full body.
+      if (!fullBody || !messageId || !createdAt) void refreshOpenLiveThread();
     };
     const onStatus = (event: Event) => {
       const detail = (event as CustomEvent<{
