@@ -480,11 +480,6 @@
   color: #86efac;
 }
 
-.chat-ui-message__copy-label {
-  font-size: 0.68rem;
-  font-weight: 500;
-}
-
 .chat-ui-thread__peer-avatar-wrap {
   position: relative;
   display: inline-flex;

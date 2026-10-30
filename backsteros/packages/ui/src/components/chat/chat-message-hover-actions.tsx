@@ -193,9 +193,6 @@ export function ChatMessageHoverActions({
       onClick={copy}
     >
       {copied ? <CopiedIcon /> : <CopyIcon />}
-      {copied ? (
-        <span className="chat-ui-message__copy-label">Copied</span>
-      ) : null}
     </button>
   );
 
