@@ -19,11 +19,13 @@ import {
   startAgentShellChatEventsLoop,
   type AgentShellChatMessagePayload,
 } from "../lib/agent-shell-chat-events";
+import { useDesktopAvatarSrcMap } from "../lib/avatar-src";
 import {
   cloudCoreRequestJson,
   isCloudCoreApiError,
 } from "../lib/cloud-core-api";
 import { openShellChatPeer } from "../lib/shell-chat-open-peer";
+import { useDesktopWorkspacePeople } from "../lib/workspace-data";
 import { useShellAgentChat } from "./use-shell-agent-chat";
 
 /** Slow catch-up; live updates come from cloud SSE. */
@@ -138,6 +140,7 @@ export type UseAgentDmNotificationsResult = {
  */
 export function useAgentDmNotifications(): UseAgentDmNotificationsResult {
   const { webhookReadyAgents } = useShellAgentChat();
+  const { contacts } = useDesktopWorkspacePeople();
   const [threads, setThreads] = useState<ChatThreadListItem[]>([]);
   const [seenTick, setSeenTick] = useState(0);
 
@@ -145,6 +148,33 @@ export function useAgentDmNotifications(): UseAgentDmNotificationsResult {
     () => new Set(webhookReadyAgents.map((agent) => agent.id)),
     [webhookReadyAgents],
   );
+
+  // Same contact avatar resolution as the shell chat peers — agents.avatarUrl
+  // is usually empty; the photo lives on the linked contact's storage key.
+  const agentContacts = useMemo(() => {
+    const byId = new Map(contacts.map((contact) => [contact.id, contact]));
+    const ordered: typeof contacts = [];
+    const seen = new Set<string>();
+    for (const agent of webhookReadyAgents) {
+      const contactId = agent.contactId?.trim();
+      if (!contactId || seen.has(contactId)) continue;
+      const contact = byId.get(contactId);
+      if (!contact) continue;
+      seen.add(contactId);
+      ordered.push(contact);
+    }
+    for (const thread of threads) {
+      const contactId = thread.agentContactId?.trim();
+      if (!contactId || seen.has(contactId)) continue;
+      const contact = byId.get(contactId);
+      if (!contact) continue;
+      seen.add(contactId);
+      ordered.push(contact);
+    }
+    return ordered;
+  }, [contacts, threads, webhookReadyAgents]);
+
+  const avatarSrcByContactId = useDesktopAvatarSrcMap("contact", agentContacts);
 
   const reload = useCallback(async () => {
     if (readyAgentIds.size === 0) {
@@ -229,6 +259,9 @@ export function useAgentDmNotifications(): UseAgentDmNotificationsResult {
     void seenTick;
     const now = Date.now();
     const unread: AgentMessageNotificationItem[] = [];
+    const contactById = new Map(
+      agentContacts.map((contact) => [contact.id, contact]),
+    );
 
     for (const thread of threads) {
       if (!readyAgentIds.has(thread.agentId)) continue;
@@ -238,13 +271,18 @@ export function useAgentDmNotifications(): UseAgentDmNotificationsResult {
 
       const agentName = thread.agentName.trim() || "Agent";
       const contactId = thread.agentContactId?.trim() || null;
+      const contact = contactId ? contactById.get(contactId) : undefined;
       const messageId = message.id;
       const threadId = thread.id;
 
       unread.push({
         id: `${threadId}:${messageId}`,
         agentName,
-        avatarSrc: thread.agentAvatarUrl,
+        avatarSrc:
+          (contactId ? avatarSrcByContactId[contactId] : null) ??
+          contact?.avatarSrc ??
+          thread.agentAvatarUrl ??
+          null,
         preview: previewFromBody(message.body),
         timestamp: formatShortRelative(message.createdAt, now),
         unread: true,
@@ -259,7 +297,13 @@ export function useAgentDmNotifications(): UseAgentDmNotificationsResult {
     }
 
     return unread;
-  }, [readyAgentIds, seenTick, threads]);
+  }, [
+    agentContacts,
+    avatarSrcByContactId,
+    readyAgentIds,
+    seenTick,
+    threads,
+  ]);
 
   return { items };
 }
