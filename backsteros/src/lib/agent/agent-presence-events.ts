@@ -189,8 +189,9 @@ export function startAgentPresenceEventsLoop(input: {
           onConnection: () => reporter.live(),
         });
         attempt = 0;
-      } catch {
+      } catch (error) {
         if (input.signal.aborted) return;
+        console.warn("[agent-presence-sse]", error);
         reporter.failed();
         attempt += 1;
         const delay = Math.min(8_000, 500 * 2 ** Math.min(attempt, 4));

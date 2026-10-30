@@ -4,6 +4,8 @@ import tailwindcss from "@tailwindcss/vite";
 import wasm from "vite-plugin-wasm";
 import topLevelAwait from "vite-plugin-top-level-await";
 import { visualizer } from "rollup-plugin-visualizer";
+import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -11,6 +13,34 @@ import { desktopManualChunks } from "./vite.manual-chunks";
 import { backsterosVaultDevPlugin } from "./vite-plugin-vault-dev";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+/**
+ * Browser Vite cannot call Tauri `owner_api_key`. For `vite` serve only, mirror
+ * Tauri by reading ~/.config/backsteros/cli.env so cloud chat (agents door)
+ * works the same as the installed app. Never inject into production builds.
+ */
+function readCliOwnerApiKey(): string | null {
+  try {
+    const envPath = path.join(os.homedir(), ".config/backsteros/cli.env");
+    const text = fs.readFileSync(envPath, "utf8");
+    for (const raw of text.split("\n")) {
+      const line = raw.trim();
+      if (!line || line.startsWith("#") || !line.startsWith("BACKSTEROS_API_KEY=")) {
+        continue;
+      }
+      const value = line
+        .slice("BACKSTEROS_API_KEY=".length)
+        .trim()
+        .replace(/^['"]|['"]$/g, "");
+      if (value.startsWith("sk_access_") || value.startsWith("sk_live_")) {
+        return value;
+      }
+    }
+  } catch {
+    // Missing cli.env is fine — cloud chat stays empty until configured.
+  }
+  return null;
+}
 
 // @ts-expect-error process is a nodejs global
 const host = process.env.TAURI_DEV_HOST;
@@ -29,7 +59,15 @@ const t3CodeHttpUrl = (
 ).replace(/\/$/, "");
 
 // https://vite.dev/config/
-export default defineConfig(async () => ({
+export default defineConfig(async ({ command }) => {
+  if (command === "serve" && !process.env.VITE_OWNER_API_KEY?.trim()) {
+    const fromCli = readCliOwnerApiKey();
+    if (fromCli) {
+      process.env.VITE_OWNER_API_KEY = fromCli;
+    }
+  }
+
+  return {
   plugins: [
     backsterosVaultDevPlugin(__dirname),
     tailwindcss(),
@@ -182,6 +220,27 @@ export default defineConfig(async () => ({
         target: t3CodeHttpUrl,
         changeOrigin: true,
       },
+      // SSE through Vite so browser streams do not fight REST for the
+      // HTTP/1.1 6-connection cap on local-core :8788 (presence/email banners).
+      ...Object.fromEntries(
+        [
+          "/api/v1/agent-presence/events",
+          "/api/v1/email/events",
+          "/api/v1/workspace/events",
+          "/api/v1/chat/events",
+        ].map((path) => [
+          path,
+          {
+            target: (
+              process.env.VITE_API_URL || "http://127.0.0.1:8788"
+            ).replace(/\/$/, ""),
+            changeOrigin: true,
+            // Long-lived SSE — do not time out idle proxied sockets.
+            timeout: 0,
+            proxyTimeout: 0,
+          },
+        ]),
+      ),
     },
     // Behind nginx TLS (`DEV_PUBLIC_HOST`): browser HMR over wss:443.
     // Direct Tailscale / Tauri (`TAURI_DEV_HOST` only): ws on :1421 (unchanged).
@@ -210,4 +269,5 @@ export default defineConfig(async () => ({
       ],
     },
   },
-}));
+};
+});

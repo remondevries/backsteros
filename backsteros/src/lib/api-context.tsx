@@ -21,6 +21,16 @@ type ApiContextValue = {
 
 const ApiContext = createContext<ApiContextValue | null>(null);
 
+/** True for SSE event streams (`…/events`), not REST like `external-calendar-events`. */
+function isSseEventsUrl(url: string): boolean {
+  try {
+    const path = new URL(url).pathname;
+    return path === "/events" || path.endsWith("/events");
+  } catch {
+    return /\/events(?:\?|$)/.test(url);
+  }
+}
+
 function createDesktopFetch(apiUrl: string): typeof globalThis.fetch {
   const sseBase = sseUrlForApiUrl(apiUrl);
   const apiBase = apiUrl.replace(/\/$/, "");
@@ -34,7 +44,7 @@ function createDesktopFetch(apiUrl: string): typeof globalThis.fetch {
         : input instanceof URL
           ? input.toString()
           : input.url;
-    if (raw.includes("/events") && raw.startsWith(apiBase)) {
+    if (isSseEventsUrl(raw) && raw.startsWith(apiBase)) {
       return globalThis.fetch(`${sseBase}${raw.slice(apiBase.length)}`, init);
     }
     return globalThis.fetch(input as RequestInfo, init);

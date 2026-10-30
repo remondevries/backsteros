@@ -145,16 +145,30 @@ test("optional replica API splits loopback REST vs SSE hosts", () => {
     "http://127.0.0.1:8080",
   );
   assert.equal(
-    sseUrlForApiUrl("http://127.0.0.1:8788"),
+    sseUrlForApiUrl("http://127.0.0.1:8788", { viteDev: false }),
     "http://localhost:8788",
   );
   assert.equal(
-    sseUrlForApiUrl("http://localhost:8788"),
+    sseUrlForApiUrl("http://localhost:8788", { viteDev: false }),
     "http://127.0.0.1:8788",
   );
   assert.equal(
-    sseUrlForApiUrl("https://api.local.backsteros.com"),
+    sseUrlForApiUrl("https://api.local.backsteros.com", { viteDev: false }),
     "https://sse.local.backsteros.com",
+  );
+  assert.equal(
+    sseUrlForApiUrl("http://127.0.0.1:8788", {
+      viteDev: true,
+      pageOrigin: "http://localhost:1420",
+    }),
+    "http://localhost:1420",
+  );
+  assert.equal(
+    sseUrlForApiUrl("http://127.0.0.1:8788", {
+      viteDev: true,
+      pageOrigin: "http://127.0.0.1:1420",
+    }),
+    "http://127.0.0.1:1420",
   );
 });
 

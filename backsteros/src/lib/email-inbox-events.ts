@@ -190,8 +190,9 @@ export function startEmailInboxEventsLoop(input: {
           onConnection: () => reporter.live(),
         });
         attempt = 0;
-      } catch {
+      } catch (error) {
         if (input.signal.aborted) return;
+        console.warn("[email-inbox-sse]", error);
         reporter.failed();
         attempt += 1;
         // Prefer quick retries after WebKit "Load failed" (core restart / dropped stream).

@@ -125,7 +125,42 @@ export function isLocalDevApiUrl(apiUrl: string): boolean {
   }
 }
 
-export function sseUrlForApiUrl(apiUrl: string): string {
+/**
+ * Base URL for authenticated SSE (`…/events`).
+ *
+ * In Vite browser/Tauri-dev (`:1420`), prefer the page origin so streams go
+ * through the Vite proxy — they then share the UI host pool instead of fighting
+ * REST for the HTTP/1.1 6-connection cap on `:8788` (Zen/Firefox especially).
+ * Packaged builds keep the localhost ↔ 127.0.0.1 split.
+ */
+export function sseUrlForApiUrl(
+  apiUrl: string,
+  options?: { pageOrigin?: string | null; viteDev?: boolean },
+): string {
+  const viteDev =
+    options?.viteDev ??
+    Boolean(
+      typeof import.meta !== "undefined" &&
+        (import.meta as ImportMeta & { env?: { DEV?: boolean } }).env?.DEV,
+    );
+  const pageOrigin =
+    options?.pageOrigin !== undefined
+      ? options.pageOrigin
+      : typeof window !== "undefined"
+        ? window.location.origin
+        : null;
+
+  if (viteDev && pageOrigin && isLocalDevApiUrl(apiUrl)) {
+    try {
+      const page = new URL(pageOrigin);
+      if (page.port === "1420" || page.port === "1421") {
+        return pageOrigin.replace(/\/$/, "");
+      }
+    } catch {
+      // fall through to loopback split
+    }
+  }
+
   if (isLocalDevApiUrl(apiUrl)) {
     try {
       const url = new URL(apiUrl);
