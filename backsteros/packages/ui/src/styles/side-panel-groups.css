@@ -1989,29 +1989,42 @@ button.side-panel-plain-group-label[aria-current="true"] {
   min-width: 140px;
 }
 
-.agents-settings__list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  margin: 12px 0 0;
-  padding: 0;
-  list-style: none;
+.agents-settings__table-wrap {
+  margin-top: 12px;
+  overflow-x: auto;
 }
 
-.agents-settings__row {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 12px;
-  border: 0.5px solid var(--border);
-  border-radius: 8px;
+.agents-settings__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.agents-settings__table th,
+.agents-settings__table td {
+  padding: 10px 12px;
+  text-align: left;
+  border-bottom: 0.5px solid var(--border);
+  vertical-align: middle;
+}
+
+.agents-settings__table th {
+  font-weight: 600;
+  color: var(--muted, #6b7280);
 }
 
 .agents-settings__row-actions {
   display: flex;
   flex-shrink: 0;
+  justify-content: flex-end;
   gap: 8px;
+}
+
+.agents-settings__expiry-readonly,
+.agents-settings__secret-hint {
+  display: block;
+  margin: 4px 0 0;
+  font-size: 12px;
 }
 
 .agents-settings__form {

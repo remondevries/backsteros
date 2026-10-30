@@ -10,6 +10,7 @@ import {
 import { SearchableDropdown } from "../dropdowns/searchable-dropdown.js";
 import { PolishedCheckbox } from "../shared/polished-checkbox.js";
 import { SettingsContentHeader } from "./settings-content-header.js";
+import { AGENT_KEY_SCOPES } from "./api-key-type.js";
 
 export type SettingsAgentItem = {
   id: string;
@@ -29,6 +30,8 @@ export type SettingsAgentApiKeyOption = {
   id: string;
   name: string;
   contactId: string | null;
+  expiresAt?: string | null;
+  scopes?: readonly string[];
 };
 
 export type AgentsSettingsSectionViewProps = {
@@ -84,8 +87,26 @@ const EMPTY_DRAFT: Draft = {
   webhookSecret: "",
 };
 
+function formatExpiry(expiresAt: string | null | undefined): string {
+  if (!expiresAt) return "Never";
+  const date = new Date(expiresAt);
+  if (Number.isNaN(date.getTime())) return "Never";
+  return date.toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+}
+
+function scopeSummary(scopes: readonly string[] | undefined): string {
+  if (!scopes || scopes.length === 0) return "—";
+  if (scopes.length <= 2) return scopes.join(", ");
+  return `${scopes.length} scopes`;
+}
+
 /**
- * Settings → API → Agents: list/add/edit agents and write-only webhook secrets.
+ * Settings → API → Agents: clean list (contact / expiry / scope) and edit mode
+ * with webhook URL + write-only secret directly above Scope (OS-152).
  */
 export function AgentsSettingsSectionView({
   title = "Agents",
@@ -111,6 +132,20 @@ export function AgentsSettingsSectionView({
     [contacts],
   );
 
+  const contactNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const contact of contacts) {
+      map.set(contact.id, contact.name);
+    }
+    return map;
+  }, [contacts]);
+
+  const apiKeyById = useMemo(() => {
+    const map = new Map<string, SettingsAgentApiKeyOption>();
+    for (const key of apiKeys) map.set(key.id, key);
+    return map;
+  }, [apiKeys]);
+
   const apiKeyOptions = useMemo(
     () => [
       { value: DROPDOWN_NONE_VALUE, label: "No API key" },
@@ -121,6 +156,13 @@ export function AgentsSettingsSectionView({
     ],
     [apiKeys],
   );
+
+  const editingAgent = editingId
+    ? (agents.find((agent) => agent.id === editingId) ?? null)
+    : null;
+  const editingKey =
+    draft.apiKeyId != null ? (apiKeyById.get(draft.apiKeyId) ?? null) : null;
+  const editingScopes = editingKey?.scopes ?? [];
 
   function startCreate() {
     setCreating(true);
@@ -241,17 +283,6 @@ export function AgentsSettingsSectionView({
               placeholder="Sander"
             />
           </label>
-          <label className="settings-field">
-            <span className="settings-field__label">Role</span>
-            <input
-              className="settings-field__input"
-              value={draft.role}
-              onChange={(event) =>
-                setDraft((current) => ({ ...current, role: event.target.value }))
-              }
-              placeholder="Grok Bot agent"
-            />
-          </label>
           <div className="settings-field">
             <span className="settings-field__label">Contact</span>
             <SearchableDropdown
@@ -280,6 +311,17 @@ export function AgentsSettingsSectionView({
               ariaLabel="Agent API key for replies"
             />
           </div>
+          <div className="settings-field">
+            <span className="settings-field__label">Expiry</span>
+            <p className="settings-muted agents-settings__expiry-readonly">
+              {formatExpiry(editingKey?.expiresAt)}
+              {editingKey
+                ? " (from linked API key)"
+                : " — link an API key to set expiry"}
+            </p>
+          </div>
+
+          {/* OS-152: webhook fields directly above Scope, edit mode only. */}
           <label className="settings-field">
             <span className="settings-field__label">Webhook URL</span>
             <input
@@ -296,15 +338,7 @@ export function AgentsSettingsSectionView({
             />
           </label>
           <label className="settings-field">
-            <span className="settings-field__label">
-              Webhook secret
-              {editingId
-                ? agents.find((agent) => agent.id === editingId)
-                    ?.webhookSecretConfigured
-                  ? " (leave blank to keep current)"
-                  : " (optional)"
-                : " (optional)"}
-            </span>
+            <span className="settings-field__label">Webhook secret</span>
             <input
               className="settings-field__input"
               type="password"
@@ -316,15 +350,46 @@ export function AgentsSettingsSectionView({
                 }))
               }
               placeholder={
-                editingId &&
-                agents.find((agent) => agent.id === editingId)
-                  ?.webhookSecretConfigured
+                editingAgent?.webhookSecretConfigured
                   ? "••••••••••••"
                   : "Paste a new secret"
               }
               autoComplete="new-password"
             />
+            <span className="settings-muted agents-settings__secret-hint">
+              {editingAgent?.webhookSecretConfigured
+                ? "Secret is set. Leave blank to keep it, or paste a replacement (write-only)."
+                : "Optional. Stored encrypted; never shown again after save."}
+            </span>
           </label>
+
+          <div className="settings-field api-key-detail-field api-key-detail-scopes">
+            <div className="api-key-detail-scopes-label">
+              <span>Scope</span>
+            </div>
+            {editingScopes.length === 0 ? (
+              <p className="settings-muted">
+                Link a reply API key to see its scopes.
+              </p>
+            ) : (
+              <div className="api-key-scope-grid" role="group" aria-label="Scopes">
+                {AGENT_KEY_SCOPES.map((scope) => {
+                  const checked = editingScopes.includes(scope);
+                  return (
+                    <label key={scope} className="api-key-scope-option">
+                      <PolishedCheckbox
+                        checked={checked}
+                        disabled
+                        ariaLabel={`Scope ${scope}${checked ? " granted" : " not granted"}`}
+                      />
+                      <span>{scope}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
           <label className="agents-settings__enabled">
             <PolishedCheckbox
               checked={draft.enabled}
@@ -362,49 +427,68 @@ export function AgentsSettingsSectionView({
         <p className="settings-muted">
           No agents yet. Add Sander or another Grok Bot persona to start.
         </p>
-      ) : (
-        <ul className="agents-settings__list">
-          {agents.map((agent) => (
-            <li key={agent.id} className="agents-settings__row">
-              <div className="agents-settings__row-main">
-                <strong>{agent.name}</strong>
-                {agent.role ? (
-                  <span className="settings-muted"> · {agent.role}</span>
-                ) : null}
-                <div className="agents-settings__meta settings-muted">
-                  {agent.enabled ? "Enabled" : "Disabled"}
-                  {" · "}
-                  {agent.webhookUrl ? "Webhook set" : "No webhook URL"}
-                  {" · "}
-                  {agent.webhookSecretConfigured
-                    ? "Secret configured"
-                    : "No secret"}
-                </div>
-              </div>
-              <div className="agents-settings__row-actions">
-                <button
-                  type="button"
-                  className="button button--secondary"
-                  onClick={() => startEdit(agent)}
-                  disabled={formOpen}
-                >
-                  Edit
-                </button>
-                {onDelete ? (
-                  <button
-                    type="button"
-                    className="button button--secondary"
-                    onClick={() => void onDelete(agent.id)}
-                    disabled={formOpen}
-                  >
-                    Delete
-                  </button>
-                ) : null}
-              </div>
-            </li>
-          ))}
-        </ul>
-      )}
+      ) : !formOpen ? (
+        <div className="agents-settings__table-wrap">
+          <table className="agents-settings__table">
+            <thead>
+              <tr>
+                <th scope="col">Contact</th>
+                <th scope="col">Expires</th>
+                <th scope="col">Scope</th>
+                <th scope="col" aria-label="Actions" />
+              </tr>
+            </thead>
+            <tbody>
+              {agents.map((agent) => {
+                const key =
+                  agent.apiKeyId != null
+                    ? apiKeyById.get(agent.apiKeyId)
+                    : undefined;
+                const contactLabel =
+                  (agent.contactId
+                    ? contactNameById.get(agent.contactId)
+                    : null) ?? agent.name;
+                return (
+                  <tr key={agent.id}>
+                    <td>
+                      <strong>{contactLabel}</strong>
+                      {!agent.enabled ? (
+                        <span className="settings-muted"> · Disabled</span>
+                      ) : null}
+                    </td>
+                    <td className="settings-muted">
+                      {formatExpiry(key?.expiresAt)}
+                    </td>
+                    <td className="settings-muted">
+                      {scopeSummary(key?.scopes)}
+                    </td>
+                    <td>
+                      <div className="agents-settings__row-actions">
+                        <button
+                          type="button"
+                          className="button button--secondary"
+                          onClick={() => startEdit(agent)}
+                        >
+                          Edit
+                        </button>
+                        {onDelete ? (
+                          <button
+                            type="button"
+                            className="button button--secondary"
+                            onClick={() => void onDelete(agent.id)}
+                          >
+                            Delete
+                          </button>
+                        ) : null}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
     </section>
   );
 }

@@ -168,6 +168,8 @@ function SettingsApiTab({
           id: key.id,
           name: key.name,
           contactId: key.contactId ?? null,
+          expiresAt: key.expiresAt ?? null,
+          scopes: key.scopes,
         })),
     [rawApiKeys],
   );
