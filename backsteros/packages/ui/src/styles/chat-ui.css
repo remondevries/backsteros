@@ -152,10 +152,10 @@
   filter: saturate(calc(0.45 + var(--peer-spotlight) * 0.55));
   transform: scale(calc(0.86 + var(--peer-spotlight) * 0.2));
   transition:
-    opacity 220ms ease,
-    transform 320ms cubic-bezier(0.22, 1, 0.36, 1),
-    filter 220ms ease,
-    box-shadow 320ms ease;
+    opacity 480ms cubic-bezier(0.22, 1, 0.36, 1),
+    transform 560ms cubic-bezier(0.22, 1, 0.36, 1),
+    filter 480ms ease,
+    box-shadow 560ms ease;
 }
 
 .chat-ui-thread__peer.is-active {
@@ -192,8 +192,8 @@
   border-radius: 999px;
   line-height: 0;
   transition:
-    box-shadow 320ms cubic-bezier(0.22, 1, 0.36, 1),
-    transform 320ms cubic-bezier(0.22, 1, 0.36, 1);
+    box-shadow 560ms cubic-bezier(0.22, 1, 0.36, 1),
+    transform 560ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .chat-ui-thread__peer.is-active .chat-ui-thread__peer-avatar {
@@ -222,6 +222,30 @@
   color: color-mix(in oklab, var(--foreground, #fff) 78%, transparent);
 }
 
+/* Active agent in a project room — circle becomes the project mark. */
+.chat-ui-thread__peer-avatar.is-project-room {
+  background: color-mix(in oklab, var(--foreground, #fff) 12%, transparent);
+  color: color-mix(in oklab, var(--foreground, #fff) 88%, transparent);
+  animation: chat-ui-project-avatar-in 280ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.chat-ui-thread__peer.is-active .chat-ui-thread__peer-avatar.is-project-room {
+  box-shadow:
+    0 0 0 2px color-mix(in oklab, var(--foreground, #fff) 55%, transparent),
+    0 0 22px color-mix(in oklab, #f97316 45%, transparent);
+}
+
+@keyframes chat-ui-project-avatar-in {
+  from {
+    opacity: 0.55;
+    transform: scale(0.92);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
 .chat-ui-thread__peer-name {
   max-width: 100%;
   overflow: hidden;
@@ -236,7 +260,7 @@
     var(--foreground, #f5f5f5) calc(45% + var(--peer-spotlight) * 55%),
     transparent
   );
-  transition: color 220ms ease;
+  transition: color 480ms ease;
 }
 
 .chat-ui-thread__peer.is-active .chat-ui-thread__peer-name {
@@ -251,81 +275,6 @@
   font-size: 0.68rem;
   line-height: 1.2;
   color: color-mix(in oklab, var(--foreground, #f5f5f5) 55%, transparent);
-}
-
-.chat-ui-thread__project-badge {
-  position: relative;
-  display: inline-flex;
-  max-width: 100%;
-  align-items: center;
-  gap: 2px;
-  margin-top: 2px;
-  padding: 1px 6px;
-  border-radius: 999px;
-  background: color-mix(in oklab, var(--foreground, #fff) 10%, transparent);
-  color: color-mix(in oklab, var(--foreground, #f5f5f5) 72%, transparent);
-  font-size: 0.62rem;
-  font-weight: 550;
-  line-height: 1.25;
-  letter-spacing: 0.01em;
-  opacity: 0;
-  transform: translateY(2px);
-  animation: chat-ui-project-badge-in 220ms ease forwards;
-}
-
-.chat-ui-thread__peer.is-inactive .chat-ui-thread__project-badge {
-  display: none;
-}
-
-.chat-ui-thread__project-badge-label {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.chat-ui-thread__project-badge-leave {
-  display: inline-flex;
-  flex: none;
-  align-items: center;
-  justify-content: center;
-  width: 0;
-  height: 14px;
-  margin: 0;
-  padding: 0;
-  overflow: hidden;
-  border: 0;
-  border-radius: 999px;
-  background: color-mix(in oklab, var(--foreground, #fff) 14%, transparent);
-  color: inherit;
-  font-size: 11px;
-  line-height: 1;
-  opacity: 0;
-  cursor: pointer;
-  transition:
-    width 140ms ease,
-    opacity 140ms ease,
-    background 120ms ease;
-}
-
-.chat-ui-thread__project-badge:hover .chat-ui-thread__project-badge-leave,
-.chat-ui-thread__project-badge:focus-within .chat-ui-thread__project-badge-leave {
-  width: 14px;
-  opacity: 1;
-}
-
-.chat-ui-thread__project-badge-leave:hover {
-  background: color-mix(in oklab, var(--foreground, #fff) 22%, transparent);
-}
-
-@keyframes chat-ui-project-badge-in {
-  from {
-    opacity: 0;
-    transform: translateY(2px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
 }
 
 /*
@@ -1056,6 +1005,35 @@
   flex: 1;
   flex-direction: column;
   overflow: hidden;
+}
+
+.chat-ui-webhook-setup {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.chat-ui-webhook-setup__card {
+  display: flex;
+  max-width: 320px;
+  flex-direction: column;
+  gap: 12px;
+  text-align: center;
+}
+
+.chat-ui-webhook-setup__title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.chat-ui-webhook-setup__body {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--muted, #6b7280);
 }
 
 .chat-ui-dev-page {

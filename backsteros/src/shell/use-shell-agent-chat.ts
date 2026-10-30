@@ -8,7 +8,14 @@ import type {
 
 import { useDesktopApi } from "../lib/api-context";
 
+export function agentHasWebhookUrl(agent: Agent): boolean {
+  return Boolean(agent.webhookUrl?.trim());
+}
+
 export type ShellAgentChatApi = {
+  agents: readonly Agent[];
+  /** Enabled agents with a webhook URL — the only ones shown in chat (OS-155). */
+  webhookReadyAgents: readonly Agent[];
   agentsByContactId: ReadonlyMap<string, Agent>;
   openThread: (agentId: string) => Promise<ChatThreadWithMessages>;
   sendMessage: (
@@ -44,14 +51,19 @@ export function useShellAgentChat(): ShellAgentChatApi {
     };
   }, [client]);
 
+  const webhookReadyAgents = useMemo(
+    () => agents.filter(agentHasWebhookUrl),
+    [agents],
+  );
+
   const agentsByContactId = useMemo(() => {
     const map = new Map<string, Agent>();
-    for (const agent of agents) {
+    for (const agent of webhookReadyAgents) {
       const contactId = agent.contactId?.trim();
       if (contactId && !map.has(contactId)) map.set(contactId, agent);
     }
     return map;
-  }, [agents]);
+  }, [webhookReadyAgents]);
 
   const openThread = useCallback(
     async (agentId: string) => {
@@ -98,6 +110,8 @@ export function useShellAgentChat(): ShellAgentChatApi {
   );
 
   return {
+    agents,
+    webhookReadyAgents,
     agentsByContactId,
     openThread,
     sendMessage,

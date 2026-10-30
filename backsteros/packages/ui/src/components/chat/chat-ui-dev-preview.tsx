@@ -165,6 +165,13 @@ export type ChatUiDevPreviewProps = {
    * (OS-150) instead of the in-memory demo thread. Project rooms stay demo.
    */
   liveAgentChat?: LiveAgentChatHandlers | null;
+  /**
+   * OS-155: when true and `peers` is empty, do not inject Judith fallback —
+   * show the webhook setup empty state instead.
+   */
+  allowEmptyPeers?: boolean;
+  /** Settings href for the webhook setup empty state (default `/settings/api`). */
+  webhookSetupHref?: string;
 };
 
 /**
@@ -176,15 +183,14 @@ export function ChatUiDevPreview({
   projects = null,
   onNavigate = null,
   liveAgentChat = null,
+  allowEmptyPeers = false,
+  webhookSetupHref = "/settings/api",
 }: ChatUiDevPreviewProps) {
   const resolvedPeers = useMemo(() => {
-    const base =
-      peers && peers.length > 0 ? [...peers] : [FALLBACK_JUDITH];
-    if (!findPeerByName(base, "Judith") && !peers?.length) {
-      return [FALLBACK_JUDITH];
-    }
-    return base;
-  }, [peers]);
+    if (peers && peers.length > 0) return [...peers];
+    if (allowEmptyPeers) return [];
+    return [FALLBACK_JUDITH];
+  }, [allowEmptyPeers, peers]);
 
   const resolvedProjects = useMemo(
     () => (projects && projects.length > 0 ? projects : []),
@@ -194,18 +200,21 @@ export function ChatUiDevPreview({
   const defaultPeer =
     findPeerByName(resolvedPeers, "Judith") ??
     resolvedPeers[0] ??
-    FALLBACK_JUDITH;
+    (allowEmptyPeers ? null : FALLBACK_JUDITH);
   /** Default project-room agent — only shown in the strip while in a project. */
   const projectPeer =
     findPeerByName(resolvedPeers, "Niels") ?? FALLBACK_NIELS;
 
-  const [activePeerId, setActivePeerId] = useState(defaultPeer.id);
+  const [activePeerId, setActivePeerId] = useState(
+    defaultPeer?.id ?? FALLBACK_JUDITH.id,
+  );
   const [projectId, setProjectId] = useState<string | null>(null);
   const [recentProjectIds, setRecentProjectIds] = useState<string[]>(() =>
     readRecentChatProjectIds(),
   );
   const [threads, setThreads] = useState<Record<string, ChatUiMessage[]>>(
     () => {
+      if (!defaultPeer) return {};
       const key = chatDemoThreadKey(defaultPeer.id, null);
       return {
         [key]: buildChatUiDemoMessages(),
@@ -221,9 +230,10 @@ export function ChatUiDevPreview({
         ? current
         : (findPeerByName(resolvedPeers, "Judith")?.id ??
           resolvedPeers[0]?.id ??
-          FALLBACK_JUDITH.id),
+          (allowEmptyPeers ? current : FALLBACK_JUDITH.id)),
     );
     setThreads((prev) => {
+      if (resolvedPeers.length === 0) return prev;
       const next = { ...prev };
       let changed = false;
       for (const [index, peer] of resolvedPeers.entries()) {
@@ -237,7 +247,7 @@ export function ChatUiDevPreview({
       }
       return changed ? next : prev;
     });
-  }, [resolvedPeers]);
+  }, [allowEmptyPeers, resolvedPeers]);
 
   const activeProject =
     projectId == null
@@ -250,9 +260,9 @@ export function ChatUiDevPreview({
     setRecentProjectIds(pruneRecentChatProjectIds(existingIds));
     if (projectId && !existingIds.includes(projectId)) {
       setProjectId(null);
-      setActivePeerId(defaultPeer.id);
+      if (defaultPeer) setActivePeerId(defaultPeer.id);
     }
-  }, [defaultPeer.id, projectId, resolvedProjects]);
+  }, [defaultPeer, projectId, resolvedProjects]);
 
   /**
    * Header strip: last ≤5 visited project rooms (newest immediately left of
@@ -288,9 +298,14 @@ export function ChatUiDevPreview({
   const threadAgent =
     (projectId
       ? projectPeer
-      : agentPeers.find((peer) => peer.id === activePeerId)) ?? defaultPeer;
+      : agentPeers.find((peer) => peer.id === activePeerId)) ??
+    defaultPeer ??
+    projectPeer;
 
   const headerActivePeerId = projectId ?? threadAgent.id;
+
+  const needsWebhookSetup =
+    allowEmptyPeers && !projectId && agentPeers.length === 0;
 
   const threadKey = chatDemoThreadKey(threadAgent.id, projectId);
   const liveAgentId =
@@ -497,6 +512,37 @@ export function ChatUiDevPreview({
     () => <p>Demo thread is empty — send a message to try the composer.</p>,
     [],
   );
+
+  if (needsWebhookSetup) {
+    return (
+      <div className="chat-ui-dev-page" data-content-detail>
+        <div className="chat-ui-dev-page__thread chat-ui-webhook-setup">
+          <div className="chat-ui-webhook-setup__card" role="status">
+            <h2 className="chat-ui-webhook-setup__title">
+              Webhook connection needed
+            </h2>
+            <p className="chat-ui-webhook-setup__body">
+              No agents have a webhook URL yet, so there is nothing to chat with.
+              Add a webhook under Settings → API → Agents, then come back here.
+            </p>
+            {onNavigate ? (
+              <button
+                type="button"
+                className="button button--primary"
+                onClick={() => onNavigate(webhookSetupHref)}
+              >
+                Open agent settings
+              </button>
+            ) : (
+              <a className="button button--primary" href={webhookSetupHref}>
+                Open agent settings
+              </a>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="chat-ui-dev-page" data-content-detail>
