@@ -21,6 +21,8 @@ export type AgentWebhookSettings = {
   agentId: string | null;
   webhookUrl: string | null;
   webhookSecretConfigured: boolean;
+  /** Lower first — Settings Agent tab + shell chat peer strip. */
+  sortOrder?: number;
 };
 
 /** Optional plaintext from the last secret save — used when cloud test is 404. */

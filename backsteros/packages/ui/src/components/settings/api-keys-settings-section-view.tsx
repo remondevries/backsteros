@@ -133,7 +133,44 @@ export type ApiKeysSettingsSectionViewProps = {
       agentName: string;
     },
   ) => Promise<void>;
+  /**
+   * Persist Agent-tab row order (api key ids, top → bottom). Also drives
+   * shell chat peer strip order via linked agents.
+   */
+  onReorderAgentKeys?: (orderedApiKeyIds: string[]) => Promise<void>;
 };
+
+function ApiKeyMoveUpIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      fill="currentColor"
+      viewBox="0 0 24 24"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <path d="M12 4.5 5.25 11.25h4.5V19.5h4.5v-8.25h4.5L12 4.5Z" />
+    </svg>
+  );
+}
+
+function ApiKeyMoveDownIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      fill="currentColor"
+      viewBox="0 0 24 24"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <path d="M12 19.5 18.75 12.75h-4.5V4.5h-4.5v8.25h-4.5L12 19.5Z" />
+    </svg>
+  );
+}
 
 function ApiKeyEditIcon({ size = 14 }: { size?: number }) {
   return (
@@ -480,6 +517,10 @@ function ApiKeyRow({
   agentWebhook,
   onSaveAgentWebhook,
   onTestAgentWebhook,
+  canMoveUp,
+  canMoveDown,
+  onMoveUp,
+  onMoveDown,
 }: {
   apiKey: SettingsApiKeyItem;
   contacts: SettingsApiKeyContactOption[];
@@ -506,6 +547,10 @@ function ApiKeyRow({
       agentName: string;
     },
   ) => Promise<void>;
+  canMoveUp?: boolean;
+  canMoveDown?: boolean;
+  onMoveUp?: () => void;
+  onMoveDown?: () => void;
 }) {
   const [confirmRevoke, setConfirmRevoke] = useState(false);
   const [confirmRotate, setConfirmRotate] = useState(false);
@@ -882,6 +927,30 @@ function ApiKeyRow({
               </>
             ) : (
               <>
+                {onMoveUp || onMoveDown ? (
+                  <>
+                    <button
+                      type="button"
+                      className="api-key-action-btn api-key-action-btn--icon"
+                      aria-label="Move up"
+                      title="Move up"
+                      disabled={!canMoveUp || !onMoveUp}
+                      onClick={() => onMoveUp?.()}
+                    >
+                      <ApiKeyMoveUpIcon />
+                    </button>
+                    <button
+                      type="button"
+                      className="api-key-action-btn api-key-action-btn--icon"
+                      aria-label="Move down"
+                      title="Move down"
+                      disabled={!canMoveDown || !onMoveDown}
+                      onClick={() => onMoveDown?.()}
+                    >
+                      <ApiKeyMoveDownIcon />
+                    </button>
+                  </>
+                ) : null}
                 <button
                   type="button"
                   className="api-key-action-btn api-key-action-btn--icon"
@@ -1026,6 +1095,7 @@ export function ApiKeysSettingsSectionView({
   agentWebhookByApiKeyId,
   onSaveAgentWebhook,
   onTestAgentWebhook,
+  onReorderAgentKeys,
 }: ApiKeysSettingsSectionViewProps) {
   const [panel, setPanel] = useState<ApiKeysSettingsPanel>("keys");
   const [tab, setTab] = useState<ApiKeyTypeTab>("access");
@@ -1044,6 +1114,7 @@ export function ApiKeysSettingsSectionView({
   const [saving, setSaving] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [auditQuery, setAuditQuery] = useState("");
+  const [reordering, setReordering] = useState(false);
 
   const contactOptions = useMemo(
     () => buildContactDropdownOptions(contacts),
@@ -1065,7 +1136,35 @@ export function ApiKeysSettingsSectionView({
     return grouped;
   }, [apiKeys]);
 
-  const filteredKeys = keysByTab[tab];
+  const filteredKeys = useMemo(() => {
+    const keys = keysByTab[tab];
+    if (tab !== "agent") return keys;
+    return [...keys].sort((a, b) => {
+      const ao =
+        agentWebhookByApiKeyId?.get(a.id)?.sortOrder ?? Number.MAX_SAFE_INTEGER;
+      const bo =
+        agentWebhookByApiKeyId?.get(b.id)?.sortOrder ?? Number.MAX_SAFE_INTEGER;
+      if (ao !== bo) return ao - bo;
+      return a.name.localeCompare(b.name);
+    });
+  }, [agentWebhookByApiKeyId, keysByTab, tab]);
+
+  async function moveAgentKey(apiKeyId: string, direction: -1 | 1) {
+    if (!onReorderAgentKeys || reordering || tab !== "agent") return;
+    const from = filteredKeys.findIndex((key) => key.id === apiKeyId);
+    const to = from + direction;
+    if (from < 0 || to < 0 || to >= filteredKeys.length) return;
+    const next = [...filteredKeys];
+    const tmp = next[from]!;
+    next[from] = next[to]!;
+    next[to] = tmp;
+    setReordering(true);
+    try {
+      await onReorderAgentKeys(next.map((key) => key.id));
+    } finally {
+      setReordering(false);
+    }
+  }
 
   const activityItems = useMemo(
     () => mergeApiKeyActivity(auditLogs, requestLogs),
@@ -1430,7 +1529,7 @@ export function ApiKeysSettingsSectionView({
                     </tr>
                   </Fragment>
                 ) : null}
-                {filteredKeys.map((apiKey) => (
+                {filteredKeys.map((apiKey, index) => (
                   <ApiKeyRow
                     key={apiKey.id}
                     apiKey={apiKey}
@@ -1456,6 +1555,28 @@ export function ApiKeysSettingsSectionView({
                     }
                     onSaveAgentWebhook={onSaveAgentWebhook}
                     onTestAgentWebhook={onTestAgentWebhook}
+                    canMoveUp={
+                      tab === "agent" &&
+                      Boolean(onReorderAgentKeys) &&
+                      !reordering &&
+                      index > 0
+                    }
+                    canMoveDown={
+                      tab === "agent" &&
+                      Boolean(onReorderAgentKeys) &&
+                      !reordering &&
+                      index < filteredKeys.length - 1
+                    }
+                    onMoveUp={
+                      tab === "agent" && onReorderAgentKeys
+                        ? () => void moveAgentKey(apiKey.id, -1)
+                        : undefined
+                    }
+                    onMoveDown={
+                      tab === "agent" && onReorderAgentKeys
+                        ? () => void moveAgentKey(apiKey.id, 1)
+                        : undefined
+                    }
                   />
                 ))}
               </tbody>

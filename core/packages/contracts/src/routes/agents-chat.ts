@@ -15,6 +15,7 @@ import {
   chatThreadsListSchema,
   errorSchema,
   getOrCreateChatThreadInputSchema,
+  reorderAgentsInputSchema,
   updateAgentInputSchema,
 } from "../schemas.js";
 
@@ -94,6 +95,18 @@ export const agentsChatRoutes: AppRouter = c.router({
       404: errorSchema,
     },
     summary: "Send a one-shot test POST to the agent chat webhook",
+  },
+  reorderAgents: {
+    method: "PUT",
+    path: "/api/v1/agents/reorder",
+    body: reorderAgentsInputSchema,
+    responses: {
+      200: agentsListSchema,
+      400: badRequestSchema,
+      401: errorSchema,
+      403: errorSchema,
+    },
+    summary: "Set chat/settings display order for agents (low → high)",
   },
   listChatThreads: {
     method: "GET",

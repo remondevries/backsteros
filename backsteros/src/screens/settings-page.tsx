@@ -30,6 +30,10 @@ import {
   cloudCoreRequestJson,
   isCloudCoreApiError,
 } from "../lib/cloud-core-api";
+import {
+  sortAgentsForDisplay,
+  writeAgentSortOrderIds,
+} from "../lib/shell-agent-order";
 import { notifyShellAgentRosterChanged } from "../lib/shell-agent-roster";
 import {
   clearAgentWebhookVerified,
@@ -107,6 +111,7 @@ function toAgentWebhookSettings(agent: Agent): AgentWebhookSettings {
     agentId: agent.id,
     webhookUrl: agent.webhookUrl,
     webhookSecretConfigured: agent.webhookSecretConfigured,
+    sortOrder: agent.sortOrder ?? 0,
   };
 }
 
@@ -169,7 +174,9 @@ function SettingsApiTab({
       setAuditLogs(auditBody.auditLogs.map(toSettingsAuditLog));
       setRequestLogs(requestBody.requestLogs.map(toSettingsRequestLog));
       if (agentsResult.ok) {
-        setAgents(agentsResult.body.agents);
+        const ordered = sortAgentsForDisplay(agentsResult.body.agents);
+        setAgents(ordered);
+        writeAgentSortOrderIds(ordered.map((agent) => agent.id));
       } else {
         setAgents([]);
         setErrorMessage(
@@ -255,7 +262,7 @@ function SettingsApiTab({
               : {}),
           }),
         });
-        setAgents((current) => [saved, ...current]);
+        setAgents((current) => sortAgentsForDisplay([...current, saved]));
       }
       // Saving URL/secret is not enough for chat — clear prior Connected state
       // until SettingsTestConnectionSwap succeeds.
@@ -337,6 +344,52 @@ function SettingsApiTab({
     notifyShellAgentRosterChanged();
   }
 
+  async function reorderAgentKeys(orderedApiKeyIds: string[]): Promise<void> {
+    const agentIds: string[] = [];
+    const seen = new Set<string>();
+    for (const apiKeyId of orderedApiKeyIds) {
+      const linked = agents.find((agent) => agent.apiKeyId === apiKeyId);
+      if (!linked || seen.has(linked.id)) continue;
+      seen.add(linked.id);
+      agentIds.push(linked.id);
+    }
+    for (const agent of agents) {
+      if (seen.has(agent.id)) continue;
+      seen.add(agent.id);
+      agentIds.push(agent.id);
+    }
+    if (agentIds.length === 0) return;
+
+    writeAgentSortOrderIds(agentIds);
+    setAgents((current) =>
+      sortAgentsForDisplay(
+        current.map((agent) => {
+          const index = agentIds.indexOf(agent.id);
+          return index >= 0 ? { ...agent, sortOrder: index } : agent;
+        }),
+        agentIds,
+      ),
+    );
+    notifyShellAgentRosterChanged();
+
+    try {
+      const body = await cloudCoreRequestJson<{ agents: Agent[] }>(
+        "/api/v1/agents/reorder",
+        {
+          method: "PUT",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ agentIds }),
+        },
+      );
+      const ordered = sortAgentsForDisplay(body.agents);
+      setAgents(ordered);
+      writeAgentSortOrderIds(ordered.map((agent) => agent.id));
+      notifyShellAgentRosterChanged();
+    } catch {
+      // localStorage + optimistic state keep order until cloud migrates.
+    }
+  }
+
   return (
     <ApiKeysSettingsSectionView
       title={title}
@@ -351,6 +404,7 @@ function SettingsApiTab({
       agentWebhookByApiKeyId={agentWebhookByApiKeyId}
       onSaveAgentWebhook={saveAgentWebhook}
       onTestAgentWebhook={testAgentWebhook}
+      onReorderAgentKeys={reorderAgentKeys}
       onRevealSecret={async (id) => {
         try {
           const body = await client.requestJson<{ secret: string }>(

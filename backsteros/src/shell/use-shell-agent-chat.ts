@@ -10,6 +10,7 @@ import {
   cloudCoreRequestJson,
   isCloudCoreApiError,
 } from "../lib/cloud-core-api";
+import { sortAgentsForDisplay } from "../lib/shell-agent-order";
 import { SHELL_AGENT_ROSTER_CHANGED_EVENT } from "../lib/shell-agent-roster";
 import { isAgentWebhookVerified } from "../lib/shell-agent-webhook-verified";
 
@@ -62,7 +63,11 @@ export function useShellAgentChat(): ShellAgentChatApi {
           "/api/v1/agents",
         );
         if (!cancelled) {
-          setAgents(body.agents.filter((agent) => agent.enabled));
+          setAgents(
+            sortAgentsForDisplay(
+              body.agents.filter((agent) => agent.enabled),
+            ),
+          );
           setAgentsLoadError(null);
         }
       } catch (error) {
@@ -96,7 +101,7 @@ export function useShellAgentChat(): ShellAgentChatApi {
   }, []);
 
   const webhookReadyAgents = useMemo(
-    () => agents.filter(agentReadyForChatRoster),
+    () => sortAgentsForDisplay(agents.filter(agentReadyForChatRoster)),
     [agents],
   );
 

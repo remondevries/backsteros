@@ -1,5 +1,9 @@
-import { and, desc, eq } from "drizzle-orm";
-import type { Agent, CreateAgentInput, UpdateAgentInput } from "@backsteros/contracts";
+import { and, asc, desc, eq, sql } from "drizzle-orm";
+import type {
+  Agent,
+  CreateAgentInput,
+  UpdateAgentInput,
+} from "@backsteros/contracts";
 
 import { db } from "../db/index.js";
 import { agents, apiKeys, contacts } from "../db/schema.js";
@@ -18,6 +22,7 @@ function toPublic(row: {
   avatarUrl: string | null;
   role: string | null;
   enabled: boolean;
+  sortOrder: number;
   webhookUrl: string | null;
   webhookSecretCiphertext: string | null;
   createdAt: Date;
@@ -32,6 +37,7 @@ function toPublic(row: {
     avatarUrl: row.avatarUrl,
     role: row.role,
     enabled: row.enabled,
+    sortOrder: row.sortOrder,
     webhookUrl: row.webhookUrl,
     webhookSecretConfigured: Boolean(row.webhookSecretCiphertext?.trim()),
     createdAt: row.createdAt.toISOString(),
@@ -90,7 +96,7 @@ export async function listAgents(workspaceId: string): Promise<Agent[]> {
     .select()
     .from(agents)
     .where(eq(agents.workspaceId, workspaceId))
-    .orderBy(desc(agents.updatedAt));
+    .orderBy(asc(agents.sortOrder), asc(agents.name), desc(agents.updatedAt));
   return rows.map(toPublic);
 }
 
@@ -164,6 +170,16 @@ export async function createAgent(
     : null;
   const now = new Date();
   const id = newId();
+  let sortOrder = input.sortOrder;
+  if (sortOrder === undefined) {
+    const [maxRow] = await db
+      .select({
+        max: sql<number>`coalesce(max(${agents.sortOrder}), -1)`,
+      })
+      .from(agents)
+      .where(eq(agents.workspaceId, workspaceId));
+    sortOrder = (maxRow?.max ?? -1) + 1;
+  }
   const [row] = await db
     .insert(agents)
     .values({
@@ -175,6 +191,7 @@ export async function createAgent(
       avatarUrl: input.avatarUrl ?? null,
       role: input.role ?? null,
       enabled: input.enabled ?? true,
+      sortOrder,
       webhookUrl,
       webhookSecretCiphertext: secretCiphertext,
       createdAt: now,
@@ -208,6 +225,7 @@ export async function updateAgent(
   if ("avatarUrl" in input) patch.avatarUrl = input.avatarUrl ?? null;
   if ("role" in input) patch.role = input.role ?? null;
   if (input.enabled !== undefined) patch.enabled = input.enabled;
+  if (input.sortOrder !== undefined) patch.sortOrder = input.sortOrder;
   if ("webhookUrl" in input) {
     patch.webhookUrl = normalizeWebhookUrl(input.webhookUrl ?? null);
   }
@@ -224,6 +242,47 @@ export async function updateAgent(
     .where(and(eq(agents.workspaceId, workspaceId), eq(agents.id, agentId)))
     .returning();
   return row ? toPublic(row) : null;
+}
+
+/**
+ * Set display order for workspace agents (Settings Agent tab + chat strip).
+ * Ids not listed keep relative order and are appended after the given sequence.
+ */
+export async function reorderAgents(
+  workspaceId: string,
+  agentIds: string[],
+): Promise<Agent[]> {
+  const existing = await db
+    .select({ id: agents.id, sortOrder: agents.sortOrder })
+    .from(agents)
+    .where(eq(agents.workspaceId, workspaceId))
+    .orderBy(asc(agents.sortOrder), asc(agents.id));
+  const existingIds = new Set(existing.map((row) => row.id));
+  const unique: string[] = [];
+  const seen = new Set<string>();
+  for (const id of agentIds) {
+    if (seen.has(id)) continue;
+    seen.add(id);
+    if (!existingIds.has(id)) {
+      throw badRequest(`Unknown agent id: ${id}`);
+    }
+    unique.push(id);
+  }
+  const ordered = [
+    ...unique,
+    ...existing.map((row) => row.id).filter((id) => !seen.has(id)),
+  ];
+  const now = new Date();
+  await db.transaction(async (tx) => {
+    for (let index = 0; index < ordered.length; index++) {
+      const id = ordered[index]!;
+      await tx
+        .update(agents)
+        .set({ sortOrder: index, updatedAt: now })
+        .where(and(eq(agents.workspaceId, workspaceId), eq(agents.id, id)));
+    }
+  });
+  return listAgents(workspaceId);
 }
 
 export async function deleteAgent(

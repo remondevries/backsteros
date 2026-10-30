@@ -20,6 +20,7 @@ function agent(partial: Partial<Agent> & Pick<Agent, "id" | "name">): Agent {
     avatarUrl: null,
     role: null,
     enabled: true,
+    sortOrder: 0,
     webhookUrl: null,
     webhookSecretConfigured: false,
     createdAt: "2026-10-30T00:00:00.000Z",

@@ -4,6 +4,7 @@
 import type { Hono } from "hono";
 import {
   createAgentInputSchema,
+  reorderAgentsInputSchema,
   updateAgentInputSchema,
 } from "@backsteros/contracts";
 
@@ -33,6 +34,36 @@ export function registerAgentRoutes(app: Hono) {
     if (!canManageAgents(auth)) return c.json(forbidden(), 403);
     const agents = await agentsService.listAgents(auth.workspaceId);
     return c.json({ agents });
+  });
+
+  // Before /:agentId so "reorder" is not captured as an id.
+  app.put("/api/v1/agents/reorder", async (c) => {
+    const auth = getAuth(c);
+    if (!canWriteAgents(auth)) return c.json(forbidden(), 403);
+    let body: unknown;
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ error: "Invalid JSON body", code: "bad_request" }, 400);
+    }
+    const parsed = reorderAgentsInputSchema.safeParse(body);
+    if (!parsed.success) {
+      return c.json(
+        { error: "Invalid reorder payload", code: "bad_request" },
+        400,
+      );
+    }
+    try {
+      const agents = await agentsService.reorderAgents(
+        auth.workspaceId,
+        parsed.data.agentIds,
+      );
+      return c.json({ agents });
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Could not reorder agents";
+      return c.json({ error: message, code: "bad_request" }, 400);
+    }
   });
 
   app.get("/api/v1/agents/:agentId", async (c) => {

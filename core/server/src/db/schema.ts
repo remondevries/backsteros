@@ -3071,6 +3071,8 @@ export const agents = pgTable(
     /** Short role label shown in settings / chat. */
     role: text("role"),
     enabled: boolean("enabled").notNull().default(true),
+    /** Lower first — Settings Agent tab + shell chat peer strip. */
+    sortOrder: integer("sort_order").notNull().default(0),
     /** Outbound webhook for human → agent messages. Empty until configured. */
     webhookUrl: text("webhook_url"),
     /** AES-GCM ciphertext — never returned to the frontend or PowerSync. */
@@ -3086,6 +3088,10 @@ export const agents = pgTable(
     index("agents_workspace_id_idx").on(table.workspaceId),
     index("agents_workspace_contact_idx").on(table.workspaceId, table.contactId),
     index("agents_api_key_id_idx").on(table.apiKeyId),
+    index("agents_workspace_sort_order_idx").on(
+      table.workspaceId,
+      table.sortOrder,
+    ),
   ],
 );
 

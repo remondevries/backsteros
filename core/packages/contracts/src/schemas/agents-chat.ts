@@ -13,6 +13,8 @@ export const agentSchema = z.object({
   avatarUrl: z.string().nullable(),
   role: z.string().nullable(),
   enabled: z.boolean(),
+  /** Lower first — Settings Agent tab + shell chat peer strip. */
+  sortOrder: z.number().int().default(0),
   webhookUrl: z.string().nullable(),
   /** True when a secret is stored; plaintext is never returned. */
   webhookSecretConfigured: z.boolean(),
@@ -31,6 +33,7 @@ export const createAgentInputSchema = z.object({
   avatarUrl: z.string().trim().max(2000).nullable().optional(),
   role: z.string().trim().max(200).nullable().optional(),
   enabled: z.boolean().optional(),
+  sortOrder: z.number().int().optional(),
   webhookUrl: z.string().trim().max(2000).nullable().optional(),
   /** Write-only — encrypted at rest; never echoed. */
   webhookSecret: z.string().min(1).max(2000).optional(),
@@ -44,6 +47,7 @@ export const updateAgentInputSchema = z
     avatarUrl: z.string().trim().max(2000).nullable().optional(),
     role: z.string().trim().max(200).nullable().optional(),
     enabled: z.boolean().optional(),
+    sortOrder: z.number().int().optional(),
     webhookUrl: z.string().trim().max(2000).nullable().optional(),
     /** Set/replace secret. Omit to leave unchanged. Empty string clears. */
     webhookSecret: z.string().max(2000).optional(),
@@ -51,6 +55,11 @@ export const updateAgentInputSchema = z
   .refine((value) => Object.keys(value).length > 0, {
     message: "At least one field is required",
   });
+
+/** Replace workspace agent order (ids low → high sortOrder). */
+export const reorderAgentsInputSchema = z.object({
+  agentIds: z.array(z.string().trim().min(1)).min(1).max(200),
+});
 
 export const chatThreadMessageRoleSchema = z.enum([
   "user",
@@ -131,6 +140,7 @@ export type Agent = z.infer<typeof agentSchema>;
 export type AgentsList = z.infer<typeof agentsListSchema>;
 export type CreateAgentInput = z.infer<typeof createAgentInputSchema>;
 export type UpdateAgentInput = z.infer<typeof updateAgentInputSchema>;
+export type ReorderAgentsInput = z.infer<typeof reorderAgentsInputSchema>;
 export type AgentWebhookTestResult = z.infer<
   typeof agentWebhookTestResultSchema
 >;

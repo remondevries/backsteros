@@ -176,6 +176,29 @@ test("OS-151/150 agents + chat loop: secret write-only, webhook fire, agent repl
   const listed = await json(app, "/api/v1/agents", ownerSecret);
   assert.equal(listed.status, 200);
   assertNoSecretLeak(listed.body, webhookPlain);
+  assert.equal(typeof created.body.sortOrder, "number");
+
+  const second = await json(app, "/api/v1/agents", ownerSecret, {
+    method: "POST",
+    body: JSON.stringify({
+      name: "Jaap",
+      role: "Second agent",
+    }),
+  });
+  assert.equal(second.status, 201);
+  const secondId = String(second.body?.id);
+  assert.ok((second.body?.sortOrder as number) > (created.body.sortOrder as number));
+
+  const reordered = await json(app, "/api/v1/agents/reorder", ownerSecret, {
+    method: "PUT",
+    body: JSON.stringify({ agentIds: [secondId, agentId] }),
+  });
+  assert.equal(reordered.status, 200);
+  const reorderedAgents = (reordered.body?.agents as Array<{ id: string; sortOrder: number }>) ?? [];
+  assert.equal(reorderedAgents[0]?.id, secondId);
+  assert.equal(reorderedAgents[0]?.sortOrder, 0);
+  assert.equal(reorderedAgents[1]?.id, agentId);
+  assert.equal(reorderedAgents[1]?.sortOrder, 1);
 
   // Replace secret — still write-only.
   const patched = await json(app, `/api/v1/agents/${agentId}`, ownerSecret, {
