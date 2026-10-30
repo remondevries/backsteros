@@ -231,24 +231,30 @@ export function useShellChromeState() {
   );
 
   useEffect(() => {
+    const sidePanelTimer = sidePanelAnimTimerRef;
+    const sidePanelRaf = sidePanelAnimRafRef;
+    const sidebarTimer = sidebarAnimTimerRef;
+    const sidebarRaf = sidebarAnimRafRef;
+    const chatPanelTimer = chatPanelAnimTimerRef;
+    const chatPanelRaf = chatPanelAnimRafRef;
     return () => {
-      if (sidePanelAnimTimerRef.current != null) {
-        window.clearTimeout(sidePanelAnimTimerRef.current);
+      if (sidePanelTimer.current != null) {
+        window.clearTimeout(sidePanelTimer.current);
       }
-      if (sidePanelAnimRafRef.current != null) {
-        window.cancelAnimationFrame(sidePanelAnimRafRef.current);
+      if (sidePanelRaf.current != null) {
+        window.cancelAnimationFrame(sidePanelRaf.current);
       }
-      if (sidebarAnimTimerRef.current != null) {
-        window.clearTimeout(sidebarAnimTimerRef.current);
+      if (sidebarTimer.current != null) {
+        window.clearTimeout(sidebarTimer.current);
       }
-      if (sidebarAnimRafRef.current != null) {
-        window.cancelAnimationFrame(sidebarAnimRafRef.current);
+      if (sidebarRaf.current != null) {
+        window.cancelAnimationFrame(sidebarRaf.current);
       }
-      if (chatPanelAnimTimerRef.current != null) {
-        window.clearTimeout(chatPanelAnimTimerRef.current);
+      if (chatPanelTimer.current != null) {
+        window.clearTimeout(chatPanelTimer.current);
       }
-      if (chatPanelAnimRafRef.current != null) {
-        window.cancelAnimationFrame(chatPanelAnimRafRef.current);
+      if (chatPanelRaf.current != null) {
+        window.cancelAnimationFrame(chatPanelRaf.current);
       }
     };
   }, []);

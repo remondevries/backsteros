@@ -56,7 +56,6 @@ import { getTaskPriorityLabel } from "../../tasks/task-priority.js";
 import { getTaskStatusLabel } from "../../tasks/task-status.js";
 import { getProjectStatusLabel } from "../../projects/project-status.js";
 import { getContactsHref } from "../../navigation/entity-routes.js";
-import { ClientLink } from "../../shared/client-link.js";
 import { ContactPeekCard } from "../contacts/contact-peek-card.js";
 import { DocumentIcon } from "./document-icon.js";
 import { LetterIcon } from "../letters/letter-icon.js";
