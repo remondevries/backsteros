@@ -6,6 +6,7 @@ import {
   CLOUD_SYNC_URL,
   LOCAL_CORE_API_URL,
   isLocalDevApiUrl,
+  readViteOrProcessEnv,
   resolveDesktopApiUrl,
   rewritePowerSyncEndpoint,
   sseUrlForApiUrl,
@@ -155,4 +156,24 @@ test("optional replica API splits loopback REST vs SSE hosts", () => {
     sseUrlForApiUrl("https://api.local.backsteros.com"),
     "https://sse.local.backsteros.com",
   );
+});
+
+test("readViteOrProcessEnv does not throw when process is undefined", () => {
+  const previous = Object.getOwnPropertyDescriptor(globalThis, "process");
+  // Browser-like: no Node `process` (OS-148 fallback must not ReferenceError).
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  delete (globalThis as any).process;
+  try {
+    assert.doesNotThrow(() =>
+      readViteOrProcessEnv("VITE_TREAT_API_AS_LOCAL_CORE_MISSING"),
+    );
+    assert.equal(
+      readViteOrProcessEnv("VITE_TREAT_API_AS_LOCAL_CORE_MISSING"),
+      undefined,
+    );
+  } finally {
+    if (previous) {
+      Object.defineProperty(globalThis, "process", previous);
+    }
+  }
 });

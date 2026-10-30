@@ -41,7 +41,8 @@ function resolveConfiguredDesktopApiUrl(): string {
   return devGatewayApiUrl() ?? LOCAL_CORE_API_URL;
 }
 
-function readViteOrProcessEnv(name: string): string | undefined {
+/** Vite first; `process.env` only when Node defines `process` (not the browser). */
+export function readViteOrProcessEnv(name: string): string | undefined {
   try {
     const fromImport = (import.meta.env as Record<string, string | undefined>)?.[
       name
@@ -50,7 +51,9 @@ function readViteOrProcessEnv(name: string): string | undefined {
   } catch {
     // import.meta.env is absent in some test runners
   }
-  return process.env[name]?.trim() || undefined;
+  return typeof process !== "undefined"
+    ? process.env[name]?.trim() || undefined
+    : undefined;
 }
 
 /**
