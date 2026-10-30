@@ -1,7 +1,14 @@
 /**
  * Authenticated SSE subscriber for live agent-working presence.
  * Complements REST poll so remote shells can pulse without waiting ~12s.
+ *
+ * Driven by local-core `GET /api/v1/agent-presence/events` (not cloud door).
+ * Server pings every 15s; client idle-recycles at 45s. Soft recycles must not
+ * flash the "Agent presence is disconnected" banner — see
+ * {@link createSseConnectionReporter}.
  */
+
+import { createSseConnectionReporter } from "../sse-connection-status";
 
 export type AgentPresenceLivePayload = {
   taskId: string;
@@ -157,23 +164,34 @@ export function startAgentPresenceEventsLoop(input: {
   onPresence: (payload: AgentPresenceLivePayload) => void;
   onConnection?: (status: "connecting" | "live" | "disconnected") => void;
   enabled?: boolean;
+  /** Override for tests; production uses 4s banner debounce. */
+  disconnectedDebounceMs?: number;
 }): void {
   if (input.enabled === false) return;
   let attempt = 0;
+  const reporter = createSseConnectionReporter(input.onConnection, {
+    debounceMs: input.disconnectedDebounceMs,
+  });
+  const onAbort = () => reporter.dispose();
+  if (input.signal.aborted) {
+    onAbort();
+    return;
+  }
+  input.signal.addEventListener("abort", onAbort, { once: true });
   const run = async () => {
     while (!input.signal.aborted) {
       try {
-        input.onConnection?.("connecting");
+        reporter.beginAttempt();
         await subscribeAgentPresenceEvents({
           client: input.client,
           signal: input.signal,
           onPresence: input.onPresence,
-          onConnection: () => input.onConnection?.("live"),
+          onConnection: () => reporter.live(),
         });
         attempt = 0;
       } catch {
         if (input.signal.aborted) return;
-        input.onConnection?.("disconnected");
+        reporter.failed();
         attempt += 1;
         const delay = Math.min(8_000, 500 * 2 ** Math.min(attempt, 4));
         await new Promise<void>((resolve) => {

@@ -1,7 +1,12 @@
 /**
  * Authenticated SSE subscriber for AgentMail inbox updates.
  * Desktop / mobile both use fetch + Authorization (EventSource cannot).
+ *
+ * Local-core `GET /api/v1/email/events` — same reconnect/banner pattern as
+ * agent presence ({@link createSseConnectionReporter}).
  */
+
+import { createSseConnectionReporter } from "./sse-connection-status";
 
 export type EmailInboxUpdatedPayload = {
   inboxId: string;
@@ -160,23 +165,34 @@ export function startEmailInboxEventsLoop(input: {
   onUpdated: (payload: EmailInboxUpdatedPayload) => void;
   onConnection?: (status: "connecting" | "live" | "disconnected") => void;
   enabled?: boolean;
+  /** Override for tests; production uses 4s banner debounce. */
+  disconnectedDebounceMs?: number;
 }): void {
   if (input.enabled === false) return;
   let attempt = 0;
+  const reporter = createSseConnectionReporter(input.onConnection, {
+    debounceMs: input.disconnectedDebounceMs,
+  });
+  const onAbort = () => reporter.dispose();
+  if (input.signal.aborted) {
+    onAbort();
+    return;
+  }
+  input.signal.addEventListener("abort", onAbort, { once: true });
   const run = async () => {
     while (!input.signal.aborted) {
       try {
-        input.onConnection?.("connecting");
+        reporter.beginAttempt();
         await subscribeEmailInboxEvents({
           client: input.client,
           signal: input.signal,
           onUpdated: input.onUpdated,
-          onConnection: () => input.onConnection?.("live"),
+          onConnection: () => reporter.live(),
         });
         attempt = 0;
       } catch {
         if (input.signal.aborted) return;
-        input.onConnection?.("disconnected");
+        reporter.failed();
         attempt += 1;
         // Prefer quick retries after WebKit "Load failed" (core restart / dropped stream).
         const delay = Math.min(8_000, 500 * 2 ** Math.min(attempt, 4));
