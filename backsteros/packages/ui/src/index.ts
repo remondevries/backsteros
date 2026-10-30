@@ -2189,6 +2189,13 @@ export {
 } from "./components/settings/api-key-detail-view.js";
 
 export {
+  AgentsSettingsSectionView,
+  type AgentsSettingsSectionViewProps,
+  type SettingsAgentApiKeyOption,
+  type SettingsAgentItem,
+} from "./components/settings/agents-settings-section-view.js";
+
+export {
   APP_TIMEZONE_OPTIONS,
   DEFAULT_APP_TIMEZONE,
   isValidAppTimezone,
@@ -5501,13 +5508,15 @@ export {
 } from "./chat/chat-composer-images.js";
 
 export {
-  CHAT_EXIT_COMMAND,
   CHAT_RECENT_PROJECTS_STORAGE_KEY,
+  CHAT_RECENT_PROJECTS_STRIP_LIMIT,
   matchProjectsBySlashQuery,
   orderChatProjects,
   projectCommandSlug,
+  pruneRecentChatProjectIds,
   readRecentChatProjectIds,
   rememberRecentChatProjectId,
+  resolveRecentChatProjectsForStrip,
   type ChatProjectOption,
 } from "./chat/chat-project-option.js";
 
@@ -5544,7 +5553,15 @@ export {
 
 export {
   ChatUiDevPreview,
+  type ChatUiDevPreviewProps,
+  type LiveAgentChatHandlers,
 } from "./components/chat/chat-ui-dev-preview.js";
+
+export {
+  chatThreadMessageToUi,
+  thinkingStatusMessage,
+  webhookErrorStatusMessage,
+} from "./chat/agent-chat-message-adapter.js";
 
 export {
   ChatCardRegistryProvider,

@@ -1960,6 +1960,63 @@ button.side-panel-plain-group-label[aria-current="true"] {
   line-height: 1.45;
 }
 
+.settings-api-tab__switch {
+  display: flex;
+  margin-bottom: 16px;
+}
+
+.agents-settings__list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.agents-settings__row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+  border: 0.5px solid var(--border);
+  border-radius: 8px;
+}
+
+.agents-settings__row-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 8px;
+}
+
+.agents-settings__form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 12px 0;
+  padding: 14px;
+  border: 0.5px solid var(--border);
+  border-radius: 8px;
+}
+
+.agents-settings__form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.agents-settings__enabled {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.agents-settings__meta {
+  margin-top: 4px;
+  font-size: 12px;
+}
+
 .settings-inbox-picker {
   display: flex;
   flex-direction: column;

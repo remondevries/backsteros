@@ -7,9 +7,10 @@ export type ChatProjectOption = {
   type?: string | null;
 };
 
-export const CHAT_EXIT_COMMAND = "exit";
 export const CHAT_RECENT_PROJECTS_STORAGE_KEY =
   "backsteros:chat-recent-projects";
+/** Max project rooms shown left of Judith / first agent in the chat header. */
+export const CHAT_RECENT_PROJECTS_STRIP_LIMIT = 5;
 
 export function projectCommandSlug(project: ChatProjectOption): string {
   const fromKey = project.key
@@ -53,6 +54,36 @@ export function rememberRecentChatProjectId(projectId: string): string[] {
   return next;
 }
 
+/** Keep only recent ids that still exist in the workspace. */
+export function filterRecentChatProjectIds(
+  recentIds: readonly string[],
+  existingProjectIds: ReadonlySet<string> | readonly string[],
+): string[] {
+  const existing =
+    existingProjectIds instanceof Set
+      ? existingProjectIds
+      : new Set(existingProjectIds);
+  return recentIds.filter((id) => existing.has(id));
+}
+
+/**
+ * Drop recent ids that no longer exist in the workspace (deleted projects).
+ * Persists when the list changes.
+ */
+export function pruneRecentChatProjectIds(
+  existingProjectIds: ReadonlySet<string> | readonly string[],
+): string[] {
+  const current = readRecentChatProjectIds();
+  const next = filterRecentChatProjectIds(current, existingProjectIds);
+  if (
+    next.length !== current.length &&
+    typeof window !== "undefined"
+  ) {
+    localStorage.setItem(CHAT_RECENT_PROJECTS_STORAGE_KEY, JSON.stringify(next));
+  }
+  return next;
+}
+
 /** Recent ids first (that still exist), then remaining projects A→Z by name. */
 export function orderChatProjects(
   projects: readonly ChatProjectOption[],
@@ -72,6 +103,33 @@ export function orderChatProjects(
     .slice()
     .sort((a, b) => a.name.localeCompare(b.name));
   return [...ordered, ...rest];
+}
+
+/**
+ * Up to `limit` recent projects for the chat header strip, oldest → newest so
+ * the most recent sits immediately left of Judith / the first agent. Always
+ * includes `activeProjectId` when present (even if not in `recentIds`).
+ */
+export function resolveRecentChatProjectsForStrip(
+  projects: readonly ChatProjectOption[],
+  recentIds: readonly string[],
+  activeProjectId: string | null = null,
+  limit: number = CHAT_RECENT_PROJECTS_STRIP_LIMIT,
+): ChatProjectOption[] {
+  if (limit <= 0) return [];
+  const byId = new Map(projects.map((project) => [project.id, project]));
+  const mru: ChatProjectOption[] = [];
+  const seen = new Set<string>();
+  const prefer = activeProjectId?.trim() ? [activeProjectId.trim()] : [];
+  for (const id of [...prefer, ...recentIds]) {
+    const project = byId.get(id);
+    if (!project || seen.has(project.id)) continue;
+    mru.push(project);
+    seen.add(project.id);
+    if (mru.length >= limit) break;
+  }
+  // MRU is newest-first; reverse so newest is rightmost (left of agents).
+  return mru.slice().reverse();
 }
 
 export function matchProjectsBySlashQuery(

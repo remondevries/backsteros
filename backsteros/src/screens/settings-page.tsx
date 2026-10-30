@@ -1,5 +1,6 @@
 import { ApiClientError } from "@backsteros/api-client";
 import type {
+  Agent,
   ApiKey,
   ApiKeyAuditLog,
   ApiKeyRequestLog,
@@ -9,10 +10,13 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Navigate, useParams } from "@tanstack/react-router";
 
 import {
+  AgentsSettingsSectionView,
   ApiKeysSettingsSectionView,
   IntegrationConnectionSettingsView,
+  SegmentedPillToggle,
   SettingsContentHeader,
   SettingsDetailLayout,
+  classifyApiKeyType,
   getSettingsTabMeta,
   isLegacyIntegrationSettingsTab,
   isSettingsTabId,
@@ -20,6 +24,7 @@ import {
   type SettingsApiKeyAuditLogItem,
   type SettingsApiKeyItem,
   type SettingsApiKeyRequestLogItem,
+  type SettingsAgentItem,
   type SettingsTabId,
 } from "@backsteros/ui";
 import { useDesktopApi } from "../lib/api-context";
@@ -82,6 +87,24 @@ function toSettingsRequestLog(
   };
 }
 
+function toSettingsAgent(agent: Agent): SettingsAgentItem {
+  return {
+    id: agent.id,
+    name: agent.name,
+    contactId: agent.contactId,
+    apiKeyId: agent.apiKeyId,
+    avatarUrl: agent.avatarUrl,
+    role: agent.role,
+    enabled: agent.enabled,
+    webhookUrl: agent.webhookUrl,
+    webhookSecretConfigured: agent.webhookSecretConfigured,
+    createdAt: agent.createdAt,
+    updatedAt: agent.updatedAt,
+  };
+}
+
+type SettingsApiSubPanel = "keys" | "agents";
+
 function SettingsApiTab({
   title,
   description,
@@ -96,7 +119,10 @@ function SettingsApiTab({
     () => withAvatarSrc(contacts, contactAvatarSrc),
     [contactAvatarSrc, contacts],
   );
+  const [subPanel, setSubPanel] = useState<SettingsApiSubPanel>("keys");
   const [apiKeys, setApiKeys] = useState<SettingsApiKeyItem[]>([]);
+  const [rawApiKeys, setRawApiKeys] = useState<ApiKey[]>([]);
+  const [agents, setAgents] = useState<SettingsAgentItem[]>([]);
   const [auditLogs, setAuditLogs] = useState<SettingsApiKeyAuditLogItem[]>([]);
   const [requestLogs, setRequestLogs] = useState<
     SettingsApiKeyRequestLogItem[]
@@ -108,7 +134,7 @@ function SettingsApiTab({
     setLoading(true);
     setErrorMessage(null);
     try {
-      const [keysBody, auditBody, requestBody] = await Promise.all([
+      const [keysBody, auditBody, requestBody, agentsBody] = await Promise.all([
         client.requestJson<{ apiKeys: ApiKey[] }>("/api/v1/api-keys"),
         client.requestJson<{ auditLogs: ApiKeyAuditLog[] }>(
           "/api/v1/api-keys/audit-logs?limit=100",
@@ -116,13 +142,16 @@ function SettingsApiTab({
         client.requestJson<{ requestLogs: ApiKeyRequestLog[] }>(
           "/api/v1/api-keys/request-logs?limit=200",
         ),
+        client.requestJson<{ agents: Agent[] }>("/api/v1/agents"),
       ]);
+      setRawApiKeys(keysBody.apiKeys);
       setApiKeys(keysBody.apiKeys.map(toSettingsApiKey));
       setAuditLogs(auditBody.auditLogs.map(toSettingsAuditLog));
       setRequestLogs(requestBody.requestLogs.map(toSettingsRequestLog));
+      setAgents(agentsBody.agents.map(toSettingsAgent));
     } catch (error) {
       setErrorMessage(
-        error instanceof Error ? error.message : "Could not load API keys",
+        error instanceof Error ? error.message : "Could not load API settings",
       );
     } finally {
       setLoading(false);
@@ -132,6 +161,18 @@ function SettingsApiTab({
   useEffect(() => {
     void loadKeys();
   }, [loadKeys]);
+
+  const agentKeyOptions = useMemo(
+    () =>
+      rawApiKeys
+        .filter((key) => classifyApiKeyType(key) === "agent")
+        .map((key) => ({
+          id: key.id,
+          name: key.name,
+          contactId: key.contactId ?? null,
+        })),
+    [rawApiKeys],
+  );
 
   async function patchApiKey(
     id: string,
@@ -161,94 +202,183 @@ function SettingsApiTab({
   }
 
   return (
-    <ApiKeysSettingsSectionView
-      title={title}
-      description={description}
-      apiKeys={apiKeys}
-      auditLogs={auditLogs}
-      requestLogs={requestLogs}
-      contacts={contactsWithAvatars}
-      loading={loading}
-      errorMessage={errorMessage}
-      onRetry={() => void loadKeys()}
-      onRevealSecret={async (id) => {
-        try {
-          const body = await client.requestJson<{ secret: string }>(
-            `/api/v1/api-keys/${encodeURIComponent(id)}/secret`,
-          );
-          return body.secret;
-        } catch {
-          return null;
-        }
-      }}
-      onCreate={async (name, contactId, expiresAt, scopes, kind) => {
-        try {
-          const result = await client.requestJson<CreateApiKeyResponse>(
-            "/api/v1/api-keys",
-            {
-              method: "POST",
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify({
-                name,
-                kind,
-                scopes,
-                contactId,
-                expiresAt,
-              }),
-            },
-          );
-          setApiKeys((current) => [
-            toSettingsApiKey(result.apiKey),
-            ...current,
-          ]);
-          void loadKeys();
-          return { id: result.apiKey.id, secret: result.secret };
-        } catch (error) {
-          setErrorMessage(
-            error instanceof Error ? error.message : "Could not create API key",
-          );
-          return null;
-        }
-      }}
-      onRename={(id, name) => patchApiKey(id, { name })}
-      onSetContact={(id, contactId) => patchApiKey(id, { contactId })}
-      onSetExpiry={(id, expiresAt) => patchApiKey(id, { expiresAt })}
-      onRotate={async (id) => {
-        try {
-          const result = await client.requestJson<CreateApiKeyResponse>(
-            `/api/v1/api-keys/${encodeURIComponent(id)}/rotate`,
-            { method: "POST" },
-          );
-          setApiKeys((current) =>
-            current.map((entry) =>
-              entry.id === result.apiKey.id
-                ? toSettingsApiKey(result.apiKey)
-                : entry,
-            ),
-          );
-          void loadKeys();
-          return result.secret;
-        } catch (error) {
-          setErrorMessage(
-            error instanceof Error ? error.message : "Could not rotate API key",
-          );
-          return null;
-        }
-      }}
-      onRevoke={async (id) => {
-        try {
-          await client.requestJson(
-            `/api/v1/api-keys/${encodeURIComponent(id)}`,
-            { method: "DELETE" },
-          );
-          setApiKeys((current) => current.filter((entry) => entry.id !== id));
-          void loadKeys();
-          return true;
-        } catch {
-          return false;
-        }
-      }}
-    />
+    <div className="settings-api-tab">
+      <div className="settings-api-tab__switch">
+        <SegmentedPillToggle
+          ariaLabel="API settings sections"
+          value={subPanel}
+          onChange={setSubPanel}
+          options={[
+            { value: "keys", label: "API Keys" },
+            { value: "agents", label: "Agents" },
+          ]}
+        />
+      </div>
+      {subPanel === "agents" ? (
+        <AgentsSettingsSectionView
+          title="Agents"
+          description="Chat agents with per-agent webhook URL and secret. Secrets are write-only and never shown again."
+          agents={agents}
+          contacts={contactsWithAvatars}
+          apiKeys={agentKeyOptions}
+          loading={loading}
+          errorMessage={errorMessage}
+          onRetry={() => void loadKeys()}
+          onCreate={async (input) => {
+            try {
+              const created = await client.requestJson<Agent>("/api/v1/agents", {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify(input),
+              });
+              setAgents((current) => [toSettingsAgent(created), ...current]);
+              return true;
+            } catch (error) {
+              setErrorMessage(
+                error instanceof Error
+                  ? error.message
+                  : "Could not create agent",
+              );
+              return false;
+            }
+          }}
+          onUpdate={async (id, patch) => {
+            try {
+              const updated = await client.requestJson<Agent>(
+                `/api/v1/agents/${encodeURIComponent(id)}`,
+                {
+                  method: "PATCH",
+                  headers: { "content-type": "application/json" },
+                  body: JSON.stringify(patch),
+                },
+              );
+              setAgents((current) =>
+                current.map((entry) =>
+                  entry.id === updated.id ? toSettingsAgent(updated) : entry,
+                ),
+              );
+              return true;
+            } catch (error) {
+              setErrorMessage(
+                error instanceof Error
+                  ? error.message
+                  : "Could not update agent",
+              );
+              return false;
+            }
+          }}
+          onDelete={async (id) => {
+            try {
+              await client.requestJson(
+                `/api/v1/agents/${encodeURIComponent(id)}`,
+                { method: "DELETE" },
+              );
+              setAgents((current) =>
+                current.filter((entry) => entry.id !== id),
+              );
+              return true;
+            } catch {
+              return false;
+            }
+          }}
+        />
+      ) : (
+        <ApiKeysSettingsSectionView
+          title={title}
+          description={description}
+          apiKeys={apiKeys}
+          auditLogs={auditLogs}
+          requestLogs={requestLogs}
+          contacts={contactsWithAvatars}
+          loading={loading}
+          errorMessage={errorMessage}
+          onRetry={() => void loadKeys()}
+          onRevealSecret={async (id) => {
+            try {
+              const body = await client.requestJson<{ secret: string }>(
+                `/api/v1/api-keys/${encodeURIComponent(id)}/secret`,
+              );
+              return body.secret;
+            } catch {
+              return null;
+            }
+          }}
+          onCreate={async (name, contactId, expiresAt, scopes, kind) => {
+            try {
+              const result = await client.requestJson<CreateApiKeyResponse>(
+                "/api/v1/api-keys",
+                {
+                  method: "POST",
+                  headers: { "content-type": "application/json" },
+                  body: JSON.stringify({
+                    name,
+                    kind,
+                    scopes,
+                    contactId,
+                    expiresAt,
+                  }),
+                },
+              );
+              setApiKeys((current) => [
+                toSettingsApiKey(result.apiKey),
+                ...current,
+              ]);
+              void loadKeys();
+              return { id: result.apiKey.id, secret: result.secret };
+            } catch (error) {
+              setErrorMessage(
+                error instanceof Error
+                  ? error.message
+                  : "Could not create API key",
+              );
+              return null;
+            }
+          }}
+          onRename={(id, name) => patchApiKey(id, { name })}
+          onSetContact={(id, contactId) => patchApiKey(id, { contactId })}
+          onSetExpiry={(id, expiresAt) => patchApiKey(id, { expiresAt })}
+          onRotate={async (id) => {
+            try {
+              const result = await client.requestJson<CreateApiKeyResponse>(
+                `/api/v1/api-keys/${encodeURIComponent(id)}/rotate`,
+                { method: "POST" },
+              );
+              setApiKeys((current) =>
+                current.map((entry) =>
+                  entry.id === result.apiKey.id
+                    ? toSettingsApiKey(result.apiKey)
+                    : entry,
+                ),
+              );
+              void loadKeys();
+              return result.secret;
+            } catch (error) {
+              setErrorMessage(
+                error instanceof Error
+                  ? error.message
+                  : "Could not rotate API key",
+              );
+              return null;
+            }
+          }}
+          onRevoke={async (id) => {
+            try {
+              await client.requestJson(
+                `/api/v1/api-keys/${encodeURIComponent(id)}`,
+                { method: "DELETE" },
+              );
+              setApiKeys((current) =>
+                current.filter((entry) => entry.id !== id),
+              );
+              void loadKeys();
+              return true;
+            } catch {
+              return false;
+            }
+          }}
+        />
+      )}
+    </div>
   );
 }
 
