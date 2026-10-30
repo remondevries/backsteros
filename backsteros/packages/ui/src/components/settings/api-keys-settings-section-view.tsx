@@ -88,6 +88,14 @@ export type ApiKeyExpiryPreset = "never" | "30d" | "90d" | "1y";
 
 export type ApiKeysSettingsPanel = "keys" | "logs";
 
+/** Non-agent key kinds kept reachable while Agents is the primary API surface (OS-154). */
+export const PARKED_API_KEY_TABS: readonly ApiKeyTypeTab[] = [
+  "access",
+  "applications",
+  "tv",
+  "carddav",
+] as const;
+
 export type ApiKeysSettingsSectionViewProps = {
   title?: string;
   description?: string;
@@ -98,6 +106,12 @@ export type ApiKeysSettingsSectionViewProps = {
   loading?: boolean;
   errorMessage?: string | null;
   onRetry?: () => void;
+  /**
+   * OS-154: hide nested Agent/Applications/… pills and Keys|Logs pills.
+   * Shows a flat list of non-agent keys; create picks kind from a dropdown.
+   * Logs stay reachable via a plain header link.
+   */
+  flattenChrome?: boolean;
   /** Reveal full secret for copy; null if unavailable (legacy keys need rotate). */
   onRevealSecret?: (id: string) => Promise<string | null>;
   onCreate?: (
@@ -953,6 +967,9 @@ const TAB_OPTIONS: readonly SegmentedPillToggleOption<ApiKeyTypeTab>[] = [
   { value: "carddav", label: "Contacts sync" },
 ];
 
+const PARKED_TAB_OPTIONS: readonly SegmentedPillToggleOption<ApiKeyTypeTab>[] =
+  TAB_OPTIONS.filter((option) => option.value !== "agent");
+
 const PANEL_OPTIONS: readonly SegmentedPillToggleOption<ApiKeysSettingsPanel>[] =
   [
     { value: "keys", label: "API Keys" },
@@ -969,6 +986,7 @@ export function ApiKeysSettingsSectionView({
   loading = false,
   errorMessage,
   onRetry,
+  flattenChrome = false,
   onRevealSecret,
   onCreate,
   onRename,
@@ -1015,7 +1033,15 @@ export function ApiKeysSettingsSectionView({
     return grouped;
   }, [apiKeys]);
 
-  const filteredKeys = keysByTab[tab];
+  /** Flat non-agent list when chrome is flattened (OS-154). */
+  const filteredKeys = useMemo(() => {
+    if (!flattenChrome) return keysByTab[tab];
+    return PARKED_API_KEY_TABS.flatMap((kind) => keysByTab[kind]);
+  }, [flattenChrome, keysByTab, tab]);
+
+  useEffect(() => {
+    if (flattenChrome && tab === "agent") setTab("access");
+  }, [flattenChrome, tab]);
 
   const activityItems = useMemo(
     () => mergeApiKeyActivity(auditLogs, requestLogs),
@@ -1137,18 +1163,58 @@ export function ApiKeysSettingsSectionView({
           description={description}
           hideRule
           trailing={
-            <SegmentedPillToggle
-              value={panel}
-              options={PANEL_OPTIONS}
-              onChange={(next) => {
-                setPanel(next);
-                setFreshSecret(null);
-                setCreateOpen(false);
-                setCreateError(null);
-                setExpandedId(null);
-              }}
-              ariaLabel="API keys or audit log"
-            />
+            flattenChrome ? (
+              <div className="api-keys-plain-switch" role="group" aria-label="API keys or audit log">
+                <button
+                  type="button"
+                  className={
+                    panel === "keys"
+                      ? "button-link api-keys-plain-switch__active"
+                      : "button-link"
+                  }
+                  onClick={() => {
+                    setPanel("keys");
+                    setFreshSecret(null);
+                    setCreateOpen(false);
+                    setCreateError(null);
+                    setExpandedId(null);
+                  }}
+                >
+                  Keys
+                </button>
+                <span aria-hidden="true">·</span>
+                <button
+                  type="button"
+                  className={
+                    panel === "logs"
+                      ? "button-link api-keys-plain-switch__active"
+                      : "button-link"
+                  }
+                  onClick={() => {
+                    setPanel("logs");
+                    setFreshSecret(null);
+                    setCreateOpen(false);
+                    setCreateError(null);
+                    setExpandedId(null);
+                  }}
+                >
+                  Logs
+                </button>
+              </div>
+            ) : (
+              <SegmentedPillToggle
+                value={panel}
+                options={PANEL_OPTIONS}
+                onChange={(next) => {
+                  setPanel(next);
+                  setFreshSecret(null);
+                  setCreateOpen(false);
+                  setCreateError(null);
+                  setExpandedId(null);
+                }}
+                ariaLabel="API keys or audit log"
+              />
+            )
           }
         />
       ) : null}
@@ -1156,18 +1222,25 @@ export function ApiKeysSettingsSectionView({
       {panel === "keys" ? (
       <section className="settings-card api-keys-members-block">
         <div className="api-keys-type-tabs">
-          <SegmentedPillToggle
-            value={tab}
-            options={TAB_OPTIONS}
-            onChange={(next) => {
-              setTab(next);
-              setFreshSecret(null);
-              setCreateOpen(false);
-              setCreateError(null);
-              setExpandedId(null);
-            }}
-            ariaLabel="API key type"
-          />
+          {flattenChrome ? (
+            <p className="settings-hint api-keys-flat-hint">
+              Access, Applications, TV, and Contacts sync keys. Agent personas
+              live in the Agents list above.
+            </p>
+          ) : (
+            <SegmentedPillToggle
+              value={tab}
+              options={TAB_OPTIONS}
+              onChange={(next) => {
+                setTab(next);
+                setFreshSecret(null);
+                setCreateOpen(false);
+                setCreateError(null);
+                setExpandedId(null);
+              }}
+              ariaLabel="API key type"
+            />
+          )}
           <button
             type="button"
             className="api-key-create-btn"
@@ -1203,9 +1276,11 @@ export function ApiKeysSettingsSectionView({
         !createOpen &&
         filteredKeys.length === 0 ? (
           <p className="settings-hint">
-            {apiKeys.length === 0
-              ? "No API keys yet."
-              : `No ${tabLabel(tab).toLowerCase()} keys yet.`}
+            {flattenChrome
+              ? "No Access / Applications / TV / Contacts sync keys yet."
+              : apiKeys.length === 0
+                ? "No API keys yet."
+                : `No ${tabLabel(tab).toLowerCase()} keys yet.`}
           </p>
         ) : null}
 
@@ -1214,7 +1289,9 @@ export function ApiKeysSettingsSectionView({
             <table className="api-key-table">
               <thead>
                 <tr>
-                  <th scope="col">{identityColumnLabel(tab)}</th>
+                  <th scope="col">
+                    {flattenChrome ? "Name" : identityColumnLabel(tab)}
+                  </th>
                   <th scope="col">Expires</th>
                   <th scope="col">Created</th>
                   <th scope="col">Last used</th>
@@ -1229,7 +1306,65 @@ export function ApiKeysSettingsSectionView({
                         <div className="api-key-table-identity">
                           <div className="api-key-table-identity-copy">
                             <div className="api-key-name-edit-row">
-                              {tab === "agent" ? (
+                              {flattenChrome ? (
+                                <>
+                                  <label className="api-key-create-kind">
+                                    <span className="settings-field__label">
+                                      Kind
+                                    </span>
+                                    <select
+                                      className="settings-field__input"
+                                      value={tab}
+                                      disabled={saving || !onCreate}
+                                      aria-label="API key kind"
+                                      onChange={(event) => {
+                                        const next = event.target
+                                          .value as ApiKeyTypeTab;
+                                        if (
+                                          !(PARKED_API_KEY_TABS as readonly string[]).includes(
+                                            next,
+                                          )
+                                        ) {
+                                          return;
+                                        }
+                                        setTab(next);
+                                        setDraftScopes([
+                                          ...scopesForApiKeyTab(next),
+                                        ]);
+                                        setCreateError(null);
+                                      }}
+                                    >
+                                      {PARKED_TAB_OPTIONS.map((option) => (
+                                        <option
+                                          key={option.value}
+                                          value={option.value}
+                                        >
+                                          {option.label}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </label>
+                                  <input
+                                    className="api-key-name-input"
+                                    value={draft}
+                                    onChange={(event) =>
+                                      setDraft(event.target.value)
+                                    }
+                                    placeholder={
+                                      tab === "access"
+                                        ? "Desktop"
+                                        : tab === "applications"
+                                          ? "Backster Meet"
+                                          : tab === "tv"
+                                            ? "Office TV"
+                                            : "Contacts sync"
+                                    }
+                                    autoComplete="off"
+                                    disabled={saving || !onCreate}
+                                    aria-label="API key name"
+                                  />
+                                </>
+                              ) : tab === "agent" ? (
                                 contacts.length > 0 ? (
                                   <ApiKeyContactDropdown
                                     value={draftContactId}

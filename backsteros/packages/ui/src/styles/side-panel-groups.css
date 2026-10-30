@@ -1960,9 +1960,33 @@ button.side-panel-plain-group-label[aria-current="true"] {
   line-height: 1.45;
 }
 
-.settings-api-tab__switch {
+.settings-api-tab__parked-keys {
+  margin-top: 28px;
+  padding-top: 20px;
+  border-top: 0.5px solid var(--border);
+}
+
+.api-keys-plain-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.api-keys-plain-switch__active {
+  font-weight: 600;
+  text-decoration: underline;
+}
+
+.api-keys-flat-hint {
+  margin: 0;
+  flex: 1;
+}
+
+.api-key-create-kind {
   display: flex;
-  margin-bottom: 16px;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 140px;
 }
 
 .agents-settings__list {

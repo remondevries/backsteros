@@ -13,7 +13,6 @@ import {
   AgentsSettingsSectionView,
   ApiKeysSettingsSectionView,
   IntegrationConnectionSettingsView,
-  SegmentedPillToggle,
   SettingsContentHeader,
   SettingsDetailLayout,
   classifyApiKeyType,
@@ -103,15 +102,15 @@ function toSettingsAgent(agent: Agent): SettingsAgentItem {
   };
 }
 
-type SettingsApiSubPanel = "keys" | "agents";
-
 function SettingsApiTab({
-  title,
-  description,
+  title: _title,
+  description: _description,
 }: {
   title: string;
   description: string;
 }) {
+  void _title;
+  void _description;
   const { client } = useDesktopApi();
   const { contacts } = useDesktopWorkspacePeople();
   const contactAvatarSrc = useDesktopAvatarSrcMap("contact", contacts);
@@ -119,7 +118,6 @@ function SettingsApiTab({
     () => withAvatarSrc(contacts, contactAvatarSrc),
     [contactAvatarSrc, contacts],
   );
-  const [subPanel, setSubPanel] = useState<SettingsApiSubPanel>("keys");
   const [apiKeys, setApiKeys] = useState<SettingsApiKeyItem[]>([]);
   const [rawApiKeys, setRawApiKeys] = useState<ApiKey[]>([]);
   const [agents, setAgents] = useState<SettingsAgentItem[]>([]);
@@ -203,95 +201,82 @@ function SettingsApiTab({
 
   return (
     <div className="settings-api-tab">
-      <div className="settings-api-tab__switch">
-        <SegmentedPillToggle
-          ariaLabel="API settings sections"
-          value={subPanel}
-          onChange={setSubPanel}
-          options={[
-            { value: "keys", label: "API Keys" },
-            { value: "agents", label: "Agents" },
-          ]}
-        />
-      </div>
-      {subPanel === "agents" ? (
-        <AgentsSettingsSectionView
-          title="Agents"
-          description="Chat agents with per-agent webhook URL and secret. Secrets are write-only and never shown again."
-          agents={agents}
-          contacts={contactsWithAvatars}
-          apiKeys={agentKeyOptions}
-          loading={loading}
-          errorMessage={errorMessage}
-          onRetry={() => void loadKeys()}
-          onCreate={async (input) => {
-            try {
-              const created = await client.requestJson<Agent>("/api/v1/agents", {
-                method: "POST",
+      <AgentsSettingsSectionView
+        title="Agents"
+        description="Chat agents with per-agent webhook URL and secret. Secrets are write-only and never shown again."
+        agents={agents}
+        contacts={contactsWithAvatars}
+        apiKeys={agentKeyOptions}
+        loading={loading}
+        errorMessage={errorMessage}
+        onRetry={() => void loadKeys()}
+        onCreate={async (input) => {
+          try {
+            const created = await client.requestJson<Agent>("/api/v1/agents", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify(input),
+            });
+            setAgents((current) => [toSettingsAgent(created), ...current]);
+            return true;
+          } catch (error) {
+            setErrorMessage(
+              error instanceof Error ? error.message : "Could not create agent",
+            );
+            return false;
+          }
+        }}
+        onUpdate={async (id, patch) => {
+          try {
+            const updated = await client.requestJson<Agent>(
+              `/api/v1/agents/${encodeURIComponent(id)}`,
+              {
+                method: "PATCH",
                 headers: { "content-type": "application/json" },
-                body: JSON.stringify(input),
-              });
-              setAgents((current) => [toSettingsAgent(created), ...current]);
-              return true;
-            } catch (error) {
-              setErrorMessage(
-                error instanceof Error
-                  ? error.message
-                  : "Could not create agent",
-              );
-              return false;
-            }
-          }}
-          onUpdate={async (id, patch) => {
-            try {
-              const updated = await client.requestJson<Agent>(
-                `/api/v1/agents/${encodeURIComponent(id)}`,
-                {
-                  method: "PATCH",
-                  headers: { "content-type": "application/json" },
-                  body: JSON.stringify(patch),
-                },
-              );
-              setAgents((current) =>
-                current.map((entry) =>
-                  entry.id === updated.id ? toSettingsAgent(updated) : entry,
-                ),
-              );
-              return true;
-            } catch (error) {
-              setErrorMessage(
-                error instanceof Error
-                  ? error.message
-                  : "Could not update agent",
-              );
-              return false;
-            }
-          }}
-          onDelete={async (id) => {
-            try {
-              await client.requestJson(
-                `/api/v1/agents/${encodeURIComponent(id)}`,
-                { method: "DELETE" },
-              );
-              setAgents((current) =>
-                current.filter((entry) => entry.id !== id),
-              );
-              return true;
-            } catch {
-              return false;
-            }
-          }}
-        />
-      ) : (
+                body: JSON.stringify(patch),
+              },
+            );
+            setAgents((current) =>
+              current.map((entry) =>
+                entry.id === updated.id ? toSettingsAgent(updated) : entry,
+              ),
+            );
+            return true;
+          } catch (error) {
+            setErrorMessage(
+              error instanceof Error ? error.message : "Could not update agent",
+            );
+            return false;
+          }
+        }}
+        onDelete={async (id) => {
+          try {
+            await client.requestJson(
+              `/api/v1/agents/${encodeURIComponent(id)}`,
+              { method: "DELETE" },
+            );
+            setAgents((current) => current.filter((entry) => entry.id !== id));
+            return true;
+          } catch {
+            return false;
+          }
+        }}
+      />
+      {/*
+        OS-154 interim home for non-agent keys + logs until Remon picks a
+        permanent place (proposal: Settings → Developer or /settings/api-keys).
+      */}
+      <div className="settings-api-tab__parked-keys">
         <ApiKeysSettingsSectionView
-          title={title}
-          description={description}
+          title="API keys & logs"
+          description="Access, Applications, TV, and Contacts sync keys — parked here until their final Settings home is chosen. Create, rotate, and revoke still work."
+          flattenChrome
           apiKeys={apiKeys}
           auditLogs={auditLogs}
           requestLogs={requestLogs}
           contacts={contactsWithAvatars}
           loading={loading}
-          errorMessage={errorMessage}
+          errorMessage={null}
           onRetry={() => void loadKeys()}
           onRevealSecret={async (id) => {
             try {
@@ -377,7 +362,7 @@ function SettingsApiTab({
             }
           }}
         />
-      )}
+      </div>
     </div>
   );
 }
