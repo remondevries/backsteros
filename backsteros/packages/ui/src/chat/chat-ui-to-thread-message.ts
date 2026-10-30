@@ -68,13 +68,54 @@ function partToThreadContent(
   }
 }
 
+/** Flatten ChatUi parts into a single text string for system ThreadMessageLike. */
+function systemTextFromParts(parts: readonly ChatUiMessagePart[]): string {
+  const chunks: string[] = [];
+  for (const part of parts) {
+    switch (part.type) {
+      case "text":
+      case "status-line":
+        chunks.push(part.text);
+        break;
+      case "error":
+        chunks.push(part.message);
+        break;
+      default:
+        break;
+    }
+  }
+  return chunks.join("\n").trim() || " ";
+}
+
 /** Build a ThreadMessageLike that preserves the full ChatUiMessage in metadata. */
 export function chatUiMessageToThreadMessageLike(
   message: ChatUiMessage,
 ): ThreadMessageLike {
+  // assistant-ui constraints:
+  // - `status` / `metadata.steps` only on assistant
+  // - system messages must be exactly one text part
+  // Our ChatThread still renders from metadata.custom.chatUi.
+  if (message.role === "system") {
+    return {
+      id: message.id,
+      role: "system",
+      content: [{ type: "text", text: systemTextFromParts(message.parts) }],
+      createdAt: message.createdAt ? new Date(message.createdAt) : undefined,
+      metadata: {
+        custom: {
+          chatUi: message,
+          author: message.author ?? null,
+        },
+      },
+    };
+  }
+
   const content = message.parts
     .map(partToThreadContent)
     .filter((part): part is NonNullable<typeof part> => part != null);
+
+  const status =
+    message.role === "assistant" ? mapStatus(message.status) : undefined;
 
   return {
     id: message.id,
@@ -84,7 +125,7 @@ export function chatUiMessageToThreadMessageLike(
         ? content
         : [{ type: "text", text: "" }],
     createdAt: message.createdAt ? new Date(message.createdAt) : undefined,
-    status: mapStatus(message.status),
+    ...(status ? { status } : {}),
     metadata: {
       custom: {
         chatUi: message,
