@@ -125,7 +125,14 @@ export type ApiKeysSettingsSectionViewProps = {
    * Webhook ping via SettingsTestConnectionSwap (resolve = Connected;
    * reject/throw = failed).
    */
-  onTestAgentWebhook?: (agentId: string) => Promise<void>;
+  onTestAgentWebhook?: (
+    agentId: string,
+    input: {
+      webhookUrl: string;
+      webhookSecret: string | null;
+      agentName: string;
+    },
+  ) => Promise<void>;
 };
 
 function ApiKeyEditIcon({ size = 14 }: { size?: number }) {
@@ -491,7 +498,14 @@ function ApiKeyRow({
     apiKeyId: string,
     input: { webhookUrl?: string | null; webhookSecret?: string },
   ) => Promise<AgentWebhookSettings | null>;
-  onTestAgentWebhook?: (agentId: string) => Promise<void>;
+  onTestAgentWebhook?: (
+    agentId: string,
+    input: {
+      webhookUrl: string;
+      webhookSecret: string | null;
+      agentName: string;
+    },
+  ) => Promise<void>;
 }) {
   const [confirmRevoke, setConfirmRevoke] = useState(false);
   const [confirmRotate, setConfirmRotate] = useState(false);

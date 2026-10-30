@@ -11,6 +11,7 @@ import { fileURLToPath } from "node:url";
 
 import { desktopManualChunks } from "./vite.manual-chunks";
 import { backsterosVaultDevPlugin } from "./vite-plugin-vault-dev";
+import { backsterosWebhookProbePlugin } from "./vite-plugin-webhook-probe";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -70,6 +71,7 @@ export default defineConfig(async ({ command }) => {
   return {
   plugins: [
     backsterosVaultDevPlugin(__dirname),
+    backsterosWebhookProbePlugin(),
     tailwindcss(),
     react(),
     wasm(),

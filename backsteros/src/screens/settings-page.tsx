@@ -270,7 +270,37 @@ function SettingsApiTab({
     }
   }
 
-  async function testAgentWebhook(agentId: string): Promise<void> {
+  async function probeWebhookViaVite(input: {
+    agentId: string;
+    webhookUrl: string;
+    webhookSecret: string;
+    agentName: string;
+  }): Promise<AgentWebhookTestResult> {
+    const res = await fetch("/__webhook_probe__", {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "application/json" },
+      body: JSON.stringify({
+        url: input.webhookUrl,
+        secret: input.webhookSecret,
+        agentId: input.agentId,
+        agentName: input.agentName,
+      }),
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      throw new Error(text.trim() || `Probe failed (${res.status})`);
+    }
+    return (await res.json()) as AgentWebhookTestResult;
+  }
+
+  async function testAgentWebhook(
+    agentId: string,
+    input: {
+      webhookUrl: string;
+      webhookSecret: string | null;
+      agentName: string;
+    },
+  ): Promise<void> {
     let result: AgentWebhookTestResult;
     try {
       result = await cloudCoreRequestJson<AgentWebhookTestResult>(
@@ -278,14 +308,25 @@ function SettingsApiTab({
         { method: "POST", body: "{}" },
       );
     } catch (error) {
-      if (isCloudCoreApiError(error) && error.status === 404) {
+      const missingOnCloud =
+        isCloudCoreApiError(error) &&
+        (error.status === 404 || error.status === 0);
+      if (missingOnCloud && input.webhookSecret?.trim()) {
+        result = await probeWebhookViaVite({
+          agentId,
+          webhookUrl: input.webhookUrl,
+          webhookSecret: input.webhookSecret.trim(),
+          agentName: input.agentName,
+        });
+      } else if (missingOnCloud) {
         throw new Error(
-          "Webhook test endpoint is not on cloud yet — deploy core to enable Test.",
+          "Re-save the webhook secret, then click Test (cloud test route is not deployed yet).",
+        );
+      } else {
+        throw new Error(
+          cloudSettingsErrorMessage(error, "Webhook test failed"),
         );
       }
-      throw new Error(
-        cloudSettingsErrorMessage(error, "Webhook test failed"),
-      );
     }
     if (!result.ok) {
       clearAgentWebhookVerified(agentId);

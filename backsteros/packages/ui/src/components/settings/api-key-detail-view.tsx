@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { PolishedCheckbox } from "../shared/polished-checkbox.js";
 import type { SettingsApiKeyItem } from "./api-keys-settings-section-view.js";
@@ -23,6 +23,13 @@ export type AgentWebhookSettings = {
   webhookSecretConfigured: boolean;
 };
 
+/** Optional plaintext from the last secret save — used when cloud test is 404. */
+export type AgentWebhookTestInput = {
+  webhookUrl: string;
+  webhookSecret: string | null;
+  agentName: string;
+};
+
 export type ApiKeyDetailViewProps = {
   apiKey: SettingsApiKeyItem;
   /** Inline expand under a list row — no back chrome / duplicate header. */
@@ -41,7 +48,10 @@ export type ApiKeyDetailViewProps = {
    * One-shot webhook ping (same pattern as integration Test connection).
    * Resolve on success; reject/throw on failure so the Action swap can animate.
    */
-  onTestAgentWebhook?: (agentId: string) => Promise<void>;
+  onTestAgentWebhook?: (
+    agentId: string,
+    input: AgentWebhookTestInput,
+  ) => Promise<void>;
 };
 
 export function ApiKeyDetailView({
@@ -85,12 +95,15 @@ export function ApiKeyDetailView({
   const [webhookError, setWebhookError] = useState<string | null>(null);
   /** Remount Test swap after URL/secret changes so a prior green check resets. */
   const [testSwapKey, setTestSwapKey] = useState(0);
+  /** Kept only in memory after Save — secrets are write-only on the server. */
+  const lastSavedSecretRef = useRef<string | null>(null);
 
   useEffect(() => {
     setWebhookUrl(agentWebhook?.webhookUrl ?? "");
     setSecretConfigured(Boolean(agentWebhook?.webhookSecretConfigured));
     setLinkedAgentId(agentWebhook?.agentId ?? null);
     setWebhookError(null);
+    lastSavedSecretRef.current = null;
     setTestSwapKey((key) => key + 1);
   }, [
     agentWebhook?.agentId,
@@ -117,6 +130,10 @@ export function ApiKeyDetailView({
         setWebhookUrl(saved.webhookUrl);
       }
       setSecretConfigured(saved.webhookSecretConfigured);
+      if (input.webhookSecret !== undefined) {
+        const trimmed = input.webhookSecret.trim();
+        lastSavedSecretRef.current = trimmed.length > 0 ? trimmed : null;
+      }
       setTestSwapKey((key) => key + 1);
       return true;
     } finally {
@@ -173,7 +190,20 @@ export function ApiKeyDetailView({
                   if (!linkedAgentId) {
                     throw new Error("Save the webhook URL and secret first.");
                   }
-                  await onTestAgentWebhook(linkedAgentId);
+                  const url = webhookUrl.trim();
+                  if (!url) {
+                    throw new Error("Save a webhook URL before testing.");
+                  }
+                  if (!lastSavedSecretRef.current) {
+                    throw new Error(
+                      "Re-save the webhook secret, then click Test.",
+                    );
+                  }
+                  await onTestAgentWebhook(linkedAgentId, {
+                    webhookUrl: url,
+                    webhookSecret: lastSavedSecretRef.current,
+                    agentName: apiKey.name,
+                  });
                 }}
               />
             ) : null
