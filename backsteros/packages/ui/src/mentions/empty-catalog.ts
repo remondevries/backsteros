@@ -8,4 +8,12 @@ export const EMPTY_MENTION_CATALOG: MentionCatalog = {
   documents: [],
   letters: [],
   emails: [],
+  meetings: [],
+  journals: [],
+  habits: [],
+  messages: [],
+  posts: [],
+  transactions: [],
+  invoices: [],
+  estimates: [],
 };

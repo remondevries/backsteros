@@ -5,10 +5,16 @@ import type {
   MentionCatalogContact,
   MentionCatalogDocument,
   MentionCatalogEmail,
+  MentionCatalogHabit,
+  MentionCatalogJournal,
   MentionCatalogLetter,
+  MentionCatalogMeeting,
+  MentionCatalogMessage,
   MentionCatalogOrganization,
+  MentionCatalogPost,
   MentionCatalogProject,
   MentionCatalogTask,
+  MentionCatalogTransaction,
 } from "./mention-menu-types.js";
 
 /** Match a contact mention ref: `C-12`, legacy slug key, or uuid. */
@@ -145,6 +151,140 @@ export function resolveMentionCatalogEmail(
     catalog.emails.find(
       (entry) =>
         entry.displayId.toLowerCase() === parsed.displayId.toLowerCase(),
+    ) ?? null
+  );
+}
+
+export function resolveMentionCatalogMeeting(
+  parsed: ParsedMentionToken,
+  catalog: MentionCatalog,
+): MentionCatalogMeeting | null {
+  if (parsed.kind !== "meeting") {
+    return null;
+  }
+
+  return (
+    catalog.meetings.find(
+      (entry) =>
+        entry.displayId.toLowerCase() === parsed.displayId.toLowerCase() ||
+        entry.id.toLowerCase() === parsed.displayId.toLowerCase(),
+    ) ?? null
+  );
+}
+
+export function resolveMentionCatalogJournal(
+  parsed: ParsedMentionToken,
+  catalog: MentionCatalog,
+): MentionCatalogJournal | null {
+  if (parsed.kind !== "journal") {
+    return null;
+  }
+
+  return (
+    catalog.journals.find((entry) => entry.date === parsed.date) ?? null
+  );
+}
+
+export function resolveMentionCatalogHabit(
+  parsed: ParsedMentionToken,
+  catalog: MentionCatalog,
+): MentionCatalogHabit | null {
+  if (parsed.kind !== "habit") {
+    return null;
+  }
+
+  return (
+    catalog.habits.find((entry) => {
+      if (entry.id.toLowerCase() !== parsed.habitId.toLowerCase()) {
+        return false;
+      }
+      if (parsed.date == null) {
+        return entry.date == null;
+      }
+      return entry.date === parsed.date;
+    }) ??
+    // Fall back to habit definition when a day row is missing.
+    (parsed.date != null
+      ? (catalog.habits.find(
+          (entry) =>
+            entry.id.toLowerCase() === parsed.habitId.toLowerCase() &&
+            entry.date == null,
+        ) ?? null)
+      : null)
+  );
+}
+
+export function resolveMentionCatalogMessage(
+  parsed: ParsedMentionToken,
+  catalog: MentionCatalog,
+): MentionCatalogMessage | null {
+  if (parsed.kind !== "message") {
+    return null;
+  }
+
+  return (
+    catalog.messages.find(
+      (entry) => entry.id.toLowerCase() === parsed.id.toLowerCase(),
+    ) ?? null
+  );
+}
+
+export function resolveMentionCatalogPost(
+  parsed: ParsedMentionToken,
+  catalog: MentionCatalog,
+): MentionCatalogPost | null {
+  if (parsed.kind !== "post") {
+    return null;
+  }
+
+  return (
+    catalog.posts.find(
+      (entry) => entry.id.toLowerCase() === parsed.id.toLowerCase(),
+    ) ?? null
+  );
+}
+
+export function resolveMentionCatalogTransaction(
+  parsed: ParsedMentionToken,
+  catalog: MentionCatalog,
+): MentionCatalogTransaction | null {
+  if (parsed.kind !== "transaction") {
+    return null;
+  }
+
+  return (
+    catalog.transactions.find(
+      (entry) => entry.id.toLowerCase() === parsed.id.toLowerCase(),
+    ) ?? null
+  );
+}
+
+export function resolveMentionCatalogInvoice(
+  parsed: ParsedMentionToken,
+  catalog: MentionCatalog,
+) {
+  if (parsed.kind !== "invoice") {
+    return null;
+  }
+
+  return (
+    catalog.invoices.find(
+      (entry) => entry.id.toLowerCase() === parsed.id.toLowerCase(),
+    ) ?? null
+  );
+}
+
+export function resolveMentionCatalogEstimate(
+  parsed: ParsedMentionToken,
+  catalog: MentionCatalog,
+) {
+  if (parsed.kind !== "estimate") {
+    return null;
+  }
+
+  return (
+    catalog.estimates.find(
+      (entry) => entry.id.toLowerCase() === parsed.id.toLowerCase(),
     ) ?? null
   );
 }

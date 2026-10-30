@@ -228,7 +228,53 @@ export function CommunicationChannelKindIcon({
   if (kind === "messenger") {
     return <CommunicationMessengerKindIcon size={brandSize} />;
   }
+  if (kind === "support") {
+    return <CommunicationSupportKindIcon size={bubbleSize} />;
+  }
   return <CommunicationChatKindIcon size={bubbleSize} />;
+}
+
+/**
+ * Platform mark for message mention / chat chips — WhatsApp, Telegram,
+ * Instagram, Messenger, X, Support, or generic chat — with disc chrome.
+ */
+export function MentionMessageChannelIcon({
+  channelType,
+  inboxName,
+  contactName,
+  size = 14,
+}: {
+  channelType?: string | null;
+  inboxName?: string | null;
+  contactName?: string | null;
+  size?: number;
+}) {
+  const kindClass = communicationChannelKindClass(channelType, {
+    inboxName,
+    contactName,
+  });
+  // Brand SVGs (Telegram / Instagram / …) include their own disc; WhatsApp /
+  // support / generic chat glyphs need the colored wrapper.
+  const glyphSize =
+    kindClass.includes("whatsapp") ||
+    kindClass.includes("support") ||
+    kindClass.endsWith("--chat")
+      ? Math.max(9, Math.round(size * 0.72))
+      : size;
+  return (
+    <span
+      className={`mention-chip-lite__channel-kind ${kindClass}`}
+      style={{ width: size, height: size }}
+      aria-hidden="true"
+    >
+      <CommunicationChannelKindIcon
+        channelType={channelType}
+        inboxName={inboxName}
+        contactName={contactName}
+        size={glyphSize}
+      />
+    </span>
+  );
 }
 
 export function communicationChannelKindClass(
@@ -241,6 +287,7 @@ export function communicationChannelKindClass(
   if (kind === "telegram") return "communication-chat__card-kind--telegram";
   if (kind === "instagram") return "communication-chat__card-kind--instagram";
   if (kind === "messenger") return "communication-chat__card-kind--messenger";
+  if (kind === "support") return "communication-chat__card-kind--support";
   return "communication-chat__card-kind--chat";
 }
 

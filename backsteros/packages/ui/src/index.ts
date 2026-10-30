@@ -166,6 +166,10 @@ export {
 } from "./components/icons/cloudflare-icon.js";
 export { TransipIcon, type TransipIconProps } from "./components/icons/transip-icon.js";
 export { ProfileLogoIcon } from "./components/icons/profile-logo-icon.js";
+export {
+  LemoDesignMarkIcon,
+  type LemoDesignMarkIconProps,
+} from "./components/icons/lemo-design-mark-icon.js";
 
 export {
   ProductSidebar,
@@ -213,6 +217,23 @@ export {
   ProductAppShell,
   type ProductAppShellProps,
 } from "./components/shell/product-app-shell.js";
+
+export {
+  ProductChatPanel,
+  CHAT_PANEL_COLLAPSE_DURATION_MS,
+  CHAT_PANEL_VISIBLE_STORAGE_KEY,
+  CHAT_PANEL_WIDTH_STORAGE_KEY,
+  readStoredChatPanelCollapsed,
+  readStoredChatPanelWidth,
+  type ProductChatPanelProps,
+} from "./components/shell/product-chat-panel.js";
+
+export {
+  ChatPanelToggleButton,
+  type ChatPanelToggleButtonProps,
+} from "./components/shell/chat-panel-toggle-button.js";
+
+export { isChatPanelToggleShortcut } from "./chat/chat-panel-toggle-shortcut.js";
 
 export { AppToastHost } from "./components/shell/app-toast-host.js";
 export {
@@ -3360,10 +3381,18 @@ export type {
   MentionCatalogContact,
   MentionCatalogDocument,
   MentionCatalogEmail,
+  MentionCatalogEstimate,
+  MentionCatalogHabit,
+  MentionCatalogInvoice,
+  MentionCatalogJournal,
   MentionCatalogLetter,
+  MentionCatalogMeeting,
+  MentionCatalogMessage,
   MentionCatalogOrganization,
+  MentionCatalogPost,
   MentionCatalogProject,
   MentionCatalogTask,
+  MentionCatalogTransaction,
   MentionItem,
   MentionMenuTriggerState,
   MentionSection,
@@ -3711,6 +3740,7 @@ export {
 export {
   DocumentMentionHoverCard,
   type DocumentMentionHoverCardProps,
+  TaskMentionHoverDetails,
 } from "./components/documents/document-mention-hover-card.js";
 
 export {
@@ -3734,6 +3764,14 @@ export {
   resolveMentionCatalogDocument,
   resolveMentionCatalogLetter,
   resolveMentionCatalogEmail,
+  resolveMentionCatalogMeeting,
+  resolveMentionCatalogJournal,
+  resolveMentionCatalogHabit,
+  resolveMentionCatalogMessage,
+  resolveMentionCatalogPost,
+  resolveMentionCatalogTransaction,
+  resolveMentionCatalogInvoice,
+  resolveMentionCatalogEstimate,
 } from "./mentions/resolve-catalog-entry.js";
 
 export {
@@ -4178,6 +4216,7 @@ export {
 
 export {
   CommunicationChannelKindIcon,
+  MentionMessageChannelIcon,
   CommunicationChatKindIcon,
   CommunicationInstagramKindIcon,
   CommunicationKindMark,
@@ -5454,10 +5493,20 @@ export { chatUiMessageToThreadMessageLike } from "./chat/chat-ui-to-thread-messa
 export { buildChatUiDemoMessages } from "./chat/chat-ui-demo-fixture.js";
 
 export {
+  matchPeersBySlashQuery,
+  parsePeerSlashCommand,
+  peerCommandSlug,
+  resolvePeerSlashCommand,
+} from "./chat/chat-peer-slash-command.js";
+
+export {
   ChatThread,
   CHAT_THREAD_VIRTUALIZE_THRESHOLD,
+  type ChatThreadPeer,
   type ChatThreadProps,
 } from "./components/chat/chat-thread.js";
+
+export { ChatThreadHeader } from "./components/chat/chat-thread-header.js";
 
 export {
   ChatUiDevPreview,
@@ -5473,6 +5522,13 @@ export {
   type ChatCardRenderer,
   type ChatCardRendererProps,
 } from "./components/chat/chat-card-registry.js";
+
+export {
+  ChatCardHref,
+  ChatCardNavigateProvider,
+  useChatCardNavigate,
+  type ChatCardNavigate,
+} from "./components/chat/chat-card-navigate.js";
 
 export {
   ChatUiMessageBody,

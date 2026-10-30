@@ -10,6 +10,7 @@ import {
   useRef,
   useState,
   type FocusEvent,
+  type MouseEvent as ReactMouseEvent,
   type ReactElement,
   type ReactNode,
   type Ref,
@@ -21,10 +22,13 @@ type HoverCardSide = "top" | "bottom";
 type HoverCardContextValue = {
   open: boolean;
   triggerRef: React.RefObject<HTMLElement | null>;
+  contentRef: React.RefObject<HTMLDivElement | null>;
   contentId: string;
   close: () => void;
+  openOnClick: boolean;
   onTriggerEnter: () => void;
   onTriggerLeave: () => void;
+  onTriggerClick: (event: ReactMouseEvent<HTMLElement>) => void;
   onContentEnter: () => void;
   onContentLeave: () => void;
 };
@@ -61,18 +65,28 @@ type HoverCardProps = {
   children: ReactNode;
   openDelay?: number;
   closeDelay?: number;
+  /**
+   * Primary click toggles a pinned open state (Escape / outside click dismiss).
+   * Modifier / middle-clicks still follow links. Hover still works when unpinned.
+   */
+  openOnClick?: boolean;
 };
 
 export function HoverCard({
   children,
   openDelay = 150,
   closeDelay = 120,
+  openOnClick = false,
 }: HoverCardProps) {
   const [open, setOpen] = useState(false);
+  const [pinned, setPinned] = useState(false);
   const triggerRef = useRef<HTMLElement | null>(null);
+  const contentRef = useRef<HTMLDivElement | null>(null);
   const openTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const contentId = useId();
+  const pinnedRef = useRef(false);
+  pinnedRef.current = pinned;
 
   const clearOpenTimer = useCallback(() => {
     if (openTimerRef.current) {
@@ -88,6 +102,13 @@ export function HoverCard({
     }
   }, []);
 
+  const close = useCallback(() => {
+    clearOpenTimer();
+    clearCloseTimer();
+    setPinned(false);
+    setOpen(false);
+  }, [clearCloseTimer, clearOpenTimer]);
+
   const scheduleOpen = useCallback(() => {
     clearCloseTimer();
     clearOpenTimer();
@@ -97,6 +118,7 @@ export function HoverCard({
   }, [clearCloseTimer, clearOpenTimer, openDelay]);
 
   const scheduleClose = useCallback(() => {
+    if (pinnedRef.current) return;
     clearOpenTimer();
     clearCloseTimer();
     closeTimerRef.current = setTimeout(() => {
@@ -104,11 +126,28 @@ export function HoverCard({
     }, closeDelay);
   }, [clearCloseTimer, clearOpenTimer, closeDelay]);
 
-  const close = useCallback(() => {
-    clearOpenTimer();
-    clearCloseTimer();
-    setOpen(false);
-  }, [clearCloseTimer, clearOpenTimer]);
+  const onTriggerClick = useCallback(
+    (event: ReactMouseEvent<HTMLElement>) => {
+      if (!openOnClick) return;
+      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
+        return;
+      }
+      if (event.button !== 0) return;
+      event.preventDefault();
+      event.stopPropagation();
+      clearOpenTimer();
+      clearCloseTimer();
+      setPinned((wasPinned) => {
+        if (wasPinned) {
+          setOpen(false);
+          return false;
+        }
+        setOpen(true);
+        return true;
+      });
+    },
+    [clearCloseTimer, clearOpenTimer, openOnClick],
+  );
 
   useEffect(() => {
     return () => {
@@ -117,13 +156,40 @@ export function HoverCard({
     };
   }, [clearCloseTimer, clearOpenTimer]);
 
+  useEffect(() => {
+    if (!openOnClick || !pinned || !open) return;
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        close();
+      }
+    };
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target as Node | null;
+      if (!target) return;
+      if (triggerRef.current?.contains(target)) return;
+      if (contentRef.current?.contains(target)) return;
+      close();
+    };
+
+    document.addEventListener("keydown", onKeyDown);
+    document.addEventListener("pointerdown", onPointerDown, true);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      document.removeEventListener("pointerdown", onPointerDown, true);
+    };
+  }, [close, open, openOnClick, pinned]);
+
   const value: HoverCardContextValue = {
     open,
     triggerRef,
+    contentRef,
     contentId,
     close,
+    openOnClick,
     onTriggerEnter: scheduleOpen,
     onTriggerLeave: scheduleClose,
+    onTriggerClick,
     onContentEnter: () => {
       clearCloseTimer();
       setOpen(true);
@@ -153,6 +219,8 @@ export function HoverCardTrigger({
     open,
     onTriggerEnter,
     onTriggerLeave,
+    onTriggerClick,
+    openOnClick,
   } = useHoverCardContext();
   const triggerClassName = className ?? "bos-hover-card-trigger";
 
@@ -177,8 +245,10 @@ export function HoverCardTrigger({
         ref={triggerRef}
         tabIndex={0}
         aria-describedby={open ? contentId : undefined}
+        aria-expanded={openOnClick ? open : undefined}
         onMouseEnter={onTriggerEnter}
         onMouseLeave={onTriggerLeave}
+        onClick={onTriggerClick}
         onFocus={focusHandlers.onFocus}
         onBlur={focusHandlers.onBlur}
         className={triggerClassName}
@@ -190,13 +260,15 @@ export function HoverCardTrigger({
 
   const childElement = children as ReactElement<{
     className?: string;
-    onMouseEnter?: (event: React.MouseEvent<HTMLElement>) => void;
-    onMouseLeave?: (event: React.MouseEvent<HTMLElement>) => void;
+    onMouseEnter?: (event: ReactMouseEvent<HTMLElement>) => void;
+    onMouseLeave?: (event: ReactMouseEvent<HTMLElement>) => void;
+    onClick?: (event: ReactMouseEvent<HTMLElement>) => void;
     onFocus?: (event: FocusEvent<HTMLElement>) => void;
     onBlur?: (event: FocusEvent<HTMLElement>) => void;
     ref?: Ref<HTMLElement>;
     tabIndex?: number;
     "aria-describedby"?: string;
+    "aria-expanded"?: boolean;
   }>;
 
   return (
@@ -206,8 +278,10 @@ export function HoverCardTrigger({
       triggerRef={triggerRef}
       contentId={contentId}
       open={open}
+      openOnClick={openOnClick}
       onTriggerEnter={onTriggerEnter}
       onTriggerLeave={onTriggerLeave}
+      onTriggerClick={onTriggerClick}
     />
   );
 }
@@ -215,20 +289,24 @@ export function HoverCardTrigger({
 type HoverCardAsChildTriggerProps = {
   child: ReactElement<{
     className?: string;
-    onMouseEnter?: (event: React.MouseEvent<HTMLElement>) => void;
-    onMouseLeave?: (event: React.MouseEvent<HTMLElement>) => void;
+    onMouseEnter?: (event: ReactMouseEvent<HTMLElement>) => void;
+    onMouseLeave?: (event: ReactMouseEvent<HTMLElement>) => void;
+    onClick?: (event: ReactMouseEvent<HTMLElement>) => void;
     onFocus?: (event: FocusEvent<HTMLElement>) => void;
     onBlur?: (event: FocusEvent<HTMLElement>) => void;
     ref?: Ref<HTMLElement>;
     tabIndex?: number;
     "aria-describedby"?: string;
+    "aria-expanded"?: boolean;
   }>;
   className?: string;
   triggerRef: React.RefObject<HTMLElement | null>;
   contentId: string;
   open: boolean;
+  openOnClick: boolean;
   onTriggerEnter: () => void;
   onTriggerLeave: () => void;
+  onTriggerClick: (event: ReactMouseEvent<HTMLElement>) => void;
 };
 
 function HoverCardAsChildTrigger({
@@ -237,8 +315,10 @@ function HoverCardAsChildTrigger({
   triggerRef,
   contentId,
   open,
+  openOnClick,
   onTriggerEnter,
   onTriggerLeave,
+  onTriggerClick,
 }: HoverCardAsChildTriggerProps) {
   const mergedClassName = [child.props.className, className]
     .filter(Boolean)
@@ -256,13 +336,19 @@ function HoverCardAsChildTrigger({
     ref: mergedRef,
     tabIndex: child.props.tabIndex ?? 0,
     "aria-describedby": open ? contentId : undefined,
-    onMouseEnter: (event: React.MouseEvent<HTMLElement>) => {
+    "aria-expanded": openOnClick ? open : undefined,
+    onMouseEnter: (event: ReactMouseEvent<HTMLElement>) => {
       child.props.onMouseEnter?.(event);
       onTriggerEnter();
     },
-    onMouseLeave: (event: React.MouseEvent<HTMLElement>) => {
+    onMouseLeave: (event: ReactMouseEvent<HTMLElement>) => {
       child.props.onMouseLeave?.(event);
       onTriggerLeave();
+    },
+    onClick: (event: ReactMouseEvent<HTMLElement>) => {
+      onTriggerClick(event);
+      if (event.defaultPrevented) return;
+      child.props.onClick?.(event);
     },
     onFocus: (event: FocusEvent<HTMLElement>) => {
       child.props.onFocus?.(event);
@@ -299,7 +385,9 @@ export function HoverCardContent({
   const {
     open,
     triggerRef,
+    contentRef,
     contentId,
+    openOnClick,
     onContentEnter,
     onContentLeave,
   } = useHoverCardContext();
@@ -374,8 +462,9 @@ export function HoverCardContent({
 
   return createPortal(
     <div
+      ref={contentRef}
       id={contentId}
-      role="tooltip"
+      role={openOnClick ? "dialog" : "tooltip"}
       onMouseEnter={onContentEnter}
       onMouseLeave={onContentLeave}
       className={className ?? "bos-hover-card"}

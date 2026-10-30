@@ -1,7 +1,14 @@
 "use client";
 
-import { ClientLink } from "../../shared/client-link.js";
+import {
+  forwardRef,
+  type HTMLAttributes,
+  type ReactNode,
+  type Ref,
+} from "react";
+
 import type { MentionCatalogTask } from "../../mentions/mention-menu-types.js";
+import { ChatCardHref } from "../chat/chat-card-navigate.js";
 import {
   formatTaskDueMetaLabel,
   getTaskDueDateUrgency,
@@ -23,33 +30,31 @@ export type TaskMentionBlockChipTask = Pick<
   | "projectIcon"
 >;
 
-export type TaskMentionBlockChipProps = {
+type ChipRestProps = Omit<HTMLAttributes<HTMLElement>, "children" | "title">;
+
+export type TaskMentionBlockChipProps = ChipRestProps & {
   task: TaskMentionBlockChipTask;
-  href: string;
+  /**
+   * When set, the chip is a navigable link. Omit for non-navigating chrome
+   * (e.g. chat `<details>` summary with a separate “Go to task” action).
+   */
+  href?: string | null;
   /** Optional native title / tooltip (defaults to display id). */
   titleAttr?: string | null;
 };
 
-/**
- * Block task card used for document `@` mentions — same chrome for email
- * agent-created tasks on the thread timeline.
- */
-export function TaskMentionBlockChip({
+function TaskMentionBlockChipContent({
   task,
-  href,
-  titleAttr = null,
-}: TaskMentionBlockChipProps) {
+}: {
+  task: TaskMentionBlockChipTask;
+}): ReactNode {
   const dueDateLabel =
     task.dueDate != null ? formatTaskDueMetaLabel(task.dueDate) : null;
   const label = task.title?.trim() || task.displayId;
   const statusLabel = getOptionalTaskStatusLabel(task.status);
 
   return (
-    <ClientLink
-      href={href}
-      className="mention-chip-lite mention-chip-lite--task mention-chip-lite--block mention-chip-lite--link"
-      title={titleAttr?.trim() || task.displayId}
-    >
+    <>
       <TaskPriorityIcon
         priority={task.priority}
         size={14}
@@ -86,6 +91,55 @@ export function TaskMentionBlockChip({
           <span>{task.projectName}</span>
         </span>
       ) : null}
-    </ClientLink>
+    </>
   );
 }
+
+/**
+ * Block task card used for document `@` mentions — same chrome for email
+ * agent-created tasks on the thread timeline. Forwards refs / event props so
+ * HoverCard `asChild` works.
+ */
+export const TaskMentionBlockChip = forwardRef<
+  HTMLAnchorElement | HTMLDivElement,
+  TaskMentionBlockChipProps
+>(function TaskMentionBlockChip(
+  { task, href = null, titleAttr = null, className, ...rest },
+  ref,
+) {
+  const title = titleAttr?.trim() || task.displayId;
+  const chipClassName = [
+    "mention-chip-lite",
+    "mention-chip-lite--task",
+    "mention-chip-lite--block",
+    href ? "mention-chip-lite--link" : null,
+    className,
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  if (href) {
+    return (
+      <ChatCardHref
+        ref={ref as Ref<HTMLAnchorElement>}
+        href={href}
+        className={chipClassName}
+        title={title}
+        {...rest}
+      >
+        <TaskMentionBlockChipContent task={task} />
+      </ChatCardHref>
+    );
+  }
+
+  return (
+    <div
+      ref={ref as Ref<HTMLDivElement>}
+      className={chipClassName}
+      title={title}
+      {...rest}
+    >
+      <TaskMentionBlockChipContent task={task} />
+    </div>
+  );
+});

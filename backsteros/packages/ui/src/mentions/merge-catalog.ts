@@ -22,6 +22,24 @@ function mergeUniqueById<T extends { id: string }>(
   return [...existing, ...additions];
 }
 
+/** Habits may share an id across definition + day rows — key by id+date. */
+function mergeHabits(
+  existing: MentionCatalog["habits"],
+  incoming: MentionCatalog["habits"],
+): MentionCatalog["habits"] {
+  const keyOf = (entry: MentionCatalog["habits"][number]) =>
+    entry.date ? `${entry.id}:${entry.date}` : entry.id;
+  const seen = new Set(existing.map(keyOf));
+  const additions: MentionCatalog["habits"] = [];
+  for (const entry of incoming) {
+    const key = keyOf(entry);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    additions.push(entry);
+  }
+  return additions.length === 0 ? existing : [...existing, ...additions];
+}
+
 export function mergeMentionCatalogs(
   base: MentionCatalog,
   patch: MentionCatalog,
@@ -33,6 +51,14 @@ export function mergeMentionCatalogs(
   const documents = mergeUniqueById(base.documents, patch.documents);
   const letters = mergeUniqueById(base.letters, patch.letters);
   const emails = mergeUniqueById(base.emails, patch.emails);
+  const meetings = mergeUniqueById(base.meetings, patch.meetings);
+  const journals = mergeUniqueById(base.journals, patch.journals);
+  const habits = mergeHabits(base.habits, patch.habits);
+  const messages = mergeUniqueById(base.messages, patch.messages);
+  const posts = mergeUniqueById(base.posts, patch.posts);
+  const transactions = mergeUniqueById(base.transactions, patch.transactions);
+  const invoices = mergeUniqueById(base.invoices, patch.invoices);
+  const estimates = mergeUniqueById(base.estimates, patch.estimates);
 
   if (
     tasks === base.tasks &&
@@ -41,7 +67,15 @@ export function mergeMentionCatalogs(
     organizations === base.organizations &&
     documents === base.documents &&
     letters === base.letters &&
-    emails === base.emails
+    emails === base.emails &&
+    meetings === base.meetings &&
+    journals === base.journals &&
+    habits === base.habits &&
+    messages === base.messages &&
+    posts === base.posts &&
+    transactions === base.transactions &&
+    invoices === base.invoices &&
+    estimates === base.estimates
   ) {
     return base;
   }
@@ -54,5 +88,13 @@ export function mergeMentionCatalogs(
     documents,
     letters,
     emails,
+    meetings,
+    journals,
+    habits,
+    messages,
+    posts,
+    transactions,
+    invoices,
+    estimates,
   };
 }

@@ -32,6 +32,11 @@ function AppShellInner({ children }: { children?: ReactNode }) {
     toggleSidePanelCollapsed,
     sidebarCollapsed,
     sidebarAnimating,
+    chatPanelCollapsed,
+    chatPanelAnimating,
+    chatPanelWidth,
+    setChatPanelWidth,
+    toggleChatPanelCollapsed,
     windowFullscreen,
     defaultAssigneeId,
     setDefaultAssigneeIdState,
@@ -100,6 +105,11 @@ function AppShellInner({ children }: { children?: ReactNode }) {
         sidePanelAnimating={sidePanelAnimating}
         sidebarCollapsed={sidebarCollapsed}
         sidebarAnimating={sidebarAnimating}
+        chatPanelCollapsed={chatPanelCollapsed}
+        chatPanelAnimating={chatPanelAnimating}
+        chatPanelWidth={chatPanelWidth}
+        onChatPanelWidthChange={setChatPanelWidth}
+        onToggleChatPanel={toggleChatPanelCollapsed}
         windowFullscreen={windowFullscreen}
         onComposeOpen={() => {
           setComposeAssigneeOverride(undefined);

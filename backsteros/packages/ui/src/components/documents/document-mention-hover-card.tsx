@@ -7,34 +7,60 @@ import {
   resolveMentionCatalogContact,
   resolveMentionCatalogDocument,
   resolveMentionCatalogEmail,
+  resolveMentionCatalogEstimate,
+  resolveMentionCatalogHabit,
+  resolveMentionCatalogInvoice,
+  resolveMentionCatalogJournal,
   resolveMentionCatalogLetter,
+  resolveMentionCatalogMeeting,
+  resolveMentionCatalogMessage,
   resolveMentionCatalogOrganization,
+  resolveMentionCatalogPost,
   resolveMentionCatalogProject,
   resolveMentionCatalogTask,
+  resolveMentionCatalogTransaction,
 } from "../../mentions/resolve-catalog-entry.js";
 import type {
   MentionCatalog,
   MentionCatalogContact,
   MentionCatalogDocument,
   MentionCatalogEmail,
+  MentionCatalogEstimate,
+  MentionCatalogHabit,
+  MentionCatalogInvoice,
+  MentionCatalogJournal,
   MentionCatalogLetter,
+  MentionCatalogMeeting,
+  MentionCatalogMessage,
   MentionCatalogOrganization,
+  MentionCatalogPost,
   MentionCatalogProject,
   MentionCatalogTask,
+  MentionCatalogTransaction,
 } from "../../mentions/mention-menu-types.js";
+import {
+  chatChannelKindLabel,
+  resolveChatChannelKind,
+} from "../../communication/chat-channel-kind.js";
+import { MentionMessageChannelIcon } from "../communication/communication-kind-icons.js";
+import { formatMeetingWhenBadge } from "../meetings/meeting-mention-block-chip.js";
+import { ArrowSwitchIcon } from "@primer/octicons-react";
+import { FlameIcon } from "../icons/flame-icon.js";
+import { JournalIcon } from "../icons/journal-icon.js";
+import { LemoDesignMarkIcon } from "../icons/lemo-design-mark-icon.js";
+import { LinkedInIcon } from "../icons/linkedin-icon.js";
+import { MoneybirdIcon } from "../icons/moneybird-icon.js";
 import type { ParsedMentionToken } from "../../mentions/mention-tokens.js";
 import { formatTaskDueMetaLabel } from "../../tasks/task-due-date.js";
 import { getTaskPriorityLabel } from "../../tasks/task-priority.js";
 import { getTaskStatusLabel } from "../../tasks/task-status.js";
 import { getProjectStatusLabel } from "../../projects/project-status.js";
 import { getContactsHref } from "../../navigation/entity-routes.js";
+import { ClientLink } from "../../shared/client-link.js";
 import { ContactPeekCard } from "../contacts/contact-peek-card.js";
 import { DocumentIcon } from "./document-icon.js";
 import { LetterIcon } from "../letters/letter-icon.js";
-import {
-  getDisplayProjectIcon,
-  ProjectOcticon,
-} from "../projects/project-octicon.js";
+import { ProjectOcticon } from "../projects/project-octicon.js";
 import { OrganizationIcon } from "../organizations/organization-icon.js";
 import { useHoverCardClose } from "../shared/hover-card.js";
 import { EmailNavIcon } from "../shell/sidebar-nav-icons.js";
@@ -72,22 +98,27 @@ function formatUpdatedAtLabel(updatedAt: number): string {
   });
 }
 
+const MENTION_KIND_LABELS: Record<ParsedMentionToken["kind"], string> = {
+  task: "Task",
+  letter: "Letter",
+  email: "E-mail",
+  project: "Project",
+  contact: "Contact",
+  organization: "Organization",
+  document: "Document",
+  meeting: "Meeting",
+  journal: "Journal entry",
+  habit: "Habit",
+  message: "Message",
+  post: "Post",
+  transaction: "Transaction",
+  invoice: "Invoice",
+  estimate: "Estimate",
+};
+
 function MentionHoverDeletedPanel({ parsed }: { parsed: ParsedMentionToken }) {
   const display = getDeletedMentionDisplay(parsed);
-  const kindLabel =
-    parsed.kind === "task"
-      ? "Task"
-      : parsed.kind === "letter"
-        ? "Letter"
-        : parsed.kind === "email"
-          ? "E-mail"
-          : parsed.kind === "project"
-          ? "Project"
-          : parsed.kind === "contact"
-            ? "Contact"
-            : parsed.kind === "organization"
-              ? "Organization"
-              : "Document";
+  const kindLabel = MENTION_KIND_LABELS[parsed.kind];
 
   return (
     <MentionHoverPanel>
@@ -119,7 +150,11 @@ function MentionHoverDeletedPanel({ parsed }: { parsed: ParsedMentionToken }) {
   );
 }
 
-function TaskMentionHoverDetails({ task }: { task: MentionCatalogTask }) {
+export function TaskMentionHoverDetails({
+  task,
+}: {
+  task: MentionCatalogTask;
+}) {
   const dueLabel = formatTaskDueMetaLabel(task.dueDate);
   const priorityLabel = getTaskPriorityLabel(task.priority);
   const statusLabel = getTaskStatusLabel(task.status);
@@ -261,8 +296,7 @@ function ProjectMentionHoverDetails({
       <MentionHoverHeader
         icon={
           <ProjectOcticon
-            icon={getDisplayProjectIcon(project.icon, project.type)}
-            type={project.type}
+            icon={project.icon}
             className="mention-hover-card__icon mention-hover-card__icon--header"
           />
         }
@@ -397,6 +431,238 @@ function OrganizationMentionHoverDetails({
   );
 }
 
+function MeetingMentionHoverDetails({
+  meeting,
+}: {
+  meeting: MentionCatalogMeeting;
+}) {
+  const whenLabel = formatMeetingWhenBadge(meeting.startAt, meeting.endAt);
+  return (
+    <MentionHoverPanel>
+      <MentionHoverMetaRow>
+        <span className="mention-hover-card__id">
+          {whenLabel ?? "Meeting"}
+        </span>
+        {meeting.projectName ? (
+          <>
+            <span className="mention-hover-card__dot" aria-hidden="true">
+              ·
+            </span>
+            <span className="mention-hover-card__truncate">
+              {meeting.projectName}
+            </span>
+          </>
+        ) : null}
+      </MentionHoverMetaRow>
+      <MentionHoverTitle>{meeting.title}</MentionHoverTitle>
+      {meeting.summary ? (
+        <MentionHoverDescription>{meeting.summary}</MentionHoverDescription>
+      ) : null}
+      <MentionHoverFooterRow>
+        <span>{meeting.status ?? "Meeting"}</span>
+      </MentionHoverFooterRow>
+    </MentionHoverPanel>
+  );
+}
+
+function JournalMentionHoverDetails({
+  journal,
+}: {
+  journal: MentionCatalogJournal;
+}) {
+  return (
+    <MentionHoverPanel>
+      <MentionHoverMetaRow>
+        <JournalIcon
+          size={14}
+          className="mention-hover-card__icon mention-hover-card__icon--muted"
+        />
+        <span className="mention-hover-card__id">Journal</span>
+      </MentionHoverMetaRow>
+      <MentionHoverTitle>{journal.date}</MentionHoverTitle>
+      {journal.snippet ? (
+        <MentionHoverDescription>{journal.snippet}</MentionHoverDescription>
+      ) : null}
+      <MentionHoverFooterRow>
+        <span>
+          {journal.updatedAt != null
+            ? `Updated ${formatUpdatedAtLabel(journal.updatedAt)}`
+            : "Journal entry"}
+        </span>
+      </MentionHoverFooterRow>
+    </MentionHoverPanel>
+  );
+}
+
+function HabitMentionHoverDetails({ habit }: { habit: MentionCatalogHabit }) {
+  return (
+    <MentionHoverPanel>
+      <MentionHoverMetaRow>
+        <FlameIcon
+          size={14}
+          className="mention-hover-card__icon mention-hover-card__icon--muted"
+        />
+        <span className="mention-hover-card__truncate">Habit</span>
+      </MentionHoverMetaRow>
+      <MentionHoverTitle>{habit.title}</MentionHoverTitle>
+      <MentionHoverFooterRow>
+        <span>{habit.date ?? habit.cadence ?? "Definition"}</span>
+        <span>
+          {habit.completed == null
+            ? "—"
+            : habit.completed
+              ? "Completed"
+              : "Open"}
+        </span>
+      </MentionHoverFooterRow>
+    </MentionHoverPanel>
+  );
+}
+
+function MessageMentionHoverDetails({
+  message,
+}: {
+  message: MentionCatalogMessage;
+}) {
+  return (
+    <MentionHoverPanel>
+      <MentionHoverMetaRow>
+        <MentionMessageChannelIcon
+          channelType={message.channelType}
+          contactName={message.contactName}
+          size={14}
+        />
+        <span className="mention-hover-card__truncate">
+          {chatChannelKindLabel(
+            resolveChatChannelKind(message.channelType, {
+              contactName: message.contactName,
+            }),
+          )}
+        </span>
+      </MentionHoverMetaRow>
+      <MentionHoverTitle>{message.title}</MentionHoverTitle>
+      {message.preview ? (
+        <MentionHoverDescription>{message.preview}</MentionHoverDescription>
+      ) : null}
+      <MentionHoverFooterRow>
+        <span>{message.contactName ?? "Conversation"}</span>
+        <span>{message.status ?? "—"}</span>
+      </MentionHoverFooterRow>
+    </MentionHoverPanel>
+  );
+}
+
+function PostMentionHoverDetails({ post }: { post: MentionCatalogPost }) {
+  return (
+    <MentionHoverPanel>
+      <MentionHoverMetaRow>
+        <LinkedInIcon
+          size={14}
+          className="mention-hover-card__icon mention-hover-card__icon--muted"
+        />
+        <span className="mention-hover-card__truncate">
+          {post.platform ?? "Post"}
+        </span>
+      </MentionHoverMetaRow>
+      <MentionHoverTitle>{post.title}</MentionHoverTitle>
+      {post.body ? (
+        <MentionHoverDescription>{post.body}</MentionHoverDescription>
+      ) : null}
+      <MentionHoverFooterRow>
+        <span>{post.authorHandle ?? "—"}</span>
+        <span>{post.status ?? "—"}</span>
+      </MentionHoverFooterRow>
+    </MentionHoverPanel>
+  );
+}
+
+function TransactionMentionHoverDetails({
+  transaction,
+}: {
+  transaction: MentionCatalogTransaction;
+}) {
+  const amount =
+    transaction.amountCents != null
+      ? `${(transaction.amountCents / 100).toFixed(2)} ${transaction.currency ?? ""}`.trim()
+      : null;
+  return (
+    <MentionHoverPanel>
+      <MentionHoverMetaRow>
+        <ArrowSwitchIcon
+          size={14}
+          className="mention-hover-card__icon mention-hover-card__icon--muted"
+        />
+        <span className="mention-hover-card__truncate">
+          {transaction.bookedOn ?? "Transaction"}
+        </span>
+      </MentionHoverMetaRow>
+      <MentionHoverTitle>{transaction.title}</MentionHoverTitle>
+      {transaction.notes ? (
+        <MentionHoverDescription>{transaction.notes}</MentionHoverDescription>
+      ) : null}
+      <MentionHoverFooterRow>
+        <span>{amount ?? "—"}</span>
+        <span>{transaction.categoryName ?? transaction.accountName ?? "—"}</span>
+      </MentionHoverFooterRow>
+    </MentionHoverPanel>
+  );
+}
+
+function InvoiceMentionHoverDetails({
+  invoice,
+}: {
+  invoice: MentionCatalogInvoice;
+}) {
+  return (
+    <MentionHoverPanel>
+      <MentionHoverMetaRow>
+        <MoneybirdIcon
+          size={14}
+          withTile={false}
+          className="mention-hover-card__icon mention-hover-card__icon--muted"
+        />
+        <span className="mention-hover-card__truncate">
+          {invoice.invoiceNumber ?? "Invoice"}
+        </span>
+      </MentionHoverMetaRow>
+      <MentionHoverTitle>{invoice.title}</MentionHoverTitle>
+      <MentionHoverFooterRow>
+        <span>{invoice.amountLabel ?? "—"}</span>
+        <span>{invoice.contactName ?? invoice.state ?? "—"}</span>
+      </MentionHoverFooterRow>
+    </MentionHoverPanel>
+  );
+}
+
+function EstimateMentionHoverDetails({
+  estimate,
+}: {
+  estimate: MentionCatalogEstimate;
+}) {
+  const amount =
+    estimate.totalAmountCents != null
+      ? `${(estimate.totalAmountCents / 100).toFixed(2)} ${estimate.currency ?? "EUR"}`.trim()
+      : null;
+  return (
+    <MentionHoverPanel>
+      <MentionHoverMetaRow>
+        <LemoDesignMarkIcon
+          size={14}
+          className="mention-hover-card__icon mention-hover-card__icon--muted"
+        />
+        <span className="mention-hover-card__truncate">
+          {estimate.displayId ?? "Estimate"}
+        </span>
+      </MentionHoverMetaRow>
+      <MentionHoverTitle>{estimate.title}</MentionHoverTitle>
+      <MentionHoverFooterRow>
+        <span>{amount ?? "—"}</span>
+        <span>{estimate.clientLabel ?? estimate.status ?? "—"}</span>
+      </MentionHoverFooterRow>
+    </MentionHoverPanel>
+  );
+}
+
 export function DocumentMentionHoverCard({
   parsed,
   catalog,
@@ -422,6 +688,62 @@ export function DocumentMentionHoverCard({
         return <MentionHoverDeletedPanel parsed={parsed} />;
       }
       return <EmailMentionHoverDetails email={email} />;
+    }
+    case "meeting": {
+      const meeting = resolveMentionCatalogMeeting(parsed, catalog);
+      if (!meeting) {
+        return <MentionHoverDeletedPanel parsed={parsed} />;
+      }
+      return <MeetingMentionHoverDetails meeting={meeting} />;
+    }
+    case "journal": {
+      const journal = resolveMentionCatalogJournal(parsed, catalog);
+      if (!journal) {
+        return <MentionHoverDeletedPanel parsed={parsed} />;
+      }
+      return <JournalMentionHoverDetails journal={journal} />;
+    }
+    case "habit": {
+      const habit = resolveMentionCatalogHabit(parsed, catalog);
+      if (!habit) {
+        return <MentionHoverDeletedPanel parsed={parsed} />;
+      }
+      return <HabitMentionHoverDetails habit={habit} />;
+    }
+    case "message": {
+      const message = resolveMentionCatalogMessage(parsed, catalog);
+      if (!message) {
+        return <MentionHoverDeletedPanel parsed={parsed} />;
+      }
+      return <MessageMentionHoverDetails message={message} />;
+    }
+    case "post": {
+      const post = resolveMentionCatalogPost(parsed, catalog);
+      if (!post) {
+        return <MentionHoverDeletedPanel parsed={parsed} />;
+      }
+      return <PostMentionHoverDetails post={post} />;
+    }
+    case "transaction": {
+      const transaction = resolveMentionCatalogTransaction(parsed, catalog);
+      if (!transaction) {
+        return <MentionHoverDeletedPanel parsed={parsed} />;
+      }
+      return <TransactionMentionHoverDetails transaction={transaction} />;
+    }
+    case "invoice": {
+      const invoice = resolveMentionCatalogInvoice(parsed, catalog);
+      if (!invoice) {
+        return <MentionHoverDeletedPanel parsed={parsed} />;
+      }
+      return <InvoiceMentionHoverDetails invoice={invoice} />;
+    }
+    case "estimate": {
+      const estimate = resolveMentionCatalogEstimate(parsed, catalog);
+      if (!estimate) {
+        return <MentionHoverDeletedPanel parsed={parsed} />;
+      }
+      return <EstimateMentionHoverDetails estimate={estimate} />;
     }
     case "project": {
       const project = resolveMentionCatalogProject(parsed, catalog);

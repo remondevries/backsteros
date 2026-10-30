@@ -5,6 +5,10 @@ import type { ChatUiMessage, ChatUiMessagePart } from "@backsteros/contracts";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
+import { AlertTriangleIcon } from "../icons/alert-triangle-icon.js";
+import { TerminalConsoleIcon } from "../icons/terminal-console-icon.js";
+import { TaskStatusIcon } from "../tasks/task-status-icon.js";
+import { TaskStatusWorkingPulse } from "../tasks/task-status-working-pulse.js";
 import { ChatCardPartView } from "./chat-card-registry.js";
 
 function formatJson(value: unknown): string {
@@ -14,6 +18,55 @@ function formatJson(value: unknown): string {
     return JSON.stringify(value, null, 2);
   } catch {
     return String(value);
+  }
+}
+
+function ChatToolCallStatusMark({
+  status,
+}: {
+  status: NonNullable<Extract<ChatUiMessagePart, { type: "tool-call" }>["status"]>;
+}) {
+  switch (status) {
+    case "pending":
+      // Backlog circle — queued, not started.
+      return (
+        <TaskStatusIcon
+          status="backlog"
+          size={14}
+          className="chat-ui-tool-call__status-icon"
+          title="Pending"
+        />
+      );
+    case "running":
+      // Yellow animated in-progress pulse.
+      return (
+        <TaskStatusWorkingPulse
+          size={14}
+          compact
+          className="chat-ui-tool-call__status-icon"
+          aria-label="Running"
+        />
+      );
+    case "done":
+      // Green completed check.
+      return (
+        <TaskStatusIcon
+          status="completed"
+          size={14}
+          className="chat-ui-tool-call__status-icon"
+          title="Done"
+        />
+      );
+    case "error":
+      return (
+        <AlertTriangleIcon
+          size={14}
+          className="chat-ui-tool-call__status-icon chat-ui-tool-call__status-icon--error"
+          aria-label="Error"
+        />
+      );
+    default:
+      return null;
   }
 }
 
@@ -31,8 +84,14 @@ function ChatToolCallPartView({
       onToggle={(event) => setOpen(event.currentTarget.open)}
     >
       <summary className="chat-ui-tool-call__summary">
-        <span className="chat-ui-tool-call__name">{part.name}</span>
-        <span className="chat-ui-tool-call__status">{status}</span>
+        <span className="chat-ui-tool-call__lead">
+          <TerminalConsoleIcon
+            size={14}
+            className="chat-ui-tool-call__icon"
+          />
+          <span className="chat-ui-tool-call__name">{part.name}</span>
+        </span>
+        <ChatToolCallStatusMark status={status} />
       </summary>
       <div className="chat-ui-tool-call__body">
         {part.input !== undefined ? (
@@ -135,12 +194,18 @@ export function ChatUiMessageBody({ message }: { message: ChatUiMessage }) {
     );
   }
 
-  const side = message.role === "user" ? "incoming" : "outgoing";
+  // T3 Code pattern: user stays a bubble; assistant replies sit flat on the
+  // thread background (no bubble chrome).
+  const isAssistant = message.role === "assistant";
+  const bodyClass = isAssistant
+    ? "chat-ui-message__body"
+    : "chat-ui-message__bubble";
+
   return (
     <div
       className={[
         "chat-ui-message",
-        `is-${side}`,
+        isAssistant ? "is-assistant" : "is-user",
         message.status === "pending" ? "is-pending" : "",
         message.status === "streaming" ? "is-streaming" : "",
         message.status === "error" ? "is-error" : "",
@@ -148,12 +213,13 @@ export function ChatUiMessageBody({ message }: { message: ChatUiMessage }) {
         .filter(Boolean)
         .join(" ")}
       data-message-id={message.id}
+      data-role={message.role}
       data-status={message.status}
     >
       {message.author?.name ? (
         <div className="chat-ui-message__author">{message.author.name}</div>
       ) : null}
-      <div className="chat-ui-message__bubble">
+      <div className={bodyClass}>
         {message.parts.map((part, index) => (
           <ChatUiPartView key={`${message.id}-${index}`} part={part} />
         ))}
@@ -162,7 +228,7 @@ export function ChatUiMessageBody({ message }: { message: ChatUiMessage }) {
         <time className="chat-ui-message__timestamp">Sending…</time>
       ) : message.status === "streaming" ? (
         <time className="chat-ui-message__timestamp">Streaming…</time>
-      ) : message.createdAt ? (
+      ) : !isAssistant && message.createdAt ? (
         <time className="chat-ui-message__timestamp" dateTime={message.createdAt}>
           {new Date(message.createdAt).toLocaleTimeString([], {
             hour: "2-digit",

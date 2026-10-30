@@ -3,6 +3,11 @@ import { useShellLocation } from "../lib/shell-route-keep-alive";
 
 import {
   CONTEXT_PANEL_COLLAPSE_DURATION_MS,
+  CHAT_PANEL_COLLAPSE_DURATION_MS,
+  CHAT_PANEL_VISIBLE_STORAGE_KEY,
+  isChatPanelToggleShortcut,
+  readStoredChatPanelCollapsed,
+  readStoredChatPanelWidth,
   SIDEBAR_COLLAPSE_DURATION_MS,
   shouldHandleGlobalShortcut,
   useBlockBrowserTabFocus,
@@ -54,12 +59,19 @@ import {
 } from "../lib/workspace-data";
 import type { useShellTabs } from "./use-shell-tabs";
 
+/** Collapse chat before the left nav when the window gets tight. */
+const CHAT_NARROW_BREAKPOINT_PX = 1180;
+const SIDEBAR_NARROW_BREAKPOINT_PX = 900;
+
 export function useShellChromeState() {
   const [composeOpen, setComposeOpen] = useState(false);
   const [sidePanelCollapsed, setSidePanelCollapsed] = useState(false);
   const [sidePanelAnimating, setSidePanelAnimating] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [sidebarAnimating, setSidebarAnimating] = useState(false);
+  const [chatPanelCollapsed, setChatPanelCollapsed] = useState(false);
+  const [chatPanelAnimating, setChatPanelAnimating] = useState(false);
+  const [chatPanelWidth, setChatPanelWidth] = useState(360);
   const windowFullscreen = useTauriWindowFullscreen();
   const [defaultAssigneeId, setDefaultAssigneeIdState] = useState<string | null>(
     () => getDefaultAssigneeId(),
@@ -75,56 +87,132 @@ export function useShellChromeState() {
   const sidePanelAnimRafRef = useRef<number | null>(null);
   const sidebarAnimTimerRef = useRef<number | null>(null);
   const sidebarAnimRafRef = useRef<number | null>(null);
+  const chatPanelAnimTimerRef = useRef<number | null>(null);
+  const chatPanelAnimRafRef = useRef<number | null>(null);
+  const chatPanelCollapsedRef = useRef(chatPanelCollapsed);
+  const sidebarCollapsedRef = useRef(sidebarCollapsed);
+
+  useEffect(() => {
+    chatPanelCollapsedRef.current = chatPanelCollapsed;
+  }, [chatPanelCollapsed]);
+  useEffect(() => {
+    sidebarCollapsedRef.current = sidebarCollapsed;
+  }, [sidebarCollapsed]);
+
+  const beginCollapseAnimation = useCallback(
+    (
+      setAnimating: (value: boolean) => void,
+      timerRef: { current: number | null },
+      rafRef: { current: number | null },
+      durationMs: number,
+      apply: () => void,
+    ) => {
+      setAnimating(true);
+      if (timerRef.current != null) {
+        window.clearTimeout(timerRef.current);
+        timerRef.current = null;
+      }
+      if (rafRef.current != null) {
+        window.cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+      }
+      rafRef.current = window.requestAnimationFrame(() => {
+        rafRef.current = window.requestAnimationFrame(() => {
+          rafRef.current = null;
+          apply();
+          timerRef.current = window.setTimeout(() => {
+            timerRef.current = null;
+            setAnimating(false);
+          }, durationMs);
+        });
+      });
+    },
+    [],
+  );
 
   /** `[` — enable width transition for one paint, then flip collapsed. */
   const toggleSidebarCollapsed = useCallback(() => {
-    setSidebarAnimating(true);
-    if (sidebarAnimTimerRef.current != null) {
-      window.clearTimeout(sidebarAnimTimerRef.current);
-      sidebarAnimTimerRef.current = null;
-    }
-    if (sidebarAnimRafRef.current != null) {
-      window.cancelAnimationFrame(sidebarAnimRafRef.current);
-      sidebarAnimRafRef.current = null;
-    }
-    sidebarAnimRafRef.current = window.requestAnimationFrame(() => {
-      sidebarAnimRafRef.current = window.requestAnimationFrame(() => {
-        sidebarAnimRafRef.current = null;
+    beginCollapseAnimation(
+      setSidebarAnimating,
+      sidebarAnimTimerRef,
+      sidebarAnimRafRef,
+      SIDEBAR_COLLAPSE_DURATION_MS,
+      () => {
         setSidebarCollapsed((current) => {
           const next = !current;
           localStorage.setItem("backsteros:sidebar-visible", String(!next));
           return next;
         });
-        sidebarAnimTimerRef.current = window.setTimeout(() => {
-          sidebarAnimTimerRef.current = null;
-          setSidebarAnimating(false);
-        }, SIDEBAR_COLLAPSE_DURATION_MS);
-      });
-    });
-  }, []);
+      },
+    );
+  }, [beginCollapseAnimation]);
 
   /** ⇧[ — enable width transition for one paint, then flip collapsed. */
   const toggleSidePanelCollapsed = useCallback(() => {
-    setSidePanelAnimating(true);
-    if (sidePanelAnimTimerRef.current != null) {
-      window.clearTimeout(sidePanelAnimTimerRef.current);
-      sidePanelAnimTimerRef.current = null;
-    }
-    if (sidePanelAnimRafRef.current != null) {
-      window.cancelAnimationFrame(sidePanelAnimRafRef.current);
-      sidePanelAnimRafRef.current = null;
-    }
-    sidePanelAnimRafRef.current = window.requestAnimationFrame(() => {
-      sidePanelAnimRafRef.current = window.requestAnimationFrame(() => {
-        sidePanelAnimRafRef.current = null;
+    beginCollapseAnimation(
+      setSidePanelAnimating,
+      sidePanelAnimTimerRef,
+      sidePanelAnimRafRef,
+      CONTEXT_PANEL_COLLAPSE_DURATION_MS,
+      () => {
         setSidePanelCollapsed((current) => !current);
-        sidePanelAnimTimerRef.current = window.setTimeout(() => {
-          sidePanelAnimTimerRef.current = null;
-          setSidePanelAnimating(false);
-        }, CONTEXT_PANEL_COLLAPSE_DURATION_MS);
-      });
-    });
-  }, []);
+      },
+    );
+  }, [beginCollapseAnimation]);
+
+  /** `]` — global right chat column (page agent rails capture and win first). */
+  const toggleChatPanelCollapsed = useCallback(() => {
+    beginCollapseAnimation(
+      setChatPanelAnimating,
+      chatPanelAnimTimerRef,
+      chatPanelAnimRafRef,
+      CHAT_PANEL_COLLAPSE_DURATION_MS,
+      () => {
+        setChatPanelCollapsed((current) => {
+          const next = !current;
+          localStorage.setItem(CHAT_PANEL_VISIBLE_STORAGE_KEY, String(!next));
+          return next;
+        });
+      },
+    );
+  }, [beginCollapseAnimation]);
+
+  const setChatPanelCollapsedPreferring = useCallback(
+    (collapsed: boolean) => {
+      if (chatPanelCollapsedRef.current === collapsed) return;
+      beginCollapseAnimation(
+        setChatPanelAnimating,
+        chatPanelAnimTimerRef,
+        chatPanelAnimRafRef,
+        CHAT_PANEL_COLLAPSE_DURATION_MS,
+        () => {
+          setChatPanelCollapsed(collapsed);
+          localStorage.setItem(
+            CHAT_PANEL_VISIBLE_STORAGE_KEY,
+            String(!collapsed),
+          );
+        },
+      );
+    },
+    [beginCollapseAnimation],
+  );
+
+  const setSidebarCollapsedPreferring = useCallback(
+    (collapsed: boolean) => {
+      if (sidebarCollapsedRef.current === collapsed) return;
+      beginCollapseAnimation(
+        setSidebarAnimating,
+        sidebarAnimTimerRef,
+        sidebarAnimRafRef,
+        SIDEBAR_COLLAPSE_DURATION_MS,
+        () => {
+          setSidebarCollapsed(collapsed);
+          localStorage.setItem("backsteros:sidebar-visible", String(!collapsed));
+        },
+      );
+    },
+    [beginCollapseAnimation],
+  );
 
   useEffect(() => {
     return () => {
@@ -140,6 +228,12 @@ export function useShellChromeState() {
       if (sidebarAnimRafRef.current != null) {
         window.cancelAnimationFrame(sidebarAnimRafRef.current);
       }
+      if (chatPanelAnimTimerRef.current != null) {
+        window.clearTimeout(chatPanelAnimTimerRef.current);
+      }
+      if (chatPanelAnimRafRef.current != null) {
+        window.cancelAnimationFrame(chatPanelAnimRafRef.current);
+      }
     };
   }, []);
 
@@ -149,6 +243,14 @@ export function useShellChromeState() {
     const frame = requestAnimationFrame(() =>
       setSidebarCollapsed(stored === "false"),
     );
+    return () => cancelAnimationFrame(frame);
+  }, []);
+
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => {
+      setChatPanelCollapsed(readStoredChatPanelCollapsed());
+      setChatPanelWidth(readStoredChatPanelWidth());
+    });
     return () => cancelAnimationFrame(frame);
   }, []);
 
@@ -172,6 +274,33 @@ export function useShellChromeState() {
     return () => window.removeEventListener("keydown", listener);
   }, [toggleSidebarCollapsed]);
 
+  useEffect(() => {
+    // Bubble phase so page agent rails (capture + `]`) win when present.
+    const listener = (event: KeyboardEvent) => {
+      if (!isChatPanelToggleShortcut(event)) return;
+      if (!shouldHandleGlobalShortcut(event)) return;
+      event.preventDefault();
+      toggleChatPanelCollapsed();
+    };
+    window.addEventListener("keydown", listener);
+    return () => window.removeEventListener("keydown", listener);
+  }, [toggleChatPanelCollapsed]);
+
+  useEffect(() => {
+    const applyNarrowLayout = () => {
+      const width = window.innerWidth;
+      if (width < CHAT_NARROW_BREAKPOINT_PX) {
+        setChatPanelCollapsedPreferring(true);
+      }
+      if (width < SIDEBAR_NARROW_BREAKPOINT_PX) {
+        setSidebarCollapsedPreferring(true);
+      }
+    };
+    applyNarrowLayout();
+    window.addEventListener("resize", applyNarrowLayout);
+    return () => window.removeEventListener("resize", applyNarrowLayout);
+  }, [setChatPanelCollapsedPreferring, setSidebarCollapsedPreferring]);
+
   return {
     composeOpen,
     setComposeOpen,
@@ -181,6 +310,11 @@ export function useShellChromeState() {
     toggleSidePanelCollapsed,
     sidebarCollapsed,
     sidebarAnimating,
+    chatPanelCollapsed,
+    chatPanelAnimating,
+    chatPanelWidth,
+    setChatPanelWidth,
+    toggleChatPanelCollapsed,
     windowFullscreen,
     defaultAssigneeId,
     setDefaultAssigneeIdState,

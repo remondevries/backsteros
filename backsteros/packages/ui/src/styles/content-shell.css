@@ -56,13 +56,47 @@
   margin-left: 0;
 }
 
+.content-tabs-trailing {
+  position: relative;
+  z-index: 30;
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.content-tabs-chat-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  color: var(--tab-text);
+  background: transparent;
+  cursor: pointer;
+}
+
+.content-tabs-chat-toggle:hover {
+  color: var(--tab-text-active);
+  background: var(--tab-close-hover-bg);
+}
+
+.content-tabs-chat-toggle.is-expanded {
+  color: var(--tab-text-active);
+}
+
 .content-tabs-timer {
   position: relative;
   z-index: 30;
   display: flex;
   flex: 0 0 auto;
   align-items: center;
-  margin-left: auto;
+  margin-left: 0;
 }
 
 .content-tabs-timer.is-idle .content-tabs-timer__control {

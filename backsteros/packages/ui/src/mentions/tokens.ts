@@ -35,6 +35,8 @@ export function buildMentionToken(item: MentionItem): string {
       return `[@letter:${item.displayId}]`;
     case "email":
       return `[@email:${item.displayId}]`;
+    case "meeting":
+      return `[@meeting:${item.displayId}]`;
     case "project":
       return `[@project:${item.key}]`;
     case "contact":
@@ -43,6 +45,22 @@ export function buildMentionToken(item: MentionItem): string {
       return `[@organization:${item.key}]`;
     case "document":
       return `[@document:${item.projectKey}/${item.relativePath}]`;
+    case "journal":
+      return `[@journal:${item.date}]`;
+    case "habit":
+      return item.date
+        ? `[@habit:${item.id}/${item.date}]`
+        : `[@habit:${item.id}]`;
+    case "message":
+      return `[@message:${item.id}]`;
+    case "post":
+      return `[@post:${item.id}]`;
+    case "transaction":
+      return `[@transaction:${item.id}]`;
+    case "invoice":
+      return `[@invoice:${item.id}]`;
+    case "estimate":
+      return `[@estimate:${item.id}]`;
   }
 }
 
@@ -113,9 +131,27 @@ export function getMentionTokenCacheKey(token: ParsedMentionToken): string {
   if (
     token.kind === "task" ||
     token.kind === "letter" ||
-    token.kind === "email"
+    token.kind === "email" ||
+    token.kind === "meeting"
   ) {
     return `${token.kind}:${token.displayId}`;
+  }
+  if (token.kind === "journal") {
+    return `${token.kind}:${token.date}`;
+  }
+  if (token.kind === "habit") {
+    return token.date
+      ? `${token.kind}:${token.habitId}/${token.date}`
+      : `${token.kind}:${token.habitId}`;
+  }
+  if (
+    token.kind === "message" ||
+    token.kind === "post" ||
+    token.kind === "transaction" ||
+    token.kind === "invoice" ||
+    token.kind === "estimate"
+  ) {
+    return `${token.kind}:${token.id}`;
   }
   return `${token.kind}:${token.key}`;
 }
@@ -237,6 +273,75 @@ export function resolveMentionHref(
         return null;
       }
       return getEmailItemHref(email.inboxId, email.messageId);
+    }
+    case "meeting": {
+      const meeting = catalog.meetings.find(
+        (entry) =>
+          entry.displayId.toLowerCase() === parsed.displayId.toLowerCase() ||
+          entry.id.toLowerCase() === parsed.displayId.toLowerCase(),
+      );
+      if (!meeting) {
+        return null;
+      }
+      return `/calendar/meetings/${encodeURIComponent(meeting.id)}`;
+    }
+    case "journal": {
+      const journal = catalog.journals.find(
+        (entry) => entry.date === parsed.date,
+      );
+      if (!journal) {
+        return `/journal/${encodeURIComponent(parsed.date)}`;
+      }
+      return `/journal/${encodeURIComponent(journal.date)}`;
+    }
+    case "habit": {
+      const habit = catalog.habits.find(
+        (entry) => entry.id.toLowerCase() === parsed.habitId.toLowerCase(),
+      );
+      const habitId = habit?.id ?? parsed.habitId;
+      if (parsed.date) {
+        return `/journal/habits/${encodeURIComponent(habitId)}?date=${encodeURIComponent(parsed.date)}`;
+      }
+      return `/journal/habits/${encodeURIComponent(habitId)}`;
+    }
+    case "message": {
+      const message = catalog.messages.find(
+        (entry) => entry.id.toLowerCase() === parsed.id.toLowerCase(),
+      );
+      if (!message) {
+        return `/communication/${encodeURIComponent(parsed.id)}`;
+      }
+      return `/communication/${encodeURIComponent(message.id)}`;
+    }
+    case "post": {
+      const post = catalog.posts.find(
+        (entry) => entry.id.toLowerCase() === parsed.id.toLowerCase(),
+      );
+      if (!post) {
+        return `/social/post/${encodeURIComponent(parsed.id)}`;
+      }
+      return `/social/post/${encodeURIComponent(post.id)}`;
+    }
+    case "transaction": {
+      const transaction = catalog.transactions.find(
+        (entry) => entry.id.toLowerCase() === parsed.id.toLowerCase(),
+      );
+      const id = transaction?.id ?? parsed.id;
+      return `/finance/transactions?tx=${encodeURIComponent(id)}`;
+    }
+    case "invoice": {
+      const invoice = catalog.invoices.find(
+        (entry) => entry.id.toLowerCase() === parsed.id.toLowerCase(),
+      );
+      const id = invoice?.id ?? parsed.id;
+      return `/finance/invoices?invoice=${encodeURIComponent(id)}`;
+    }
+    case "estimate": {
+      const estimate = catalog.estimates.find(
+        (entry) => entry.id.toLowerCase() === parsed.id.toLowerCase(),
+      );
+      const id = estimate?.id ?? parsed.id;
+      return `/finance/estimates/${encodeURIComponent(id)}`;
     }
   }
 }

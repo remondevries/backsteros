@@ -73,6 +73,20 @@ describe("resolveChatChannelKind", () => {
     );
   });
 
+  it("maps support / helpdesk / ticket channels", () => {
+    assert.equal(resolveChatChannelKind("Channel::Support"), "support");
+    assert.equal(resolveChatChannelKind("support"), "support");
+    assert.equal(resolveChatChannelKind("Channel::Helpdesk"), "support");
+    assert.equal(
+      resolveChatChannelKind("Channel::Api", { inboxName: "Support tickets" }),
+      "support",
+    );
+    assert.equal(
+      resolveChatChannelKind("Channel::Api", { inboxName: "Helpdesk" }),
+      "support",
+    );
+  });
+
   it("keeps website / API as generic chat", () => {
     assert.equal(resolveChatChannelKind("Channel::Api"), "chat");
     assert.equal(
@@ -93,6 +107,7 @@ describe("chatChannelKindLabel", () => {
     assert.equal(chatChannelKindLabel("messenger"), "Messenger");
     assert.equal(chatChannelKindLabel("whatsapp"), "WhatsApp");
     assert.equal(chatChannelKindLabel("x"), "X");
+    assert.equal(chatChannelKindLabel("support"), "Support");
     assert.equal(chatChannelKindLabel("chat"), "Chat");
   });
 });

@@ -93,43 +93,65 @@ function positionMentionPanel(rect: CaretRect): {
 function primaryLabel(item: MentionItem): string {
   switch (item.kind) {
     case "task":
-      return item.title;
     case "letter":
-      return item.title;
     case "email":
+    case "document":
+    case "meeting":
+    case "journal":
+    case "habit":
+    case "message":
+    case "post":
+    case "transaction":
+    case "invoice":
+    case "estimate":
       return item.title;
     case "project":
-      return item.name;
     case "contact":
-      return item.name;
     case "organization":
       return item.name;
-    case "document":
-      return item.title;
   }
 }
 
 function secondaryLabel(item: MentionItem): string | null {
   switch (item.kind) {
     case "task":
-      return item.projectName;
     case "letter":
-      return item.projectName;
     case "email":
+    case "meeting":
       return item.projectName;
     case "project":
+    case "organization":
       return null;
     case "contact":
       return item.organizationName ?? item.title;
-    case "organization":
-      return null;
     case "document":
       return `${item.projectKey}/${item.relativePath}`;
+    case "journal":
+      return item.date;
+    case "habit":
+      return item.date;
+    case "message":
+      return item.contactName ?? item.channelType;
+    case "post":
+      return item.platform;
+    case "transaction":
+      return item.currency != null && item.amountCents != null
+        ? `${(item.amountCents / 100).toFixed(2)} ${item.currency}`
+        : null;
+    case "invoice":
+      return item.invoiceNumber;
+    case "estimate":
+      return item.displayId;
   }
 }
 
 function trailingHint(item: MentionItem): string | null {
-  if (item.kind === "task" || item.kind === "letter" || item.kind === "email") {
+  if (
+    item.kind === "task" ||
+    item.kind === "letter" ||
+    item.kind === "email" ||
+    item.kind === "meeting"
+  ) {
     return item.displayId;
   }
   if (item.kind === "contact") {
@@ -137,6 +159,18 @@ function trailingHint(item: MentionItem): string | null {
   }
   if (item.kind === "project" || item.kind === "organization") {
     return item.key;
+  }
+  if (item.kind === "journal") {
+    return item.date;
+  }
+  if (item.kind === "habit" && item.date) {
+    return item.date;
+  }
+  if (item.kind === "message") {
+    return item.channelType;
+  }
+  if (item.kind === "post") {
+    return item.platform;
   }
   return null;
 }
@@ -428,6 +462,12 @@ export function DocumentMentionMenu({
                       }
                       documentIcon={
                         item.kind === "document" ? item.icon : null
+                      }
+                      channelType={
+                        item.kind === "message" ? item.channelType : null
+                      }
+                      contactName={
+                        item.kind === "message" ? item.contactName : null
                       }
                       contact={
                         item.kind === "contact"

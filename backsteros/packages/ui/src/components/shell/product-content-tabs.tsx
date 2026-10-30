@@ -3,6 +3,10 @@
 import type { ReactNode } from "react";
 
 import { getNavigationItemIcon } from "../navigation/navigation-item-icon.js";
+import {
+  ChatPanelToggleButton,
+  type ChatPanelToggleButtonProps,
+} from "./chat-panel-toggle-button.js";
 import { SidePanelPlusIcon } from "./side-panel-plus-icon.js";
 import { ContentTabsTimer } from "./content-tabs-timer.js";
 import {
@@ -31,6 +35,8 @@ export type ProductContentTabsProps = {
    * recent / back / forward stay reachable next to the traffic lights.
    */
   historyToolbar?: ProductHistoryToolbarProps | null;
+  /** Optional global chat column toggle (right of the tabs, before timer). */
+  chatPanelToggle?: ChatPanelToggleButtonProps | null;
 };
 
 function DefaultTabIcon({ href }: { href: string }) {
@@ -57,6 +63,7 @@ export function ProductContentTabs({
   onOpenNewTab,
   renderTabIcon,
   historyToolbar = null,
+  chatPanelToggle = null,
 }: ProductContentTabsProps) {
   return (
     <header className="content-tabs-bar-row" data-tauri-drag-region="deep">
@@ -142,7 +149,10 @@ export function ProductContentTabs({
           </button>
         </div>
       </div>
-      <ContentTabsTimer />
+      <div className="content-tabs-trailing">
+        {chatPanelToggle ? <ChatPanelToggleButton {...chatPanelToggle} /> : null}
+        <ContentTabsTimer />
+      </div>
     </header>
   );
 }

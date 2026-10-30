@@ -21,6 +21,7 @@ import { useWindowChromeDrag } from "../lib/window-drag";
 import { navigateToHref } from "../router/navigate-href";
 import { RouterLink } from "./app-shell-links";
 import { renderAppShellTabIcon } from "./app-shell-tab-icon";
+import { ShellChatPanel } from "./shell-chat-panel";
 import type { useShellTabs } from "./use-shell-tabs";
 import type { resolveInboxSidebarIndicatorTone } from "@backsteros/ui/inbox";
 
@@ -40,6 +41,11 @@ type ShellChromeProps = {
   sidePanelAnimating: boolean;
   sidebarCollapsed: boolean;
   sidebarAnimating: boolean;
+  chatPanelCollapsed: boolean;
+  chatPanelAnimating: boolean;
+  chatPanelWidth: number;
+  onChatPanelWidthChange: (width: number) => void;
+  onToggleChatPanel: () => void;
   windowFullscreen: boolean;
   onComposeOpen: () => void;
 };
@@ -58,6 +64,11 @@ function ShellChromeInner({
   sidePanelAnimating,
   sidebarCollapsed,
   sidebarAnimating,
+  chatPanelCollapsed,
+  chatPanelAnimating,
+  chatPanelWidth,
+  onChatPanelWidthChange,
+  onToggleChatPanel,
   windowFullscreen,
   onComposeOpen,
 }: ShellChromeProps) {
@@ -123,11 +134,20 @@ function ShellChromeInner({
         sidebar={sidebar}
         sidebarCollapsed={sidebarCollapsed}
         sidebarAnimating={sidebarAnimating}
+        chatPanel={<ShellChatPanel />}
+        chatPanelCollapsed={chatPanelCollapsed}
+        chatPanelAnimating={chatPanelAnimating}
+        chatPanelWidth={chatPanelWidth}
+        onChatPanelWidthChange={onChatPanelWidthChange}
         tabs={tabsState.tabs}
         activeTabId={tabsState.activeTabId}
         onActivateTab={activateTab}
         onCloseTab={closeTab}
         onOpenNewTab={openNewTab}
+        chatPanelToggle={{
+          collapsed: chatPanelCollapsed,
+          onToggle: onToggleChatPanel,
+        }}
         historyToolbar={
           sidebarCollapsed
             ? {

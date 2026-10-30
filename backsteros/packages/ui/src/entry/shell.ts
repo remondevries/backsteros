@@ -3,6 +3,23 @@ export {
   type ProductAppShellProps,
 } from "../components/shell/product-app-shell.js";
 
+export {
+  ProductChatPanel,
+  CHAT_PANEL_COLLAPSE_DURATION_MS,
+  CHAT_PANEL_VISIBLE_STORAGE_KEY,
+  CHAT_PANEL_WIDTH_STORAGE_KEY,
+  readStoredChatPanelCollapsed,
+  readStoredChatPanelWidth,
+  type ProductChatPanelProps,
+} from "../components/shell/product-chat-panel.js";
+
+export {
+  ChatPanelToggleButton,
+  type ChatPanelToggleButtonProps,
+} from "../components/shell/chat-panel-toggle-button.js";
+
+export { isChatPanelToggleShortcut } from "../chat/chat-panel-toggle-shortcut.js";
+
 export { AppToastHost } from "../components/shell/app-toast-host.js";
 export {
   APP_TOAST_EVENT,

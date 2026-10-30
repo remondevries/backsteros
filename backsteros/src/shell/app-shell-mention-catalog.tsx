@@ -16,6 +16,7 @@ import { needsMentionCatalog } from "../lib/needs-mention-catalog";
 import {
   useDesktopWorkspaceDocuments,
   useDesktopWorkspaceInboxItems,
+  useDesktopWorkspaceMeta,
   useDesktopWorkspacePeople,
   useDesktopWorkspaceProjects,
   useDesktopWorkspaceTasks,
@@ -55,7 +56,13 @@ function AppShellMentionCatalogTree({
   const { projects, letters, projectSummaries } = useDesktopWorkspaceProjects();
   const { contacts, organizations, contactDetails } =
     useDesktopWorkspacePeople();
-  const { knowledgeDocuments, projectDocuments } = useDesktopWorkspaceDocuments();
+  const {
+    knowledgeDocuments,
+    projectDocuments,
+    journalItems,
+    journalDocumentIdsByDate,
+  } = useDesktopWorkspaceDocuments();
+  const { meetings, habits } = useDesktopWorkspaceMeta();
   const agentMail = useAgentMail();
   const contactAvatarSrc = useDesktopAvatarSrcMap("contact", contacts);
   const organizationAvatarSrc = useDesktopAvatarSrcMap(
@@ -80,6 +87,10 @@ function AppShellMentionCatalogTree({
       projectDocuments,
       projectSummaries,
       projects,
+      meetings,
+      journalItems,
+      journalDocumentIdsByDate,
+      habits,
     });
     const emails = buildMentionCatalogFromEmailMessages(agentMail.messages);
     if (emails.length === 0) {
@@ -95,9 +106,13 @@ function AppShellMentionCatalogTree({
     contactAvatarSrc,
     contactDetails,
     contacts,
+    habits,
     inboxItems,
+    journalDocumentIdsByDate,
+    journalItems,
     knowledgeDocuments,
     letters,
+    meetings,
     organizationAvatarSrc,
     organizations,
     projectDocuments,

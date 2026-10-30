@@ -14,6 +14,11 @@ export type MentionChipHoverShellProps = {
   layout?: "inline" | "block";
   /** Merge trigger props onto the child (required for navigable `<a>` chips). */
   asChild?: boolean;
+  /**
+   * Primary click pins the mention peek open (same panel as hover).
+   * Modifier / middle-click still follows the chip href.
+   */
+  openOnClick?: boolean;
 };
 
 export function MentionChipHoverShell({
@@ -21,6 +26,7 @@ export function MentionChipHoverShell({
   hoverContent,
   layout = "inline",
   asChild,
+  openOnClick = false,
 }: MentionChipHoverShellProps) {
   const isBlock = layout === "block";
   // Inline chips wrap in a span trigger so HoverCard always has a stable DOM
@@ -29,7 +35,7 @@ export function MentionChipHoverShell({
   const useAsChild = asChild ?? isBlock;
 
   return (
-    <HoverCard openDelay={150} closeDelay={120}>
+    <HoverCard openDelay={150} closeDelay={120} openOnClick={openOnClick}>
       <HoverCardTrigger
         asChild={useAsChild}
         className={

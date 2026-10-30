@@ -50,10 +50,18 @@ import {
   resolveMentionCatalogContact,
   resolveMentionCatalogDocument,
   resolveMentionCatalogEmail,
+  resolveMentionCatalogHabit,
+  resolveMentionCatalogJournal,
   resolveMentionCatalogLetter,
+  resolveMentionCatalogMeeting,
+  resolveMentionCatalogMessage,
   resolveMentionCatalogOrganization,
+  resolveMentionCatalogEstimate,
+  resolveMentionCatalogInvoice,
+  resolveMentionCatalogPost,
   resolveMentionCatalogProject,
   resolveMentionCatalogTask,
+  resolveMentionCatalogTransaction,
 } from "../../mentions/resolve-catalog-entry.js";
 import type { MentionCatalog } from "../../mentions/mention-menu-types.js";
 import { resolveMentionHref } from "../../mentions/tokens.js";
@@ -72,9 +80,14 @@ import {
 import { getOptionalTaskStatusLabel } from "../../tasks/task-status.js";
 import { useContentPreviewLinkNavigation } from "../../content/use-content-preview-link-navigation.js";
 import { DocumentMentionHoverCard } from "./document-mention-hover-card.js";
-import { EmailMentionBlockChip } from "../email/email-mention-block-chip.js";
+import {
+  EmailMentionBlockChip,
+  emailMentionChipPartyLabel,
+} from "../email/email-mention-block-chip.js";
+import { CalendarIcon } from "../icons/calendar-icon.js";
 import { LetterIcon } from "../letters/letter-icon.js";
 import { EmailNavIcon } from "../shell/sidebar-nav-icons.js";
+import { MeetingMentionBlockChip } from "../meetings/meeting-mention-block-chip.js";
 import { MentionChipHoverShell } from "../mentions/mention-chip-hover-shell.js";
 import { MentionLeadingIcon } from "../mentions/mention-leading-icon.js";
 import { NamedLinkChip } from "../mentions/named-link-chip.js";
@@ -501,6 +514,65 @@ function resolvePreviewChipLabel(
       }
       return { label: document.title, deleted: false };
     }
+    case "meeting": {
+      const meeting = resolveMentionCatalogMeeting(token, catalog);
+      if (!meeting) {
+        return { label: mentionTokenLabel(token), deleted: true };
+      }
+      return { label: meeting.title || meeting.displayId, deleted: false };
+    }
+    case "journal": {
+      const journal = resolveMentionCatalogJournal(token, catalog);
+      if (!journal) {
+        return { label: mentionTokenLabel(token), deleted: true };
+      }
+      return { label: journal.title || journal.date, deleted: false };
+    }
+    case "habit": {
+      const habit = resolveMentionCatalogHabit(token, catalog);
+      if (!habit) {
+        return { label: mentionTokenLabel(token), deleted: true };
+      }
+      return {
+        label: habit.date ? `${habit.title} · ${habit.date}` : habit.title,
+        deleted: false,
+      };
+    }
+    case "message": {
+      const message = resolveMentionCatalogMessage(token, catalog);
+      if (!message) {
+        return { label: mentionTokenLabel(token), deleted: true };
+      }
+      return { label: message.title, deleted: false };
+    }
+    case "post": {
+      const post = resolveMentionCatalogPost(token, catalog);
+      if (!post) {
+        return { label: mentionTokenLabel(token), deleted: true };
+      }
+      return { label: post.title, deleted: false };
+    }
+    case "transaction": {
+      const transaction = resolveMentionCatalogTransaction(token, catalog);
+      if (!transaction) {
+        return { label: mentionTokenLabel(token), deleted: true };
+      }
+      return { label: transaction.title, deleted: false };
+    }
+    case "invoice": {
+      const invoice = resolveMentionCatalogInvoice(token, catalog);
+      if (!invoice) {
+        return { label: mentionTokenLabel(token), deleted: true };
+      }
+      return { label: invoice.title, deleted: false };
+    }
+    case "estimate": {
+      const estimate = resolveMentionCatalogEstimate(token, catalog);
+      if (!estimate) {
+        return { label: mentionTokenLabel(token), deleted: true };
+      }
+      return { label: estimate.title, deleted: false };
+    }
   }
 }
 
@@ -540,6 +612,22 @@ function resolvePreviewChipIconProps(
         organization: null,
       };
     }
+    case "meeting":
+    case "journal":
+    case "habit":
+    case "message":
+    case "post":
+    case "transaction":
+    case "invoice":
+    case "estimate":
+      return {
+        kind: token.kind,
+        status: null,
+        projectIcon: null,
+        documentIcon: null,
+        contact: null,
+        organization: null,
+      };
     case "project": {
       const project = resolveMentionCatalogProject(token, catalog);
       return {
@@ -753,6 +841,14 @@ function renderMentionChipBody(
 
     const dueDateLabel =
       email.dueDate != null ? formatTaskDueMetaLabel(email.dueDate) : null;
+    const receivedLabel =
+      email.receivedAt != null
+        ? formatTaskDueMetaLabel(email.receivedAt)
+        : null;
+    const partyLabel = emailMentionChipPartyLabel(
+      email.contactName,
+      email.from,
+    );
 
     return (
       <>
@@ -764,9 +860,13 @@ function renderMentionChipBody(
         <span className="mention-chip-lite__icon" aria-hidden="true">
           <EmailNavIcon size={14} />
         </span>
-        <span className="mention-chip-lite__id">{email.displayId}</span>
-        <span className="mention-chip-lite__label mention-chip-lite__label--grow">
-          {email.title || email.displayId}
+        <span className="mention-chip-lite__title-group mention-chip-lite__label--grow">
+          <span className="mention-chip-lite__label">
+            {email.title || "Email"}
+          </span>
+          {partyLabel ? (
+            <span className="mention-chip-lite__from">{partyLabel}</span>
+          ) : null}
         </span>
         {dueDateLabel ? (
           <span className="mention-chip-lite__due">
@@ -780,13 +880,12 @@ function renderMentionChipBody(
             <span>{dueDateLabel}</span>
           </span>
         ) : null}
+        {receivedLabel ? (
+          <span className="mention-chip-lite__received">{receivedLabel}</span>
+        ) : null}
         {email.projectName ? (
           <span className="mention-chip-lite__project">
             <span>{email.projectName}</span>
-          </span>
-        ) : email.contactName ? (
-          <span className="mention-chip-lite__project">
-            <span>{email.contactName}</span>
           </span>
         ) : null}
       </>
@@ -809,11 +908,7 @@ function renderMentionChipBody(
     return (
       <>
         <span className="mention-chip-lite__icon" aria-hidden="true">
-          <ProjectOcticon
-            icon={getDisplayProjectIcon(project.icon, project.type)}
-            type={project.type}
-            size={14}
-          />
+          <ProjectOcticon icon={project.icon} size={14} />
         </span>
         <span className="mention-chip-lite__id">{project.key}</span>
         <ProjectStatusIcon status={project.status} size={14} />
@@ -824,6 +919,158 @@ function renderMentionChipBody(
           <span className="mention-chip-lite__area">
             {PROJECT_AREA_LABELS[project.area]}
           </span>
+        ) : null}
+      </>
+    );
+  }
+
+  if (token.kind === "journal") {
+    const journal = resolveMentionCatalogJournal(token, catalog);
+    return (
+      <>
+        <span className="mention-chip-lite__icon" aria-hidden="true">
+          <MentionLeadingIcon kind="journal" size={14} />
+        </span>
+        <span className="mention-chip-lite__id">Journal</span>
+        <span className="mention-chip-lite__label mention-chip-lite__label--grow">
+          {journal?.date ?? token.date}
+        </span>
+      </>
+    );
+  }
+
+  if (token.kind === "habit") {
+    const habit = resolveMentionCatalogHabit(token, catalog);
+    const habitDate = habit?.date ?? token.date;
+    return (
+      <>
+        <span className="mention-chip-lite__icon" aria-hidden="true">
+          <MentionLeadingIcon kind="habit" size={14} />
+        </span>
+        <span className="mention-chip-lite__id">Habit</span>
+        <span className="mention-chip-lite__label mention-chip-lite__label--grow">
+          {habit?.title || label}
+        </span>
+        {habitDate ? (
+          <span className="mention-chip-lite__received">
+            <CalendarIcon size={12} />
+            <span>{habitDate}</span>
+          </span>
+        ) : null}
+        {habit?.cadence ? (
+          <span className="mention-chip-lite__project">{habit.cadence}</span>
+        ) : null}
+      </>
+    );
+  }
+
+  if (token.kind === "message") {
+    const message = resolveMentionCatalogMessage(token, catalog);
+    return (
+      <>
+        <span className="mention-chip-lite__icon" aria-hidden="true">
+          <MentionLeadingIcon
+            kind="message"
+            size={14}
+            channelType={message?.channelType}
+            contactName={message?.contactName}
+          />
+        </span>
+        <span className="mention-chip-lite__label mention-chip-lite__label--grow">
+          {message?.title || label}
+        </span>
+        {message?.contactName ? (
+          <span className="mention-chip-lite__project">
+            {message.contactName}
+          </span>
+        ) : null}
+      </>
+    );
+  }
+
+  if (token.kind === "post") {
+    const post = resolveMentionCatalogPost(token, catalog);
+    return (
+      <>
+        <span className="mention-chip-lite__icon" aria-hidden="true">
+          <MentionLeadingIcon kind="post" size={14} />
+        </span>
+        {post?.platform ? (
+          <span className="mention-chip-lite__id">{post.platform}</span>
+        ) : null}
+        <span className="mention-chip-lite__label mention-chip-lite__label--grow">
+          {post?.title || label}
+        </span>
+        {post?.authorHandle ? (
+          <span className="mention-chip-lite__project">{post.authorHandle}</span>
+        ) : null}
+      </>
+    );
+  }
+
+  if (token.kind === "transaction") {
+    const transaction = resolveMentionCatalogTransaction(token, catalog);
+    const amount =
+      transaction?.amountCents != null
+        ? `${(transaction.amountCents / 100).toFixed(2)} ${transaction.currency ?? ""}`.trim()
+        : null;
+    return (
+      <>
+        <span className="mention-chip-lite__icon" aria-hidden="true">
+          <MentionLeadingIcon kind="transaction" size={14} />
+        </span>
+        {transaction?.bookedOn ? (
+          <span className="mention-chip-lite__id">{transaction.bookedOn}</span>
+        ) : null}
+        <span className="mention-chip-lite__label mention-chip-lite__label--grow">
+          {transaction?.title || label}
+        </span>
+        {amount ? (
+          <span className="mention-chip-lite__project">{amount}</span>
+        ) : null}
+      </>
+    );
+  }
+
+  if (token.kind === "invoice") {
+    const invoice = resolveMentionCatalogInvoice(token, catalog);
+    return (
+      <>
+        <span className="mention-chip-lite__icon" aria-hidden="true">
+          <MentionLeadingIcon kind="invoice" size={14} />
+        </span>
+        {invoice?.invoiceNumber ? (
+          <span className="mention-chip-lite__id">{invoice.invoiceNumber}</span>
+        ) : null}
+        <span className="mention-chip-lite__label mention-chip-lite__label--grow">
+          {invoice?.title || label}
+        </span>
+        {invoice?.amountLabel ? (
+          <span className="mention-chip-lite__project">{invoice.amountLabel}</span>
+        ) : null}
+      </>
+    );
+  }
+
+  if (token.kind === "estimate") {
+    const estimate = resolveMentionCatalogEstimate(token, catalog);
+    const amount =
+      estimate?.totalAmountCents != null
+        ? `${(estimate.totalAmountCents / 100).toFixed(2)} ${estimate.currency ?? "EUR"}`.trim()
+        : null;
+    return (
+      <>
+        <span className="mention-chip-lite__icon" aria-hidden="true">
+          <MentionLeadingIcon kind="estimate" size={14} />
+        </span>
+        {estimate?.displayId ? (
+          <span className="mention-chip-lite__id">{estimate.displayId}</span>
+        ) : null}
+        <span className="mention-chip-lite__label mention-chip-lite__label--grow">
+          {estimate?.title || label}
+        </span>
+        {amount ? (
+          <span className="mention-chip-lite__project">{amount}</span>
         ) : null}
       </>
     );
@@ -859,7 +1106,18 @@ function MentionChipLite({
     token.kind === "task" ||
     token.kind === "project" ||
     token.kind === "letter" ||
-    token.kind === "email"
+    token.kind === "email" ||
+    token.kind === "meeting" ||
+    token.kind === "journal" ||
+    token.kind === "habit" ||
+    token.kind === "message" ||
+    token.kind === "post" ||
+    token.kind === "transaction" ||
+    token.kind === "invoice" ||
+    token.kind === "estimate" ||
+    token.kind === "contact" ||
+    token.kind === "organization" ||
+    token.kind === "document"
       ? layout
       : "inline";
   const trailSourceHref = useMentionNavigationPathname();
@@ -909,6 +1167,34 @@ function MentionChipLite({
       const trigger = (
         <EmailMentionBlockChip
           email={email}
+          href={href}
+          titleAttr={token.raw}
+        />
+      );
+      return (
+        <MentionChipHoverShell
+          trigger={trigger}
+          layout="block"
+          asChild
+          hoverContent={
+            <DocumentMentionHoverCard parsed={token} catalog={catalog} />
+          }
+        />
+      );
+    }
+  }
+
+  if (
+    !deleted &&
+    chipLayout === "block" &&
+    token.kind === "meeting" &&
+    href
+  ) {
+    const meeting = resolveMentionCatalogMeeting(token, catalog);
+    if (meeting) {
+      const trigger = (
+        <MeetingMentionBlockChip
+          meeting={meeting}
           href={href}
           titleAttr={token.raw}
         />

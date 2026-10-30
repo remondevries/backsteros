@@ -682,6 +682,33 @@ mark.spellcheck-fix-mark,
   color: color-mix(in srgb, var(--foreground) 55%, transparent);
 }
 
+.mention-hover-card__actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 2px;
+}
+
+.mention-hover-card__action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  line-height: 1.2;
+  color: var(--foreground);
+  background: color-mix(in srgb, var(--foreground) 10%, transparent);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.mention-hover-card__action:hover {
+  background: color-mix(in srgb, var(--foreground) 14%, transparent);
+  color: var(--foreground);
+}
+
 .mention-hover-card__separator {
   height: 1px;
   background: rgb(255 255 255 / 0.1);
@@ -866,6 +893,40 @@ a.mention-chip-lite--deleted:hover {
   color: color-mix(in srgb, var(--foreground) 55%, transparent);
 }
 
+/* Channel platform disc for message mention / chat entity chips. */
+.mention-chip-lite__channel-kind {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  overflow: hidden;
+  line-height: 0;
+}
+
+.mention-chip-lite__channel-kind.communication-chat__card-kind--whatsapp {
+  background: #25d366;
+  color: #fff;
+}
+
+.mention-chip-lite__channel-kind.communication-chat__card-kind--support {
+  background: #eab308;
+  color: #171718;
+}
+
+.mention-chip-lite__channel-kind.communication-chat__card-kind--chat {
+  background: #a855f7;
+  color: #fff;
+}
+
+.mention-chip-lite__channel-kind.communication-chat__card-kind--telegram,
+.mention-chip-lite__channel-kind.communication-chat__card-kind--instagram,
+.mention-chip-lite__channel-kind.communication-chat__card-kind--messenger,
+.mention-chip-lite__channel-kind.communication-chat__card-kind--x {
+  background: transparent;
+  color: #fff;
+}
+
 .named-link-chip.named-link-chip--spark-email .mention-chip-lite__icon {
   color: #60a5fa;
 }
@@ -923,6 +984,44 @@ a.mention-chip-lite--deleted:hover {
 .mention-chip-lite__label--grow {
   flex: 1 1 auto;
   max-width: none;
+}
+
+.mention-chip-lite__title-group {
+  display: inline-flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 0.4rem;
+}
+
+.mention-chip-lite__title-group .mention-chip-lite__label {
+  flex: 0 1 auto;
+}
+
+.mention-chip-lite__from {
+  flex-shrink: 1;
+  min-width: 0;
+  max-width: 12rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.75rem;
+  font-weight: 400;
+  line-height: 1.2;
+  color: color-mix(in srgb, var(--foreground) 42%, transparent);
+  letter-spacing: -0.01em;
+}
+
+.mention-chip-lite__received {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.75rem;
+  font-weight: 400;
+  line-height: 1;
+  color: color-mix(in srgb, var(--foreground) 50%, transparent);
+  white-space: nowrap;
+  letter-spacing: -0.01em;
 }
 
 .mention-chip-lite__status {

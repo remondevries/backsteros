@@ -17,6 +17,14 @@ const SECTION_HEADINGS: Record<MentionKind, string> = {
   document: "Documents",
   letter: "Letters",
   email: "E-mail",
+  meeting: "Meetings",
+  journal: "Journal",
+  habit: "Habits",
+  message: "Messages",
+  post: "Posts",
+  transaction: "Transactions",
+  invoice: "Invoices",
+  estimate: "Estimates",
 };
 
 function normalizeQuery(query: string): string {
@@ -232,6 +240,191 @@ function filterLetters(catalog: MentionCatalog, query: string): MentionItem[] {
     );
 }
 
+function filterMeetings(catalog: MentionCatalog, query: string): MentionItem[] {
+  const normalized = normalizeQuery(query);
+
+  return catalog.meetings
+    .filter(
+      (meeting) =>
+        matchesQuery(meeting.title, normalized) ||
+        matchesQuery(meeting.displayId, normalized),
+    )
+    .slice(0, MAX_ITEMS_PER_SECTION)
+    .map(
+      (meeting): MentionItem => ({
+        kind: "meeting",
+        id: meeting.id,
+        displayId: meeting.displayId,
+        title: meeting.title,
+        startAt: meeting.startAt,
+        projectName: meeting.projectName,
+      }),
+    );
+}
+
+function filterJournals(catalog: MentionCatalog, query: string): MentionItem[] {
+  const normalized = normalizeQuery(query);
+
+  return catalog.journals
+    .filter(
+      (journal) =>
+        matchesQuery(journal.title, normalized) ||
+        matchesQuery(journal.date, normalized),
+    )
+    .slice(0, MAX_ITEMS_PER_SECTION)
+    .map(
+      (journal): MentionItem => ({
+        kind: "journal",
+        id: journal.id,
+        date: journal.date,
+        title: journal.title,
+      }),
+    );
+}
+
+function filterHabits(catalog: MentionCatalog, query: string): MentionItem[] {
+  const normalized = normalizeQuery(query);
+
+  return catalog.habits
+    .filter(
+      (habit) =>
+        matchesQuery(habit.title, normalized) ||
+        (habit.date != null && matchesQuery(habit.date, normalized)),
+    )
+    .slice(0, MAX_ITEMS_PER_SECTION)
+    .map(
+      (habit): MentionItem => ({
+        kind: "habit",
+        id: habit.id,
+        title: habit.title,
+        icon: habit.icon,
+        date: habit.date,
+      }),
+    );
+}
+
+function filterMessages(catalog: MentionCatalog, query: string): MentionItem[] {
+  const normalized = normalizeQuery(query);
+
+  return catalog.messages
+    .filter(
+      (message) =>
+        matchesQuery(message.title, normalized) ||
+        matchesQuery(message.channelType, normalized) ||
+        (message.contactName != null &&
+          matchesQuery(message.contactName, normalized)),
+    )
+    .slice(0, MAX_ITEMS_PER_SECTION)
+    .map(
+      (message): MentionItem => ({
+        kind: "message",
+        id: message.id,
+        channelType: message.channelType,
+        title: message.title,
+        contactName: message.contactName,
+      }),
+    );
+}
+
+function filterPosts(catalog: MentionCatalog, query: string): MentionItem[] {
+  const normalized = normalizeQuery(query);
+
+  return catalog.posts
+    .filter(
+      (post) =>
+        matchesQuery(post.title, normalized) ||
+        (post.platform != null && matchesQuery(post.platform, normalized)) ||
+        (post.body != null && matchesQuery(post.body, normalized)),
+    )
+    .slice(0, MAX_ITEMS_PER_SECTION)
+    .map(
+      (post): MentionItem => ({
+        kind: "post",
+        id: post.id,
+        title: post.title,
+        platform: post.platform,
+      }),
+    );
+}
+
+function filterTransactions(
+  catalog: MentionCatalog,
+  query: string,
+): MentionItem[] {
+  const normalized = normalizeQuery(query);
+
+  return catalog.transactions
+    .filter(
+      (transaction) =>
+        matchesQuery(transaction.title, normalized) ||
+        (transaction.counterparty != null &&
+          matchesQuery(transaction.counterparty, normalized)) ||
+        (transaction.notes != null && matchesQuery(transaction.notes, normalized)),
+    )
+    .slice(0, MAX_ITEMS_PER_SECTION)
+    .map(
+      (transaction): MentionItem => ({
+        kind: "transaction",
+        id: transaction.id,
+        title: transaction.title,
+        amountCents: transaction.amountCents,
+        currency: transaction.currency,
+      }),
+    );
+}
+
+function filterInvoices(
+  catalog: MentionCatalog,
+  query: string,
+): MentionItem[] {
+  const normalized = normalizeQuery(query);
+
+  return catalog.invoices
+    .filter(
+      (invoice) =>
+        matchesQuery(invoice.title, normalized) ||
+        (invoice.invoiceNumber != null &&
+          matchesQuery(invoice.invoiceNumber, normalized)) ||
+        (invoice.contactName != null &&
+          matchesQuery(invoice.contactName, normalized)),
+    )
+    .slice(0, MAX_ITEMS_PER_SECTION)
+    .map(
+      (invoice): MentionItem => ({
+        kind: "invoice",
+        id: invoice.id,
+        title: invoice.title,
+        invoiceNumber: invoice.invoiceNumber,
+      }),
+    );
+}
+
+function filterEstimates(
+  catalog: MentionCatalog,
+  query: string,
+): MentionItem[] {
+  const normalized = normalizeQuery(query);
+
+  return catalog.estimates
+    .filter(
+      (estimate) =>
+        matchesQuery(estimate.title, normalized) ||
+        (estimate.displayId != null &&
+          matchesQuery(estimate.displayId, normalized)) ||
+        (estimate.clientLabel != null &&
+          matchesQuery(estimate.clientLabel, normalized)),
+    )
+    .slice(0, MAX_ITEMS_PER_SECTION)
+    .map(
+      (estimate): MentionItem => ({
+        kind: "estimate",
+        id: estimate.id,
+        title: estimate.title,
+        displayId: estimate.displayId,
+      }),
+    );
+}
+
 export function buildMentionSections(
   catalog: MentionCatalog,
   query: string,
@@ -253,6 +446,16 @@ export function buildMentionSections(
       items: filterEmails(catalog, query),
     },
     {
+      kind: "meeting",
+      heading: SECTION_HEADINGS.meeting,
+      items: filterMeetings(catalog, query),
+    },
+    {
+      kind: "message",
+      heading: SECTION_HEADINGS.message,
+      items: filterMessages(catalog, query),
+    },
+    {
       kind: "project",
       heading: SECTION_HEADINGS.project,
       items: filterProjects(catalog, query),
@@ -271,6 +474,36 @@ export function buildMentionSections(
       kind: "document",
       heading: SECTION_HEADINGS.document,
       items: filterDocuments(catalog, query),
+    },
+    {
+      kind: "journal",
+      heading: SECTION_HEADINGS.journal,
+      items: filterJournals(catalog, query),
+    },
+    {
+      kind: "habit",
+      heading: SECTION_HEADINGS.habit,
+      items: filterHabits(catalog, query),
+    },
+    {
+      kind: "post",
+      heading: SECTION_HEADINGS.post,
+      items: filterPosts(catalog, query),
+    },
+    {
+      kind: "transaction",
+      heading: SECTION_HEADINGS.transaction,
+      items: filterTransactions(catalog, query),
+    },
+    {
+      kind: "invoice",
+      heading: SECTION_HEADINGS.invoice,
+      items: filterInvoices(catalog, query),
+    },
+    {
+      kind: "estimate",
+      heading: SECTION_HEADINGS.estimate,
+      items: filterEstimates(catalog, query),
     },
   ];
 

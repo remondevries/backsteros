@@ -1,7 +1,8 @@
 "use client";
 
-import { ClientLink } from "../../shared/client-link.js";
-import { CalendarIcon } from "../icons/calendar-icon.js";
+import { forwardRef, type HTMLAttributes, type ReactNode, type Ref } from "react";
+
+import { ChatCardHref } from "../chat/chat-card-navigate.js";
 import { OrganizationIcon } from "../organizations/organization-icon.js";
 import { getDisplayProjectIcon, ProjectOcticon } from "../projects/project-octicon.js";
 
@@ -15,9 +16,12 @@ export type MeetingMentionBlockChipMeeting = {
   organizationName?: string | null;
 };
 
-export type MeetingMentionBlockChipProps = {
+type ChipRestProps = Omit<HTMLAttributes<HTMLElement>, "children" | "title">;
+
+export type MeetingMentionBlockChipProps = ChipRestProps & {
   meeting: MeetingMentionBlockChipMeeting;
-  href: string;
+  /** Omit for non-navigating chrome (e.g. chat `<details>` summary). */
+  href?: string | null;
   titleAttr?: string | null;
 };
 
@@ -71,40 +75,24 @@ export function formatMeetingWhenBadge(
   return `${datePart} · ${formatTime(start)} → ${formatDateLabel(end)} · ${formatTime(end)}`;
 }
 
-/**
- * Block meeting card — same chrome as task mention chips on the email
- * thread timeline when an agenda item is created.
- */
-export function MeetingMentionBlockChip({
+function MeetingMentionBlockChipContent({
   meeting,
-  href,
-  titleAttr = null,
-}: MeetingMentionBlockChipProps) {
+}: {
+  meeting: MeetingMentionBlockChipMeeting;
+}): ReactNode {
   const whenLabel = formatMeetingWhenBadge(meeting.startAt, meeting.endAt);
   const label = meeting.title.trim() || "Meeting";
-  const displayId = meeting.displayId?.trim() || null;
 
   return (
-    <ClientLink
-      href={href}
-      className="mention-chip-lite mention-chip-lite--meeting mention-chip-lite--block mention-chip-lite--link"
-      title={titleAttr?.trim() || displayId || label}
-    >
-      <span className="mention-chip-lite__icon" aria-hidden="true">
-        <CalendarIcon size={14} />
-      </span>
-      {displayId ? (
-        <span className="mention-chip-lite__id">{displayId}</span>
-      ) : null}
+    <>
+      {whenLabel ? (
+        <span className="mention-chip-lite__id">{whenLabel}</span>
+      ) : (
+        <span className="mention-chip-lite__id">Meeting</span>
+      )}
       <span className="mention-chip-lite__label mention-chip-lite__label--grow">
         {label}
       </span>
-      {whenLabel ? (
-        <span className="mention-chip-lite__due">
-          <CalendarIcon size={12} />
-          <span>{whenLabel}</span>
-        </span>
-      ) : null}
       {meeting.projectName ? (
         <span className="mention-chip-lite__project">
           <ProjectOcticon
@@ -120,6 +108,55 @@ export function MeetingMentionBlockChip({
           <span>{meeting.organizationName}</span>
         </span>
       ) : null}
-    </ClientLink>
+    </>
   );
 }
+
+/**
+ * Block meeting card — journal-style `DATE TITLE` row (no leading icon).
+ */
+export const MeetingMentionBlockChip = forwardRef<
+  HTMLAnchorElement | HTMLDivElement,
+  MeetingMentionBlockChipProps
+>(function MeetingMentionBlockChip(
+  { meeting, href = null, titleAttr = null, className, ...rest },
+  ref,
+) {
+  const label = meeting.title.trim() || "Meeting";
+  const whenLabel = formatMeetingWhenBadge(meeting.startAt, meeting.endAt);
+  const title = titleAttr?.trim() || whenLabel || label;
+  const chipClassName = [
+    "mention-chip-lite",
+    "mention-chip-lite--meeting",
+    "mention-chip-lite--block",
+    href ? "mention-chip-lite--link" : null,
+    className,
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  if (href) {
+    return (
+      <ChatCardHref
+        ref={ref as Ref<HTMLAnchorElement>}
+        href={href}
+        className={chipClassName}
+        title={title}
+        {...rest}
+      >
+        <MeetingMentionBlockChipContent meeting={meeting} />
+      </ChatCardHref>
+    );
+  }
+
+  return (
+    <div
+      ref={ref as Ref<HTMLDivElement>}
+      className={chipClassName}
+      title={title}
+      {...rest}
+    >
+      <MeetingMentionBlockChipContent meeting={meeting} />
+    </div>
+  );
+});

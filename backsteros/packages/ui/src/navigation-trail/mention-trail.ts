@@ -114,6 +114,15 @@ function mentionTrailRef(
       };
     }
     case "email":
+    case "meeting":
+    case "journal":
+    case "habit":
+    case "message":
+    case "post":
+    case "transaction":
+    case "invoice":
+    case "estimate":
+      // Open canonical section URLs via resolveMentionHref — no trail node yet.
       return null;
   }
 }

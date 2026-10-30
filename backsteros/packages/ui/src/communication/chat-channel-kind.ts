@@ -9,6 +9,7 @@ export type ChatChannelKind =
   | "messenger"
   | "whatsapp"
   | "x"
+  | "support"
   | "chat";
 
 export type ResolveChatChannelKindOptions = {
@@ -70,6 +71,16 @@ export function resolveChatChannelKind(
   if (channel.includes("facebook") || channel.includes("messenger")) {
     return "messenger";
   }
+  // Support tickets / helpdesk inboxes (Chatwoot or local Support module).
+  if (
+    channel.includes("support") ||
+    channel.includes("helpdesk") ||
+    channel.includes("ticket") ||
+    inbox.includes("support") ||
+    inbox.includes("helpdesk")
+  ) {
+    return "support";
+  }
   return "chat";
 }
 
@@ -85,6 +96,8 @@ export function chatChannelKindLabel(kind: ChatChannelKind): string {
       return "WhatsApp";
     case "x":
       return "X";
+    case "support":
+      return "Support";
     default:
       return "Chat";
   }

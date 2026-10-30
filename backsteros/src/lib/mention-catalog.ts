@@ -6,6 +6,7 @@ import {
   collapseEmailListItemsByThread,
   formatEmailDisplayId,
   formatLetterDisplayId,
+  formatMeetingDisplayId,
   formatTaskDisplayId,
   isProjectStatus,
   isTaskPriority,
@@ -18,13 +19,18 @@ import {
   type MentionCatalogContact,
   type MentionCatalogDocument,
   type MentionCatalogEmail,
+  type MentionCatalogHabit,
+  type MentionCatalogJournal,
   type MentionCatalogLetter,
+  type MentionCatalogMeeting,
   type MentionCatalogOrganization,
   type MentionCatalogProject,
   type MentionCatalogTask,
   type ProjectArea,
   type TaskPriority,
 } from "@backsteros/ui";
+
+import type { Habit } from "@backsteros/contracts";
 
 import type { DesktopWorkspaceData } from "./workspace-data";
 
@@ -159,6 +165,11 @@ function mapEmailListItem(item: EmailListItem): MentionCatalogEmail | null {
     status,
     priority: toPriority(item.priority ?? 0),
     dueDate: dueDateMs(item.dueDate),
+    receivedAt:
+      typeof item.receivedAt === "number" && Number.isFinite(item.receivedAt)
+        ? item.receivedAt
+        : null,
+    from: item.from?.trim() || null,
     inboxId: item.inboxId,
     threadId: item.threadId ?? null,
     messageId: item.id,
@@ -205,6 +216,10 @@ export function buildMentionCatalogFromWorkspace(
     | "inboxItems"
     | "projectSummaries"
     | "letters"
+    | "meetings"
+    | "journalItems"
+    | "journalDocumentIdsByDate"
+    | "habits"
   >,
 ): MentionCatalog {
   const contactsById = new Map(
@@ -386,13 +401,70 @@ export function buildMentionCatalogFromWorkspace(
     };
   });
 
+  const meetings: MentionCatalogMeeting[] = workspace.meetings.map(
+    (meeting) => {
+      const project = meeting.projectId
+        ? projectsById.get(meeting.projectId)
+        : null;
+      return {
+        id: meeting.id,
+        displayId: formatMeetingDisplayId(meeting.number),
+        title: meeting.title,
+        startAt: dueDateMs(meeting.startAt),
+        endAt: dueDateMs(meeting.endAt),
+        status: meeting.status ?? null,
+        summary: meeting.summary ?? null,
+        location: meeting.location ?? null,
+        projectId: meeting.projectId ?? null,
+        projectKey: meeting.projectKey ?? project?.key ?? null,
+        projectName: meeting.projectName ?? project?.name ?? null,
+        projectIcon: null,
+        organizationName: meeting.organizationName ?? null,
+      };
+    },
+  );
+
+  const journals: MentionCatalogJournal[] = workspace.journalItems.map(
+    (item) => {
+      const documentId =
+        workspace.journalDocumentIdsByDate[item.dateSlug] ?? item.dateSlug;
+      return {
+        id: documentId,
+        date: item.dateSlug,
+        title: item.dateSlug,
+        snippet: null,
+        updatedAt: null,
+      };
+    },
+  );
+
+  const habits: MentionCatalogHabit[] = workspace.habits.map(
+    (habit: Habit) => ({
+      id: habit.id,
+      title: habit.title,
+      icon: habit.icon,
+      cadence: habit.cadence,
+      date: null,
+      completed:
+        habit.todayTaskStatus === "completed"
+          ? true
+          : habit.todayTaskStatus == null
+            ? null
+            : false,
+      taskDisplayId: null,
+    }),
+  );
+
   if (
     taskById.size === 0 &&
     projects.length === 0 &&
     contacts.length === 0 &&
     organizations.length === 0 &&
     documents.length === 0 &&
-    letters.length === 0
+    letters.length === 0 &&
+    meetings.length === 0 &&
+    journals.length === 0 &&
+    habits.length === 0
   ) {
     return EMPTY_MENTION_CATALOG;
   }
@@ -405,5 +477,13 @@ export function buildMentionCatalogFromWorkspace(
     documents,
     letters,
     emails: [],
+    meetings,
+    journals,
+    habits,
+    messages: [],
+    posts: [],
+    transactions: [],
+    invoices: [],
+    estimates: [],
   };
 }
