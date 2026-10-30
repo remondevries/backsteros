@@ -253,6 +253,81 @@
   color: color-mix(in oklab, var(--foreground, #f5f5f5) 55%, transparent);
 }
 
+.chat-ui-thread__project-badge {
+  position: relative;
+  display: inline-flex;
+  max-width: 100%;
+  align-items: center;
+  gap: 2px;
+  margin-top: 2px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--foreground, #fff) 10%, transparent);
+  color: color-mix(in oklab, var(--foreground, #f5f5f5) 72%, transparent);
+  font-size: 0.62rem;
+  font-weight: 550;
+  line-height: 1.25;
+  letter-spacing: 0.01em;
+  opacity: 0;
+  transform: translateY(2px);
+  animation: chat-ui-project-badge-in 220ms ease forwards;
+}
+
+.chat-ui-thread__peer.is-inactive .chat-ui-thread__project-badge {
+  display: none;
+}
+
+.chat-ui-thread__project-badge-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-ui-thread__project-badge-leave {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 0;
+  height: 14px;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--foreground, #fff) 14%, transparent);
+  color: inherit;
+  font-size: 11px;
+  line-height: 1;
+  opacity: 0;
+  cursor: pointer;
+  transition:
+    width 140ms ease,
+    opacity 140ms ease,
+    background 120ms ease;
+}
+
+.chat-ui-thread__project-badge:hover .chat-ui-thread__project-badge-leave,
+.chat-ui-thread__project-badge:focus-within .chat-ui-thread__project-badge-leave {
+  width: 14px;
+  opacity: 1;
+}
+
+.chat-ui-thread__project-badge-leave:hover {
+  background: color-mix(in oklab, var(--foreground, #fff) 22%, transparent);
+}
+
+@keyframes chat-ui-project-badge-in {
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 /*
  * ThreadPrimitive.Viewport owns scroll + autoScroll (turnAnchor=bottom).
  * Parent chain must be height-bounded (see data-content-detail / page-scroll).
@@ -777,16 +852,71 @@
 .chat-ui-composer {
   position: relative;
   display: flex;
-  align-items: flex-end;
+  flex-direction: column;
+  align-items: stretch;
   gap: 8px;
   padding: 8px 10px;
   border-radius: 18px;
   border: 1px solid color-mix(in oklab, var(--foreground, #fff) 14%, transparent);
   background: color-mix(in oklab, var(--foreground, #fff) 6%, transparent);
+  transition: border-color 120ms ease, background 120ms ease;
+}
+
+.chat-ui-composer.is-drag-over {
+  border-color: color-mix(in oklab, #f97316 70%, transparent);
+  background: color-mix(in oklab, #f97316 10%, transparent);
 }
 
 .chat-ui-composer.is-disabled {
   opacity: 0.55;
+}
+
+.chat-ui-composer__attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.chat-ui-composer__attachment {
+  position: relative;
+  width: 72px;
+  height: 72px;
+  border-radius: 12px;
+  overflow: hidden;
+  background: color-mix(in oklab, var(--foreground, #fff) 8%, transparent);
+}
+
+.chat-ui-composer__attachment-thumb {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.chat-ui-composer__attachment-remove {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: rgb(0 0 0 / 0.65);
+  color: #fff;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.chat-ui-composer__row {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
 }
 
 .chat-ui-composer__slash-menu {
@@ -797,14 +927,46 @@
   z-index: 3;
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  max-height: 220px;
+  gap: 6px;
+  max-height: 280px;
   overflow-y: auto;
   padding: 6px;
   border-radius: 14px;
   border: 1px solid color-mix(in oklab, var(--foreground, #fff) 12%, transparent);
   background: color-mix(in oklab, var(--background, #0a0a0a) 94%, #fff 6%);
   box-shadow: 0 12px 32px rgb(0 0 0 / 0.35);
+}
+
+.chat-ui-composer__slash-section {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.chat-ui-composer__slash-section-label {
+  padding: 4px 10px 2px;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: color-mix(in oklab, var(--foreground, #fff) 42%, transparent);
+}
+
+.chat-ui-composer__slash-option-icon {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  background: color-mix(in oklab, var(--foreground, #fff) 8%, transparent);
+  color: color-mix(in oklab, var(--foreground, #fff) 70%, transparent);
+  font-size: 0.7rem;
+}
+
+.chat-ui-composer__slash-option-icon.is-command {
+  font-size: 0.62rem;
 }
 
 .chat-ui-composer__slash-option {
@@ -900,8 +1062,21 @@
   --chat-ui-content-max-width: 46rem;
   --chat-ui-content-inline-pad: 18px;
   box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+  flex: 1;
   padding: 0;
   gap: 0;
+  overflow: hidden;
+}
+
+/* Shell right column hosts the same preview chrome. */
+.desktop-chat-panel__body .chat-ui-dev-page {
+  /* Narrower readable column inside the chat rail. */
+  --chat-ui-content-max-width: 100%;
+  --chat-ui-content-inline-pad: 10px;
 }
 
 /* Thread chrome is full-bleed; messages + composer stay content-width. */

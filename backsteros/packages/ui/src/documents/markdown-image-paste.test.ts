@@ -34,6 +34,28 @@ describe("collectImageFiles", () => {
     assert.deepEqual(collectImageFiles(dt), [image]);
   });
 
+  it("falls back to clipboard items when files is empty", () => {
+    const image = new File([new Uint8Array([1])], "shot.png", {
+      type: "image/png",
+    });
+    const dt = {
+      files: [],
+      items: [
+        {
+          kind: "file",
+          type: "image/png",
+          getAsFile: () => image,
+        },
+        {
+          kind: "string",
+          type: "text/plain",
+          getAsFile: () => null,
+        },
+      ],
+    } as unknown as DataTransfer;
+    assert.deepEqual(collectImageFiles(dt), [image]);
+  });
+
   it("returns empty when data is missing", () => {
     assert.deepEqual(collectImageFiles(null), []);
     assert.deepEqual(collectImageFiles(undefined), []);

@@ -5493,6 +5493,36 @@ export { chatUiMessageToThreadMessageLike } from "./chat/chat-ui-to-thread-messa
 export { buildChatUiDemoMessages } from "./chat/chat-ui-demo-fixture.js";
 
 export {
+  collectPendingChatImagesFromDataTransfer,
+  createPendingChatImages,
+  pendingChatImagesToFileParts,
+  revokePendingChatImages,
+  type PendingChatImage,
+} from "./chat/chat-composer-images.js";
+
+export {
+  CHAT_EXIT_COMMAND,
+  CHAT_RECENT_PROJECTS_STORAGE_KEY,
+  matchProjectsBySlashQuery,
+  orderChatProjects,
+  projectCommandSlug,
+  readRecentChatProjectIds,
+  rememberRecentChatProjectId,
+  type ChatProjectOption,
+} from "./chat/chat-project-option.js";
+
+export {
+  buildChatSlashMenu,
+  flattenChatSlashMenu,
+  resolveChatSlashCommand,
+  type ChatSlashMenuItem,
+  type ChatSlashMenuSection,
+  type ChatSlashResolveResult,
+} from "./chat/chat-slash-menu.js";
+
+export { chatDemoThreadKey } from "./components/chat/chat-ui-dev-preview.js";
+
+export {
   matchPeersBySlashQuery,
   parsePeerSlashCommand,
   peerCommandSlug,
@@ -5504,9 +5534,13 @@ export {
   CHAT_THREAD_VIRTUALIZE_THRESHOLD,
   type ChatThreadPeer,
   type ChatThreadProps,
+  type ChatThreadSendPayload,
 } from "./components/chat/chat-thread.js";
 
-export { ChatThreadHeader } from "./components/chat/chat-thread-header.js";
+export {
+  ChatThreadHeader,
+  type ChatThreadActiveProject,
+} from "./components/chat/chat-thread-header.js";
 
 export {
   ChatUiDevPreview,

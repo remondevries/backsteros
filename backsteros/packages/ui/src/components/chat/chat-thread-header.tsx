@@ -105,10 +105,21 @@ function ChatThreadPeerAvatar({ peer }: { peer: ChatThreadPeer }) {
   );
 }
 
+export type ChatThreadActiveProject = {
+  id: string;
+  name: string;
+};
+
 export type ChatThreadHeaderProps = {
   peers: readonly ChatThreadPeer[];
   activePeerId: string | null;
   onSelectPeer?: (peerId: string) => void;
+  /**
+   * When set, fade in under the *active* agent name only (project room badge).
+   * Hover reveals a leave control.
+   */
+  activeProject?: ChatThreadActiveProject | null;
+  onLeaveProject?: () => void;
 };
 
 /**
@@ -120,6 +131,8 @@ export function ChatThreadHeader({
   peers,
   activePeerId,
   onSelectPeer,
+  activeProject = null,
+  onLeaveProject,
 }: ChatThreadHeaderProps) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const trackRef = useRef<HTMLDivElement | null>(null);
@@ -272,13 +285,39 @@ export function ChatThreadHeader({
             const active = peer.id === activePeerId;
             const selectable = Boolean(onSelectPeer) && peers.length > 1;
             const subtitle = peer.subtitle?.trim() || null;
+            const showProjectBadge =
+              active && Boolean(activeProject?.name?.trim());
             const className = [
               "chat-ui-thread__peer",
               active ? "is-active" : "is-inactive",
               selectable ? "is-selectable" : "",
+              showProjectBadge ? "has-project-badge" : "",
             ]
               .filter(Boolean)
               .join(" ");
+
+            const projectBadge = showProjectBadge && activeProject ? (
+              <span className="chat-ui-thread__project-badge">
+                <span className="chat-ui-thread__project-badge-label">
+                  {activeProject.name}
+                </span>
+                {onLeaveProject ? (
+                  <button
+                    type="button"
+                    className="chat-ui-thread__project-badge-leave"
+                    aria-label={`Leave ${activeProject.name}`}
+                    title="Leave project"
+                    onClick={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      onLeaveProject();
+                    }}
+                  >
+                    ×
+                  </button>
+                ) : null}
+              </span>
+            ) : null;
 
             if (selectable) {
               return (
@@ -293,7 +332,8 @@ export function ChatThreadHeader({
                 >
                   <ChatThreadPeerAvatar peer={peer} />
                   <span className="chat-ui-thread__peer-name">{peer.name}</span>
-                  {subtitle ? (
+                  {projectBadge}
+                  {!showProjectBadge && subtitle ? (
                     <span className="chat-ui-thread__peer-subtitle">
                       {subtitle}
                     </span>
@@ -310,7 +350,8 @@ export function ChatThreadHeader({
               >
                 <ChatThreadPeerAvatar peer={peer} />
                 <div className="chat-ui-thread__peer-name">{peer.name}</div>
-                {subtitle ? (
+                {projectBadge}
+                {!showProjectBadge && subtitle ? (
                   <div className="chat-ui-thread__peer-subtitle">{subtitle}</div>
                 ) : null}
               </div>

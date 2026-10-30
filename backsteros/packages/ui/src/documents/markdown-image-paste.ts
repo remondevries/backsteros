@@ -5,14 +5,32 @@ export type UploadMarkdownImages = (
   files: File[],
 ) => Promise<string[] | null | undefined>;
 
-/** Collect image files from a paste or drop DataTransfer. */
+function isImageFile(file: File | null | undefined): file is File {
+  return Boolean(file && file.type.startsWith("image/"));
+}
+
+/**
+ * Collect image files from a paste or drop DataTransfer.
+ * Prefers `files`, then falls back to `items` (macOS screenshot paste).
+ */
 export function collectImageFiles(
   data: DataTransfer | null | undefined,
 ): File[] {
   if (!data) return [];
-  return [...(data.files ?? [])].filter((file) =>
-    file.type.startsWith("image/"),
-  );
+  const fromFiles = [...(data.files ?? [])].filter(isImageFile);
+  if (fromFiles.length > 0) return fromFiles;
+
+  const fromItems: File[] = [];
+  const items = data.items;
+  if (!items) return [];
+  for (let index = 0; index < items.length; index += 1) {
+    const item = items[index];
+    if (!item || item.kind !== "file") continue;
+    if (!item.type.startsWith("image/")) continue;
+    const file = item.getAsFile();
+    if (isImageFile(file)) fromItems.push(file);
+  }
+  return fromItems;
 }
 
 /** Build a markdown image line for an uploaded content URL. */

@@ -6,11 +6,13 @@ import {
   useMemo,
   useRef,
   useState,
+  type ClipboardEvent,
+  type DragEvent,
   type FormEvent,
   type KeyboardEvent,
   type ReactNode,
 } from "react";
-import type { ChatUiMessage } from "@backsteros/contracts";
+import type { ChatUiFilePart, ChatUiMessage } from "@backsteros/contracts";
 import {
   AssistantRuntimeProvider,
   ComposerPrimitive,
@@ -26,10 +28,19 @@ import {
 } from "@legendapp/list/react";
 
 import {
-  matchPeersBySlashQuery,
-  parsePeerSlashCommand,
-  resolvePeerSlashCommand,
-} from "../../chat/chat-peer-slash-command.js";
+  collectPendingChatImagesFromDataTransfer,
+  pendingChatImagesToFileParts,
+  revokePendingChatImages,
+  type PendingChatImage,
+} from "../../chat/chat-composer-images.js";
+import type { ChatProjectOption } from "../../chat/chat-project-option.js";
+import { parsePeerSlashCommand } from "../../chat/chat-peer-slash-command.js";
+import {
+  buildChatSlashMenu,
+  flattenChatSlashMenu,
+  resolveChatSlashCommand,
+  type ChatSlashMenuItem,
+} from "../../chat/chat-slash-menu.js";
 import { chatUiMessageToThreadMessageLike } from "../../chat/chat-ui-to-thread-message.js";
 import {
   ChatCardNavigateProvider,
@@ -43,8 +54,10 @@ import {
 import { ChatUiMessageBody } from "./chat-message-parts.js";
 import {
   ChatThreadHeader,
+  type ChatThreadActiveProject,
   type ChatThreadPeer,
 } from "./chat-thread-header.js";
+import { ProjectOcticon } from "../projects/project-octicon.js";
 import { AssigneeListMark } from "../tasks/assignee-list-mark.js";
 
 /** Window when the thread is long enough that DOM cost matters. */
@@ -52,10 +65,21 @@ export const CHAT_THREAD_VIRTUALIZE_THRESHOLD = 48;
 
 export type { ChatThreadPeer };
 
+export type ChatThreadSendPayload = {
+  text: string;
+  attachments: readonly ChatUiFilePart[];
+};
+
 export type ChatThreadProps = {
   messages: readonly ChatUiMessage[];
-  /** Called when the composer sends. Parent owns persistence / optimistic rows. */
-  onSend?: (text: string) => void | Promise<void>;
+  /**
+   * Called when the composer sends. Parent owns persistence / optimistic rows.
+   * `attachments` are pasted/dropped images (ChatUi file parts) ready to store.
+   */
+  onSend?: (
+    text: string,
+    attachments?: readonly ChatUiFilePart[],
+  ) => void | Promise<void>;
   /** Extra / override card renderers (`task` is built in). */
   cardRegistry?: ChatCardRegistry;
   /**
@@ -78,6 +102,16 @@ export type ChatThreadProps = {
    * Ignored when `peers` is non-empty.
    */
   peer?: ChatThreadPeer | null;
+  /** Projects offered in the `/` menu (separate “Projects” group). */
+  projects?: readonly ChatProjectOption[];
+  /** MRU project ids — recent first in the Projects group. */
+  recentProjectIds?: readonly string[];
+  /** Active project room (badge under the focused agent). */
+  activeProject?: ChatThreadActiveProject | null;
+  /** Enter a project room from the `/` menu. */
+  onSelectProject?: (projectId: string) => void;
+  /** Leave the project room (`/exit` or badge ×). */
+  onLeaveProject?: () => void;
   /** Composer placeholder. */
   placeholder?: string;
   /** Disable composer (e.g. while detail loading). */
@@ -105,49 +139,181 @@ function readAppendText(message: AppendMessage): string {
     .trim();
 }
 
+function ChatSlashOptionIcon({ item }: { item: ChatSlashMenuItem }) {
+  if (item.kind === "exit") {
+    return (
+      <span className="chat-ui-composer__slash-option-icon is-command" aria-hidden="true">
+        ⌘
+      </span>
+    );
+  }
+  if (item.kind === "project") {
+    return (
+      <span className="chat-ui-composer__slash-option-icon is-project" aria-hidden="true">
+        <ProjectOcticon
+          icon={item.project.icon}
+          type={item.project.type}
+          size={14}
+        />
+      </span>
+    );
+  }
+  if (item.peer.kind === "contact") {
+    return (
+      <AssigneeListMark
+        label={item.peer.name}
+        avatarSrc={item.peer.avatarSrc}
+        size={22}
+      />
+    );
+  }
+  return (
+    <span className="chat-ui-composer__slash-option-icon is-project" aria-hidden="true">
+      <ProjectOcticon
+        icon={item.peer.icon}
+        type={item.peer.type}
+        size={14}
+      />
+    </span>
+  );
+}
+
 function ChatThreadComposer({
   placeholder,
   disabled,
   peers,
   onSelectPeer,
+  projects,
+  recentProjectIds,
+  inProject,
+  onSelectProject,
+  onLeaveProject,
+  pendingImages,
+  onPendingImagesChange,
+  onSendAttachmentsOnly,
 }: {
   placeholder: string;
   disabled: boolean;
   peers: readonly ChatThreadPeer[];
   onSelectPeer?: (peerId: string) => void;
+  projects: readonly ChatProjectOption[];
+  recentProjectIds: readonly string[];
+  inProject: boolean;
+  onSelectProject?: (projectId: string) => void;
+  onLeaveProject?: () => void;
+  pendingImages: readonly PendingChatImage[];
+  onPendingImagesChange: (next: PendingChatImage[]) => void;
+  /** Flush image-only sends (assistant-ui skips empty text). */
+  onSendAttachmentsOnly: () => void;
 }) {
   const { value, setText } = unstable_useComposerInput({ disabled });
   const [highlight, setHighlight] = useState(0);
+  const [dragOver, setDragOver] = useState(false);
   const slashQuery = useMemo(() => parsePeerSlashCommand(value), [value]);
-  const suggestions = useMemo(() => {
-    if (slashQuery == null || !onSelectPeer || peers.length === 0) return [];
-    return matchPeersBySlashQuery(peers, slashQuery).slice(0, 8);
-  }, [slashQuery, onSelectPeer, peers]);
-  const menuOpen = suggestions.length > 0;
+  const slashSections = useMemo(() => {
+    if (slashQuery == null) return [];
+    return buildChatSlashMenu({
+      text: value,
+      peers,
+      projects,
+      recentProjectIds,
+      // Pin `/exit` while in a project; also surface it when typing an exit prefix
+      // so the reserved command never loses to a project name.
+      showExit:
+        inProject ||
+        (slashQuery.length > 0 && "exit".startsWith(slashQuery)),
+    });
+  }, [inProject, peers, projects, recentProjectIds, slashQuery, value]);
+  const slashItems = useMemo(
+    () => flattenChatSlashMenu(slashSections),
+    [slashSections],
+  );
+  const menuOpen = slashItems.length > 0;
+  const hasPendingImages = pendingImages.length > 0;
+  const canSend = !disabled && (value.trim().length > 0 || hasPendingImages);
 
   useEffect(() => {
     setHighlight(0);
-  }, [slashQuery, suggestions.length]);
+  }, [slashQuery, slashItems.length]);
 
-  const applyPeer = useCallback(
-    (peerId: string) => {
-      onSelectPeer?.(peerId);
+  const applySlashItem = useCallback(
+    (item: ChatSlashMenuItem) => {
       setText("");
+      if (item.kind === "exit") {
+        onLeaveProject?.();
+        return;
+      }
+      if (item.kind === "project") {
+        onSelectProject?.(item.project.id);
+        return;
+      }
+      onSelectPeer?.(item.peer.id);
     },
-    [onSelectPeer, setText],
+    [onLeaveProject, onSelectPeer, onSelectProject, setText],
   );
 
+  const addImagesFromDataTransfer = useCallback(
+    (data: DataTransfer | null | undefined) => {
+      const next = collectPendingChatImagesFromDataTransfer(data);
+      if (next.length === 0) return false;
+      onPendingImagesChange([...pendingImages, ...next]);
+      return true;
+    },
+    [onPendingImagesChange, pendingImages],
+  );
+
+  const removePendingImage = useCallback(
+    (id: string) => {
+      const target = pendingImages.find((image) => image.id === id);
+      if (target) revokePendingChatImages([target]);
+      onPendingImagesChange(pendingImages.filter((image) => image.id !== id));
+    },
+    [onPendingImagesChange, pendingImages],
+  );
+
+  const onPaste = (event: ClipboardEvent<HTMLTextAreaElement>) => {
+    if (disabled) return;
+    if (!addImagesFromDataTransfer(event.clipboardData)) return;
+    event.preventDefault();
+  };
+
+  const onDrop = (event: DragEvent<HTMLFormElement>) => {
+    if (disabled) return;
+    setDragOver(false);
+    if (!addImagesFromDataTransfer(event.dataTransfer)) return;
+    event.preventDefault();
+  };
+
+  const onDragOver = (event: DragEvent<HTMLFormElement>) => {
+    if (disabled) return;
+    const types = event.dataTransfer?.types;
+    if (!types || ![...types].includes("Files")) return;
+    event.preventDefault();
+    setDragOver(true);
+  };
+
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (
+      !menuOpen &&
+      event.key === "Enter" &&
+      !event.shiftKey &&
+      !value.trim() &&
+      hasPendingImages
+    ) {
+      event.preventDefault();
+      onSendAttachmentsOnly();
+      return;
+    }
     if (!menuOpen) return;
     if (event.key === "ArrowDown") {
       event.preventDefault();
-      setHighlight((index) => (index + 1) % suggestions.length);
+      setHighlight((index) => (index + 1) % slashItems.length);
       return;
     }
     if (event.key === "ArrowUp") {
       event.preventDefault();
       setHighlight(
-        (index) => (index - 1 + suggestions.length) % suggestions.length,
+        (index) => (index - 1 + slashItems.length) % slashItems.length,
       );
       return;
     }
@@ -158,68 +324,168 @@ function ChatThreadComposer({
     }
     if (event.key === "Tab" || (event.key === "Enter" && !event.shiftKey)) {
       event.preventDefault();
-      const resolved = resolvePeerSlashCommand(value, peers);
-      const peer = resolved ?? suggestions[highlight] ?? suggestions[0];
-      if (peer) applyPeer(peer.id);
+      const resolved = resolveChatSlashCommand({
+        text: value,
+        peers,
+        projects,
+        recentProjectIds,
+      });
+      if (resolved?.type === "exit") {
+        applySlashItem({
+          kind: "exit",
+          id: "exit",
+          label: "Exit project",
+          command: "exit",
+        });
+        return;
+      }
+      if (resolved?.type === "peer") {
+        applySlashItem({
+          kind: "peer",
+          id: resolved.peer.id,
+          label: resolved.peer.name,
+          command: resolved.peer.name,
+          peer: resolved.peer,
+        });
+        return;
+      }
+      if (resolved?.type === "project") {
+        applySlashItem({
+          kind: "project",
+          id: resolved.project.id,
+          label: resolved.project.name,
+          command: resolved.project.key,
+          project: resolved.project,
+        });
+        return;
+      }
+      const item = slashItems[highlight] ?? slashItems[0];
+      if (item) applySlashItem(item);
     }
   };
 
   return (
-    <ComposerPrimitive.Root className="chat-ui-composer">
+    <ComposerPrimitive.Root
+      className={[
+        "chat-ui-composer",
+        dragOver ? "is-drag-over" : "",
+        hasPendingImages ? "has-attachments" : "",
+      ]
+        .filter(Boolean)
+        .join(" ")}
+      onDragOver={onDragOver}
+      onDragLeave={() => setDragOver(false)}
+      onDrop={onDrop}
+    >
       {menuOpen ? (
         <div className="chat-ui-composer__slash-menu" role="listbox">
-          {suggestions.map((peer, index) => (
-            <button
-              key={peer.id}
-              type="button"
-              role="option"
-              aria-selected={index === highlight}
-              className={[
-                "chat-ui-composer__slash-option",
-                index === highlight ? "is-active" : "",
-              ]
-                .filter(Boolean)
-                .join(" ")}
-              onMouseDown={(event) => {
-                event.preventDefault();
-                applyPeer(peer.id);
-              }}
-            >
-              {peer.kind === "contact" ? (
-                <AssigneeListMark
-                  label={peer.name}
-                  avatarSrc={peer.avatarSrc}
-                  size={22}
-                />
-              ) : null}
-              <span className="chat-ui-composer__slash-option-copy">
-                <span className="chat-ui-composer__slash-option-name">
-                  {peer.name}
-                </span>
-                <span className="chat-ui-composer__slash-option-cmd">
-                  /
-                  {(peer.name.split(/\s+/)[0] ?? peer.name).toLowerCase()}
-                </span>
-              </span>
-            </button>
+          {slashSections.map((section) => {
+            let sectionOffset = 0;
+            for (const prior of slashSections) {
+              if (prior.id === section.id) break;
+              sectionOffset += prior.items.length;
+            }
+            return (
+              <div
+                key={section.id}
+                className="chat-ui-composer__slash-section"
+                role="group"
+                aria-label={section.label}
+              >
+                <div className="chat-ui-composer__slash-section-label">
+                  {section.label}
+                </div>
+                {section.items.map((item, itemIndex) => {
+                  const index = sectionOffset + itemIndex;
+                  return (
+                    <button
+                      key={`${item.kind}-${item.id}`}
+                      type="button"
+                      role="option"
+                      aria-selected={index === highlight}
+                      className={[
+                        "chat-ui-composer__slash-option",
+                        index === highlight ? "is-active" : "",
+                      ]
+                        .filter(Boolean)
+                        .join(" ")}
+                      onMouseDown={(event) => {
+                        event.preventDefault();
+                        applySlashItem(item);
+                      }}
+                    >
+                      <ChatSlashOptionIcon item={item} />
+                      <span className="chat-ui-composer__slash-option-copy">
+                        <span className="chat-ui-composer__slash-option-name">
+                          {item.label}
+                        </span>
+                        <span className="chat-ui-composer__slash-option-cmd">
+                          /{item.command}
+                        </span>
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
+      {hasPendingImages ? (
+        <div className="chat-ui-composer__attachments" aria-label="Attached images">
+          {pendingImages.map((image) => (
+            <div key={image.id} className="chat-ui-composer__attachment">
+              <img
+                src={image.previewUrl}
+                alt={image.file.name || "Pasted image"}
+                className="chat-ui-composer__attachment-thumb"
+              />
+              <button
+                type="button"
+                className="chat-ui-composer__attachment-remove"
+                aria-label={`Remove ${image.file.name || "image"}`}
+                onClick={() => removePendingImage(image.id)}
+              >
+                ×
+              </button>
+            </div>
           ))}
         </div>
       ) : null}
-      <ComposerPrimitive.Input
-        className="chat-ui-composer__input"
-        placeholder={placeholder}
-        rows={1}
-        disabled={disabled}
-        submitOnEnter={!menuOpen}
-        onKeyDown={onKeyDown}
-      />
-      <ComposerPrimitive.Send
-        className="chat-ui-composer__send"
-        disabled={disabled}
-        aria-label="Send message"
-      >
-        ↑
-      </ComposerPrimitive.Send>
+      <div className="chat-ui-composer__row">
+        <ComposerPrimitive.Input
+          className="chat-ui-composer__input"
+          placeholder={
+            hasPendingImages
+              ? `${placeholder}  ·  paste more images or send`
+              : placeholder
+          }
+          rows={1}
+          disabled={disabled}
+          submitOnEnter={!menuOpen && value.trim().length > 0}
+          onKeyDown={onKeyDown}
+          onPaste={onPaste}
+        />
+        {hasPendingImages && !value.trim() ? (
+          <button
+            type="button"
+            className="chat-ui-composer__send"
+            disabled={!canSend}
+            aria-label="Send message"
+            onClick={onSendAttachmentsOnly}
+          >
+            ↑
+          </button>
+        ) : (
+          <ComposerPrimitive.Send
+            className="chat-ui-composer__send"
+            disabled={!canSend}
+            aria-label="Send message"
+          >
+            ↑
+          </ComposerPrimitive.Send>
+        )}
+      </div>
     </ComposerPrimitive.Root>
   );
 }
@@ -287,12 +553,21 @@ export function ChatThread({
   activePeerId = null,
   onPeerChange,
   peer = null,
+  projects = [],
+  recentProjectIds = [],
+  activeProject = null,
+  onSelectProject,
+  onLeaveProject,
   placeholder = "Write a message…",
   composerDisabled = false,
   emptyState = null,
   className,
 }: ChatThreadProps) {
   const [isRunning, setIsRunning] = useState(false);
+  const [pendingImages, setPendingImages] = useState<PendingChatImage[]>([]);
+  const pendingImagesRef = useRef(pendingImages);
+  pendingImagesRef.current = pendingImages;
+
   const registry = useMemo(
     () => mergeChatCardRegistry(cardRegistry),
     [cardRegistry],
@@ -305,35 +580,79 @@ export function ChatThread({
     activePeerId ?? resolvedPeers[0]?.id ?? null;
   const hasPeerHeader = resolvedPeers.length > 0;
 
+  useEffect(() => {
+    return () => {
+      revokePendingChatImages(pendingImagesRef.current);
+    };
+  }, []);
+
+  const clearPendingImages = useCallback(() => {
+    revokePendingChatImages(pendingImagesRef.current);
+    setPendingImages([]);
+  }, []);
+
   const convertMessage = useCallback(
     (message: ChatUiMessage) => chatUiMessageToThreadMessageLike(message),
     [],
+  );
+
+  const flushSend = useCallback(
+    async (text: string) => {
+      if (!onSend || composerDisabled) return;
+      const attachments = pendingChatImagesToFileParts(pendingImagesRef.current);
+      if (!text.trim() && attachments.length === 0) return;
+      setIsRunning(true);
+      try {
+        await onSend(text, attachments.length > 0 ? attachments : undefined);
+        clearPendingImages();
+      } finally {
+        setIsRunning(false);
+      }
+    },
+    [clearPendingImages, composerDisabled, onSend],
   );
 
   const handleNew = useCallback(
     async (message: AppendMessage) => {
       if (composerDisabled) return;
       const text = readAppendText(message);
-      if (!text) return;
+      const hasAttachments = pendingImagesRef.current.length > 0;
+      if (!text && !hasAttachments) return;
 
-      // `/jaap` (etc.) switches the focused peer instead of sending a message.
-      if (onPeerChange && resolvedPeers.length > 0) {
-        const matched = resolvePeerSlashCommand(text, resolvedPeers);
-        if (matched) {
-          onPeerChange(matched.id);
+      // `/exit`, `/jaap`, `/bsh` — room / peer / project commands, not messages.
+      if (text && !hasAttachments) {
+        const resolved = resolveChatSlashCommand({
+          text,
+          peers: resolvedPeers,
+          projects,
+          recentProjectIds,
+        });
+        if (resolved?.type === "exit") {
+          onLeaveProject?.();
+          return;
+        }
+        if (resolved?.type === "peer") {
+          onPeerChange?.(resolved.peer.id);
+          return;
+        }
+        if (resolved?.type === "project") {
+          onSelectProject?.(resolved.project.id);
           return;
         }
       }
 
-      if (!onSend) return;
-      setIsRunning(true);
-      try {
-        await onSend(text);
-      } finally {
-        setIsRunning(false);
-      }
+      await flushSend(text);
     },
-    [composerDisabled, onPeerChange, onSend, resolvedPeers],
+    [
+      composerDisabled,
+      flushSend,
+      onLeaveProject,
+      onPeerChange,
+      onSelectProject,
+      projects,
+      recentProjectIds,
+      resolvedPeers,
+    ],
   );
 
   const runtime = useExternalStoreRuntime({
@@ -350,9 +669,12 @@ export function ChatThread({
   const onFallbackSubmit = (event: FormEvent) => {
     event.preventDefault();
     const text = draft.trim();
-    if (!text || !onSend || composerDisabled) return;
+    const attachments = pendingChatImagesToFileParts(pendingImagesRef.current);
+    if ((!text && attachments.length === 0) || !onSend || composerDisabled) {
+      return;
+    }
     setDraft("");
-    void onSend(text);
+    void flushSend(text);
   };
 
   return (
@@ -374,6 +696,8 @@ export function ChatThread({
                 peers={resolvedPeers}
                 activePeerId={resolvedActivePeerId}
                 onSelectPeer={onPeerChange}
+                activeProject={activeProject}
+                onLeaveProject={onLeaveProject}
               />
               <ThreadPrimitive.Viewport
                 className={[
@@ -425,18 +749,28 @@ export function ChatThread({
                         ↑
                       </button>
                     </form>
-                  ) : (
-                    <ChatThreadComposer
-                      placeholder={
-                        resolvedPeers.length > 1
-                          ? `${placeholder}  ·  /name to switch`
-                          : placeholder
-                      }
-                      disabled={false}
-                      peers={resolvedPeers}
-                      onSelectPeer={onPeerChange}
-                    />
-                  )}
+                ) : (
+                  <ChatThreadComposer
+                    placeholder={
+                      resolvedPeers.length > 1 || projects.length > 0
+                        ? `${placeholder}  ·  /agent or /project`
+                        : placeholder
+                    }
+                    disabled={false}
+                    peers={resolvedPeers}
+                    onSelectPeer={onPeerChange}
+                    projects={projects}
+                    recentProjectIds={recentProjectIds}
+                    inProject={Boolean(activeProject)}
+                    onSelectProject={onSelectProject}
+                    onLeaveProject={onLeaveProject}
+                    pendingImages={pendingImages}
+                    onPendingImagesChange={setPendingImages}
+                    onSendAttachmentsOnly={() => {
+                      void flushSend("");
+                    }}
+                  />
+                )}
                 </div>
               ) : null}
             </ThreadPrimitive.Root>
