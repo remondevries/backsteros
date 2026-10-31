@@ -195,12 +195,8 @@ export async function listDocuments(
       : [filters.type]
     : [];
 
-  if (
-    structuralTypes.length === 0 ||
-    structuralTypes.includes("knowledge")
-  ) {
-    await ensureSpacesHierarchy(workspaceId, executor);
-  }
+  // OS-162 / audit #14: never ensure/heal hierarchy on list (write-on-read).
+  // Use POST /api/v1/spaces/heal or spaces create paths instead.
 
   const conditions = [
     eq(documents.workspaceId, workspaceId),
