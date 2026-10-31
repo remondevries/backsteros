@@ -18,6 +18,21 @@ export type DesktopWorkspaceMeta = Pick<
   "source" | "ready" | "habits" | "meetings" | "areas"
 > & {
   readyBySurface: WorkspaceSurfaceReady;
+  /**
+   * True when a PowerSync list watch returned exactly the soft LIMIT
+   * (possible truncation). OS-163 review.
+   */
+  listHasMore: {
+    tasks: boolean;
+    projects: boolean;
+    documents: boolean;
+    contacts: boolean;
+    organizations: boolean;
+    letters: boolean;
+    habits: boolean;
+    areas: boolean;
+    meetings: boolean;
+  };
 };
 
 export type { WorkspaceSurface, WorkspaceSurfaceReady };
