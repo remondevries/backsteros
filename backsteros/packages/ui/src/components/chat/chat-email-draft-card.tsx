@@ -191,7 +191,10 @@ export function ChatEmailDraftCard({ part }: { part: ChatUiCardPart }) {
   const data = useMemo(() => parseData(part), [part]);
   const onAnswer = useChatEmailDraftAnswerOptional();
   const compose = useChatEmailDraftComposeOptional();
-  const mailboxes = compose?.mailboxes ?? [];
+  const mailboxes = useMemo(
+    () => compose?.mailboxes ?? [],
+    [compose?.mailboxes],
+  );
   const [bodyMode, setBodyMode] = useState<EmailDraftBodyMode>("preview");
   const [toText, setToText] = useState("");
   const [ccText, setCcText] = useState("");

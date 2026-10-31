@@ -210,6 +210,8 @@ export function ProjectChannelField({
     if (timeoutFlipRef.current === key) return;
     timeoutFlipRef.current = key;
     void markInactiveAfterTimeout();
+    // Once per connecting timeout key; markInactiveAfterTimeout closes over patchProject.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- timeoutFlipRef gates repeats
   }, [timedOutConnecting, saving, project.channelRequestedAt, project.id]);
 
   function openPendingLink() {

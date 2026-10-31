@@ -154,7 +154,7 @@ export function TaskShellTerminal({
       });
 
       socket.addEventListener("message", (event) => {
-        let message: PtyClientMessage | null = null;
+        let message: PtyClientMessage;
         try {
           message = JSON.parse(String(event.data)) as PtyClientMessage;
         } catch {

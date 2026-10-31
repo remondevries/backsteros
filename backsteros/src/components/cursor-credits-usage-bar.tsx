@@ -227,17 +227,23 @@ async function loadCursorUsage(
       }
       const localError =
         fromLocal.error?.trim() || "Local Cursor session unavailable.";
-      return unavailableUsage(`${settingsError} Local fallback: ${localError}`);
+      const settingsPart =
+        settingsError ?? "Settings Cursor usage unavailable.";
+      return unavailableUsage(`${settingsPart} Local fallback: ${localError}`);
     } catch {
       if (fromSettings?.available) return fromSettings;
+      const settingsPart =
+        settingsError ?? "Settings Cursor usage unavailable.";
       return unavailableUsage(
-        `${settingsError} Local fallback: Cursor credits invoke failed.`,
+        `${settingsPart} Local fallback: Cursor credits invoke failed.`,
       );
     }
   }
 
   if (fromSettings?.available) return fromSettings;
-  return unavailableUsage(settingsError);
+  return unavailableUsage(
+    settingsError ?? "Settings Cursor usage unavailable.",
+  );
 }
 
 type CursorCreditsUsageBarProps = {
