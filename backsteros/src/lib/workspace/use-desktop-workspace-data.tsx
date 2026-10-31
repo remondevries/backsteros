@@ -554,7 +554,7 @@ function useDesktopWorkspaceDataImpl(): {
                 ),
                 apiProjects,
               ),
-              // Always use REST list — description is not in the sync stream (OS-163).
+              // REST gap-fill for list-SQL omissions / cold lag (description is synced).
               apiProjects,
               ["summary", "description"],
             ),

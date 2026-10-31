@@ -46,11 +46,10 @@ function schemaColumnsForTable(tableName: string): Set<string> {
  * (OS-163 / audit #12). Sync SELECT may omit these; schema may still declare them.
  */
 const DETAIL_ONLY_SCHEMA_COLUMNS: Readonly<Record<string, readonly string[]>> = {
-  // Desktop list SQL + REST gap-fill; not bulk-synced (OS-163 #12 / review).
-  projects: ["description"],
+  // Unused in contact/org UI (they edit `summary`); kept off the sync stream.
   organizations: ["notes"],
   contacts: ["notes"],
-  // Still synced (mobile reads these) — listed here only if removed again.
+  // Meeting notes/transcription: desktop REST detail (`useDesktopMeetingNotes`).
   meetings: ["notes", "transcription"],
 };
 
