@@ -1306,6 +1306,9 @@ function escapeEmailHtml(text: string): string {
 /** Content-ID for the inbox contact avatar shown beside the sign-off. */
 export const EMAIL_SIGN_OFF_AVATAR_CID = "backsteros-signoff-avatar";
 
+/** Display size for the sign-off avatar <img> (PNG may be 2–3× for Retina). */
+export const EMAIL_SIGN_OFF_AVATAR_IMG_EDGE = 96;
+
 /**
  * HTML alternative matching the compose UI: greeting + body, then a
  * sign-off footer with optional circular avatar to the left of the text.
@@ -1321,14 +1324,16 @@ export function assembleEmailHtml(
   const bodyHtml = escapeEmailHtml(assembled.body).replace(/\n/g, "<br>\n");
   const signOffHtml = escapeEmailHtml(assembled.signOff).replace(/\n/g, "<br>\n");
   const cid = options?.signOffAvatarCid?.trim() || null;
+  const img = EMAIL_SIGN_OFF_AVATAR_IMG_EDGE;
 
   // border-radius is a bonus for clients that honor it; the CID attachment is a
-  // pre-cropped circular PNG so Outlook / webmail still show a round avatar.
+  // pre-cropped circular PNG (up to 3× pixels) so Outlook / webmail stay round
+  // and sharp on Retina.
   const footer = cid
     ? `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin-top:4px;border-collapse:collapse">
   <tr>
     <td style="vertical-align:middle;padding-right:16px">
-      <img src="cid:${cid}" width="96" height="96" alt="" style="display:block;border:0;border-radius:9999px;width:96px;height:96px" />
+      <img src="cid:${cid}" width="${img}" height="${img}" alt="" style="display:block;border:0;border-radius:9999px;width:${img}px;height:${img}px" />
     </td>
     <td style="vertical-align:middle;font-size:14px;line-height:1.55;color:#444444">${signOffHtml}</td>
   </tr>
