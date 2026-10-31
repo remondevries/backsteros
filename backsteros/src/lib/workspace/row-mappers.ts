@@ -382,6 +382,12 @@ export function mapProject(project: ApiProject): ProjectOverviewRowProject & {
     productionLocation: project.productionLocation ?? null,
     development,
     production,
+    leadAgentContactId: (() => {
+      const raw =
+        (project as { leadAgentContactId?: unknown }).leadAgentContactId ??
+        (project as { lead_agent_contact_id?: unknown }).lead_agent_contact_id;
+      return typeof raw === "string" && raw.trim() ? raw.trim() : null;
+    })(),
     channel: (() => {
       const raw = (project as { channel?: unknown }).channel;
       if (raw == null) return null;

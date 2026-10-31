@@ -24,6 +24,7 @@ describe("postChannelConnectWebhook", () => {
         projectName: "BacksterOS",
         type: "codebase",
         requestedAt: "2026-10-31T12:00:00.000Z",
+        leadAgentContactId: "contact_niels",
       },
       configOverride: {
         url: "https://example.com/channel-connect",
@@ -47,9 +48,11 @@ describe("postChannelConnectWebhook", () => {
     const body = JSON.parse(hit.body) as {
       event: string;
       projectKey: string;
+      leadAgentContactId: string | null;
     };
     assert.equal(body.event, CHANNEL_CONNECT_WEBHOOK_EVENT);
     assert.equal(body.projectKey, "OS");
+    assert.equal(body.leadAgentContactId, "contact_niels");
   });
 
   it("returns a clear error when webhook is not configured", async () => {
@@ -62,6 +65,7 @@ describe("postChannelConnectWebhook", () => {
         projectName: "BacksterOS",
         type: "codebase",
         requestedAt: "2026-10-31T12:00:00.000Z",
+        leadAgentContactId: null,
       },
       configOverride: null,
       fetchImpl: async () => {

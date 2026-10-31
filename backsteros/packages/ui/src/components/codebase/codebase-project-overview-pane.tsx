@@ -70,6 +70,8 @@ import {
 import { GithubPullRequestIcon } from "./github-pull-request-icon.js";
 import { LocationFolderPicker } from "./location-folder-picker.js";
 import { ProjectChannelField } from "./project-channel-field.js";
+import { ProjectLeadAgentField } from "./project-lead-agent-field.js";
+import type { AssigneeDropdownContact } from "../dropdowns/dropdown-options.js";
 import { normalizeWorkingDirectory } from "./normalize-working-directory.js";
 import type { ProjectFsClient } from "./project-fs-types.js";
 import { ProjectWorkingDirectoryTree } from "./project-working-directory-tree.js";
@@ -1768,6 +1770,9 @@ export type CodebaseProjectOverviewPaneProps = {
   copyIdShortcutEnabled?: boolean;
   /** Open Channel needs_details chat deep links in the shell panel. */
   onOpenChatDeepLink?: ((href: string) => void) | null;
+  /** Agent persona contacts for the Lead agent picker. */
+  agentContacts?: readonly AssigneeDropdownContact[] | null;
+  avatarSrcById?: Readonly<Record<string, string | null | undefined>>;
 };
 
 export function CodebaseProjectOverviewPane({
@@ -1801,6 +1806,8 @@ export function CodebaseProjectOverviewPane({
   belowDescription = null,
   copyIdShortcutEnabled = true,
   onOpenChatDeepLink = null,
+  agentContacts = null,
+  avatarSrcById,
 }: CodebaseProjectOverviewPaneProps) {
   const tasksPanelToggle =
     showHeader !== false && onToggleTasksPanel != null ? (
@@ -2120,6 +2127,15 @@ export function CodebaseProjectOverviewPane({
                         />
                       </EntityOverviewField>
                     </div>
+                    <EntityOverviewField label="Lead agent">
+                      <ProjectLeadAgentField
+                        project={project}
+                        onProjectUpdated={onProjectUpdated}
+                        requestJson={requestJson}
+                        agentContacts={agentContacts ?? []}
+                        avatarSrcById={avatarSrcById}
+                      />
+                    </EntityOverviewField>
                     <EntityOverviewField label="Channel">
                       <ProjectChannelField
                         project={project}

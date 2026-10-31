@@ -5461,6 +5461,12 @@ export {
   type ProjectChannelFieldProject,
 } from "./components/codebase/project-channel-field.js";
 
+export {
+  ProjectLeadAgentField,
+  type ProjectLeadAgentFieldProps,
+  type ProjectLeadAgentFieldProject,
+} from "./components/codebase/project-lead-agent-field.js";
+
 export { apiErrorMessage as codebaseApiErrorMessage } from "./components/codebase/api-error-message.js";
 export {
   fileExtension,

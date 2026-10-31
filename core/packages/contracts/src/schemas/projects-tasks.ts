@@ -116,6 +116,11 @@ export const projectSchema = z.object({
    */
   production: nullableProjectProductionSchema,
   /**
+   * Lead agent contact id (CRM contact linked to an `agents` row).
+   * Null when unset. Channel Connect prefers this agent's webhook.
+   */
+  leadAgentContactId: z.string().nullable(),
+  /**
    * Project chat-room Channel `{ uri, name? }`
    * (e.g. uri `grokbot://app/v1/agent?id=<uuid>`). Null when unset.
    */
@@ -207,6 +212,11 @@ export const createProjectSchema = z.object({
   productionLocation: z.string().max(4096).nullable().optional(),
   development: nullableProjectDevelopmentSchema.optional(),
   production: nullableProjectProductionSchema.optional(),
+  /**
+   * Lead agent contact id or contact key. Null clears.
+   * Prefer a contact that has an enabled `agents` row.
+   */
+  leadAgentContactId: z.string().trim().min(1).max(128).nullable().optional(),
   /** Project chat-room Channel `{ uri, name? }`. */
   channel: nullableProjectChannelSchema.optional(),
   /** Self-service Channel connect lifecycle (agents may set needs_details/active/inactive). */

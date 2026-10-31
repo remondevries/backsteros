@@ -646,6 +646,9 @@ export function mapProjectUpsert(
       }
       return raw as CreateProjectInput["production"];
     })(),
+    leadAgentContactId: asNullableString(
+      payloadValue(payload, "lead_agent_contact_id", "leadAgentContactId"),
+    ),
     channel: (() => {
       const raw = payloadValue(payload, "channel", "channel");
       if (raw === undefined) return undefined;

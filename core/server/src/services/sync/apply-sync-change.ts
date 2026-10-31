@@ -197,6 +197,7 @@ export async function applySyncChange(
           productionLocation: input.productionLocation,
           development: input.development,
           production: input.production,
+          leadAgentContactId: input.leadAgentContactId,
           channel: input.channel,
           channelStatus: input.channelStatus,
           channelPendingLink: input.channelPendingLink,

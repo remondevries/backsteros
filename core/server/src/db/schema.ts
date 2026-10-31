@@ -882,6 +882,14 @@ export const projects = pgTable(
       path?: string | null;
     } | null>(),
     /**
+     * Lead agent — CRM contact id (usually linked via agents.contact_id).
+     * Channel Connect prefers that agent's webhook.
+     */
+    leadAgentContactId: text("lead_agent_contact_id").references(
+      () => contacts.id,
+      { onDelete: "set null" },
+    ),
+    /**
      * Project chat-room Channel: `{ uri, name? }`.
      * uri e.g. `grokbot://app/v1/agent?id=<uuid>`; name is optional display label.
      */
@@ -943,6 +951,7 @@ export const projects = pgTable(
     index("projects_category_idx").on(table.category),
     index("projects_cloudflare_zone_id_idx").on(table.cloudflareZoneId),
     index("projects_penpot_project_id_idx").on(table.penpotProjectId),
+    index("projects_lead_agent_contact_id_idx").on(table.leadAgentContactId),
     index("projects_deleted_at_idx").on(table.deletedAt),
   ],
 );

@@ -104,18 +104,27 @@ with a `field` in the body.
 #### Codebase project locations (agents)
 
 `GET` / `PATCH /api/v1/projects/:id` expose GitHub + Development + Production +
-Channel. GitHub / Development / Production apply to `type=codebase`; Channel is
-available on any project type:
+Lead agent + Channel. GitHub / Development / Production apply to
+`type=codebase`; Lead agent and Channel are available on any project type:
 
 | Field | Shape |
 | --- | --- |
 | `githubRepository` | `owner/repo` or `null` |
 | `development` | `{ kind: "local" \| "server", path, host? }` or `null` — Local is folded into `kind: "local"` |
 | `production` | `{ server?, url?, deployMethod?, branch?, path? }` or `null` (at least one field when set) |
+| `leadAgentContactId` | Contact id (or contact key on write) of the lead agent, or `null`. Must be a contact linked to an enabled `agents` row. Default `null` on create |
 | `channel` | `{ uri, name? }` or `null` — uri e.g. `grokbot://app/v1/agent?id=<uuid>` (Grok Bot); `slack:<channel id>` reserved; other schemes allowed; `name` is optional display label |
 | `channelStatus` | `inactive` \| `connecting` \| `needs_details` \| `active` |
 | `channelPendingLink` | Chat deep link while `needs_details`. **Only** `backsteros://chat/<threadId>?message=<msgId>` or `/chat/<threadId>?message=<msgId>` (message required); anything else → **400** `channel_pending_link_invalid`. Else `null` |
 | `channelRequestedAt` | ISO datetime when Connect was requested, else `null` |
+
+**Lead agent:** Locations shows an avatar chip picker of contacts that have an
+enabled agent persona (`agents.contact_id`). There is no separate `isAgent`
+column on contacts — the `agents` table is the flag. Per-agent webhook URL +
+secret already live on `agents` (`webhook_url`, `webhook_secret_ciphertext`);
+owner configures them via Settings → Agents / `PATCH /api/v1/agents/:id`
+(`webhookSecret` write-only; responses only expose `webhookSecretConfigured`).
+Secrets are never PowerSynced and never logged.
 
 Compat mirrors (still written): `localWorkingDirectory` (Development path when
 `kind=local`), `developmentLocation` / `productionLocation` (path mirrors for
@@ -159,22 +168,24 @@ Requires `projects:write` and a non-agent (owner / Access) key. Sets
   "projectKey": "OS",
   "projectName": "BacksterOS",
   "type": "codebase",
-  "requestedAt": "2026-10-31T12:00:00.000Z"
+  "requestedAt": "2026-10-31T12:00:00.000Z",
+  "leadAgentContactId": "<contact-uuid-or-null>"
 }
 ```
 
 Headers: `Content-Type: application/json`,
 `x-backsteros-webhook-secret: <secret>`.
 
-**Settings / env (never hard-code, never log the secret)**
+**Webhook destination (never hard-code, never log the secret)**
 
-| Source | Keys |
+| Priority | Source |
 | --- | --- |
-| Env (overrides settings) | `CHANNEL_CONNECT_WEBHOOK_URL`, `CHANNEL_CONNECT_WEBHOOK_SECRET` |
-| Workspace secrets | `workspace_integration_secrets.channel_connect_webhook_url`, `channel_connect_webhook_secret` |
+| 1 | Lead agent's `agents.webhook_url` + decrypted `webhook_secret_ciphertext` (when `leadAgentContactId` is set and configured) |
+| 2 | Env `CHANNEL_CONNECT_WEBHOOK_URL` + `CHANNEL_CONNECT_WEBHOOK_SECRET` |
+| 3 | Workspace secrets `channel_connect_webhook_url` / `channel_connect_webhook_secret` |
 
-If the webhook is missing, Connect still sets `connecting` and returns the
-project with `channelConnectWarning` (desktop shows the warning).
+If no destination is configured, Connect still sets `connecting` and returns
+the project with `channelConnectWarning` (desktop shows the warning).
 
 **Chat deep links**
 

@@ -94,6 +94,7 @@ export function toProject(row: DbProject): Project {
     productionLocation: row.productionLocation ?? null,
     development: row.development ?? null,
     production: row.production ?? null,
+    leadAgentContactId: row.leadAgentContactId ?? null,
     channel: row.channel ?? null,
     channelStatus:
       row.channelStatus === "connecting" ||

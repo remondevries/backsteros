@@ -91,6 +91,16 @@ type Props = {
   projects: CodebaseWorkbenchProject[];
   organizations: ApiOrganization[];
   nestedAreas?: ProjectDetailNestedArea[];
+  agentContacts?: Array<{
+    id: string;
+    name: string;
+    firstName?: string | null;
+    lastName?: string | null;
+    title?: string | null;
+    email?: string | null;
+    avatarSrc?: string | null;
+  }>;
+  contactAvatarSrcById?: Readonly<Record<string, string | null | undefined>>;
   tasks: ApiTask[];
   taskProgress: { total: number; completed: number };
   routeScope?: ProjectRouteScope | null;
@@ -150,6 +160,9 @@ function toApiProject(project: CodebaseWorkbenchProject): ApiProject {
       null,
     production:
       (project as { production?: ApiProject["production"] }).production ?? null,
+    leadAgentContactId:
+      (project as { leadAgentContactId?: string | null }).leadAgentContactId ??
+      null,
     channel: (project as { channel?: ApiProject["channel"] }).channel ?? null,
     channelStatus:
       (project as { channelStatus?: ApiProject["channelStatus"] })
@@ -182,6 +195,8 @@ export function CodebaseProjectWorkbench({
   projects,
   organizations,
   nestedAreas = [],
+  agentContacts = [],
+  contactAvatarSrcById,
   tasks,
   taskProgress,
   routeScope,
@@ -1055,6 +1070,8 @@ export function CodebaseProjectWorkbench({
             }
             organizations={organizations}
             nestedAreas={nestedAreas}
+            agentContacts={agentContacts}
+            avatarSrcById={contactAvatarSrcById}
             onCreateOrganizationFromQuery={onCreateOrganizationFromQuery}
             tasks={tasks}
             taskProgress={taskProgress}

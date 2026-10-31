@@ -27,15 +27,54 @@ import {
   rewriteProjectStorageKeyPrefix,
   rewriteProjectVaultWorkingDirectory,
 } from "../../lib/storage.js";
+import { resolveContactRef } from "../../lib/entity-refs.js";
 import { assertWorkspaceReference, type DbExecutor } from "./shared.js";
 import { db } from "../../db/index.js";
-import { areas, documents, organizations, projects } from "../../db/schema.js";
+import {
+  agents,
+  areas,
+  documents,
+  organizations,
+  projects,
+} from "../../db/schema.js";
 import {
   decodeUpdatedAtCursor,
   encodeUpdatedAtCursor,
   type ParsedProjectsListQuery,
 } from "../../lib/list-query.js";
 import { newId } from "../../lib/crypto.js";
+
+/**
+ * Resolve lead agent contact id or key. Null clears.
+ * Contact must exist; when set, must be linked to an enabled agents row.
+ */
+async function resolveLeadAgentContactId(
+  workspaceId: string,
+  value: string | null | undefined,
+  executor: DbExecutor,
+): Promise<string | null | undefined> {
+  if (value === undefined) return undefined;
+  if (value == null || !String(value).trim()) return null;
+  const contactId = await resolveContactRef(workspaceId, value, executor);
+  if (!contactId) {
+    throw new Error("LEAD_AGENT_CONTACT_NOT_FOUND");
+  }
+  const [agent] = await executor
+    .select({ id: agents.id })
+    .from(agents)
+    .where(
+      and(
+        eq(agents.workspaceId, workspaceId),
+        eq(agents.contactId, contactId),
+        eq(agents.enabled, true),
+      ),
+    )
+    .limit(1);
+  if (!agent) {
+    throw new Error("LEAD_AGENT_NOT_AGENT");
+  }
+  return contactId;
+}
 /** OS-49: peer sync replay / controlled writes. */
 export type ProjectWriteOptions = {
   /** Preserve the sync_event row time instead of stamping now. */
@@ -499,6 +538,11 @@ export async function createProject(
     executor,
   );
   await assertWorkspaceReference(workspaceId, input.areaId, areas, "AREA_NOT_FOUND", executor);
+  const createLeadAgentContactId = await resolveLeadAgentContactId(
+    workspaceId,
+    input.leadAgentContactId,
+    executor,
+  );
 
   const type = input.type ?? "general";
   if (input.githubRepository && type !== "codebase") {
@@ -538,6 +582,7 @@ export async function createProject(
       organizationId: input.organizationId ?? null,
       areaId: input.areaId ?? null,
       area: input.area ?? null,
+      leadAgentContactId: createLeadAgentContactId ?? null,
       startDate: input.startDate ? new Date(input.startDate) : null,
       dueDate: input.dueDate ? new Date(input.dueDate) : null,
       icon: input.icon ?? null,
@@ -665,6 +710,11 @@ export async function updateProject(
     executor,
   );
   await assertWorkspaceReference(workspaceId, input.areaId, areas, "AREA_NOT_FOUND", executor);
+  const nextLeadAgentContactId = await resolveLeadAgentContactId(
+    workspaceId,
+    input.leadAgentContactId,
+    executor,
+  );
 
   const nextType = input.type ?? existing.type;
   if (
@@ -814,6 +864,9 @@ export async function updateProject(
           : existing.localLocation
             ? { localLocation: null }
             : {}),
+        ...(nextLeadAgentContactId !== undefined
+          ? { leadAgentContactId: nextLeadAgentContactId }
+          : {}),
         ...(nextChannel !== undefined ? { channel: nextChannel } : {}),
         ...(channelConnectPatch.channelStatus !== undefined
           ? { channelStatus: channelConnectPatch.channelStatus }

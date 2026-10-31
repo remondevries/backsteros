@@ -263,6 +263,31 @@ export function registerProjectCoreRoutes(app: Hono) {
             400,
           );
         }
+        if (
+          error instanceof Error &&
+          error.message === "LEAD_AGENT_CONTACT_NOT_FOUND"
+        ) {
+          return c.json(
+            {
+              error: "Lead agent contact not found",
+              code: "lead_agent_contact_not_found",
+            },
+            400,
+          );
+        }
+        if (
+          error instanceof Error &&
+          error.message === "LEAD_AGENT_NOT_AGENT"
+        ) {
+          return c.json(
+            {
+              error:
+                "Lead agent must be a contact linked to an enabled agent persona",
+              code: "lead_agent_not_agent",
+            },
+            400,
+          );
+        }
         throw error;
       }
     },
@@ -420,6 +445,31 @@ export function registerProjectCoreRoutes(app: Hono) {
             400,
           );
         }
+        if (
+          error instanceof Error &&
+          error.message === "LEAD_AGENT_CONTACT_NOT_FOUND"
+        ) {
+          return c.json(
+            {
+              error: "Lead agent contact not found",
+              code: "lead_agent_contact_not_found",
+            },
+            400,
+          );
+        }
+        if (
+          error instanceof Error &&
+          error.message === "LEAD_AGENT_NOT_AGENT"
+        ) {
+          return c.json(
+            {
+              error:
+                "Lead agent must be a contact linked to an enabled agent persona",
+              code: "lead_agent_not_agent",
+            },
+            400,
+          );
+        }
         throw error;
       }
     },
@@ -465,6 +515,7 @@ export function registerProjectCoreRoutes(app: Hono) {
         projectName: row.name,
         type: row.type,
         requestedAt,
+        leadAgentContactId: row.leadAgentContactId ?? null,
       },
     });
 

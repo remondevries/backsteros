@@ -1310,6 +1310,13 @@
       "when": 1796210000000,
       "tag": "0185_project_channel_connect",
       "breakpoints": true
+    },
+    {
+      "idx": 187,
+      "version": "7",
+      "when": 1796220000000,
+      "tag": "0186_project_lead_agent",
+      "breakpoints": true
     }
   ]
 }

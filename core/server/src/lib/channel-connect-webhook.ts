@@ -1,13 +1,15 @@
 /**
  * Outbound Channel Connect webhook (Niels Grok Bot routine).
- * URL + secret from workspace settings and/or env — never hard-coded, never logged.
+ * Prefer the project's lead agent webhook; fall back to workspace/env global.
+ * URL + secret never hard-coded, never logged.
  */
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 
 import { db } from "../db/index.js";
-import { workspaceIntegrationSecrets } from "../db/schema.js";
+import { agents, workspaceIntegrationSecrets } from "../db/schema.js";
 import { logger } from "./logger.js";
 import { validateAutoReviewWebhookUrl } from "./auto-review-webhook.js";
+import { decryptAgentChatWebhookSecret } from "./agent-chat-webhook.js";
 
 export const CHANNEL_CONNECT_WEBHOOK_EVENT = "project.channel.connect" as const;
 export const CHANNEL_CONNECT_WEBHOOK_TIMEOUT_MS = 10_000;
@@ -21,6 +23,7 @@ export type ChannelConnectWebhookPayload = {
   projectName: string;
   type: string;
   requestedAt: string;
+  leadAgentContactId: string | null;
 };
 
 export type ChannelConnectWebhookConfig = {
@@ -28,8 +31,40 @@ export type ChannelConnectWebhookConfig = {
   secret: string;
 };
 
-/** Resolve URL+secret: env overrides workspace secrets. Never log secret. */
-export async function resolveChannelConnectWebhookConfig(
+async function resolveLeadAgentWebhookConfig(
+  workspaceId: string,
+  leadAgentContactId: string | null | undefined,
+): Promise<ChannelConnectWebhookConfig | null> {
+  const contactId = leadAgentContactId?.trim() || "";
+  if (!contactId) return null;
+  try {
+    const [row] = await db
+      .select({
+        webhookUrl: agents.webhookUrl,
+        webhookSecretCiphertext: agents.webhookSecretCiphertext,
+      })
+      .from(agents)
+      .where(
+        and(
+          eq(agents.workspaceId, workspaceId),
+          eq(agents.contactId, contactId),
+          eq(agents.enabled, true),
+        ),
+      )
+      .limit(1);
+    const url = row?.webhookUrl?.trim() || "";
+    if (!url || !row?.webhookSecretCiphertext?.trim()) return null;
+    const secret = decryptAgentChatWebhookSecret(row.webhookSecretCiphertext);
+    if (!secret?.trim()) return null;
+    const checked = validateAutoReviewWebhookUrl(url);
+    if (!checked.ok || !checked.url) return null;
+    return { url: checked.url, secret };
+  } catch {
+    return null;
+  }
+}
+
+async function resolveGlobalChannelConnectWebhookConfig(
   workspaceId: string,
 ): Promise<ChannelConnectWebhookConfig | null> {
   const envUrl = process.env.CHANNEL_CONNECT_WEBHOOK_URL?.trim() || "";
@@ -62,6 +97,22 @@ export async function resolveChannelConnectWebhookConfig(
   }
 }
 
+/**
+ * Resolve URL+secret: lead agent webhook first, then env / workspace global.
+ * Never log secret.
+ */
+export async function resolveChannelConnectWebhookConfig(
+  workspaceId: string,
+  leadAgentContactId?: string | null,
+): Promise<ChannelConnectWebhookConfig | null> {
+  const lead = await resolveLeadAgentWebhookConfig(
+    workspaceId,
+    leadAgentContactId,
+  );
+  if (lead) return lead;
+  return resolveGlobalChannelConnectWebhookConfig(workspaceId);
+}
+
 export async function postChannelConnectWebhook(
   input: {
     workspaceId: string;
@@ -74,12 +125,15 @@ export async function postChannelConnectWebhook(
   const config =
     input.configOverride !== undefined
       ? input.configOverride
-      : await resolveChannelConnectWebhookConfig(input.workspaceId);
+      : await resolveChannelConnectWebhookConfig(
+          input.workspaceId,
+          input.payload.leadAgentContactId,
+        );
   if (!config) {
     return {
       ok: false,
       error:
-        "Channel Connect webhook is not configured (set CHANNEL_CONNECT_WEBHOOK_URL + CHANNEL_CONNECT_WEBHOOK_SECRET or workspace settings).",
+        "Channel Connect webhook is not configured (set the lead agent's webhook, or CHANNEL_CONNECT_WEBHOOK_URL + CHANNEL_CONNECT_WEBHOOK_SECRET).",
     };
   }
 

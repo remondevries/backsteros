@@ -34,6 +34,7 @@ import {
   PropertyFieldGroup,
   PropertyInlineChip,
   ProjectChannelField,
+  ProjectLeadAgentField,
   PillNav,
   RegisterEntityDeleteAction,
   RegisterEntityDuplicateAction,
@@ -135,6 +136,7 @@ import { useProjectLatestUpdate } from "../lib/use-project-latest-update";
 import { projectFs } from "../lib/project-fs";
 import { CodebaseProjectActivityPanel } from "../components/codebase-project-activity-panel";
 import { CodebaseProjectWorkbench } from "./codebase-project-workbench";
+import { useShellAgentChat } from "../shell/use-shell-agent-chat";
 import { DesktopCodebaseDocsListPanel } from "./codebase-docs-list-panel";
 import { DesktopProjectLettersListPanel } from "./project-letters-list-panel";
 import { CodebaseRepoDocsDetail } from "./codebase-repo-docs-detail";
@@ -303,6 +305,20 @@ function ProjectDetailScreen({
   const organizationAvatarSrc = useDesktopAvatarSrcMap(
     "organization",
     organizations);
+  const { webhookReadyAgents } = useShellAgentChat();
+  const agentContactsForLead = useMemo(() => {
+    const byId = new Map(contacts.map((contact) => [contact.id, contact]));
+    const ordered: typeof contacts = [];
+    const seen = new Set<string>();
+    for (const agent of webhookReadyAgents) {
+      const contactId = agent.contactId?.trim();
+      if (!contactId || seen.has(contactId)) continue;
+      seen.add(contactId);
+      const contact = byId.get(contactId);
+      if (contact) ordered.push(contact);
+    }
+    return ordered;
+  }, [contacts, webhookReadyAgents]);
   const projects = useProjectsWithOverlay(workspace.projects, projectOverlay);
   const documents = useMemo(() => {
     const omitted = new Set(omittedDocumentIds);
@@ -2226,6 +2242,8 @@ function ProjectDetailScreen({
           }))}
           organizations={Object.values(workspace.organizationDetails)}
           nestedAreas={mapWorkspaceNestedAreas(workspace.areas)}
+          agentContacts={agentContactsForLead}
+          contactAvatarSrcById={contactAvatarSrc}
           tasks={[]}
           taskProgress={taskProgress}
           routeScope={routeScope}
@@ -2618,6 +2636,29 @@ function ProjectDetailScreen({
     </EntityPropertiesSection>
   );
 
+  const leadAgentField = (
+    <PropertyFieldGroup label="Lead agent">
+      <ProjectLeadAgentField
+        project={{
+          id: project.id,
+          leadAgentContactId:
+            (project as { leadAgentContactId?: string | null })
+              .leadAgentContactId ?? null,
+        }}
+        onProjectUpdated={(updated) => {
+          patchSelected({
+            leadAgentContactId: updated.leadAgentContactId ?? null,
+          } as Parameters<typeof patchSelected>[0]);
+        }}
+        agentContacts={agentContactsForLead}
+        avatarSrcById={contactAvatarSrc}
+        requestJson={(path, init) =>
+          desktopApiClient.requestJson(path, init)
+        }
+      />
+    </PropertyFieldGroup>
+  );
+
   const channelField = (
     <PropertyFieldGroup label="Channel">
       <ProjectChannelField
@@ -2722,6 +2763,7 @@ function ProjectDetailScreen({
           </PropertyFieldGroup>
         </>
       ) : null}
+      {leadAgentField}
       {channelField}
     </EntityPropertiesSection>
   );

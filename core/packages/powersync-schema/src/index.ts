@@ -36,6 +36,7 @@ const projects = new Table(
     production_location: column.text,
     development: column.text,
     production: column.text,
+    lead_agent_contact_id: column.text,
     channel: column.text,
     channel_status: column.text,
     channel_pending_link: column.text,
