@@ -10,6 +10,7 @@ import type {
 
 import { invalidateAgentDmThreads } from "../lib/agent-dm-seen";
 import {
+  cloudCoreRequestBlob,
   cloudCoreRequestJson,
   isCloudCoreApiError,
 } from "../lib/cloud-core-api";
@@ -44,7 +45,16 @@ export type ShellAgentChatApi = {
   sendMessage: (
     threadId: string,
     body: string,
+    options?: {
+      attachmentIds?: readonly string[];
+      skipLinkPreviews?: boolean;
+    },
   ) => Promise<CreateChatThreadMessageResult>;
+  uploadAttachment: (
+    threadId: string,
+    file: File,
+  ) => Promise<{ id: string }>;
+  resolveAttachmentUrl: (url: string) => Promise<string>;
   getThread: (threadId: string) => Promise<ChatThreadWithMessages>;
   listMessages: (threadId: string) => Promise<ChatThreadMessage[]>;
   deleteMessages: (
@@ -133,14 +143,61 @@ export function useShellAgentChat(): ShellAgentChatApi {
     });
   }, []);
 
-  const sendMessage = useCallback(async (threadId: string, body: string) => {
-    return cloudCoreRequestJson<CreateChatThreadMessageResult>(
-      `/api/v1/chat/threads/${encodeURIComponent(threadId)}/messages`,
-      {
-        method: "POST",
-        body: JSON.stringify({ body }),
+  const sendMessage = useCallback(
+    async (
+      threadId: string,
+      body: string,
+      options?: {
+        attachmentIds?: readonly string[];
+        skipLinkPreviews?: boolean;
       },
-    );
+    ) => {
+      return cloudCoreRequestJson<CreateChatThreadMessageResult>(
+        `/api/v1/chat/threads/${encodeURIComponent(threadId)}/messages`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            body,
+            ...(options?.attachmentIds && options.attachmentIds.length > 0
+              ? { attachmentIds: [...options.attachmentIds] }
+              : {}),
+            ...(options?.skipLinkPreviews
+              ? { skipLinkPreviews: true }
+              : {}),
+          }),
+        },
+      );
+    },
+    [],
+  );
+
+  const uploadAttachment = useCallback(
+    async (threadId: string, file: File) => {
+      return cloudCoreRequestJson<{ id: string }>(
+        `/api/v1/chat/threads/${encodeURIComponent(threadId)}/attachments`,
+        {
+          method: "POST",
+          body: file,
+          headers: {
+            "Content-Type": file.type || "application/octet-stream",
+            "X-Filename": file.name || "attachment.bin",
+          },
+        },
+      );
+    },
+    [],
+  );
+
+  const resolveAttachmentUrl = useCallback(async (url: string) => {
+    if (url.startsWith("blob:") || url.startsWith("data:")) return url;
+    const path = url.startsWith("http")
+      ? (() => {
+          const parsed = new URL(url);
+          return `${parsed.pathname}${parsed.search}`;
+        })()
+      : url;
+    const blob = await cloudCoreRequestBlob(path);
+    return URL.createObjectURL(blob);
   }, []);
 
   const getThread = useCallback(async (threadId: string) => {
@@ -204,6 +261,8 @@ export function useShellAgentChat(): ShellAgentChatApi {
       agentsLoadError,
       openThread,
       sendMessage,
+      uploadAttachment,
+      resolveAttachmentUrl,
       getThread,
       listMessages,
       deleteMessages,
@@ -218,7 +277,9 @@ export function useShellAgentChat(): ShellAgentChatApi {
       getThread,
       listMessages,
       openThread,
+      resolveAttachmentUrl,
       sendMessage,
+      uploadAttachment,
       webhookReadyAgents,
     ],
   );

@@ -19,6 +19,25 @@ export type AgentShellChatMessageChoicesAnswer = {
   answeredAt: string;
 };
 
+export type AgentShellChatMessageAttachment = {
+  id: string;
+  filename: string;
+  mime: string;
+  size: number;
+  url: string;
+  thumbnailUrl?: string | null;
+  kind: "image" | "pdf" | "file";
+};
+
+export type AgentShellChatMessageLinkPreview = {
+  url: string;
+  siteName?: string | null;
+  faviconUrl?: string | null;
+  title?: string | null;
+  description?: string | null;
+  imageUrl?: string | null;
+};
+
 export type AgentShellChatMessageEvent = {
   workspaceId: string;
   threadId: string;
@@ -33,6 +52,8 @@ export type AgentShellChatMessageEvent = {
     /** Assistant choice buttons (when the reply includes them). */
     choices?: AgentShellChatMessageChoices;
     choicesAnswer?: AgentShellChatMessageChoicesAnswer | null;
+    attachments?: AgentShellChatMessageAttachment[];
+    linkPreviews?: AgentShellChatMessageLinkPreview[];
   };
 };
 

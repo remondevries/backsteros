@@ -1631,6 +1631,250 @@
   cursor: default;
 }
 
+.chat-ui-attachments {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 8px;
+  margin-top: 8px;
+  max-width: min(100%, 520px);
+}
+
+.chat-ui-file-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 12px;
+  border: 1px solid color-mix(in oklab, var(--foreground, #fff) 12%, transparent);
+  background:
+    linear-gradient(
+      215deg,
+      color-mix(in oklab, var(--foreground, #fff) 6%, transparent) 0%,
+      transparent 42%
+    ),
+    color-mix(in oklab, var(--foreground, #fff) 3%, transparent);
+  color: inherit;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+
+.chat-ui-file-card:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.chat-ui-file-card__glyph,
+.chat-ui-file-card__preview {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  background: color-mix(in oklab, var(--foreground, #fff) 10%, transparent);
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  overflow: hidden;
+}
+
+.chat-ui-file-card__thumb {
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  object-fit: cover;
+}
+
+.chat-ui-file-card__meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.chat-ui-file-card__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.chat-ui-file-card__sub {
+  font-size: 0.6875rem;
+  opacity: 0.65;
+}
+
+.chat-ui-file-card.is-image {
+  padding: 6px;
+}
+
+.chat-ui-image-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgb(0 0 0 / 0.72);
+  cursor: zoom-out;
+}
+
+.chat-ui-image-lightbox__img {
+  max-width: min(96vw, 1200px);
+  max-height: 92vh;
+  border-radius: 8px;
+  object-fit: contain;
+  cursor: default;
+}
+
+.chat-ui-link-previews {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+  max-width: min(100%, 420px);
+}
+
+.chat-ui-link-preview {
+  display: flex;
+  gap: 0;
+  overflow: hidden;
+  border-radius: 12px;
+  border: 1px solid color-mix(in oklab, var(--foreground, #fff) 12%, transparent);
+  background: color-mix(in oklab, var(--foreground, #fff) 3%, transparent);
+  color: inherit;
+  text-decoration: none;
+}
+
+.chat-ui-link-preview:hover {
+  border-color: color-mix(in oklab, var(--foreground, #fff) 22%, transparent);
+}
+
+.chat-ui-link-preview__body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  padding: 10px 12px;
+}
+
+.chat-ui-link-preview__site {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.6875rem;
+  opacity: 0.7;
+}
+
+.chat-ui-link-preview__favicon {
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  object-fit: cover;
+}
+
+.chat-ui-link-preview__title {
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.chat-ui-link-preview__desc {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  font-size: 0.75rem;
+  opacity: 0.7;
+  line-height: 1.35;
+}
+
+.chat-ui-link-preview__image {
+  flex: 0 0 96px;
+  width: 96px;
+  object-fit: cover;
+  background: color-mix(in oklab, var(--foreground, #fff) 6%, transparent);
+}
+
+.chat-ui-composer__attach {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  opacity: 0.7;
+  cursor: pointer;
+  font-size: 1.1rem;
+  line-height: 1;
+}
+
+.chat-ui-composer__attach:hover {
+  opacity: 1;
+  background: color-mix(in oklab, var(--foreground, #fff) 8%, transparent);
+}
+
+.chat-ui-composer__attach-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.chat-ui-file-card__pdf-thumb {
+  width: 40px;
+  height: 40px;
+  object-fit: cover;
+}
+
+.chat-ui-pdf-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: flex;
+  flex-direction: column;
+  background: color-mix(in oklab, #0b1220 92%, transparent);
+}
+
+.chat-ui-pdf-overlay__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  border-bottom: 1px solid color-mix(in oklab, #fff 12%, transparent);
+  color: #fff;
+}
+
+.chat-ui-pdf-overlay__close {
+  margin: 0;
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: 1px solid color-mix(in oklab, #fff 20%, transparent);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.chat-ui-pdf-overlay__body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
 /* Shell right column hosts the same preview chrome. */
 .desktop-chat-panel__body .chat-ui-dev-page {
   /* Narrower readable column inside the chat rail. */

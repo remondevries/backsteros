@@ -3164,6 +3164,11 @@ export const chatThreadMessages = pgTable(
      * Null while unanswered (or when `choices` is null).
      */
     choicesAnswer: jsonb("choices_answer").$type<Record<string, unknown> | null>(),
+    /**
+     * Server-fetched Open Graph / HTML link previews for URLs in `body`.
+     * Null when skipped or none found.
+     */
+    linkPreviews: jsonb("link_previews").$type<unknown[] | null>(),
     /** Soft-delete — excluded from lists / DM last-assistant. */
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
@@ -3183,6 +3188,48 @@ export const chatThreadMessages = pgTable(
 );
 
 export type DbChatThreadMessage = typeof chatThreadMessages.$inferSelect;
+
+/** Shell chat file attachments (Spaces/R2; REST only — not PowerSync). */
+export const chatThreadAttachments = pgTable(
+  "chat_thread_attachments",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    threadId: text("thread_id")
+      .notNull()
+      .references(() => chatThreads.id, { onDelete: "cascade" }),
+    /** Null until the upload is linked to a posted message. */
+    messageId: text("message_id").references(() => chatThreadMessages.id, {
+      onDelete: "set null",
+    }),
+    storageKey: text("storage_key").notNull(),
+    originalFilename: text("original_filename").notNull().default(""),
+    contentType: text("content_type")
+      .notNull()
+      .default("application/octet-stream"),
+    byteSize: integer("byte_size").notNull().default(0),
+    checksum: text("checksum"),
+    contentEtag: text("content_etag"),
+    /** image | pdf | file */
+    kind: text("kind").notNull().default("file"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("chat_thread_attachments_workspace_id_idx").on(table.workspaceId),
+    index("chat_thread_attachments_thread_id_idx").on(table.threadId),
+    index("chat_thread_attachments_message_id_idx").on(table.messageId),
+  ],
+);
+
+export type DbChatThreadAttachment = typeof chatThreadAttachments.$inferSelect;
 
 export const chatWebhookEvents = pgTable(
   "chat_webhook_events",

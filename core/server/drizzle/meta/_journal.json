@@ -1254,6 +1254,13 @@
       "when": 1796130000000,
       "tag": "0177_chat_thread_message_choices",
       "breakpoints": true
+    },
+    {
+      "idx": 179,
+      "version": "7",
+      "when": 1796140000000,
+      "tag": "0178_chat_attachments_link_previews",
+      "breakpoints": true
     }
   ]
 }

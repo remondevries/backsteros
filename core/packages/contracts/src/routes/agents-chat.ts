@@ -23,6 +23,7 @@ import {
   reorderAgentsInputSchema,
   updateAgentInputSchema,
   updateChatThreadAgentStatusInputSchema,
+  uploadChatThreadAttachmentResultSchema,
 } from "../schemas.js";
 
 const c = initContract();
@@ -178,6 +179,43 @@ export const agentsChatRoutes: AppRouter = c.router({
     },
     summary:
       "Post a message (Remon as user, or agent API key as assistant reply)",
+  },
+  uploadChatThreadAttachment: {
+    method: "POST",
+    path: "/api/v1/chat/threads/:threadId/attachments",
+    pathParams: z.object({ threadId: z.string() }),
+    headers: z.object({
+      "x-filename": z.string().optional(),
+      "content-type": z.string().optional(),
+    }),
+    body: c.type<ArrayBuffer | Blob>(),
+    responses: {
+      201: uploadChatThreadAttachmentResultSchema,
+      400: badRequestSchema,
+      401: errorSchema,
+      403: errorSchema,
+      404: errorSchema,
+    },
+    summary:
+      "Upload a chat attachment (raw body + X-Filename); link via attachmentIds on post",
+  },
+  getChatThreadAttachment: {
+    method: "GET",
+    path: "/api/v1/chat/threads/:threadId/attachments/:attachmentId",
+    pathParams: z.object({
+      threadId: z.string(),
+      attachmentId: z.string(),
+    }),
+    responses: {
+      200: c.otherResponse({
+        contentType: "application/octet-stream",
+        body: c.type<Blob>(),
+      }),
+      401: errorSchema,
+      403: errorSchema,
+      404: errorSchema,
+    },
+    summary: "Download a chat attachment (auth required)",
   },
   answerChatThreadMessageChoices: {
     method: "POST",

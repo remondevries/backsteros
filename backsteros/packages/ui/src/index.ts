@@ -5545,6 +5545,7 @@ export { buildChatUiDemoMessages } from "./chat/chat-ui-demo-fixture.js";
 
 export {
   collectPendingChatImagesFromDataTransfer,
+  createPendingChatFilesFromList,
   createPendingChatImages,
   pendingChatImagesToFileParts,
   revokePendingChatImages,

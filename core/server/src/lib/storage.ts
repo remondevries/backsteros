@@ -376,6 +376,19 @@ export function buildTaskAttachmentStorageKey(
   );
 }
 
+/** Shell chat attachments under `.backsteros/attachments/chat-{threadId}/…`. */
+export function buildChatAttachmentStorageKey(
+  threadId: string,
+  attachmentId: string,
+  fileName: string,
+): string {
+  return buildTaskAttachmentStorageKey(
+    `chat-${safeSegment(threadId)}`,
+    attachmentId,
+    fileName,
+  );
+}
+
 /** @deprecated Use {@link buildTaskAttachmentStorageKey}. */
 export function buildTaskPdfAttachmentStorageKey(
   taskId: string,

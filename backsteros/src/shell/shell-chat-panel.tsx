@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import type { ChatUiCardPart } from "@backsteros/contracts";
 import {
@@ -11,6 +11,10 @@ import {
   type LiveAgentChatHandlers,
 } from "@backsteros/ui";
 
+import {
+  ChatPdfOverlay,
+  ChatPdfPageThumb,
+} from "../components/chat-pdf-overlay";
 import { markAgentDmSeen } from "../lib/agent-dm-seen";
 import { useDesktopAvatarSrcMap } from "../lib/avatar-src";
 import {
@@ -46,6 +50,10 @@ export function ShellChatPanel() {
   const { allTasks } = useDesktopWorkspaceTasks();
   const projects = useShellChatProjects();
   const agentChat = useShellAgentChat();
+  const [pdfOverlay, setPdfOverlay] = useState<{
+    url: string;
+    filename: string;
+  } | null>(null);
 
   const onNavigate = useCallback(
     (href: string) => {
@@ -90,6 +98,14 @@ export function ShellChatPanel() {
         return thread;
       },
       sendMessage: agentChat.sendMessage,
+      uploadAttachment: agentChat.uploadAttachment,
+      resolveAttachmentUrl: agentChat.resolveAttachmentUrl,
+      openPdfAttachment: (url, filename) => {
+        setPdfOverlay({ url, filename });
+      },
+      renderPdfThumb: (url, filename) => (
+        <ChatPdfPageThumb fileUrl={url} filename={filename} />
+      ),
       getThread: async (threadId) => {
         const thread = await agentChat.getThread(threadId);
         markLatestAssistantSeen(thread);
@@ -150,6 +166,13 @@ export function ShellChatPanel() {
         webhookSetupHref="/settings/api?type=agent"
         webhookSetupMessage={agentChat.agentsLoadError}
       />
+      {pdfOverlay ? (
+        <ChatPdfOverlay
+          fileUrl={pdfOverlay.url}
+          filename={pdfOverlay.filename}
+          onClose={() => setPdfOverlay(null)}
+        />
+      ) : null}
     </ChatMentionResolveProvider>
   );
 }

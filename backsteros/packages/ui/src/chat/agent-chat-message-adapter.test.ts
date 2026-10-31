@@ -35,6 +35,56 @@ function assistantWithChoices(
   };
 }
 
+describe("chatThreadMessageToUi attachments + link previews", () => {
+  it("appends attachment and link-preview cards below the bubble", () => {
+    const ui = chatThreadMessageToUi({
+      id: "m-att",
+      threadId: "th",
+      role: "user",
+      authorContactId: null,
+      authorName: "Remon",
+      body: "See https://example.com",
+      status: "done",
+      createdAt: "2026-10-31T08:00:00.000Z",
+      updatedAt: "2026-10-31T08:00:00.000Z",
+      attachments: [
+        {
+          id: "a1",
+          filename: "shot.png",
+          mime: "image/png",
+          size: 12,
+          url: "/api/v1/chat/threads/th/attachments/a1",
+          thumbnailUrl: "/api/v1/chat/threads/th/attachments/a1",
+          kind: "image",
+        },
+      ],
+      linkPreviews: [
+        {
+          url: "https://example.com",
+          siteName: "Example",
+          title: "Example Site",
+          description: "Hello",
+          faviconUrl: null,
+          imageUrl: null,
+        },
+      ],
+    });
+    assert.equal(ui.parts[0]?.type, "text");
+    assert.equal(
+      ui.parts.some(
+        (part) => part.type === "card" && part.cardType === "attachments",
+      ),
+      true,
+    );
+    assert.equal(
+      ui.parts.some(
+        (part) => part.type === "card" && part.cardType === "link-previews",
+      ),
+      true,
+    );
+  });
+});
+
 describe("chatThreadMessageToUi choices", () => {
   it("keeps body copy and appends a choices card", () => {
     const ui = chatThreadMessageToUi(assistantWithChoices("m1", false));

@@ -67,6 +67,25 @@ export type AgentChatWebhookChoicesAnswer = {
   answeredAt: string;
 };
 
+export type AgentChatWebhookAttachment = {
+  id: string;
+  filename: string;
+  mime: string;
+  size: number;
+  url: string;
+  thumbnailUrl?: string | null;
+  kind: "image" | "pdf" | "file";
+};
+
+export type AgentChatWebhookLinkPreview = {
+  url: string;
+  siteName?: string | null;
+  faviconUrl?: string | null;
+  title?: string | null;
+  description?: string | null;
+  imageUrl?: string | null;
+};
+
 export type AgentChatWebhookMessage = {
   id: string;
   role: "user" | "assistant" | "system";
@@ -77,6 +96,10 @@ export type AgentChatWebhookMessage = {
   /** Assistant-only interactive options (when present on context messages). */
   choices?: AgentChatWebhookChoices;
   choicesAnswer?: AgentChatWebhookChoicesAnswer | null;
+  /** Files attached to this message. */
+  attachments?: AgentChatWebhookAttachment[];
+  /** Server-resolved URL previews for links in `text`. */
+  linkPreviews?: AgentChatWebhookLinkPreview[];
 };
 
 type AgentWebhookPayloadBase = {

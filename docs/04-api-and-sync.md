@@ -553,6 +553,49 @@ POST /api/v1/chat/threads/{threadId}/messages
 - Desktop keeps `body` as the bubble copy and renders buttons below.
 - Thread/SSE/webhook message objects may include `choices` and `choicesAnswer` (`null` until answered).
 
+**File attachments** (Remon or agent):
+
+```http
+POST /api/v1/chat/threads/{threadId}/attachments
+X-Filename: notes.pdf
+Content-Type: application/pdf
+
+<raw bytes, max 25 MB>
+```
+
+```json
+{
+  "id": "att_…",
+  "filename": "notes.pdf",
+  "mime": "application/pdf",
+  "size": 12345,
+  "url": "/api/v1/chat/threads/{threadId}/attachments/att_…",
+  "thumbnailUrl": null,
+  "kind": "pdf"
+}
+```
+
+Then reference ids on the message POST (`body` may be empty when attachments are present):
+
+```json
+{
+  "body": "Here are the files",
+  "attachmentIds": ["att_…"],
+  "skipLinkPreviews": false
+}
+```
+
+- Upload stores workspace-scoped blobs (Spaces/R2 under `.backsteros/attachments/chat-…`).
+- MIME is sniffed (JPEG/PNG/GIF/WebP → `kind: image`; `%PDF` → `pdf`; else `file`). SVG/HTML/scripts never render inline.
+- `GET …/attachments/:id` requires auth; `Content-Disposition` is `inline` for image/pdf, `attachment` otherwise.
+- Thread / SSE / webhook message objects may include `attachments[]`.
+
+**Link previews** (server-side only):
+
+- Core extracts up to 5 `http(s)` URLs from `body`, fetches HTML with SSRF guards (block private/loopback/Tailscale/link-local, 5s timeout, 512 KB cap, cached ~1h), and stores `linkPreviews[]` (`url`, `siteName`, `faviconUrl`, `title`, `description`, `imageUrl`).
+- Agents may set `skipLinkPreviews: true` on the message POST to opt out.
+- Desktop shows preview cards below the bubble; the URL stays clickable in the text.
+
 **Owner answers once** (Access / owner keys only — not agent keys):
 
 ```http

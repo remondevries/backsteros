@@ -7,9 +7,12 @@ import {
   useReducer,
   useRef,
   useState,
+  type ReactNode,
 } from "react";
 import type {
   AnswerChatThreadMessageChoicesResult,
+  ChatThreadAttachment,
+  ChatThreadLinkPreview,
   ChatThreadMessageChoices,
   ChatThreadMessageChoicesAnswer,
   ChatThreadWithMessages,
@@ -34,6 +37,7 @@ import {
   liveAgentThreadView,
 } from "../../chat/live-agent-thread-state.js";
 import type { ChatCardNavigate } from "./chat-card-navigate.js";
+import { ChatAttachmentActionsProvider } from "./chat-attachments-card.js";
 import { ChatThread } from "./chat-thread.js";
 import type { ChatThreadPeer } from "./chat-thread-header.js";
 
@@ -52,7 +56,22 @@ export type LiveAgentChatHandlers = {
   sendMessage: (
     threadId: string,
     body: string,
+    options?: {
+      attachmentIds?: readonly string[];
+      skipLinkPreviews?: boolean;
+    },
   ) => Promise<CreateChatThreadMessageResult>;
+  /** Upload raw bytes before posting; returns attachment id. */
+  uploadAttachment?: (
+    threadId: string,
+    file: File,
+  ) => Promise<{ id: string }>;
+  /** Authenticated fetch → blob URL for chat attachment paths. */
+  resolveAttachmentUrl?: (url: string) => Promise<string>;
+  /** Open a PDF attachment in the existing desktop PDF viewer. */
+  openPdfAttachment?: (url: string, filename: string) => void | Promise<void>;
+  /** Optional first-page PDF thumbnail (desktop; uses react-pdf). */
+  renderPdfThumb?: (url: string, filename: string) => ReactNode;
   getThread: (threadId: string) => Promise<ChatThreadWithMessages>;
   deleteMessages?: (
     threadId: string,
@@ -451,6 +470,8 @@ export function ChatUiDevPreview({
             createdAt?: string;
             choices?: ChatThreadMessageChoices;
             choicesAnswer?: ChatThreadMessageChoicesAnswer | null;
+            attachments?: ChatThreadAttachment[];
+            linkPreviews?: ChatThreadLinkPreview[];
           };
         }>
       ).detail;
@@ -472,6 +493,14 @@ export function ChatUiDevPreview({
                   choices: detail.message.choices,
                   choicesAnswer: detail.message.choicesAnswer ?? null,
                 }
+              : {}),
+            ...(detail.message?.attachments &&
+            detail.message.attachments.length > 0
+              ? { attachments: detail.message.attachments }
+              : {}),
+            ...(detail.message?.linkPreviews &&
+            detail.message.linkPreviews.length > 0
+              ? { linkPreviews: detail.message.linkPreviews }
               : {}),
           },
         });
@@ -571,21 +600,46 @@ export function ChatUiDevPreview({
       ];
       if (parts.length === 0) return;
 
-      if (liveAgentId && liveAgentChat && liveThreadId && text.trim()) {
+      if (
+        liveAgentId &&
+        liveAgentChat &&
+        liveThreadId &&
+        (text.trim() || attachments.length > 0)
+      ) {
         const optimistic: ChatUiMessage = {
           id: pendingId,
           role: "user",
           author: { name: "You" },
           status: "pending",
           createdAt: now,
-          parts: [{ type: "text", text }],
+          parts,
         };
         dispatchLive({ type: "sendStarted", message: optimistic });
         try {
-          // The POST returns the stored message, so no follow-up GET is needed.
+          const attachmentIds: string[] = [];
+          if (attachments.length > 0) {
+            if (!liveAgentChat.uploadAttachment) {
+              throw new Error("File uploads are not available for this chat");
+            }
+            for (const part of attachments) {
+              const response = await fetch(part.url);
+              const blob = await response.blob();
+              const file = new File(
+                [blob],
+                part.name || "attachment",
+                { type: part.mimeType || blob.type || "application/octet-stream" },
+              );
+              const uploaded = await liveAgentChat.uploadAttachment(
+                liveThreadId,
+                file,
+              );
+              attachmentIds.push(uploaded.id);
+            }
+          }
           const result = await liveAgentChat.sendMessage(
             liveThreadId,
             text.trim(),
+            attachmentIds.length > 0 ? { attachmentIds } : undefined,
           );
           dispatchLive({
             type: "sendSucceeded",
@@ -777,6 +831,11 @@ export function ChatUiDevPreview({
   return (
     <div className="chat-ui-dev-page" data-content-detail>
       <div className="chat-ui-dev-page__thread">
+        <ChatAttachmentActionsProvider
+          resolveUrl={liveAgentChat?.resolveAttachmentUrl ?? null}
+          openPdf={liveAgentChat?.openPdfAttachment ?? null}
+          renderPdfThumb={liveAgentChat?.renderPdfThumb ?? null}
+        >
         <ChatThread
           messages={messages}
           onSend={onSend}
@@ -796,6 +855,7 @@ export function ChatUiDevPreview({
           emptyState={null}
           placeholder="Message…"
         />
+        </ChatAttachmentActionsProvider>
       </div>
     </div>
   );

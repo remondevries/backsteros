@@ -30,6 +30,7 @@ import { TrashIcon } from "@primer/octicons-react";
 
 import {
   collectPendingChatImagesFromDataTransfer,
+  createPendingChatFilesFromList,
   pendingChatImagesToFileParts,
   revokePendingChatImages,
   type PendingChatImage,
@@ -586,27 +587,54 @@ function ChatThreadComposer({
         />
       ) : null}
       {hasPendingImages ? (
-        <div className="chat-ui-composer__attachments" aria-label="Attached images">
-          {pendingImages.map((image) => (
-            <div key={image.id} className="chat-ui-composer__attachment">
-              <img
-                src={image.previewUrl}
-                alt={image.file.name || "Pasted image"}
-                className="chat-ui-composer__attachment-thumb"
-              />
-              <button
-                type="button"
-                className="chat-ui-composer__attachment-remove"
-                aria-label={`Remove ${image.file.name || "image"}`}
-                onClick={() => removePendingImage(image.id)}
-              >
-                ×
-              </button>
-            </div>
-          ))}
+        <div className="chat-ui-composer__attachments" aria-label="Attachments">
+          {pendingImages.map((image) => {
+            const isImage = (image.file.type || "").startsWith("image/");
+            return (
+              <div key={image.id} className="chat-ui-composer__attachment">
+                {isImage ? (
+                  <img
+                    src={image.previewUrl}
+                    alt={image.file.name || "Pasted image"}
+                    className="chat-ui-composer__attachment-thumb"
+                  />
+                ) : (
+                  <span className="chat-ui-composer__attachment-thumb chat-ui-file-card__glyph">
+                    {(image.file.name.split(".").pop() || "FILE")
+                      .slice(0, 4)
+                      .toUpperCase()}
+                  </span>
+                )}
+                <button
+                  type="button"
+                  className="chat-ui-composer__attachment-remove"
+                  aria-label={`Remove ${image.file.name || "file"}`}
+                  onClick={() => removePendingImage(image.id)}
+                >
+                  ×
+                </button>
+              </div>
+            );
+          })}
         </div>
       ) : null}
       <div className="chat-ui-composer__row">
+        <label className="chat-ui-composer__attach" title="Attach file">
+          <span aria-hidden>+</span>
+          <input
+            type="file"
+            className="chat-ui-composer__attach-input"
+            multiple
+            disabled={disabled}
+            aria-label="Attach file"
+            onChange={(event) => {
+              const next = createPendingChatFilesFromList(event.target.files);
+              event.target.value = "";
+              if (next.length === 0) return;
+              onPendingImagesChange([...pendingImages, ...next]);
+            }}
+          />
+        </label>
         <div className="chat-ui-composer__input-wrap" ref={inputWrapRef}>
           <ChatComposerMentionInput
             value={value}
@@ -616,7 +644,7 @@ function ChatThreadComposer({
             disabled={disabled}
             placeholder={
               hasPendingImages
-                ? `${placeholder}  ·  paste more images or send`
+                ? `${placeholder}  ·  attach more or send`
                 : placeholder
             }
             onKeyDown={onKeyDown}

@@ -126,6 +126,35 @@ export const chatThreadMessageChoicesAnswerSchema = z.object({
   answeredAt: z.string().datetime(),
 });
 
+/** File attached to a shell chat message (Spaces/R2-backed). */
+export const chatThreadAttachmentKindSchema = z.enum([
+  "image",
+  "pdf",
+  "file",
+]);
+
+export const chatThreadAttachmentSchema = z.object({
+  id: z.string(),
+  filename: z.string(),
+  mime: z.string(),
+  size: z.number().int().nonnegative(),
+  /** Authenticated download URL on core. */
+  url: z.string(),
+  /** Same as `url` for images; null for non-image kinds. */
+  thumbnailUrl: z.string().nullable().optional(),
+  kind: chatThreadAttachmentKindSchema,
+});
+
+/** Server-resolved Open Graph / HTML metadata for a URL in the message body. */
+export const chatThreadLinkPreviewSchema = z.object({
+  url: z.string().url(),
+  siteName: z.string().nullable().optional(),
+  faviconUrl: z.string().nullable().optional(),
+  title: z.string().nullable().optional(),
+  description: z.string().nullable().optional(),
+  imageUrl: z.string().nullable().optional(),
+});
+
 export const chatThreadMessageSchema = z.object({
   id: z.string(),
   threadId: z.string(),
@@ -142,6 +171,10 @@ export const chatThreadMessageSchema = z.object({
   choices: chatThreadMessageChoicesSchema.optional(),
   /** Present (possibly null) when `choices` is set. */
   choicesAnswer: chatThreadMessageChoicesAnswerSchema.nullable().optional(),
+  /** Files linked to this message (upload then reference by id). */
+  attachments: z.array(chatThreadAttachmentSchema).optional(),
+  /** URL previews for http(s) links in `body` (unless skipped). */
+  linkPreviews: z.array(chatThreadLinkPreviewSchema).optional(),
 });
 
 export const chatThreadSchema = z.object({
@@ -179,13 +212,39 @@ export const getOrCreateChatThreadInputSchema = z.object({
   agentId: z.string().trim().min(1),
 });
 
-export const createChatThreadMessageInputSchema = z.object({
-  body: z.string().trim().min(1).max(32_000),
-  /**
-   * Assistant replies only. Ignored / rejected on user posts.
-   * Desktop renders buttons below the bubble; `body` is still the copy.
-   */
-  choices: chatThreadMessageChoicesSchema.optional(),
+export const createChatThreadMessageInputSchema = z
+  .object({
+    body: z.string().trim().max(32_000).default(""),
+    /**
+     * Assistant replies only. Ignored / rejected on user posts.
+     * Desktop renders buttons below the bubble; `body` is still the copy.
+     */
+    choices: chatThreadMessageChoicesSchema.optional(),
+    /** Previously uploaded attachment ids to attach to this message (max 20). */
+    attachmentIds: z.array(z.string().trim().min(1)).max(20).optional(),
+    /**
+     * Skip server-side URL preview fetch. Agents may set this; Remon desktop
+     * usually leaves it unset.
+     */
+    skipLinkPreviews: z.boolean().optional(),
+  })
+  .superRefine((value, ctx) => {
+    const hasBody = value.body.trim().length > 0;
+    const hasAttachments = (value.attachmentIds?.length ?? 0) > 0;
+    if (!hasBody && !hasAttachments) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Message body or attachments are required",
+        path: ["body"],
+      });
+    }
+  });
+
+/** Result of uploading a chat attachment before posting a message. */
+export const uploadChatThreadAttachmentResultSchema = chatThreadAttachmentSchema;
+
+export const chatThreadAttachmentsListSchema = z.object({
+  attachments: z.array(chatThreadAttachmentSchema),
 });
 
 export const createChatThreadMessageResultSchema = z.object({
@@ -314,7 +373,15 @@ export type ChatThreadMessageChoices = z.infer<
 export type ChatThreadMessageChoicesAnswer = z.infer<
   typeof chatThreadMessageChoicesAnswerSchema
 >;
+export type ChatThreadAttachmentKind = z.infer<
+  typeof chatThreadAttachmentKindSchema
+>;
+export type ChatThreadAttachment = z.infer<typeof chatThreadAttachmentSchema>;
+export type ChatThreadLinkPreview = z.infer<typeof chatThreadLinkPreviewSchema>;
 export type ChatThreadMessage = z.infer<typeof chatThreadMessageSchema>;
+export type UploadChatThreadAttachmentResult = z.infer<
+  typeof uploadChatThreadAttachmentResultSchema
+>;
 export type ChatThreadWithMessages = z.infer<
   typeof chatThreadWithMessagesSchema
 >;

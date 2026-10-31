@@ -115,6 +115,50 @@ export async function cloudCoreRequestJson<T>(
 }
 
 /**
+ * Binary GET/POST against cloud-core (attachments) with the owner API key.
+ * Does not force `Content-Type: application/json`.
+ */
+export async function cloudCoreRequestBlob(
+  path: string,
+  init?: RequestInit,
+): Promise<Blob> {
+  const token = await loadDesktopOwnerToken();
+  if (!token) {
+    throw new CloudCoreApiError(
+      401,
+      "Owner API key required for cloud-core (agent.backsteros.com)",
+    );
+  }
+  const normalized = path.startsWith("/") ? path : `/${path}`;
+  const url = `${trimSlash(cloudCoreApiBaseUrl())}${normalized}`;
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      ...init,
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "*/*",
+        ...(init?.headers ?? {}),
+      },
+    });
+  } catch (error) {
+    const message =
+      error instanceof Error && error.message.trim()
+        ? error.message
+        : "Network error talking to cloud-core";
+    throw new CloudCoreApiError(0, message);
+  }
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new CloudCoreApiError(
+      res.status,
+      `${res.status} ${body || res.statusText}`,
+    );
+  }
+  return res.blob();
+}
+
+/**
  * Streaming GET against cloud-core (SSE) with the owner API key.
  * Used for shell agent DM push (`/api/v1/chat/threads/events`).
  */

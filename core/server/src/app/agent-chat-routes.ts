@@ -12,12 +12,14 @@ import {
 } from "@backsteros/contracts";
 
 import * as agentChat from "../services/agent-chat.js";
+import * as chatAttachments from "../services/chat-attachments.js";
 import {
   AGENT_SHELL_CHAT_SSE_EVENT,
   AGENT_SHELL_CHAT_STATUS_SSE_EVENT,
   subscribeAgentShellChatMessage,
   subscribeAgentShellChatStatus,
 } from "../lib/agent-shell-chat-events.js";
+import { MAX_CHAT_ATTACHMENT_BYTES } from "../lib/chat-attachment-content-type.js";
 import {
   can,
   forbidden,
@@ -243,7 +245,11 @@ export function registerAgentChatRoutes(app: Hono) {
           authorName: asAgent ? null : "Remon",
         },
         undefined,
-        parsed.data.choices,
+        {
+          choices: parsed.data.choices,
+          attachmentIds: parsed.data.attachmentIds,
+          skipLinkPreviews: parsed.data.skipLinkPreviews,
+        },
       );
       return c.json(result, 201);
     } catch (error) {
@@ -253,6 +259,82 @@ export function registerAgentChatRoutes(app: Hono) {
       return c.json({ error: message, code: errorCode(status) }, status);
     }
   });
+
+  /**
+   * Upload a chat attachment (raw body + X-Filename). Link via `attachmentIds`
+   * on the subsequent message POST. Owner or the agent for this thread.
+   */
+  app.post("/api/v1/chat/threads/:threadId/attachments", async (c) => {
+    const auth = getAuth(c);
+    const asAgent = canWriteAgentReply(auth);
+    const asUser = canWriteUserMessage(auth);
+    if (!asAgent && !asUser) return c.json(forbidden(), 403);
+
+    const threadId = c.req.param("threadId");
+    const bytes = new Uint8Array(await c.req.arrayBuffer());
+    if (bytes.byteLength === 0 || bytes.byteLength > MAX_CHAT_ATTACHMENT_BYTES) {
+      return c.json(
+        {
+          error: "Attachment must be between 1 byte and 25 MB",
+          code: "bad_request",
+        },
+        400,
+      );
+    }
+    const filename = (c.req.header("X-Filename") ?? "").trim();
+    if (!filename) {
+      return c.json(
+        { error: "X-Filename is required", code: "bad_request" },
+        400,
+      );
+    }
+
+    try {
+      const attachment = await chatAttachments.uploadChatThreadAttachment(
+        auth.workspaceId,
+        threadId,
+        bytes,
+        filename,
+        c.req.header("Content-Type"),
+      );
+      return c.json(attachment, 201);
+    } catch (error) {
+      const status = errorStatus(error);
+      const message =
+        error instanceof Error ? error.message : "Could not upload attachment";
+      return c.json({ error: message, code: errorCode(status) }, status);
+    }
+  });
+
+  app.get(
+    "/api/v1/chat/threads/:threadId/attachments/:attachmentId",
+    async (c) => {
+      const auth = getAuth(c);
+      if (!canReadChat(auth) && !canWriteAgentReply(auth)) {
+        return c.json(forbidden(), 403);
+      }
+      const result = await chatAttachments.getChatThreadAttachmentBytes(
+        auth.workspaceId,
+        c.req.param("threadId"),
+        c.req.param("attachmentId"),
+      );
+      if (!result) return c.json(notFound("Attachment"), 404);
+      const { row, bytes } = result;
+      const disposition =
+        row.kind === "image" || row.kind === "pdf" ? "inline" : "attachment";
+      const safeName = row.originalFilename.replace(/[^\w.\- ()[\]]+/g, "_");
+      return new Response(Buffer.from(bytes), {
+        status: 200,
+        headers: {
+          "content-type": row.contentType || "application/octet-stream",
+          "content-length": String(bytes.byteLength),
+          "content-disposition": `${disposition}; filename="${safeName}"`,
+          "x-content-type-options": "nosniff",
+          "cache-control": "private, max-age=3600",
+        },
+      });
+    },
+  );
 
   /**
    * Answer assistant choice buttons once — owner / Access keys only.

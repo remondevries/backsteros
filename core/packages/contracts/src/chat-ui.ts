@@ -429,3 +429,44 @@ export const chatUiChoicesCardDataSchema = z.object({
   dismissed: z.boolean().optional(),
 });
 export type ChatUiChoicesCardData = z.infer<typeof chatUiChoicesCardDataSchema>;
+
+/** Card payload for `cardType: "attachments"` (files below the bubble). */
+export const chatUiAttachmentsCardDataSchema = z.object({
+  items: z
+    .array(
+      z.object({
+        id: z.string(),
+        filename: z.string(),
+        mime: z.string(),
+        size: z.number().int().nonnegative(),
+        url: z.string(),
+        thumbnailUrl: z.string().nullable().optional(),
+        kind: z.enum(["image", "pdf", "file"]),
+      }),
+    )
+    .min(1)
+    .max(20),
+});
+export type ChatUiAttachmentsCardData = z.infer<
+  typeof chatUiAttachmentsCardDataSchema
+>;
+
+/** Card payload for `cardType: "link-previews"` (URL cards below the bubble). */
+export const chatUiLinkPreviewsCardDataSchema = z.object({
+  items: z
+    .array(
+      z.object({
+        url: z.string().url(),
+        siteName: z.string().nullable().optional(),
+        faviconUrl: z.string().nullable().optional(),
+        title: z.string().nullable().optional(),
+        description: z.string().nullable().optional(),
+        imageUrl: z.string().nullable().optional(),
+      }),
+    )
+    .min(1)
+    .max(5),
+});
+export type ChatUiLinkPreviewsCardData = z.infer<
+  typeof chatUiLinkPreviewsCardDataSchema
+>;

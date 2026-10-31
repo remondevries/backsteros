@@ -4,9 +4,13 @@
  */
 
 import {
+  chatThreadAttachmentSchema,
+  chatThreadLinkPreviewSchema,
   chatThreadMessageChoicesAnswerSchema,
   chatThreadMessageChoicesSchema,
   sanitizeChatThreadStatusLabel,
+  type ChatThreadAttachment,
+  type ChatThreadLinkPreview,
   type ChatThreadMessageChoices,
   type ChatThreadMessageChoicesAnswer,
 } from "@backsteros/contracts";
@@ -38,6 +42,8 @@ export type AgentShellChatMessagePayload = {
     createdAt: string;
     choices?: ChatThreadMessageChoices;
     choicesAnswer?: ChatThreadMessageChoicesAnswer | null;
+    attachments?: ChatThreadAttachment[];
+    linkPreviews?: ChatThreadLinkPreview[];
   };
 };
 
@@ -108,6 +114,8 @@ export function parseAgentShellChatMessagePayload(
         createdAt?: unknown;
         choices?: unknown;
         choicesAnswer?: unknown;
+        attachments?: unknown;
+        linkPreviews?: unknown;
       };
     };
     const threadId =
@@ -142,6 +150,20 @@ export function parseAgentShellChatMessagePayload(
           ? null
           : null
       : undefined;
+    const attachments: ChatThreadAttachment[] = [];
+    if (Array.isArray(parsed.message?.attachments)) {
+      for (const entry of parsed.message.attachments) {
+        const item = chatThreadAttachmentSchema.safeParse(entry);
+        if (item.success) attachments.push(item.data);
+      }
+    }
+    const linkPreviews: ChatThreadLinkPreview[] = [];
+    if (Array.isArray(parsed.message?.linkPreviews)) {
+      for (const entry of parsed.message.linkPreviews) {
+        const item = chatThreadLinkPreviewSchema.safeParse(entry);
+        if (item.success) linkPreviews.push(item.data);
+      }
+    }
     return {
       threadId,
       agentId,
@@ -151,6 +173,8 @@ export function parseAgentShellChatMessagePayload(
         fullBody,
         createdAt,
         ...(choices ? { choices, choicesAnswer: choicesAnswer ?? null } : {}),
+        ...(attachments.length > 0 ? { attachments } : {}),
+        ...(linkPreviews.length > 0 ? { linkPreviews } : {}),
       },
     };
   } catch {

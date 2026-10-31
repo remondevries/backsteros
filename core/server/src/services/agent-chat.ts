@@ -1,5 +1,6 @@
 import { and, asc, desc, eq, inArray, isNull } from "drizzle-orm";
 import {
+  chatThreadLinkPreviewSchema,
   chatThreadMessageChoicesAnswerSchema,
   chatThreadMessageChoicesSchema,
   type AgentWebhookTestResult,
@@ -8,6 +9,8 @@ import {
   type ChatThread,
   type ChatThreadAgentStatus,
   type ChatThreadAgentStatusState,
+  type ChatThreadAttachment,
+  type ChatThreadLinkPreview,
   type ChatThreadListItem,
   type ChatThreadMessage,
   type ChatThreadMessageChoices,
@@ -37,7 +40,12 @@ import {
   buildAgentChatWebhookHeaders,
   decryptAgentChatWebhookSecret,
 } from "../lib/agent-chat-webhook.js";
+import { resolveChatLinkPreviews } from "../lib/chat-link-preview.js";
 import { getAgentRowForWebhook } from "./agents.js";
+import {
+  linkAttachmentsToMessage,
+  listAttachmentsForMessages,
+} from "./chat-attachments.js";
 import { resolveChatMentionsInBody } from "./resolve-chat-mentions.js";
 import {
   previewAgentChatMessageBody,
@@ -146,6 +154,19 @@ function parseChoicesAnswerColumn(
   return parsed.success ? parsed.data : null;
 }
 
+function parseLinkPreviewsColumn(
+  value: unknown,
+): ChatThreadLinkPreview[] | undefined {
+  if (value == null) return undefined;
+  if (!Array.isArray(value)) return undefined;
+  const items: ChatThreadLinkPreview[] = [];
+  for (const entry of value) {
+    const parsed = chatThreadLinkPreviewSchema.safeParse(entry);
+    if (parsed.success) items.push(parsed.data);
+  }
+  return items.length > 0 ? items : undefined;
+}
+
 type MessageRow = {
   id: string;
   threadId: string;
@@ -156,6 +177,7 @@ type MessageRow = {
   status: string;
   choices?: unknown;
   choicesAnswer?: unknown;
+  linkPreviews?: unknown;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -177,12 +199,19 @@ function toWebhookMessage(
           choicesAnswer: message.choicesAnswer ?? null,
         }
       : {}),
+    ...(message.attachments && message.attachments.length > 0
+      ? { attachments: message.attachments }
+      : {}),
+    ...(message.linkPreviews && message.linkPreviews.length > 0
+      ? { linkPreviews: message.linkPreviews }
+      : {}),
   };
 }
 
 function toMessage(
   row: MessageRow,
   mentions?: ChatResolvedMention[],
+  attachments?: ChatThreadAttachment[],
 ): ChatThreadMessage {
   const role =
     row.role === "assistant" || row.role === "system" ? row.role : "user";
@@ -196,6 +225,7 @@ function toMessage(
   const choicesAnswer = choices
     ? (parseChoicesAnswerColumn(row.choicesAnswer) ?? null)
     : undefined;
+  const linkPreviews = parseLinkPreviewsColumn(row.linkPreviews);
   return {
     id: row.id,
     threadId: row.threadId,
@@ -208,15 +238,25 @@ function toMessage(
     updatedAt: row.updatedAt.toISOString(),
     ...(mentions && mentions.length > 0 ? { mentions } : {}),
     ...(choices ? { choices, choicesAnswer: choicesAnswer ?? null } : {}),
+    ...(attachments && attachments.length > 0 ? { attachments } : {}),
+    ...(linkPreviews ? { linkPreviews } : {}),
   };
 }
 
-async function toMessageWithMentions(
+async function hydrateMessages(
   workspaceId: string,
-  row: MessageRow,
-): Promise<ChatThreadMessage> {
-  const mentions = await resolveChatMentionsInBody(workspaceId, row.body);
-  return toMessage(row, mentions);
+  rows: MessageRow[],
+): Promise<ChatThreadMessage[]> {
+  const attachmentMap = await listAttachmentsForMessages(
+    workspaceId,
+    rows.map((row) => row.id),
+  );
+  return Promise.all(
+    rows.map(async (row) => {
+      const mentions = await resolveChatMentionsInBody(workspaceId, row.body);
+      return toMessage(row, mentions, attachmentMap.get(row.id));
+    }),
+  );
 }
 
 function badRequest(message: string): Error {
@@ -246,13 +286,23 @@ function publishShellMessageEvent(input: {
   agentId: string;
   message: ChatThreadMessage;
 }): void {
+  const attachmentPreview =
+    input.message.attachments && input.message.attachments.length > 0
+      ? input.message.attachments
+          .map((item) => item.filename)
+          .filter(Boolean)
+          .join(", ")
+      : "";
+  const previewSource =
+    input.message.body.trim() ||
+    (attachmentPreview ? `Attachment: ${attachmentPreview}` : "");
   publishAgentShellChatMessage({
     workspaceId: input.workspaceId,
     threadId: input.threadId,
     agentId: input.agentId,
     message: {
       id: input.message.id,
-      body: previewAgentChatMessageBody(input.message.body),
+      body: previewAgentChatMessageBody(previewSource),
       fullBody: input.message.body,
       createdAt: input.message.createdAt,
       ...(input.message.choices
@@ -260,6 +310,12 @@ function publishShellMessageEvent(input: {
             choices: input.message.choices,
             choicesAnswer: input.message.choicesAnswer ?? null,
           }
+        : {}),
+      ...(input.message.attachments && input.message.attachments.length > 0
+        ? { attachments: input.message.attachments }
+        : {}),
+      ...(input.message.linkPreviews && input.message.linkPreviews.length > 0
+        ? { linkPreviews: input.message.linkPreviews }
         : {}),
     },
   });
@@ -329,9 +385,7 @@ async function loadMessages(
       ),
     )
     .orderBy(asc(chatThreadMessages.createdAt));
-  return Promise.all(
-    rows.map((row) => toMessageWithMentions(workspaceId, row)),
-  );
+  return hydrateMessages(workspaceId, rows);
 }
 
 export async function getChatThreadWithMessages(
@@ -459,12 +513,8 @@ async function recentContext(
     .orderBy(desc(chatThreadMessages.createdAt))
     .limit(limit);
   const ordered = rows.reverse();
-  const out: AgentChatWebhookMessage[] = [];
-  for (const row of ordered) {
-    const mentions = await resolveChatMentionsInBody(workspaceId, row.body);
-    out.push(toWebhookMessage(toMessage(row, mentions)));
-  }
-  return out;
+  const messages = await hydrateMessages(workspaceId, ordered);
+  return messages.map(toWebhookMessage);
 }
 
 /**
@@ -601,6 +651,12 @@ export async function deliverAgentChatWebhook(
   }
 }
 
+export type PostChatThreadMessageOptions = {
+  choices?: ChatThreadMessageChoices;
+  attachmentIds?: string[];
+  skipLinkPreviews?: boolean;
+};
+
 /**
  * Post a message as Remon (user) or as the agent (assistant).
  * User messages look up the agent webhook dynamically and fire it.
@@ -612,10 +668,13 @@ export async function postChatThreadMessage(
   body: string,
   auth: PostMessageAuth,
   deps: DeliverDeps = {},
-  choices?: ChatThreadMessageChoices,
+  options: PostChatThreadMessageOptions = {},
 ): Promise<CreateChatThreadMessageResult> {
   const text = body.trim();
-  if (!text) throw badRequest("Message body is required");
+  const attachmentIds = options.attachmentIds ?? [];
+  if (!text && attachmentIds.length === 0) {
+    throw badRequest("Message body or attachments are required");
+  }
 
   const [threadRow] = await db
     .select({
@@ -633,7 +692,7 @@ export async function postChatThreadMessage(
     .limit(1);
   if (!threadRow) throw notFound("Thread");
 
-  const { thread, agent } = threadRow;
+  const { agent } = threadRow;
   const now = deps.now?.() ?? new Date();
   const isAgentReply =
     auth.apiKeyId != null &&
@@ -647,15 +706,21 @@ export async function postChatThreadMessage(
     );
   }
 
-  if (choices && !isAgentReply) {
+  if (options.choices && !isAgentReply) {
     throw badRequest("choices are only allowed on assistant messages");
   }
 
+  const linkPreviews = await resolveChatLinkPreviews(text, {
+    skip: options.skipLinkPreviews === true || !text,
+    fetchImpl: deps.fetchImpl,
+  });
+
   if (isAgentReply) {
+    const messageId = newId();
     const [messageRow] = await db
       .insert(chatThreadMessages)
       .values({
-        id: newId(),
+        id: messageId,
         workspaceId,
         threadId,
         role: "assistant",
@@ -663,12 +728,20 @@ export async function postChatThreadMessage(
         authorName: auth.authorName ?? agent.name,
         body: text,
         status: "done",
-        choices: choices ?? null,
+        choices: options.choices ?? null,
         choicesAnswer: null,
+        linkPreviews: linkPreviews.length > 0 ? linkPreviews : null,
         createdAt: now,
         updatedAt: now,
       })
       .returning();
+
+    const attachments = await linkAttachmentsToMessage(
+      workspaceId,
+      threadId,
+      messageId,
+      attachmentIds,
+    );
 
     const [updatedThread] = await db
       .update(chatThreads)
@@ -676,7 +749,11 @@ export async function postChatThreadMessage(
       .where(eq(chatThreads.id, threadId))
       .returning();
 
-    const message = toMessage(messageRow!);
+    const message = toMessage(
+      messageRow!,
+      undefined,
+      attachments.length > 0 ? attachments : undefined,
+    );
     publishShellMessageEvent({
       workspaceId,
       threadId,
@@ -703,10 +780,11 @@ export async function postChatThreadMessage(
   }
 
   // Human / local-shell message → store, then fire agent webhook.
+  const messageId = newId();
   const [messageRow] = await db
     .insert(chatThreadMessages)
     .values({
-      id: newId(),
+      id: messageId,
       workspaceId,
       threadId,
       role: "user",
@@ -714,18 +792,32 @@ export async function postChatThreadMessage(
       authorName: auth.authorName ?? "Remon",
       body: text,
       status: "done",
+      linkPreviews: linkPreviews.length > 0 ? linkPreviews : null,
       createdAt: now,
       updatedAt: now,
     })
     .returning();
+
+  const attachments = await linkAttachmentsToMessage(
+    workspaceId,
+    threadId,
+    messageId,
+    attachmentIds,
+  );
 
   const agentForWebhook = await getAgentRowForWebhook(workspaceId, agent.id);
   const webhookUrl = agentForWebhook?.webhookUrl?.trim() ?? "";
   let thinking = false;
   let webhookError: string | null = null;
 
-  const mentions = await resolveChatMentionsInBody(workspaceId, text);
-  const userMessage = toMessage(messageRow!, mentions);
+  const mentions = text
+    ? await resolveChatMentionsInBody(workspaceId, text)
+    : [];
+  const userMessage = toMessage(
+    messageRow!,
+    mentions,
+    attachments.length > 0 ? attachments : undefined,
+  );
 
   if (!agentForWebhook?.enabled) {
     webhookError = `${agent.name} is disabled.`;

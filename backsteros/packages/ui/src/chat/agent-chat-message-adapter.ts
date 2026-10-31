@@ -1,7 +1,9 @@
 import type {
   ChatThreadMessage,
+  ChatUiAttachmentsCardData,
   ChatUiCardPart,
   ChatUiChoicesCardData,
+  ChatUiLinkPreviewsCardData,
   ChatUiMessage,
   ChatUiMessagePart,
 } from "@backsteros/contracts";
@@ -36,14 +38,60 @@ function choicesCardPart(
   };
 }
 
+function attachmentsCardPart(message: ChatThreadMessage): ChatUiCardPart | null {
+  if (!message.attachments || message.attachments.length === 0) return null;
+  const data: ChatUiAttachmentsCardData = {
+    items: message.attachments.map((item) => ({
+      id: item.id,
+      filename: item.filename,
+      mime: item.mime,
+      size: item.size,
+      url: item.url,
+      thumbnailUrl: item.thumbnailUrl ?? null,
+      kind: item.kind,
+    })),
+  };
+  return {
+    type: "card",
+    cardType: "attachments",
+    id: `attachments:${message.id}`,
+    data,
+  };
+}
+
+function linkPreviewsCardPart(message: ChatThreadMessage): ChatUiCardPart | null {
+  if (!message.linkPreviews || message.linkPreviews.length === 0) return null;
+  const data: ChatUiLinkPreviewsCardData = {
+    items: message.linkPreviews.map((item) => ({
+      url: item.url,
+      siteName: item.siteName ?? null,
+      faviconUrl: item.faviconUrl ?? null,
+      title: item.title ?? null,
+      description: item.description ?? null,
+      imageUrl: item.imageUrl ?? null,
+    })),
+  };
+  return {
+    type: "card",
+    cardType: "link-previews",
+    id: `link-previews:${message.id}`,
+    data,
+  };
+}
+
 /** Map a persisted shell chat message into ChatThread's UI shape. */
 export function chatThreadMessageToUi(
   message: ChatThreadMessage,
   options?: ChatThreadMessageToUiOptions,
 ): ChatUiMessage {
-  const parts: ChatUiMessagePart[] = [
-    { type: "text", text: message.body, markdown: true },
-  ];
+  const parts: ChatUiMessagePart[] = [];
+  if (message.body.trim().length > 0) {
+    parts.push({ type: "text", text: message.body, markdown: true });
+  }
+  const attachments = attachmentsCardPart(message);
+  if (attachments) parts.push(attachments);
+  const linkPreviews = linkPreviewsCardPart(message);
+  if (linkPreviews) parts.push(linkPreviews);
   const choices = choicesCardPart(message, options?.dismissed === true);
   if (choices) parts.push(choices);
 

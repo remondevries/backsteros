@@ -28,9 +28,17 @@ import { TaskStatusIcon } from "../tasks/task-status-icon.js";
 import { TaskStatusWorkingPulse } from "../tasks/task-status-working-pulse.js";
 import { ChatCardPartView } from "./chat-card-registry.js";
 import {
+  ChatAttachmentsCard,
+  findAttachmentsCardPart,
+} from "./chat-attachments-card.js";
+import {
   ChatChoicesCard,
   findChoicesCardPart,
 } from "./chat-choices-card.js";
+import {
+  ChatLinkPreviewsCard,
+  findLinkPreviewsCardPart,
+} from "./chat-link-previews-card.js";
 import { ChatMessageHoverActions } from "./chat-message-hover-actions.js";
 
 function formatJson(value: unknown): string {
@@ -287,6 +295,14 @@ export function ChatUiMessageBody({
     () => findChoicesCardPart(message.parts),
     [message.parts],
   );
+  const attachmentsPart = useMemo(
+    () => findAttachmentsCardPart(message.parts),
+    [message.parts],
+  );
+  const linkPreviewsPart = useMemo(
+    () => findLinkPreviewsCardPart(message.parts),
+    [message.parts],
+  );
   const bubbleParts = useMemo(
     () =>
       chatMessageBubbleParts(message.parts, {
@@ -398,6 +414,12 @@ export function ChatUiMessageBody({
               <ChatCardPartView key={entry.key} part={entry.part} />
             ))}
           </div>
+        ) : null}
+        {attachmentsPart ? (
+          <ChatAttachmentsCard part={attachmentsPart} />
+        ) : null}
+        {linkPreviewsPart ? (
+          <ChatLinkPreviewsCard part={linkPreviewsPart} />
         ) : null}
         {choicesPart ? <ChatChoicesCard part={choicesPart} /> : null}
       </div>

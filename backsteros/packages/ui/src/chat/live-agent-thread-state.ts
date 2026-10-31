@@ -8,6 +8,8 @@
  * after an idle / reply signal.
  */
 import type {
+  ChatThreadAttachment,
+  ChatThreadLinkPreview,
   ChatThreadMessage,
   ChatThreadMessageChoices,
   ChatThreadMessageChoicesAnswer,
@@ -57,6 +59,8 @@ export type LiveAgentMessagePush = {
   createdAt: string;
   choices?: ChatThreadMessageChoices;
   choicesAnswer?: ChatThreadMessageChoicesAnswer | null;
+  attachments?: ChatThreadAttachment[];
+  linkPreviews?: ChatThreadLinkPreview[];
 };
 
 export type LiveAgentThreadAction =
@@ -307,6 +311,13 @@ export function liveAgentThreadReducer(
               choices: action.message.choices,
               choicesAnswer: action.message.choicesAnswer ?? null,
             }
+          : {}),
+        ...(action.message.attachments && action.message.attachments.length > 0
+          ? { attachments: action.message.attachments }
+          : {}),
+        ...(action.message.linkPreviews &&
+        action.message.linkPreviews.length > 0
+          ? { linkPreviews: action.message.linkPreviews }
           : {}),
       });
       // Same id may arrive again with choicesAnswer filled in.
