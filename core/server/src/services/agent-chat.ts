@@ -704,7 +704,7 @@ function publishShellMessageEvent(input: {
 export async function listChatThreads(
   workspaceId: string,
   agentId?: string,
-): Promise<ChatThreadListItem[]> {
+): Promise<{ threads: ChatThreadListItem[]; hasMore: boolean }> {
   // DM notification list — project rooms are opened via projectId, not here.
   const conditions = [
     eq(chatThreads.workspaceId, workspaceId),
@@ -722,11 +722,13 @@ export async function listChatThreads(
     .innerJoin(agents, eq(agents.id, chatThreads.agentId))
     .where(and(...conditions))
     .orderBy(desc(chatThreads.updatedAt))
-    .limit(CHAT_THREAD_LIST_LIMIT);
+    .limit(CHAT_THREAD_LIST_LIMIT + 1);
 
-  if (rows.length === 0) return [];
+  const hasMore = rows.length > CHAT_THREAD_LIST_LIMIT;
+  const page = hasMore ? rows.slice(0, CHAT_THREAD_LIST_LIMIT) : rows;
+  if (page.length === 0) return { threads: [], hasMore: false };
 
-  const threadIds = rows.map((row) => row.thread.id);
+  const threadIds = page.map((row) => row.thread.id);
   // One latest assistant message per thread — not the full assistant history.
   const lastAssistantRows = await Promise.all(
     threadIds.map((threadId) =>
@@ -743,7 +745,7 @@ export async function listChatThreads(
         )
         .orderBy(desc(chatThreadMessages.createdAt))
         .limit(1)
-        .then((page) => page[0] ?? null),
+        .then((pageRows) => pageRows[0] ?? null),
     ),
   );
 
@@ -753,19 +755,22 @@ export async function listChatThreads(
     lastAssistantByThread.set(message.threadId, toMessage(message));
   }
 
-  return rows.map((row) => ({
-    ...toThread(row.thread),
-    agentName: row.agentName,
-    agentAvatarUrl: row.agentAvatarUrl,
-    agentContactId: row.agentContactId,
-    lastAssistantMessage: lastAssistantByThread.get(row.thread.id) ?? null,
-  }));
+  return {
+    threads: page.map((row) => ({
+      ...toThread(row.thread),
+      agentName: row.agentName,
+      agentAvatarUrl: row.agentAvatarUrl,
+      agentContactId: row.agentContactId,
+      lastAssistantMessage: lastAssistantByThread.get(row.thread.id) ?? null,
+    })),
+    hasMore,
+  };
 }
 
 async function loadMessages(
   workspaceId: string,
   threadId: string,
-): Promise<ChatThreadMessage[]> {
+): Promise<{ messages: ChatThreadMessage[]; hasMore: boolean }> {
   // Most recent page, then chronological for the UI (OS-162).
   const newestFirst = await db
     .select()
@@ -778,9 +783,16 @@ async function loadMessages(
       ),
     )
     .orderBy(desc(chatThreadMessages.createdAt))
-    .limit(CHAT_MESSAGE_LIST_LIMIT);
-  const rows = newestFirst.slice().reverse();
-  return hydrateMessages(workspaceId, rows);
+    .limit(CHAT_MESSAGE_LIST_LIMIT + 1);
+  const hasMore = newestFirst.length > CHAT_MESSAGE_LIST_LIMIT;
+  const page = hasMore
+    ? newestFirst.slice(0, CHAT_MESSAGE_LIST_LIMIT)
+    : newestFirst;
+  const rows = page.slice().reverse();
+  return {
+    messages: await hydrateMessages(workspaceId, rows),
+    hasMore,
+  };
 }
 
 export async function getChatThreadWithMessages(
@@ -803,11 +815,12 @@ export async function getChatThreadWithMessages(
     .limit(1);
   if (!row) return null;
   const thread = await clearStalePendingReplyAt(row.thread);
-  const messages = await loadMessages(workspaceId, threadId);
+  const loaded = await loadMessages(workspaceId, threadId);
   return {
     ...toThread(thread),
     agentName: row.agentName,
-    messages,
+    messages: loaded.messages,
+    hasMore: loaded.hasMore,
   };
 }
 
@@ -869,11 +882,12 @@ export async function getOrCreateChatThread(
     }
 
     const freshThread = await clearStalePendingReplyAt(thread);
-    const messages = await loadMessages(workspaceId, freshThread.id);
+    const loaded = await loadMessages(workspaceId, freshThread.id);
     return {
       ...toThread(freshThread),
       agentName: lead.name,
-      messages,
+      messages: loaded.messages,
+      hasMore: loaded.hasMore,
     };
   }
 
@@ -916,18 +930,19 @@ export async function getOrCreateChatThread(
   }
 
   const freshThread = await clearStalePendingReplyAt(thread);
-  const messages = await loadMessages(workspaceId, freshThread.id);
+  const loaded = await loadMessages(workspaceId, freshThread.id);
   return {
     ...toThread(freshThread),
     agentName: agent.name,
-    messages,
+    messages: loaded.messages,
+    hasMore: loaded.hasMore,
   };
 }
 
 export async function listChatThreadMessages(
   workspaceId: string,
   threadId: string,
-): Promise<ChatThreadMessage[] | null> {
+): Promise<{ messages: ChatThreadMessage[]; hasMore: boolean } | null> {
   const [thread] = await db
     .select({ id: chatThreads.id })
     .from(chatThreads)

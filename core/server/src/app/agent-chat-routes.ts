@@ -157,8 +157,8 @@ export function registerAgentChatRoutes(app: Hono) {
     const auth = getAuth(c);
     if (!canReadChat(auth)) return c.json(forbidden(), 403);
     const agentId = c.req.query("agentId")?.trim() || undefined;
-    const threads = await agentChat.listChatThreads(auth.workspaceId, agentId);
-    return c.json({ threads });
+    const page = await agentChat.listChatThreads(auth.workspaceId, agentId);
+    return c.json({ threads: page.threads, has_more: page.hasMore });
   });
 
   app.post("/api/v1/chat/threads", async (c) => {
@@ -210,12 +210,12 @@ export function registerAgentChatRoutes(app: Hono) {
   app.get("/api/v1/chat/threads/:threadId/messages", async (c) => {
     const auth = getAuth(c);
     if (!canReadChat(auth)) return c.json(forbidden(), 403);
-    const messages = await agentChat.listChatThreadMessages(
+    const page = await agentChat.listChatThreadMessages(
       auth.workspaceId,
       c.req.param("threadId"),
     );
-    if (!messages) return c.json(notFound("Thread"), 404);
-    return c.json({ messages });
+    if (!page) return c.json(notFound("Thread"), 404);
+    return c.json({ messages: page.messages, has_more: page.hasMore });
   });
 
   app.post("/api/v1/chat/threads/:threadId/messages", async (c) => {

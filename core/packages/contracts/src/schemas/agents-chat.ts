@@ -758,6 +758,8 @@ export const chatThreadSchema = z.object({
 export const chatThreadWithMessagesSchema = chatThreadSchema.extend({
   agentName: z.string().optional(),
   messages: z.array(chatThreadMessageSchema),
+  /** True when the thread hit the server message page cap (OS-162). */
+  hasMore: z.boolean().optional(),
 });
 
 /** List row for shell DM notifications — thread + agent + latest assistant msg. */
@@ -770,10 +772,14 @@ export const chatThreadListItemSchema = chatThreadSchema.extend({
 
 export const chatThreadsListSchema = z.object({
   threads: z.array(chatThreadListItemSchema),
+  /** True when more DM threads exist beyond the server cap (OS-162). */
+  has_more: z.boolean().optional(),
 });
 
 export const chatThreadMessagesListSchema = z.object({
   messages: z.array(chatThreadMessageSchema),
+  /** True when more messages exist beyond the server cap (OS-162). */
+  has_more: z.boolean().optional(),
 });
 
 /**
