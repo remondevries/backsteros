@@ -151,10 +151,9 @@ export const CONTACT_LIST_COLUMNS = [
   "languages",
   "summary",
   "timezone",
-  // Portal ACL / login — required so local patches are not invisible to the
-  // watch (gap-fill from a stale apiContacts row was reverting language, etc.).
+  // Portal ACL / login — username + settings only. Password hash is
+  // server-only (never synced); portalPasswordSet comes from REST gap-fill.
   "portal_username",
-  "portal_password_hash",
   "portal_settings",
   "updated_at",
   "created_at",

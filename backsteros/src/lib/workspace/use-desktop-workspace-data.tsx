@@ -47,6 +47,7 @@ import {
   fillMissingLongTextFromApi,
   fillMissingMeetingPropertiesFromApi,
   fillMissingAvatarFieldsFromApi,
+  fillPortalPasswordSetFromApi,
   fillMissingMoneybirdContactIdFromApi,
   fillMissingNumberFromApi,
   fillMissingParentFromApi,
@@ -718,48 +719,52 @@ function useDesktopWorkspaceDataImpl(): {
     const localMapped =
       localContacts.data?.map((row) => snakeRow(row) as ApiContact) ?? null;
     const fillFrom = apiFillSourceForColdStart(localMapped, apiContacts);
-    return fillMissingAvatarFieldsFromApi(
-      applyLiveEntityOverlay(
-        fillMissingLongTextFromApi(
-          // Same race as tasks: optimistic create lands in apiContacts before the
-          // PowerSync watch mirrors the INSERT — without this, the new contact is
-          // dropped from membership and open/create flashes "Not found".
-          mergeLocalWithPendingApiCreates(
-            resolveLocalOrApiRows(localMapped, apiContacts),
-            apiContacts,
+    return fillPortalPasswordSetFromApi(
+      fillMissingAvatarFieldsFromApi(
+        applyLiveEntityOverlay(
+          fillMissingLongTextFromApi(
+            // Same race as tasks: optimistic create lands in apiContacts before the
+            // PowerSync watch mirrors the INSERT — without this, the new contact is
+            // dropped from membership and open/create flashes "Not found".
+            mergeLocalWithPendingApiCreates(
+              resolveLocalOrApiRows(localMapped, apiContacts),
+              apiContacts,
+            ),
+            fillFrom,
+            [
+              "summary",
+              "notes",
+              "title",
+              "birthday",
+              "firstName",
+              "lastName",
+              "organizationId",
+              "emails",
+              "phones",
+              "languages",
+              "socialAccounts",
+              "facebookMessengerId",
+              "xUserId",
+              "latitude",
+              "longitude",
+              "address",
+              "city",
+              "postalCode",
+              "country",
+              "region",
+              "timezone",
+              "portalUsername",
+              "portalSettings",
+            ],
           ),
-          fillFrom,
-          [
-            "summary",
-            "notes",
-            "title",
-            "birthday",
-            "firstName",
-            "lastName",
-            "organizationId",
-            "emails",
-            "phones",
-            "languages",
-            "socialAccounts",
-            "facebookMessengerId",
-            "xUserId",
-            "latitude",
-            "longitude",
-            "address",
-            "city",
-            "postalCode",
-            "country",
-            "region",
-            "timezone",
-            "portalUsername",
-            "portalSettings",
-          ],
+          liveContactsById,
+          { deletedIds: liveDeletedContactIds },
         ),
-        liveContactsById,
-        { deletedIds: liveDeletedContactIds },
+        // Always — cold-start gating left avatar keys blank once SQLite had rows,
+        // and optimistic live overlays could omit them (Fandy etc. lost marks).
+        apiContacts,
       ),
-      // Always — cold-start gating left avatar keys blank once SQLite had rows,
-      // and optimistic live overlays could omit them (Fandy etc. lost marks).
+      // Hash is not synced; portalPasswordSet is REST-only.
       apiContacts,
     );
   }, [
@@ -1367,7 +1372,7 @@ function useDesktopWorkspaceDataImpl(): {
     async (id: string, values: Record<string, unknown>) => {
       // organizationName is display-only (joined from organizations); writing it
       // as organization_name fails SQLite and aborts the PowerSync upload path.
-      // portalPasswordSet is API-only (derived from portal_password_hash).
+      // portalPasswordSet is API-only (hash never synced to clients).
       const {
         organizationName: _organizationName,
         portalPasswordSet: _portalPasswordSet,

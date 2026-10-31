@@ -710,8 +710,6 @@ export function mapContact(
       portalSettingsParsed = null;
     }
   }
-  const portalPasswordHash = (contact as { portalPasswordHash?: string | null })
-    .portalPasswordHash;
   return {
     id: contact.id,
     name: contact.name,
@@ -742,9 +740,9 @@ export function mapContact(
     languages,
     portalUsername:
       (contact as { portalUsername?: string | null }).portalUsername ?? null,
+    // Hash never reaches the client; REST exposes portalPasswordSet only.
     portalPasswordSet: Boolean(
-      (contact as { portalPasswordSet?: boolean }).portalPasswordSet ??
-        portalPasswordHash,
+      (contact as { portalPasswordSet?: boolean }).portalPasswordSet,
     ),
     portalSettings:
       portalSettingsParsed &&

@@ -16,6 +16,7 @@ import {
   fillMissingTypeFromApi,
   applyLiveEntityOverlay,
   fillMissingAvatarFieldsFromApi,
+  fillPortalPasswordSetFromApi,
   mergeLocalAndApiByUpdatedAt,
   dropStaleLocalHabitTasks,
   mergeLocalDocumentsWithLiveApi,
@@ -293,6 +294,24 @@ test("fillMissingAvatarFieldsFromApi copies keys even when local already has row
   assert.equal(merged[0]?.avatarContentType, "image/png");
   // Existing local key wins — do not clobber with API.
   assert.equal(merged[1]?.avatarStorageKey, ".backsteros/avatars/c2/avatar");
+});
+
+test("fillPortalPasswordSetFromApi copies REST-only flag onto local rows", () => {
+  const filled = fillPortalPasswordSetFromApi(
+    [
+      { id: "c1" },
+      { id: "c2", portalPasswordSet: true },
+      { id: "c3", portalPasswordSet: true },
+    ],
+    [
+      { id: "c1", portalPasswordSet: true },
+      { id: "c2", portalPasswordSet: true },
+      { id: "c3", portalPasswordSet: false },
+    ],
+  );
+  assert.equal(filled[0]?.portalPasswordSet, true);
+  assert.equal(filled[1]?.portalPasswordSet, true);
+  assert.equal(filled[2]?.portalPasswordSet, false);
 });
 
 test("applyLiveEntityOverlay hides deleted ids until PowerSync drops them", () => {

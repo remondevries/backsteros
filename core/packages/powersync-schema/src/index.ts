@@ -224,7 +224,7 @@ const contacts = new Table(
     birthday: column.text,
     languages: column.text,
     portal_username: column.text,
-    portal_password_hash: column.text,
+    // portal_password_hash stays server-only — never in the client schema.
     portal_settings: column.text,
     ...commonDates,
   },
@@ -556,8 +556,8 @@ export function mapCrudBatch(
 ): UploadEntry[] {
   return crud.map((entry) => {
     let data = entry.opData;
-    // Portal password hashes are write-once via REST (`portalPassword`). Never
-    // re-upload a stale local hash — it silently overwrites a fresher server hash.
+    // Portal password hashes are server-only (not in client schema). Strip any
+    // leftover local column from older SQLite DBs so uploads cannot clobber.
     if (entry.table === "contacts" && data && "portal_password_hash" in data) {
       const { portal_password_hash: _hash, ...rest } = data;
       data = rest;

@@ -492,6 +492,26 @@ export function fillMissingAvatarFieldsFromApi<
   });
 }
 
+/**
+ * `portal_password_hash` is server-only (not synced to SQLite). Copy the
+ * API-only `portalPasswordSet` boolean onto local-primary contact rows.
+ */
+export function fillPortalPasswordSetFromApi<
+  T extends {
+    id: string;
+    portalPasswordSet?: boolean;
+  },
+>(mergedRows: T[], apiRows: T[] | null | undefined): T[] {
+  if (!apiRows?.length) return mergedRows;
+  const apiById = new Map(apiRows.map((row) => [row.id, row]));
+  return mergedRows.map((row) => {
+    const api = apiById.get(row.id);
+    if (!api || typeof api.portalPasswordSet !== "boolean") return row;
+    if (row.portalPasswordSet === api.portalPasswordSet) return row;
+    return { ...row, portalPasswordSet: api.portalPasswordSet };
+  });
+}
+
 function textMissing(value: unknown): boolean {
   return value == null || (typeof value === "string" && value.trim() === "");
 }
