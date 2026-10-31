@@ -133,7 +133,7 @@ export function registerTasksRoutes(app: Hono) {
       if (page.hasMore) {
         c.header(
           "X-BacksterOS-Hint",
-          `Legacy task list capped at ${page.limit}. has_more=true — use paginated=true for cursor pages.`,
+          `Legacy task list capped at ${page.limit}. has_more=true - use paginated=true for cursor pages.`,
         );
       }
       return c.json({
