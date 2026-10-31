@@ -51,6 +51,12 @@ export const REPLICATED_TABLES = [
   "device_push_tokens",
   "entity_counters",
   "api_keys",
+  /**
+   * Agent personas (id, name, contact_id, enabled, …). Webhook URL + secret
+   * ciphertext are stripped on the wire — secrets stay on the core that holds
+   * them (typically cloud). chat_threads / messages stay local-first for now.
+   */
+  "agents",
   /** Append-only audit trail for API key create / revoke / rotate (OS-139). */
   "api_key_audit_logs",
   /** CSV import metadata; FK parent of financial_transactions.import_batch_id. Bytes via R2. */
@@ -64,8 +70,6 @@ export const REPLICATED_TABLES = [
   "chat_conversations",
   "chat_messages",
   "chat_webhook_events",
-  // agents / chat_threads / chat_thread_messages (OS-150/151): local-first for
-  // now — twin after cloud-core ships migration 0174 (avoid pull 400 noise).
 ] as const;
 
 export type ReplicatedTable = (typeof REPLICATED_TABLES)[number];

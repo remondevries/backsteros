@@ -5,6 +5,7 @@ import {
   tableExists,
   toIso,
 } from "./cursors.js";
+import { sanitizeAgentsRowForReplication } from "./agent-replication.js";
 import { sanitizeWorkspaceSettingsRowForReplication } from "./machine-local-settings.js";
 import {
   getTableSpec,
@@ -24,6 +25,9 @@ function sanitizeOutboundRow(
 ): Record<string, unknown> {
   if (table === "workspace_settings") {
     return sanitizeWorkspaceSettingsRowForReplication(row);
+  }
+  if (table === "agents") {
+    return sanitizeAgentsRowForReplication(row);
   }
   return row;
 }

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { describe, it } from "node:test";
+import { afterEach, describe, it } from "node:test";
 
 import {
   CHANNEL_CONNECT_WEBHOOK_EVENT,
@@ -7,7 +7,58 @@ import {
   postChannelConnectWebhook,
 } from "./channel-connect-webhook.js";
 
+const PREV = {
+  role: process.env.CORE_REPLICATION_ROLE,
+  peer: process.env.CORE_REPLICATION_PEER_URL,
+  secret: process.env.CORE_REPLICATION_SECRET,
+};
+
+function applyEnv(key: string, value: string | undefined) {
+  if (value === undefined) delete process.env[key];
+  else process.env[key] = value;
+}
+
+afterEach(() => {
+  applyEnv("CORE_REPLICATION_ROLE", PREV.role);
+  applyEnv("CORE_REPLICATION_PEER_URL", PREV.peer);
+  applyEnv("CORE_REPLICATION_SECRET", PREV.secret);
+});
+
 describe("postChannelConnectWebhook", () => {
+  it("forwards to cloud-core on hybrid local without resolving local secrets", async () => {
+    applyEnv("CORE_REPLICATION_ROLE", "local");
+    applyEnv("CORE_REPLICATION_PEER_URL", "http://127.0.0.1:3999");
+    applyEnv("CORE_REPLICATION_SECRET", "test-secret");
+
+    let hitUrl: string | null = null;
+    const result = await postChannelConnectWebhook({
+      workspaceId: "ws_test",
+      payload: {
+        event: CHANNEL_CONNECT_WEBHOOK_EVENT,
+        projectId: "proj_1",
+        projectKey: "OS",
+        projectName: "BacksterOS",
+        type: "codebase",
+        requestedAt: "2026-10-31T12:00:00.000Z",
+        leadAgentContactId: "contact_niels",
+      },
+      fetchImpl: (async (input) => {
+        hitUrl = String(input);
+        return {
+          ok: true,
+          status: 200,
+          text: async () => JSON.stringify({ ok: true }),
+        } as Response;
+      }) as typeof fetch,
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(
+      hitUrl,
+      "http://127.0.0.1:3999/internal/core-replication/channel-connect-webhook",
+    );
+  });
+
   it("POSTs payload with secret header and never requires a live network", async () => {
     let hit: {
       url: string;

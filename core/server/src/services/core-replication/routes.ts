@@ -60,6 +60,11 @@ import {
 import { AgentMailApiError } from "../../lib/agentmail-client.js";
 import * as agentmailSettingsService from "../agentmail-settings.js";
 import { readEmailAgentCallback } from "../email-agent-callbacks.js";
+import {
+  CHANNEL_CONNECT_WEBHOOK_EVENT,
+  postChannelConnectWebhook,
+  type ChannelConnectWebhookPayload,
+} from "../../lib/channel-connect-webhook.js";
 
 function unauthorized() {
   return { error: "Unauthorized", code: "unauthorized" as const };
@@ -954,6 +959,63 @@ export function registerCoreReplicationRoutes(app: Hono) {
       summary: formatPendingUnpushedSummary(pending),
     });
   });
+
+  /**
+   * Local-core → cloud-core: POST Channel Connect webhook using cloud secrets.
+   * Agent webhook ciphertext is not replicated; Connect on local must forward.
+   */
+  app.post(
+    "/internal/core-replication/channel-connect-webhook",
+    async (c) => {
+      if (!replicationAuth(c.req.header("Authorization"))) {
+        return c.json(unauthorized(), 401);
+      }
+      const config = getCoreReplicationConfig();
+      if (!config || config.role !== "cloud") {
+        return c.json(
+          {
+            error: "Channel Connect webhook dispatch is cloud-only",
+            code: "forbidden" as const,
+          },
+          403,
+        );
+      }
+
+      const body = (await c.req.json().catch(() => null)) as {
+        workspace_id?: string;
+        payload?: ChannelConnectWebhookPayload;
+      } | null;
+
+      const workspaceId = body?.workspace_id?.trim();
+      const payload = body?.payload;
+      if (
+        !workspaceId ||
+        !payload ||
+        typeof payload !== "object" ||
+        payload.event !== CHANNEL_CONNECT_WEBHOOK_EVENT ||
+        typeof payload.projectId !== "string" ||
+        !payload.projectId.trim()
+      ) {
+        return c.json(
+          {
+            error: "workspace_id and a valid channel-connect payload are required",
+            code: "bad_request" as const,
+          },
+          400,
+        );
+      }
+
+      const result = await postChannelConnectWebhook({
+        workspaceId,
+        payload,
+        skipCloudForward: true,
+      });
+      if (!result.ok) {
+        return c.json({ ok: false, error: result.error }, 200);
+      }
+      return c.json({ ok: true });
+    },
+  );
 
   /**
    * Local-core → cloud-core: register email_agent_callbacks + wake Judith.

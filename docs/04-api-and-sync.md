@@ -118,13 +118,20 @@ Lead agent + Channel. GitHub / Development / Production apply to
 | `channelPendingLink` | Chat deep link while `needs_details`. **Only** `backsteros://chat/<threadId>?message=<msgId>` or `/chat/<threadId>?message=<msgId>` (message required); anything else → **400** `channel_pending_link_invalid`. Else `null` |
 | `channelRequestedAt` | ISO datetime when Connect was requested, else `null` |
 
-**Lead agent:** Locations shows an avatar chip picker of contacts that have an
-enabled agent persona (`agents.contact_id`). There is no separate `isAgent`
-column on contacts — the `agents` table is the flag. Per-agent webhook URL +
-secret already live on `agents` (`webhook_url`, `webhook_secret_ciphertext`);
-owner configures them via Settings → Agents / `PATCH /api/v1/agents/:id`
-(`webhookSecret` write-only; responses only expose `webhookSecretConfigured`).
-Secrets are never PowerSynced and never logged.
+**Lead agent:** Codebase / Agents UI shows an avatar chip picker of contacts that
+have an enabled agent persona (`agents.contact_id`). There is no separate
+`isAgent` column on contacts — the `agents` table is the flag. REST create /
+PATCH and PowerSync `apply-sync-change` both require the contact to map to an
+**enabled** `agents` row on the writing core.
+
+`agents` twins via core-replication (roster: id, name, `contact_id`, enabled,
+role, sort order, …) so local-core can validate Lead agent picks even when
+personas were created on cloud. **Webhook URL + `webhook_secret_ciphertext` are
+stripped on the wire** — omitted columns are not upserted, so each core keeps
+its own ciphertext. Secrets are never PowerSynced, never logged, and never
+copied to local-core. Owner configures webhooks via Settings → Agents /
+`PATCH /api/v1/agents/:id` (`webhookSecret` write-only; responses only expose
+`webhookSecretConfigured`).
 
 Compat mirrors (still written): `localWorkingDirectory` (Development path when
 `kind=local`), `developmentLocation` / `productionLocation` (path mirrors for
@@ -157,7 +164,10 @@ POST /api/v1/projects/:id/channel/connect
 
 Requires `projects:write` and a non-agent (owner / Access) key. Sets
 `channelStatus=connecting`, stamps `channelRequestedAt`, clears
-`channelPendingLink`, then POSTs the outbound webhook.
+`channelPendingLink`, then POSTs the outbound webhook. On **hybrid local-core**,
+that POST is forwarded to cloud-core
+(`POST /internal/core-replication/channel-connect-webhook`) so the lead agent's
+webhook secret can resolve where it lives — local does not need ciphertext.
 
 **Webhook payload** (`event: project.channel.connect`)
 
@@ -180,6 +190,7 @@ Headers: `Content-Type: application/json`,
 
 | Priority | Source |
 | --- | --- |
+| 0 | Hybrid **local-core**: forward payload to cloud-core (cloud runs 1–3) |
 | 1 | Lead agent's `agents.webhook_url` + decrypted `webhook_secret_ciphertext` (when `leadAgentContactId` is set and configured) |
 | 2 | Env `CHANNEL_CONNECT_WEBHOOK_URL` + `CHANNEL_CONNECT_WEBHOOK_SECRET` |
 | 3 | Workspace secrets `channel_connect_webhook_url` / `channel_connect_webhook_secret` |

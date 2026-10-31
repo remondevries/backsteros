@@ -2,6 +2,10 @@
  * Outbound Channel Connect webhook (Niels Grok Bot routine).
  * Prefer the project's lead agent webhook; fall back to workspace/env global.
  * URL + secret never hard-coded, never logged.
+ *
+ * On hybrid local-core, agent webhook ciphertext is not replicated — forward
+ * the Connect POST to cloud-core (where secrets live) instead of resolving
+ * locally.
  */
 import { and, eq } from "drizzle-orm";
 
@@ -10,6 +14,10 @@ import { agents, workspaceIntegrationSecrets } from "../db/schema.js";
 import { logger } from "./logger.js";
 import { validateAutoReviewWebhookUrl } from "./auto-review-webhook.js";
 import { decryptAgentChatWebhookSecret } from "./agent-chat-webhook.js";
+import {
+  forwardChannelConnectWebhookToCloud,
+  shouldForwardChannelConnectWebhookToCloud,
+} from "./channel-connect-cloud-forward.js";
 
 export const CHANNEL_CONNECT_WEBHOOK_EVENT = "project.channel.connect" as const;
 export const CHANNEL_CONNECT_WEBHOOK_TIMEOUT_MS = 10_000;
@@ -120,8 +128,25 @@ export async function postChannelConnectWebhook(
     fetchImpl?: typeof fetch;
     /** Test/inject override — never log. */
     configOverride?: ChannelConnectWebhookConfig | null;
+    /**
+     * When true, skip local→cloud forward (cloud internal handler).
+     * Tests that inject configOverride also skip forward.
+     */
+    skipCloudForward?: boolean;
   },
 ): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (
+    input.configOverride === undefined &&
+    !input.skipCloudForward &&
+    shouldForwardChannelConnectWebhookToCloud()
+  ) {
+    return forwardChannelConnectWebhookToCloud({
+      workspaceId: input.workspaceId,
+      payload: input.payload,
+      fetchImpl: input.fetchImpl,
+    });
+  }
+
   const config =
     input.configOverride !== undefined
       ? input.configOverride

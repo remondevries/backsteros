@@ -299,6 +299,7 @@ add open-ended sweep items for them unless a dual-core race shows up in prod.
 | Letter/PDF **bytes** | Local vault only — metadata via letter `sync_events` |
 | `financial_import_batches` | In `REPLICATED_TABLES` (insert-only, cursor on `created_at`, ordered before `financial_transactions` as the `import_batch_id` FK parent); CSV blob under `.backsteros/finance-imports/` reaches R2 via vault upload. Transaction **rows** from CSV/Moneybird use create-via-sync + leader-first (`commitFinancialTransactionCreates`); `import_batch_id` is linked after apply on the importing core and is not round-tripped on the client sync clock |
 | `workspace_integration_secrets` | Twin for AgentMail/Moneybird credentials; not `sync_events` |
+| `agents` | In `REPLICATED_TABLES` (after `api_keys` / `contacts`). Roster twins so local can validate Lead agent. **`webhook_url` + `webhook_secret_ciphertext` stripped on the wire** — Channel Connect on local forwards to cloud (`/internal/core-replication/channel-connect-webhook`). `chat_threads` / messages stay local-first. |
 | `file_task_callbacks` | Cloud-only TTL mailbox for Development → Grok Bot receipts. Not in `REPLICATED_TABLES`. Agent POSTs via `https://agent.backsteros.com`. |
 | `email_agent_callbacks` | Cloud-only TTL mailbox for desktop email → Judith. Local-core forwards wake/poll to cloud (OS-100). Callback URLs always on `agent.backsteros.com` (stale `AGENTS_PUBLIC_URL` / staging is ignored). |
 
