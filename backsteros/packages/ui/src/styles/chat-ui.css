@@ -1510,14 +1510,14 @@
   padding: 12px;
   border-radius: 10px;
   border: 1px solid color-mix(in srgb, #3a3a3a 55%, black);
-  /* Soft #272727 top-right → transparent bottom-left (no solid base). */
-  background-color: transparent;
-  background-image: linear-gradient(
+  /* Top-right → transparent bottom-left only — no solid fill behind it. */
+  background: linear-gradient(
     to bottom left,
-    #272727,
+    #272727 0%,
     color-mix(in srgb, #3a3a3a 40%, transparent) 48%,
-    transparent
+    transparent 100%
   );
+  background-color: transparent;
   box-sizing: border-box;
 }
 
