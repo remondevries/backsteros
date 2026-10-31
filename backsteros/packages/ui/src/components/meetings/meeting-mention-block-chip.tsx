@@ -3,6 +3,7 @@
 import { forwardRef, type HTMLAttributes, type ReactNode, type Ref } from "react";
 
 import { ChatCardHref } from "../chat/chat-card-navigate.js";
+import { CalendarIcon } from "../icons/calendar-icon.js";
 import { OrganizationIcon } from "../organizations/organization-icon.js";
 import { getDisplayProjectIcon, ProjectOcticon } from "../projects/project-octicon.js";
 
@@ -85,6 +86,9 @@ function MeetingMentionBlockChipContent({
 
   return (
     <>
+      <span className="mention-chip-lite__icon" aria-hidden="true">
+        <CalendarIcon size={14} />
+      </span>
       {whenLabel ? (
         <span className="mention-chip-lite__id">{whenLabel}</span>
       ) : (
@@ -113,7 +117,7 @@ function MeetingMentionBlockChipContent({
 }
 
 /**
- * Block meeting card — journal-style `DATE TITLE` row (no leading icon).
+ * Block meeting card — calendar icon + when badge + title (same slot as other chips).
  */
 export const MeetingMentionBlockChip = forwardRef<
   HTMLAnchorElement | HTMLDivElement,
