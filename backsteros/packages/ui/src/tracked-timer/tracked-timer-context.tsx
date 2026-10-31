@@ -18,6 +18,10 @@ import {
 } from "react";
 
 import {
+  nextPausedTimerAccumulatedSeconds,
+  shouldSkipEmptyPausedTimerSync,
+} from "./tracked-timer-duration-sync.js";
+import {
   buildTrackedTimerKey,
   type RemoteRunningTimerAdoption,
   type SyncRemoteRunningTimersOptions,
@@ -387,20 +391,27 @@ export function TrackedTimerProvider({
         existing?.startedAt != null ||
         isRunningEntry ||
         existing?.sessionStartAt != null;
-      const seededSeconds = hasTimerHistory
+      // Paused + explicit duration from the field (incl. pending manual edit)
+      // must not Math.max with stale memory or decreases snap back on re-register.
+      const seededSeconds = isRunningEntry
         ? Math.max(propSeconds, rememberedSeconds)
-        : Math.max(
-            propSeconds,
-            resolvedSecondsFromFields({
-              trackedDurationSeconds: registration.trackedDurationSeconds,
-              trackedMinutes: registration.trackedMinutes ?? null,
-              scheduleMinutes: registration.scheduleMinutes ?? null,
-            }),
-          );
-      const nextAccumulatedSeconds = Math.max(
-        existing?.accumulatedSeconds ?? 0,
-        seededSeconds,
-      );
+        : registration.trackedDurationSeconds != null
+          ? Math.max(0, registration.trackedDurationSeconds)
+          : hasTimerHistory
+            ? Math.max(propSeconds, rememberedSeconds)
+            : Math.max(
+                propSeconds,
+                resolvedSecondsFromFields({
+                  trackedDurationSeconds: registration.trackedDurationSeconds,
+                  trackedMinutes: registration.trackedMinutes ?? null,
+                  scheduleMinutes: registration.scheduleMinutes ?? null,
+                }),
+              );
+      const nextAccumulatedSeconds = isRunningEntry
+        ? Math.max(existing?.accumulatedSeconds ?? 0, seededSeconds)
+        : registration.trackedDurationSeconds != null
+          ? seededSeconds
+          : Math.max(existing?.accumulatedSeconds ?? 0, seededSeconds);
       const nextTrackedDurationSeconds =
         existing?.sessionStartAt != null
           ? existing.trackedDurationSeconds
@@ -641,25 +652,36 @@ export function TrackedTimerProvider({
         }
 
         if (existing && !existing.adoptedFromRemote) {
-          // Local paused registration — refresh meta/duration only.
+          // Local paused registration — refresh chrome meta. Keep duration +
+          // persist callbacks while a mounted field owns this entry so a
+          // recent-timers poll cannot overwrite a manual edit or swap
+          // onPersist to the chrome-only cloud PATCH.
+          const fieldOwnsDuration = existing.onPersist != null;
           entriesRef.current.set(key, {
             ...existing,
             title: adoption.title,
             subtitle: adoption.subtitle ?? null,
             statusKey: adoption.statusKey ?? null,
             href: adoption.href,
-            accumulatedSeconds: Math.max(
-              existing.accumulatedSeconds,
-              seededSeconds,
-            ),
-            baseSeconds: Math.max(existing.baseSeconds, seededSeconds),
-            trackedDurationSeconds:
-              Math.max(existing.accumulatedSeconds, seededSeconds) > 0
-                ? Math.max(existing.accumulatedSeconds, seededSeconds)
-                : null,
+            ...(fieldOwnsDuration
+              ? {}
+              : {
+                  accumulatedSeconds: Math.max(
+                    existing.accumulatedSeconds,
+                    seededSeconds,
+                  ),
+                  baseSeconds: Math.max(existing.baseSeconds, seededSeconds),
+                  trackedDurationSeconds:
+                    Math.max(existing.accumulatedSeconds, seededSeconds) > 0
+                      ? Math.max(existing.accumulatedSeconds, seededSeconds)
+                      : null,
+                }),
             startedAt: existing.startedAt ?? lastTimerAtMs,
-            onPersist: adoption.onPersist,
-            onSessionChange: adoption.onSessionChange ?? existing.onSessionChange,
+            onPersist: existing.onPersist ?? adoption.onPersist,
+            onSessionChange:
+              existing.onSessionChange ??
+              adoption.onSessionChange ??
+              null,
           });
           changed = true;
           continue;
@@ -749,24 +771,34 @@ export function TrackedTimerProvider({
         trackedMinutes: trackedMinutes ?? entry.trackedMinutes,
         scheduleMinutes: scheduleMinutes ?? entry.scheduleMinutes,
       });
-      const nextAccumulatedSeconds = Math.max(
-        entry.accumulatedSeconds,
-        resolvedSeconds,
-        trackedDurationSeconds ?? 0,
-      );
       if (
-        trackedDurationSeconds == null &&
-        resolvedSeconds <= 0 &&
-        nextAccumulatedSeconds > 0
+        shouldSkipEmptyPausedTimerSync({
+          trackedDurationSeconds,
+          resolvedSeconds,
+          previousAccumulatedSeconds: entry.accumulatedSeconds,
+        })
       ) {
         return;
       }
+      // Trust the field's authoritative value (including manual decreases).
+      // Stale prop regressions are guarded by pendingSeconds in TrackedTimeField.
+      const nextAccumulatedSeconds = nextPausedTimerAccumulatedSeconds({
+        trackedDurationSeconds,
+        resolvedSeconds,
+        previousAccumulatedSeconds: entry.accumulatedSeconds,
+      });
+      const nextTrackedMinutes =
+        trackedDurationSeconds != null
+          ? trackedDurationSeconds >= 60
+            ? Math.floor(trackedDurationSeconds / 60)
+            : null
+          : (trackedMinutes ?? entry.trackedMinutes);
       const next: TimerEntry = {
         ...entry,
         accumulatedSeconds: nextAccumulatedSeconds,
         trackedDurationSeconds:
           nextAccumulatedSeconds > 0 ? nextAccumulatedSeconds : null,
-        trackedMinutes: trackedMinutes ?? entry.trackedMinutes,
+        trackedMinutes: nextTrackedMinutes,
         scheduleMinutes: scheduleMinutes ?? entry.scheduleMinutes,
         baseSeconds: nextAccumulatedSeconds,
       };

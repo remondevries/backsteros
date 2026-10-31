@@ -22,6 +22,11 @@ import {
   useTrackedTimerOptional,
   type TrackedTimerSessionMeta,
 } from "../../tracked-timer/tracked-timer-context.js";
+import {
+  resolveEffectiveTrackedDurationSeconds,
+  shouldClearPendingTrackedSeconds,
+  shouldSyncTrackedTimeDraft,
+} from "../../tracked-timer/tracked-timer-duration-sync.js";
 
 export type TrackedTimeFieldProps = {
   trackedDurationSeconds?: number | null;
@@ -140,10 +145,21 @@ export function TrackedTimeField({
     : null;
 
   const [pendingSeconds, setPendingSeconds] = useState<number | null>(null);
+  const [hasPending, setHasPending] = useState(false);
+  const markPending = useCallback((seconds: number | null) => {
+    setPendingSeconds(seconds);
+    setHasPending(true);
+  }, []);
+  const clearPending = useCallback(() => {
+    setPendingSeconds(null);
+    setHasPending(false);
+  }, []);
   const effectiveTrackedDurationSeconds =
-    pendingSeconds != null && trackedDurationSeconds != null
-      ? Math.max(pendingSeconds, trackedDurationSeconds)
-      : (pendingSeconds ?? trackedDurationSeconds);
+    resolveEffectiveTrackedDurationSeconds({
+      hasPending,
+      pendingSeconds,
+      trackedDurationSeconds,
+    });
   const displaySeconds = resolveTrackedDurationSeconds({
     trackedDurationSeconds: effectiveTrackedDurationSeconds,
     trackedMinutes,
@@ -183,14 +199,16 @@ export function TrackedTimeField({
   registrationTrackedSecondsRef.current = effectiveTrackedDurationSeconds;
 
   useEffect(() => {
-    if (pendingSeconds == null) return;
     if (
-      trackedDurationSeconds != null &&
-      trackedDurationSeconds >= pendingSeconds
+      shouldClearPendingTrackedSeconds({
+        hasPending,
+        pendingSeconds,
+        trackedDurationSeconds,
+      })
     ) {
-      setPendingSeconds(null);
+      clearPending();
     }
-  }, [pendingSeconds, trackedDurationSeconds]);
+  }, [clearPending, hasPending, pendingSeconds, trackedDurationSeconds]);
 
   // Re-register only when a session field changes, not on a new object identity.
   const timerSessionRef = useRef(timerSession);
@@ -206,7 +224,7 @@ export function TrackedTimeField({
       trackedMinutes,
       scheduleMinutes,
       onPersist: (seconds) => {
-        setPendingSeconds(seconds);
+        markPending(seconds);
         setDraft(formatTrackedTimeInput(seconds));
         setIsEditingTime(false);
         onPersistRef.current?.(seconds);
@@ -221,6 +239,7 @@ export function TrackedTimeField({
       },
     });
   }, [
+    markPending,
     scheduleMinutes,
     timerKey,
     timerSession?.entityId,
@@ -265,19 +284,29 @@ export function TrackedTimeField({
 
   const pausedSeconds =
     !isRunning && timerElapsedSeconds > 0 ? timerElapsedSeconds : null;
-  const settledSeconds =
-    pendingSeconds ??
-    pausedSeconds ??
-    displaySeconds ??
-    0;
+  // While optimistic, pending wins. Otherwise prefer the higher of memory vs
+  // props so a just-paused clock is not briefly overwritten by stale props —
+  // manual decreases go through pending, so they are not stuck behind memory.
+  const settledSeconds = hasPending
+    ? (pendingSeconds ?? 0)
+    : Math.max(pausedSeconds ?? 0, displaySeconds ?? 0);
 
   useEffect(() => {
     if (isRunning) {
       setIsEditingTime(false);
       return;
     }
+    if (
+      !shouldSyncTrackedTimeDraft({
+        isEditingTime,
+        isRunning,
+      })
+    ) {
+      return;
+    }
     setDraft(formatTrackedTimeInput(settledSeconds));
-  }, [settledSeconds, isRunning, timerTick]);
+    // Intentionally omit timerTick: another running timer must not rewrite draft.
+  }, [settledSeconds, isRunning, isEditingTime]);
 
   useEffect(() => {
     if (!isEditingTime) return;
@@ -308,6 +337,11 @@ export function TrackedTimeField({
     if (!onTrackedDurationSecondsChange || isRunning) return;
     const trimmed = raw.trim();
     if (!trimmed) {
+      markPending(null);
+      if (usesGlobalTimer && timerKey) {
+        // Pass 0 so paused memory is wiped; null would keep prior accumulated.
+        syncTimerDurationSecondsRef.current?.(timerKey, 0, null, null);
+      }
       onTrackedDurationSecondsChange(null);
       setDraft("");
       return;
@@ -316,6 +350,17 @@ export function TrackedTimeField({
     if (parsed == null) {
       setDraft(formatTrackedTimeInput(settledSeconds));
       return;
+    }
+    markPending(parsed);
+    const nextTrackedMinutes =
+      parsed >= 60 ? Math.floor(parsed / 60) : null;
+    if (usesGlobalTimer && timerKey) {
+      syncTimerDurationSecondsRef.current?.(
+        timerKey,
+        parsed,
+        nextTrackedMinutes,
+        scheduleMinutes,
+      );
     }
     onTrackedDurationSecondsChange(parsed);
     setDraft(formatTrackedTimeInput(parsed));
