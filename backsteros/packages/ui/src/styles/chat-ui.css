@@ -1564,16 +1564,16 @@
   color: var(--surface, #0b1220);
 }
 
-/* Danger: red outline + red text on black fill. */
+/* Danger: red outline + red text on near-black fill. */
 .chat-ui-choices__option.is-danger {
   border-color: var(--danger, #ef4444);
-  background: #000;
+  background: #1a1a1a;
   color: var(--danger, #ef4444);
 }
 
 .chat-ui-choices__option.is-danger:hover:not(:disabled) {
   border-color: var(--danger, #ef4444);
-  background: color-mix(in oklab, #000 88%, var(--danger, #ef4444));
+  background: color-mix(in oklab, #1a1a1a 88%, var(--danger, #ef4444));
   color: var(--danger, #ef4444);
 }
 
