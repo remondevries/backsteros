@@ -1,7 +1,8 @@
 /**
- * Chat display layout for mention tokens: every kind except `contact` renders
- * once as a full card below the bubble. Matching tokens are stripped from the
- * bubble text so they never also appear as inline chips. Contacts stay inline.
+ * Chat display layout for mention tokens: every kind except `contact` and
+ * `organization` renders once as a full card below the bubble. Matching tokens
+ * are stripped from the bubble text so they never also appear as inline chips.
+ * Contact and organization mentions stay inline as name chips.
  */
 import type {
   ChatUiCardPart,
@@ -40,8 +41,15 @@ import { getScopedProjectTaskHref } from "../projects/project-route-scope.js";
 import { getInboxTaskRouteHref } from "../inbox/inbox-items.js";
 import { INBOX_TASK_KEY } from "../tasks/task-display-id.js";
 
-/** Contact mentions stay as inline name chips — never below-card / never stripped. */
-export const CHAT_INLINE_MENTION_KINDS = new Set<MentionKind>(["contact"]);
+/** Mentions that stay as inline name chips — never below-card / never stripped. */
+export const CHAT_INLINE_MENTION_KINDS = new Set<MentionKind>([
+  "contact",
+  "organization",
+]);
+
+function isInlineChatCardType(cardType: string): boolean {
+  return cardType === "contact" || cardType === "organization";
+}
 
 export function isChatBelowCardMentionKind(kind: MentionKind): boolean {
   return !CHAT_INLINE_MENTION_KINDS.has(kind);
@@ -67,7 +75,7 @@ type MentionSlot = {
   cardPart: ChatUiCardPart | null;
 };
 
-/** Dedupe key `kind:id` for below-card mentions; null for contacts / invalid. */
+/** Dedupe key `kind:id` for below-card mentions; null for inline kinds / invalid. */
 export function mentionDedupeKey(token: ParsedMentionToken): string | null {
   if (!isChatBelowCardMentionKind(token.kind)) return null;
   switch (token.kind) {
@@ -113,9 +121,9 @@ function stringField(
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
-/** Dedupe key from an explicit card part; null for contact / unkeyable. */
+/** Dedupe key from an explicit card part; null for inline kinds / unkeyable. */
 export function cardPartDedupeKey(part: ChatUiCardPart): string | null {
-  if (part.cardType === "contact") return null;
+  if (isInlineChatCardType(part.cardType)) return null;
   const data = part.data;
   if (!data || typeof data !== "object") return null;
   const record = data as Record<string, unknown>;
@@ -849,7 +857,7 @@ export function taskMentionTokensInMessage(
 /**
  * Remove below-card mention tokens whose dedupe keys are in `keys`, then tidy
  * leftover whitespace / a dangling trailing colon / empty paragraphs.
- * Contact tokens are never stripped.
+ * Contact and organization tokens are never stripped.
  */
 export function stripBelowCardMentionsFromText(
   text: string,
@@ -929,7 +937,7 @@ function normalizeStripKeys(
 
 /**
  * Parts that stay inside the message bubble — below-card types are lifted out
- * (contacts stay), and text mentions for below-cards are stripped.
+ * (contact / organization stay), and text mentions for below-cards are stripped.
  */
 export function chatMessageBubbleParts(
   parts: readonly ChatUiMessagePart[],
@@ -939,8 +947,8 @@ export function chatMessageBubbleParts(
   const out: ChatUiMessagePart[] = [];
   for (const part of parts) {
     const card = asCardPart(part);
-    if (card && card.cardType !== "contact") {
-      // Lift every non-contact entity card below the bubble.
+    if (card && !isInlineChatCardType(card.cardType)) {
+      // Lift every non-inline entity card below the bubble.
       continue;
     }
     if (part.type === "text" && stripKeys) {
@@ -1009,7 +1017,7 @@ function isCollectOptions(
 /**
  * Unique mention cards below the bubble, first-seen order, deduped by kind+id.
  * Prefers an explicit `card` part, then workspace resolution, then catalog,
- * then a stub. Contacts are never included.
+ * then a stub. Contact and organization mentions are never included.
  */
 export function collectChatMentionCardsBelow(
   message: ChatUiMessage,
@@ -1053,7 +1061,7 @@ export function collectChatMentionCardsBelow(
     }
 
     const card = asCardPart(part);
-    if (!card || card.cardType === "contact") continue;
+    if (!card || isInlineChatCardType(card.cardType)) continue;
     const key = cardPartDedupeKey(card);
     if (!key) continue;
     const slot = ensureSlot(key);

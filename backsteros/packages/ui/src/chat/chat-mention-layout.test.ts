@@ -187,13 +187,13 @@ describe("stripTaskMentionsFromText", () => {
 });
 
 describe("stripBelowCardMentionsFromText", () => {
-  it("strips project / letter / invoice tokens and keeps contacts inline", () => {
+  it("strips project / letter / invoice tokens and keeps contact + organization inline", () => {
     assert.equal(
       stripBelowCardMentionsFromText(
-        "Hi [@contact:remon], see [@project:OS] + [@letter:L-12] + [@invoice:inv-99].",
+        "Hi [@contact:remon] / [@organization:acme], see [@project:OS] + [@letter:L-12] + [@invoice:inv-99].",
         new Set(["project:os", "letter:l-12", "invoice:inv-99"]),
       ),
-      "Hi [@contact:remon], see + +.",
+      "Hi [@contact:remon] / [@organization:acme], see + +.",
     );
   });
 });
@@ -215,7 +215,7 @@ describe("chatMessageBubbleParts", () => {
     assert.equal(parts[0]?.type, "text");
   });
 
-  it("keeps explicit contact cards inline in the bubble", () => {
+  it("keeps explicit contact and organization cards inline in the bubble", () => {
     const parts = chatMessageBubbleParts([
       {
         type: "card",
@@ -223,11 +223,21 @@ describe("chatMessageBubbleParts", () => {
         id: "c1",
         data: { contactId: "contact-1", name: "Remon" },
       },
+      {
+        type: "card",
+        cardType: "organization",
+        id: "o1",
+        data: { organizationId: "org-1", key: "acme", name: "Acme" },
+      },
     ]);
-    assert.equal(parts.length, 1);
+    assert.equal(parts.length, 2);
     assert.equal(parts[0]?.type, "card");
+    assert.equal(parts[1]?.type, "card");
     if (parts[0]?.type === "card") {
       assert.equal(parts[0].cardType, "contact");
+    }
+    if (parts[1]?.type === "card") {
+      assert.equal(parts[1].cardType, "organization");
     }
   });
 
@@ -432,12 +442,12 @@ describe("collectChatMentionCardsBelow", () => {
     );
   });
 
-  it("never collects contact mentions as below-cards", () => {
+  it("never collects contact or organization mentions as below-cards", () => {
     const below = collectChatMentionCardsBelow(
       message([
         {
           type: "text",
-          text: "Ping [@contact:remon] about [@task:OS-153].",
+          text: "Ping [@contact:remon] / [@organization:acme] about [@task:OS-153].",
         },
       ]),
       { catalog: CATALOG },
@@ -466,10 +476,13 @@ describe("collectChatMentionCardsBelow", () => {
 });
 
 describe("mentionDedupeKey", () => {
-  it("returns null for contacts", () => {
-    const token = parseMentionToken("[@contact:remon]");
-    assert.ok(token);
-    assert.equal(mentionDedupeKey(token!), null);
+  it("returns null for contacts and organizations", () => {
+    const contact = parseMentionToken("[@contact:remon]");
+    const organization = parseMentionToken("[@organization:acme]");
+    assert.ok(contact);
+    assert.ok(organization);
+    assert.equal(mentionDedupeKey(contact!), null);
+    assert.equal(mentionDedupeKey(organization!), null);
   });
 });
 
