@@ -1001,6 +1001,25 @@ test("fillMissingLongTextFromApi fills title when local row is empty", () => {
   assert.equal(filled[0]?.title, "Founder");
 });
 
+test("fillMissingLongTextFromApi fills project description when local sync omitted it", () => {
+  // Simulates post-OS-163: SQLite has the project row but description was not synced.
+  const filled = fillMissingLongTextFromApi(
+    [{ id: "p1", name: "OS", description: null }],
+    [{ id: "p1", name: "OS", description: "Ops system" }],
+    ["description"],
+  );
+  assert.equal(filled[0]?.description, "Ops system");
+});
+
+test("fillMissingLongTextFromApi never overwrites a local non-empty description", () => {
+  const filled = fillMissingLongTextFromApi(
+    [{ id: "p1", description: "local edit" }],
+    [{ id: "p1", description: "server" }],
+    ["description"],
+  );
+  assert.equal(filled[0]?.description, "local edit");
+});
+
 test("fillMissingLongTextFromApi fills emails when local SQLite has empty JSON", () => {
   const apiEmails = [{ label: "work", address: "a@example.com" }];
   const filled = fillMissingLongTextFromApi(

@@ -113,10 +113,13 @@ import {
   DOCUMENTS_LIST_SQL,
   HABITS_LIST_SQL,
   LETTERS_LIST_SQL,
+  MEETINGS_LIST_SOFT_LIMIT,
   MEETINGS_LIST_SQL,
   ORGANIZATIONS_LIST_SQL,
   PROJECTS_LIST_SQL,
+  WORKSPACE_LIST_SOFT_LIMIT,
 } from "./workspace-sql";
+import { logWorkspaceListSoftCapHit } from "./workspace-list-soft-cap";
 
 export type {
   DesktopWorkspaceActions,
@@ -235,6 +238,91 @@ function useDesktopWorkspaceDataImpl(): {
     authenticated ? MEETINGS_LIST_SQL : null,
     [],
     { rowComparator: WORKSPACE_LIST_ROW_COMPARATOR },
+  );
+
+  // Soft-cap visibility (OS-163 review): log once when a list watch saturates LIMIT.
+  useEffect(() => {
+    logWorkspaceListSoftCapHit(
+      "tasks",
+      localAllTasks.data?.length ?? 0,
+      WORKSPACE_LIST_SOFT_LIMIT,
+    );
+    logWorkspaceListSoftCapHit(
+      "projects",
+      localProjects.data?.length ?? 0,
+      WORKSPACE_LIST_SOFT_LIMIT,
+    );
+    logWorkspaceListSoftCapHit(
+      "documents",
+      localDocuments.data?.length ?? 0,
+      WORKSPACE_LIST_SOFT_LIMIT,
+    );
+    logWorkspaceListSoftCapHit(
+      "contacts",
+      localContacts.data?.length ?? 0,
+      WORKSPACE_LIST_SOFT_LIMIT,
+    );
+    logWorkspaceListSoftCapHit(
+      "organizations",
+      localOrganizations.data?.length ?? 0,
+      WORKSPACE_LIST_SOFT_LIMIT,
+    );
+    logWorkspaceListSoftCapHit(
+      "letters",
+      localLetters.data?.length ?? 0,
+      WORKSPACE_LIST_SOFT_LIMIT,
+    );
+    logWorkspaceListSoftCapHit(
+      "habits",
+      localHabits.data?.length ?? 0,
+      WORKSPACE_LIST_SOFT_LIMIT,
+    );
+    logWorkspaceListSoftCapHit(
+      "areas",
+      localAreas.data?.length ?? 0,
+      WORKSPACE_LIST_SOFT_LIMIT,
+    );
+    logWorkspaceListSoftCapHit(
+      "meetings",
+      localMeetings.data?.length ?? 0,
+      MEETINGS_LIST_SOFT_LIMIT,
+    );
+  }, [
+    localAllTasks.data?.length,
+    localAreas.data?.length,
+    localContacts.data?.length,
+    localDocuments.data?.length,
+    localHabits.data?.length,
+    localLetters.data?.length,
+    localMeetings.data?.length,
+    localOrganizations.data?.length,
+    localProjects.data?.length,
+  ]);
+
+  const listHasMore = useMemo(
+    () => ({
+      tasks: (localAllTasks.data?.length ?? 0) >= WORKSPACE_LIST_SOFT_LIMIT,
+      projects: (localProjects.data?.length ?? 0) >= WORKSPACE_LIST_SOFT_LIMIT,
+      documents: (localDocuments.data?.length ?? 0) >= WORKSPACE_LIST_SOFT_LIMIT,
+      contacts: (localContacts.data?.length ?? 0) >= WORKSPACE_LIST_SOFT_LIMIT,
+      organizations:
+        (localOrganizations.data?.length ?? 0) >= WORKSPACE_LIST_SOFT_LIMIT,
+      letters: (localLetters.data?.length ?? 0) >= WORKSPACE_LIST_SOFT_LIMIT,
+      habits: (localHabits.data?.length ?? 0) >= WORKSPACE_LIST_SOFT_LIMIT,
+      areas: (localAreas.data?.length ?? 0) >= WORKSPACE_LIST_SOFT_LIMIT,
+      meetings: (localMeetings.data?.length ?? 0) >= MEETINGS_LIST_SOFT_LIMIT,
+    }),
+    [
+      localAllTasks.data?.length,
+      localAreas.data?.length,
+      localContacts.data?.length,
+      localDocuments.data?.length,
+      localHabits.data?.length,
+      localLetters.data?.length,
+      localMeetings.data?.length,
+      localOrganizations.data?.length,
+      localProjects.data?.length,
+    ],
   );
 
   const hasLocalWorkspaceRows = Boolean(
@@ -466,7 +554,8 @@ function useDesktopWorkspaceDataImpl(): {
                 ),
                 apiProjects,
               ),
-              fillFrom,
+              // Always use REST list — description is not in the sync stream (OS-163).
+              apiProjects,
               ["summary", "description"],
             ),
             fillFrom,
@@ -515,7 +604,8 @@ function useDesktopWorkspaceDataImpl(): {
             ),
             fillFrom,
           ),
-          fillFrom,
+          // Always use REST list — notes is not in the sync stream (OS-163).
+          apiOrganizations,
           [
             "summary",
             "notes",
@@ -731,7 +821,8 @@ function useDesktopWorkspaceDataImpl(): {
               resolveLocalOrApiRows(localMapped, apiContacts),
               apiContacts,
             ),
-            fillFrom,
+            // Always use REST list — notes is not in the sync stream (OS-163).
+            apiContacts,
             [
               "summary",
               "notes",
@@ -849,7 +940,8 @@ function useDesktopWorkspaceDataImpl(): {
     return applyLiveEntityOverlay(
       fillMissingLongTextFromApi(
         resolveLocalOrApiRows(localMapped, apiHabits),
-        fillFrom,
+        // Always use REST list — description is not in the sync stream (OS-163).
+        apiHabits,
         ["description"],
       ),
       liveHabitsById,
@@ -1475,8 +1567,9 @@ function useDesktopWorkspaceDataImpl(): {
       habits,
       meetings,
       areas: rawAreas,
+      listHasMore,
     }),
-    [habits, meetings, rawAreas, ready, readyBySurface, source],
+    [habits, listHasMore, meetings, rawAreas, ready, readyBySurface, source],
   );
 
   const tasksSlice = useMemo<DesktopWorkspaceTasks>(

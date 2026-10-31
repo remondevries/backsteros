@@ -366,8 +366,15 @@ function fieldMissingForApiFill(field: string, value: unknown): boolean {
 }
 
 /**
- * When list watches omit long-text columns (description / summary / context /
- * notes / transcription), copy non-empty values from the API row.
+ * When list watches / sync omit long-text columns (description / summary /
+ * context / notes / transcription / CRM body), copy non-empty values from the
+ * API row.
+ *
+ * Callers must pass the live REST list (`apiProjects`, …), not
+ * {@link apiFillSourceForColdStart} — cold-start is null once SQLite has any
+ * rows, which would leave detail text blank after OS-163 fat-column cuts.
+ * Only fills when the local field is missing; non-empty local (incl. edits)
+ * is never overwritten.
  */
 export function fillMissingLongTextFromApi<T extends { id: string }>(
   mergedRows: T[],
