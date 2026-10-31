@@ -19,7 +19,8 @@ export type SyncIssueLayoutId =
   | "vault-failed"
   | "missing-blob"
   | "draft-protected"
-  | "version-drift";
+  | "version-drift"
+  | "resync-needed";
 
 export type SyncUploadQueueItem = {
   id: string;
@@ -75,6 +76,11 @@ export type SyncIssuePayload =
       localCommit: string;
       peerCommit: string;
       updateHint: string;
+    }
+  | {
+      kind: "resync-needed";
+      status: "needed" | "bootstrapping" | "failed";
+      message: string | null;
     };
 
 export type SyncIssueInstance = {
@@ -122,6 +128,15 @@ export type SyncingSnapshot = {
     localCommit: string;
     peerCommit: string;
     updateHint: string;
+  } | null;
+  /**
+   * Local-core reported sync_events `resync_needed` (retention gap).
+   * OS-163 — never leave the shell silently stale.
+   */
+  syncEventResync: {
+    needed: boolean;
+    status: "idle" | "needed" | "bootstrapping" | "failed";
+    message: string | null;
   } | null;
 };
 
@@ -207,6 +222,50 @@ export function buildSyncIssuesFromSnapshot(
         code: inferErrorCode(message),
         endpoint: "/api/v1/powersync/token",
         log: message,
+      },
+    });
+  }
+
+  const resync = snapshot.syncEventResync;
+  if (
+    resync &&
+    (resync.needed ||
+      resync.status === "needed" ||
+      resync.status === "bootstrapping" ||
+      resync.status === "failed")
+  ) {
+    const status =
+      resync.status === "idle" ? "needed" : resync.status;
+    issues.push({
+      id: "resync-needed",
+      layoutId: "resync-needed",
+      tone: status === "failed" ? "error" : "warning",
+      badge:
+        status === "bootstrapping"
+          ? "Resyncing"
+          : status === "failed"
+            ? "Resync failed"
+            : "Resync needed",
+      title:
+        status === "bootstrapping"
+          ? "Reloading workspace snapshot"
+          : status === "failed"
+            ? "Snapshot reload failed"
+            : "Full resync required",
+      detail:
+        status === "bootstrapping"
+          ? "Local-core reset the sync cursor and is copying tables from the peer."
+          : "The peer sync log has a gap. Local-core must reload a full snapshot — updates will not resume until this finishes.",
+      summary: truncateSummary(
+        resync.message ??
+          (status === "bootstrapping"
+            ? "Bootstrapping from peer…"
+            : "resync_needed from sync_events feed"),
+      ),
+      payload: {
+        kind: "resync-needed",
+        status,
+        message: resync.message,
       },
     });
   }

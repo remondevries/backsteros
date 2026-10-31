@@ -21,6 +21,7 @@ import { DesktopOverlayComposeContextPublisher } from "../components/desktop-ove
 import { DesktopOverlayMainNavigationListener } from "../components/desktop-overlay-main-navigation-listener";
 import { ExternalOpenHrefListener } from "../components/external-open-href-listener";
 import { ModClickNewTabListener } from "../components/mod-click-new-tab-listener";
+import { SyncEventResyncHost } from "../components/sync-event-resync-host";
 import { AppShellMentionCatalog } from "./app-shell-mention-catalog";
 import { AppShellTaskSideEffects } from "./app-shell-task-side-effects";
 import { DesktopClientLink } from "./app-shell-links";
@@ -81,6 +82,7 @@ export function ShellRuntimeProviders({
   return (
     <ClientLinkProvider Link={DesktopClientLink}>
       <SyncingIssuesProvider>
+        <SyncEventResyncHost />
         <InboxListSessionProvider value={sessionContextValue}>
           <InboxModeModelProvider active={inboxModelActive} pathname={pathname}>
             <MentionNavigationProvider pathname={pathname}>

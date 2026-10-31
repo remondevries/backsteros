@@ -45,6 +45,13 @@ export {
   buildSyncEventsFeed,
 } from "./sync-event-replication.js";
 export {
+  beginSyncEventResync,
+  getSyncEventResyncState,
+  getAnySyncEventResyncState,
+  forceSetSyncEventPullCursor,
+  markSyncEventResyncNeeded,
+} from "./sync-event-resync.js";
+export {
   notifyPeerOfDocumentWrite,
   notifyReplicaOfCloudWrite,
   handleReplicationNudge,

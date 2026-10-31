@@ -25,6 +25,7 @@ function emptySnapshot(
     healthFetchError: null,
     healthAuthDenied: false,
     versionDrift: null,
+    syncEventResync: null,
     ...overrides,
   };
 }
@@ -104,5 +105,21 @@ describe("buildSyncIssuesFromSnapshot", () => {
     assert.equal(issues.length, 1);
     assert.equal(issues[0]?.id, "version-drift");
     assert.equal(issues[0]?.payload.kind, "version-drift");
+  });
+
+  it("surfaces sync_events resync_needed clearly (OS-163)", () => {
+    const issues = buildSyncIssuesFromSnapshot(
+      emptySnapshot({
+        syncEventResync: {
+          needed: true,
+          status: "needed",
+          message: "peer log has a gap",
+        },
+      }),
+    );
+    assert.equal(issues.length, 1);
+    assert.equal(issues[0]?.id, "resync-needed");
+    assert.equal(issues[0]?.payload.kind, "resync-needed");
+    assert.match(issues[0]?.title ?? "", /resync/i);
   });
 });

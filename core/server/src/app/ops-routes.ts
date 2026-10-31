@@ -72,11 +72,53 @@ export function registerOpsRoutes(app: Hono) {
         listOpenReplicationDeadLetters(20),
         listReplicationReconcileMismatches(),
       ]);
+    const { getAnySyncEventResyncState, getSyncEventResyncState } =
+      await import("../services/core-replication/sync-event-resync.js");
+    const workspaceIds = [
+      getAuth(c).workspaceId,
+      ...(process.env.CORE_REPLICATION_WORKSPACE_IDS?.split(",")
+        .map((id) => id.trim())
+        .filter(Boolean) ?? []),
+    ];
+    const syncEventResync =
+      getAnySyncEventResyncState([...new Set(workspaceIds)]) ??
+      getSyncEventResyncState(getAuth(c).workspaceId);
     return c.json({
       ...payload,
       replicationDeadLetterCount,
       replicationDeadLetters,
       replicationMismatches,
+      syncEventResync: {
+        needed: syncEventResync.needed,
+        status: syncEventResync.status,
+        message: syncEventResync.message,
+        startedAt: syncEventResync.startedAt,
+        finishedAt: syncEventResync.finishedAt,
+        workspaceId: syncEventResync.workspaceId,
+      },
+    });
+  });
+
+  app.post("/api/v1/ops/sync-event-resync", async (c) => {
+    const denied = await requireOwner(c);
+    if (denied) return denied;
+
+    const { beginSyncEventResync, getSyncEventResyncState } = await import(
+      "../services/core-replication/sync-event-resync.js"
+    );
+    const workspaceId = getAuth(c).workspaceId;
+    void beginSyncEventResync(workspaceId);
+    const state = getSyncEventResyncState(workspaceId);
+    return c.json({
+      ok: true as const,
+      syncEventResync: {
+        needed: state.needed,
+        status: state.status,
+        message: state.message,
+        startedAt: state.startedAt,
+        finishedAt: state.finishedAt,
+        workspaceId: state.workspaceId,
+      },
     });
   });
 

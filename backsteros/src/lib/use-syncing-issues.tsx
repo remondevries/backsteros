@@ -34,6 +34,11 @@ import {
   type SyncingHealthFacts,
   type SyncingSnapshot,
 } from "./sync-issue-model";
+import {
+  IDLE_SYNC_EVENT_RESYNC,
+  parseSyncEventResyncFacts,
+  type SyncEventResyncFacts,
+} from "./sync-event-resync-client";
 import { useLocalCoreVersionMismatch } from "./use-local-core-version-mismatch";
 
 const HEALTH_POLL_MS = 15_000;
@@ -123,6 +128,8 @@ function useSyncingIssuesState(): SyncingIssuesState {
   const [mismatches, setMismatches] = useState<SyncReconcileMismatch[]>([]);
   const [healthFetchError, setHealthFetchError] = useState<string | null>(null);
   const [healthAuthDenied, setHealthAuthDenied] = useState(false);
+  const [syncEventResync, setSyncEventResync] =
+    useState<SyncEventResyncFacts>(IDLE_SYNC_EVENT_RESYNC);
   const [dismissedIds, setDismissedIds] = useState<SyncIssueLayoutId[]>([]);
 
   const uploadErrorMessage =
@@ -136,6 +143,7 @@ function useSyncingIssuesState(): SyncingIssuesState {
       setDeadLetters(parsed.letters);
       setDeadLetterCount(parsed.count);
       setMismatches(parsed.mismatches);
+      setSyncEventResync(parseSyncEventResyncFacts(body));
       setHealthFetchError(null);
       setHealthAuthDenied(false);
     } catch (error) {
@@ -146,6 +154,7 @@ function useSyncingIssuesState(): SyncingIssuesState {
           setDeadLetters([]);
           setDeadLetterCount(0);
           setMismatches([]);
+          setSyncEventResync(IDLE_SYNC_EVENT_RESYNC);
           return;
         }
         setHealthFetchError(error.message);
@@ -155,8 +164,8 @@ function useSyncingIssuesState(): SyncingIssuesState {
         );
       }
       setHealthAuthDenied(false);
-      // Keep last known dead letters / mismatches — a transient fetch blip must
-      // not flash Settings as Healthy while the sidebar still shows twin-lag.
+      // Keep last known dead letters / mismatches / resync — a transient fetch
+      // blip must not flash Settings as Healthy while the sidebar still shows issues.
     }
   }, [client]);
 
@@ -224,6 +233,11 @@ function useSyncingIssuesState(): SyncingIssuesState {
               updateHint: LOCAL_CORE_UPDATE_BUILD_HINT,
             }
           : null,
+      syncEventResync: {
+        needed: syncEventResync.needed,
+        status: syncEventResync.status,
+        message: syncEventResync.message,
+      },
     }),
     [
       deadLetterCount,
@@ -237,6 +251,9 @@ function useSyncingIssuesState(): SyncingIssuesState {
       powerSync.message,
       powerSync.offline,
       powerSync.status,
+      syncEventResync.message,
+      syncEventResync.needed,
+      syncEventResync.status,
       uploadErrorMessage,
       uploadItems,
       versionMismatch,

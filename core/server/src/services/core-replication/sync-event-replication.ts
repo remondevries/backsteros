@@ -57,8 +57,11 @@ export type PullPeerSyncEventsHooks = {
     duplicate: number;
     skipped: number;
     peerMissing?: boolean;
+    resyncNeeded?: boolean;
     stuck?: { cursor: number; entity: string; entityId: string; error: string };
   }>;
+  /** Override for tests — default starts snapshot bootstrap + cursor reset. */
+  beginSyncEventResync?: (workspaceId: string) => Promise<void>;
 };
 
 type DbExecutor = Pick<typeof db, "select" | "insert" | "update" | "delete">;
@@ -427,7 +430,7 @@ async function pullWorkspaceSyncEvents(workspaceId: string): Promise<{
       appendOpsLog(
         "error",
         "core sync-events pull resync_needed",
-        `workspace=${workspaceId} after=${after} — peer log has a gap; table LWW continues`,
+        `workspace=${workspaceId} after=${after} — peer log has a gap; starting full resync`,
       );
       return {
         applied,
@@ -520,6 +523,8 @@ export async function pullPeerSyncEvents(
   const getPending = hooks.getPendingUnpushedState ?? getPendingUnpushedState;
   const pullWorkspace =
     hooks.pullWorkspaceSyncEvents ?? pullWorkspaceSyncEvents;
+  const { beginSyncEventResync } = await import("./sync-event-resync.js");
+  const startResync = hooks.beginSyncEventResync ?? beginSyncEventResync;
 
   let pending: PendingUnpushedState;
   try {
@@ -573,6 +578,11 @@ export async function pullPeerSyncEvents(
         `core sync-events pull ${workspaceId} stuck`,
         `cursor=${result.stuck.cursor} ${result.stuck.entity}/${result.stuck.entityId}: ${result.stuck.error} (cursor not advanced; will retry)`,
       );
+      continue;
+    }
+    if (result.resyncNeeded) {
+      // Full snapshot reload + cursor reset; do not leave the replica silently stale.
+      void startResync(workspaceId);
       continue;
     }
     if (result.applied + result.duplicate + result.skipped > 0) {
