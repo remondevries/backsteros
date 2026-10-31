@@ -809,7 +809,6 @@ function useDesktopWorkspaceDataImpl(): {
   const rawContacts = useMemo(() => {
     const localMapped =
       localContacts.data?.map((row) => snakeRow(row) as ApiContact) ?? null;
-    const fillFrom = apiFillSourceForColdStart(localMapped, apiContacts);
     return fillPortalPasswordSetFromApi(
       fillMissingAvatarFieldsFromApi(
         applyLiveEntityOverlay(
@@ -936,11 +935,10 @@ function useDesktopWorkspaceDataImpl(): {
           todayTaskStatus: local.todayTaskStatus ?? null,
         } satisfies ApiHabit;
       }) ?? null;
-    const fillFrom = apiFillSourceForColdStart(localMapped, apiHabits);
     return applyLiveEntityOverlay(
       fillMissingLongTextFromApi(
         resolveLocalOrApiRows(localMapped, apiHabits),
-        // Always use REST list — description is not in the sync stream (OS-163).
+        // REST fill if local description is empty (cold start / lag).
         apiHabits,
         ["description"],
       ),
