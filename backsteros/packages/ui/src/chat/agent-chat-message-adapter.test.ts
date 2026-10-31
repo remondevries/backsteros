@@ -118,6 +118,36 @@ describe("chatThreadMessageToUi progress", () => {
   });
 });
 
+function assistantWithApproval(
+  id: string,
+  answered: boolean,
+): ChatThreadMessage {
+  return {
+    id,
+    threadId: "th",
+    role: "assistant",
+    authorContactId: null,
+    authorName: "Sander",
+    body: "Ready?",
+    status: "done",
+    createdAt: "2026-10-31T08:00:00.000Z",
+    updatedAt: "2026-10-31T08:00:00.000Z",
+    approval: {
+      title: "Deploy production",
+      kind: "deploy",
+      summary: "Ship abc123",
+      fields: [{ label: "Commit", value: "abc123" }],
+      destructive: false,
+    },
+    approvalAnswer: answered
+      ? {
+          decision: "approved",
+          answeredAt: "2026-10-31T08:01:00.000Z",
+        }
+      : null,
+  };
+}
+
 describe("chatThreadMessageToUi choices", () => {
   it("keeps body copy and appends a choices card", () => {
     const ui = chatThreadMessageToUi(assistantWithChoices("m1", false));
@@ -196,5 +226,64 @@ describe("chatThreadMessageToUi choices", () => {
     );
     assert.ok(card && card.type === "card");
     assert.equal((card.data as { dismissed?: boolean }).dismissed, true);
+  });
+});
+
+describe("chatThreadMessageToUi approval", () => {
+  it("appends an approval card", () => {
+    const ui = chatThreadMessageToUi(assistantWithApproval("m1", false));
+    const card = ui.parts.find(
+      (part) => part.type === "card" && part.cardType === "approval",
+    );
+    assert.ok(card && card.type === "card");
+    assert.equal(
+      (card.data as { title?: string }).title,
+      "Deploy production",
+    );
+    assert.equal((card.data as { answer: unknown }).answer, null);
+  });
+
+  it("marks unanswered approval dismissed after a later user message", () => {
+    const ui = chatThreadMessagesToUi([
+      assistantWithApproval("m1", false),
+      {
+        id: "m2",
+        threadId: "th",
+        role: "user",
+        authorContactId: null,
+        authorName: "Remon",
+        body: "typed instead",
+        status: "done",
+        createdAt: "2026-10-31T08:02:00.000Z",
+        updatedAt: "2026-10-31T08:02:00.000Z",
+      },
+    ]);
+    const card = ui[0]?.parts.find(
+      (part) => part.type === "card" && part.cardType === "approval",
+    );
+    assert.ok(card && card.type === "card");
+    assert.equal((card.data as { dismissed?: boolean }).dismissed, true);
+  });
+
+  it("does not dismiss answered approval", () => {
+    const ui = chatThreadMessagesToUi([
+      assistantWithApproval("m1", true),
+      {
+        id: "m2",
+        threadId: "th",
+        role: "user",
+        authorContactId: null,
+        authorName: "Remon",
+        body: "Approved: Deploy production",
+        status: "done",
+        createdAt: "2026-10-31T08:02:00.000Z",
+        updatedAt: "2026-10-31T08:02:00.000Z",
+      },
+    ]);
+    const card = ui[0]?.parts.find(
+      (part) => part.type === "card" && part.cardType === "approval",
+    );
+    assert.ok(card && card.type === "card");
+    assert.notEqual((card.data as { dismissed?: boolean }).dismissed, true);
   });
 });

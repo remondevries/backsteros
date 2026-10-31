@@ -145,6 +145,7 @@ export function ShellChatPanel() {
       },
       deleteMessages: agentChat.deleteMessages,
       answerChoices: agentChat.answerChoices,
+      answerApproval: agentChat.answerApproval,
     };
   }, [agentChat, resolveAttachmentUrl]);
 

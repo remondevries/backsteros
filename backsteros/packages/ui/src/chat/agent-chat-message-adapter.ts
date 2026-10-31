@@ -1,5 +1,6 @@
 import type {
   ChatThreadMessage,
+  ChatUiApprovalCardData,
   ChatUiAttachmentsCardData,
   ChatUiCardPart,
   ChatUiChoicesCardData,
@@ -11,7 +12,9 @@ import type {
 
 export type ChatThreadMessageToUiOptions = {
   /** Unanswered choices superseded by a later typed user message. */
-  dismissed?: boolean;
+  dismissedChoices?: boolean;
+  /** Unanswered approval superseded by a later typed user message. */
+  dismissedApproval?: boolean;
 };
 
 function choicesCardPart(
@@ -35,6 +38,36 @@ function choicesCardPart(
     type: "card",
     cardType: "choices",
     id: `choices:${message.id}`,
+    data,
+  };
+}
+
+function approvalCardPart(
+  message: ChatThreadMessage,
+  dismissed: boolean,
+): ChatUiCardPart | null {
+  if (!message.approval) return null;
+  const data: ChatUiApprovalCardData = {
+    messageId: message.id,
+    title: message.approval.title,
+    kind: message.approval.kind,
+    summary: message.approval.summary,
+    ...(message.approval.fields ? { fields: message.approval.fields } : {}),
+    ...(message.approval.details ? { details: message.approval.details } : {}),
+    ...(message.approval.approveLabel
+      ? { approveLabel: message.approval.approveLabel }
+      : {}),
+    ...(message.approval.rejectLabel
+      ? { rejectLabel: message.approval.rejectLabel }
+      : {}),
+    destructive: message.approval.destructive,
+    answer: message.approvalAnswer ?? null,
+    ...(dismissed ? { dismissed: true } : {}),
+  };
+  return {
+    type: "card",
+    cardType: "approval",
+    id: `approval:${message.id}`,
     data,
   };
 }
@@ -118,8 +151,16 @@ export function chatThreadMessageToUi(
   if (linkPreviews) parts.push(linkPreviews);
   const progress = progressCardPart(message);
   if (progress) parts.push(progress);
-  const choices = choicesCardPart(message, options?.dismissed === true);
+  const choices = choicesCardPart(
+    message,
+    options?.dismissedChoices === true,
+  );
   if (choices) parts.push(choices);
+  const approval = approvalCardPart(
+    message,
+    options?.dismissedApproval === true,
+  );
+  if (approval) parts.push(approval);
 
   return {
     id: message.id,
@@ -139,21 +180,60 @@ export function chatThreadMessageToUi(
 }
 
 /**
- * Map a thread snapshot, marking unanswered choice cards dismissed when a
- * later user message exists (typed reply without answering).
+ * Map a thread snapshot, marking unanswered choice / approval cards dismissed
+ * when a later user message exists (typed reply without answering).
  */
 export function chatThreadMessagesToUi(
   messages: readonly ChatThreadMessage[],
 ): ChatUiMessage[] {
   return messages.map((message, index) => {
-    const dismissed =
-      Boolean(message.choices) &&
-      !message.choicesAnswer &&
-      messages
-        .slice(index + 1)
-        .some((later) => later.role === "user");
-    return chatThreadMessageToUi(message, { dismissed });
+    const laterUser = messages
+      .slice(index + 1)
+      .some((later) => later.role === "user");
+    return chatThreadMessageToUi(message, {
+      dismissedChoices:
+        Boolean(message.choices) && !message.choicesAnswer && laterUser,
+      dismissedApproval:
+        Boolean(message.approval) && !message.approvalAnswer && laterUser,
+    });
   });
+}
+
+function withCardDismissedState(
+  message: ChatUiMessage,
+  index: number,
+  messages: readonly ChatUiMessage[],
+  cardType: "choices" | "approval",
+): ChatUiMessage {
+  const partIndex = message.parts.findIndex(
+    (part) => part.type === "card" && part.cardType === cardType,
+  );
+  if (partIndex < 0) return message;
+  const part = message.parts[partIndex]!;
+  if (part.type !== "card") return message;
+  const data = (part.data ?? {}) as {
+    answer?: unknown;
+    dismissed?: boolean;
+  };
+  if (data.answer) {
+    if (!data.dismissed) return message;
+    const nextParts = [...message.parts];
+    nextParts[partIndex] = {
+      ...part,
+      data: { ...data, dismissed: false },
+    };
+    return { ...message, parts: nextParts };
+  }
+  const dismissed = messages
+    .slice(index + 1)
+    .some((later) => later.role === "user");
+  if (Boolean(data.dismissed) === dismissed) return message;
+  const nextParts = [...message.parts];
+  nextParts[partIndex] = {
+    ...part,
+    data: { ...data, dismissed },
+  };
+  return { ...message, parts: nextParts };
 }
 
 /**
@@ -163,32 +243,9 @@ export function withChoicesDismissedStates(
   messages: readonly ChatUiMessage[],
 ): ChatUiMessage[] {
   return messages.map((message, index) => {
-    const partIndex = message.parts.findIndex(
-      (part) => part.type === "card" && part.cardType === "choices",
-    );
-    if (partIndex < 0) return message;
-    const part = message.parts[partIndex]!;
-    if (part.type !== "card") return message;
-    const data = (part.data ?? {}) as ChatUiChoicesCardData;
-    if (data.answer) {
-      if (!data.dismissed) return message;
-      const nextParts = [...message.parts];
-      nextParts[partIndex] = {
-        ...part,
-        data: { ...data, dismissed: false },
-      };
-      return { ...message, parts: nextParts };
-    }
-    const dismissed = messages
-      .slice(index + 1)
-      .some((later) => later.role === "user");
-    if (Boolean(data.dismissed) === dismissed) return message;
-    const nextParts = [...message.parts];
-    nextParts[partIndex] = {
-      ...part,
-      data: { ...data, dismissed },
-    };
-    return { ...message, parts: nextParts };
+    let next = withCardDismissedState(message, index, messages, "choices");
+    next = withCardDismissedState(next, index, messages, "approval");
+    return next;
   });
 }
 

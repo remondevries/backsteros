@@ -13,6 +13,8 @@ import type {
   AnswerChatThreadMessageChoicesResult,
   ChatThreadAttachment,
   ChatThreadLinkPreview,
+  ChatThreadMessageApproval,
+  ChatThreadMessageApprovalAnswer,
   ChatThreadMessageChoices,
   ChatThreadMessageChoicesAnswer,
   ChatThreadMessageProgress,
@@ -82,6 +84,12 @@ export type LiveAgentChatHandlers = {
     threadId: string,
     messageId: string,
     values: readonly string[],
+  ) => Promise<AnswerChatThreadMessageChoicesResult>;
+  answerApproval?: (
+    threadId: string,
+    messageId: string,
+    decision: "approved" | "rejected",
+    note?: string,
   ) => Promise<AnswerChatThreadMessageChoicesResult>;
 };
 
@@ -472,6 +480,8 @@ export function ChatUiDevPreview({
             updatedAt?: string;
             choices?: ChatThreadMessageChoices;
             choicesAnswer?: ChatThreadMessageChoicesAnswer | null;
+            approval?: ChatThreadMessageApproval;
+            approvalAnswer?: ChatThreadMessageApprovalAnswer | null;
             progress?: ChatThreadMessageProgress;
             attachments?: ChatThreadAttachment[];
             linkPreviews?: ChatThreadLinkPreview[];
@@ -497,6 +507,12 @@ export function ChatUiDevPreview({
               ? {
                   choices: detail.message.choices,
                   choicesAnswer: detail.message.choicesAnswer ?? null,
+                }
+              : {}),
+            ...(detail.message?.approval
+              ? {
+                  approval: detail.message.approval,
+                  approvalAnswer: detail.message.approvalAnswer ?? null,
                 }
               : {}),
             ...(detail.message?.progress
@@ -772,6 +788,12 @@ export function ChatUiDevPreview({
                   choicesAnswer: result.message.choicesAnswer ?? null,
                 }
               : {}),
+            ...(result.message.approval
+              ? {
+                  approval: result.message.approval,
+                  approvalAnswer: result.message.approvalAnswer ?? null,
+                }
+              : {}),
           },
         });
         dispatchLive({
@@ -790,6 +812,95 @@ export function ChatUiDevPreview({
             error instanceof Error
               ? error.message
               : "Could not submit choice.",
+        });
+        throw error;
+      }
+    },
+    [liveAgentChat, liveAgentId, liveThreadId],
+  );
+
+  const onAnswerApproval = useCallback(
+    async (
+      messageId: string,
+      decision: "approved" | "rejected",
+      note?: string,
+    ) => {
+      if (!liveAgentId || !liveAgentChat?.answerApproval || !liveThreadId) {
+        return;
+      }
+      const pendingId = `pending-approval-${Date.now()}`;
+      const now = new Date().toISOString();
+      const source = liveRef.current.messages.find((message) => message.id === messageId);
+      const approvalPart = source?.parts.find(
+        (part) => part.type === "card" && part.cardType === "approval",
+      );
+      const titleHint =
+        approvalPart &&
+        approvalPart.type === "card" &&
+        typeof approvalPart.data?.title === "string"
+          ? approvalPart.data.title
+          : "Request";
+      const body =
+        decision === "approved"
+          ? `Approved: ${titleHint}`
+          : note?.trim()
+            ? `Rejected: ${titleHint} — ${note.trim()}`
+            : `Rejected: ${titleHint}`;
+      dispatchLive({
+        type: "sendStarted",
+        message: {
+          id: pendingId,
+          role: "user",
+          author: { name: "You" },
+          status: "pending",
+          createdAt: now,
+          parts: [{ type: "text", text: body }],
+        },
+      });
+      try {
+        const result = await liveAgentChat.answerApproval(
+          liveThreadId,
+          messageId,
+          decision,
+          note,
+        );
+        dispatchLive({
+          type: "pushMessage",
+          threadId: liveThreadId,
+          message: {
+            id: result.message.id,
+            body: result.message.body,
+            createdAt: result.message.createdAt,
+            ...(result.message.choices
+              ? {
+                  choices: result.message.choices,
+                  choicesAnswer: result.message.choicesAnswer ?? null,
+                }
+              : {}),
+            ...(result.message.approval
+              ? {
+                  approval: result.message.approval,
+                  approvalAnswer: result.message.approvalAnswer ?? null,
+                }
+              : {}),
+          },
+        });
+        dispatchLive({
+          type: "sendSucceeded",
+          pendingId,
+          message: result.reply.message,
+          thinking: result.reply.thinking,
+          webhookError: result.reply.webhookError,
+          nowMs: Date.now(),
+        });
+      } catch (error) {
+        dispatchLive({
+          type: "sendFailed",
+          pendingId,
+          error:
+            error instanceof Error
+              ? error.message
+              : "Could not submit approval.",
         });
         throw error;
       }
@@ -858,6 +969,11 @@ export function ChatUiDevPreview({
           onAnswerChoices={
             liveAgentId && liveAgentChat?.answerChoices
               ? onAnswerChoices
+              : null
+          }
+          onAnswerApproval={
+            liveAgentId && liveAgentChat?.answerApproval
+              ? onAnswerApproval
               : null
           }
           emptyState={null}

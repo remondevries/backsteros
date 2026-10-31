@@ -67,6 +67,28 @@ export type AgentChatWebhookChoicesAnswer = {
   answeredAt: string;
 };
 
+export type AgentChatWebhookApprovalField = {
+  label: string;
+  value: string;
+};
+
+export type AgentChatWebhookApproval = {
+  title: string;
+  kind: "deploy" | "invoice" | "email" | "payment" | "delete" | "generic";
+  summary: string;
+  fields?: AgentChatWebhookApprovalField[];
+  details?: string;
+  approveLabel?: string;
+  rejectLabel?: string;
+  destructive: boolean;
+};
+
+export type AgentChatWebhookApprovalAnswer = {
+  decision: "approved" | "rejected";
+  note?: string;
+  answeredAt: string;
+};
+
 export type AgentChatWebhookAttachment = {
   id: string;
   filename: string;
@@ -110,6 +132,9 @@ export type AgentChatWebhookMessage = {
   /** Assistant-only interactive options (when present on context messages). */
   choices?: AgentChatWebhookChoices;
   choicesAnswer?: AgentChatWebhookChoicesAnswer | null;
+  /** Assistant-only approve/reject card (when present on context messages). */
+  approval?: AgentChatWebhookApproval;
+  approvalAnswer?: AgentChatWebhookApprovalAnswer | null;
   /** Assistant-only live progress (when present on context messages). */
   progress?: AgentChatWebhookProgress;
   /** Files attached to this message. */

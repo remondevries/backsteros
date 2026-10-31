@@ -68,6 +68,10 @@ import {
   type ChatCardRegistry,
 } from "./chat-card-registry.js";
 import {
+  ChatApprovalAnswerProvider,
+  type ChatApprovalAnswerFn,
+} from "./chat-approval-card.js";
+import {
   ChatChoicesAnswerProvider,
   type ChatChoicesAnswerFn,
 } from "./chat-choices-card.js";
@@ -158,6 +162,11 @@ export type ChatThreadProps = {
    * normal user message via the answer API.
    */
   onAnswerChoices?: ChatChoicesAnswerFn | null;
+  /**
+   * Answer assistant approval cards (owner). Posts Approved/Rejected as a
+   * normal user message via the same answer API.
+   */
+  onAnswerApproval?: ChatApprovalAnswerFn | null;
   /**
    * Optional empty state when there are no messages.
    * Pass `null` to show no empty-state copy (composer only).
@@ -785,6 +794,7 @@ export function ChatThread({
   composerDisabled = false,
   onDeleteMessages = null,
   onAnswerChoices = null,
+  onAnswerApproval = null,
   emptyState,
   className,
 }: ChatThreadProps) {
@@ -1110,6 +1120,7 @@ export function ChatThread({
     <ChatCardNavigateProvider navigate={onNavigate}>
       <ChatCardRegistryProvider registry={registry}>
         <ChatChoicesAnswerProvider onAnswer={onAnswerChoices}>
+        <ChatApprovalAnswerProvider onAnswer={onAnswerApproval}>
         <AssistantRuntimeProvider runtime={runtime}>
           <div
             ref={threadRootRef}
@@ -1246,6 +1257,7 @@ export function ChatThread({
             </ThreadPrimitive.Root>
           </div>
         </AssistantRuntimeProvider>
+        </ChatApprovalAnswerProvider>
         </ChatChoicesAnswerProvider>
       </ChatCardRegistryProvider>
     </ChatCardNavigateProvider>

@@ -1268,6 +1268,13 @@
       "when": 1796150000000,
       "tag": "0179_chat_thread_message_progress",
       "breakpoints": true
+    },
+    {
+      "idx": 181,
+      "version": "7",
+      "when": 1796160000000,
+      "tag": "0180_chat_thread_message_approval",
+      "breakpoints": true
     }
   ]
 }

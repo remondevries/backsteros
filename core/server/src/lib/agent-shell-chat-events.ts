@@ -19,6 +19,28 @@ export type AgentShellChatMessageChoicesAnswer = {
   answeredAt: string;
 };
 
+export type AgentShellChatMessageApprovalField = {
+  label: string;
+  value: string;
+};
+
+export type AgentShellChatMessageApproval = {
+  title: string;
+  kind: "deploy" | "invoice" | "email" | "payment" | "delete" | "generic";
+  summary: string;
+  fields?: AgentShellChatMessageApprovalField[];
+  details?: string;
+  approveLabel?: string;
+  rejectLabel?: string;
+  destructive: boolean;
+};
+
+export type AgentShellChatMessageApprovalAnswer = {
+  decision: "approved" | "rejected";
+  note?: string;
+  answeredAt: string;
+};
+
 export type AgentShellChatMessageAttachment = {
   id: string;
   filename: string;
@@ -68,6 +90,9 @@ export type AgentShellChatMessageEvent = {
     /** Assistant choice buttons (when the reply includes them). */
     choices?: AgentShellChatMessageChoices;
     choicesAnswer?: AgentShellChatMessageChoicesAnswer | null;
+    /** Approve/reject card (when the reply includes one). */
+    approval?: AgentShellChatMessageApproval;
+    approvalAnswer?: AgentShellChatMessageApprovalAnswer | null;
     /** Live progress / status card (agents PATCH to update). */
     progress?: AgentShellChatMessageProgress;
     attachments?: AgentShellChatMessageAttachment[];

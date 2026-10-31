@@ -430,6 +430,48 @@ export const chatUiChoicesCardDataSchema = z.object({
 });
 export type ChatUiChoicesCardData = z.infer<typeof chatUiChoicesCardDataSchema>;
 
+/** Card payload for `cardType: "approval"` (agent approve/reject gate). */
+export const chatUiApprovalCardDataSchema = z.object({
+  messageId: z.string(),
+  title: z.string().min(1).max(120),
+  kind: z.enum([
+    "deploy",
+    "invoice",
+    "email",
+    "payment",
+    "delete",
+    "generic",
+  ]),
+  summary: z.string().min(1).max(500),
+  fields: z
+    .array(
+      z.object({
+        label: z.string().min(1).max(40),
+        value: z.string().min(1).max(200),
+      }),
+    )
+    .max(12)
+    .optional(),
+  details: z.string().min(1).max(8192).optional(),
+  approveLabel: z.string().min(1).max(40).optional(),
+  rejectLabel: z.string().min(1).max(40).optional(),
+  destructive: z.boolean().default(false),
+  answer: z
+    .object({
+      decision: z.enum(["approved", "rejected"]),
+      note: z.string().min(1).max(500).optional(),
+      answeredAt: z.string().datetime(),
+    })
+    .nullable()
+    .optional(),
+  /**
+   * True when a later user message exists and this was never answered —
+   * greyed out, no buttons.
+   */
+  dismissed: z.boolean().optional(),
+});
+export type ChatUiApprovalCardData = z.infer<typeof chatUiApprovalCardDataSchema>;
+
 /** Card payload for `cardType: "progress"` (agent live status / progress). */
 export const chatUiProgressCardDataSchema = z.object({
   messageId: z.string(),

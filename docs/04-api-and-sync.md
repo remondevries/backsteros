@@ -553,6 +553,38 @@ POST /api/v1/chat/threads/{threadId}/messages
 - Desktop keeps `body` as the bubble copy and renders buttons below.
 - Thread/SSE/webhook message objects may include `choices` and `choicesAnswer` (`null` until answered).
 
+**Agent reply with an approval card** (assistant only — optional `approval`, may sit alongside `choices`):
+
+```json
+{
+  "body": "Ready when you are.",
+  "approval": {
+    "title": "Deploy production",
+    "kind": "deploy",
+    "summary": "Ship commit `abc123` to production.",
+    "fields": [
+      { "label": "Commit", "value": "abc123" },
+      { "label": "Target", "value": "production" }
+    ],
+    "details": "```diff\n+ health check\n```",
+    "approveLabel": "Deploy",
+    "rejectLabel": "Hold",
+    "destructive": false
+  }
+}
+```
+
+- `approval.title` required, ≤120 chars.
+- `approval.kind`: `deploy` | `invoice` | `email` | `payment` | `delete` | `generic` (default `generic`).
+- `approval.summary` required, ≤500 chars (markdown-lite; mentions allowed).
+- `approval.fields` optional, ≤12; each `label` ≤40, `value` ≤200 (mentions allowed; shown as a key/value grid).
+- `approval.details` optional longer markdown / code block, ≤8KB; collapsible on desktop.
+- `approval.approveLabel` / `approval.rejectLabel` optional (defaults Approve / Reject), ≤40 chars.
+- `approval.destructive` defaults to `false` — when true, Approve uses the danger button style.
+- Desktop renders kind icon, title, summary, field grid, collapsible details, Approve / Reject / Reject with note.
+- Thread / SSE / webhook message objects may include `approval` and `approvalAnswer` (`null` until answered).
+- Locked (answered) state shows decision + time (green approved / red rejected). Typing a later user message greys the unanswered card out like choices.
+
 **Agent reply with a live progress card** (assistant only — optional `progress`):
 
 ```json
@@ -661,6 +693,26 @@ Content-Type: application/json
 
 Records `choicesAnswer` on the assistant message (HTTP **409** if already answered) **and** creates a normal user message whose `body` is the joined value(s). That user message fires the usual `agent.chat.message` webhook — agents need no new answer logic.
 
+Same endpoint for approval cards:
+
+```http
+POST /api/v1/chat/threads/{threadId}/messages/{messageId}/answer
+Content-Type: application/json
+
+{ "decision": "approved" }
+```
+
+```json
+{ "decision": "rejected", "note": "Wrong amount" }
+```
+
+Records `approvalAnswer` (`decision`, optional `note`, `answeredAt`; HTTP **409** if already answered) **and** creates a normal user message:
+
+- Approved → `Approved: <title>`
+- Rejected → `Rejected: <title>` or `Rejected: <title> — <note>`
+
+That user message fires the usual `agent.chat.message` webhook — agents need no new answer logic.
+
 **Human message** (`event` must be matched exactly):
 
 ```json
@@ -672,7 +724,7 @@ Records `choicesAnswer` on the assistant message (HTTP **409** if already answer
   "threadId": "…",
   "replyUrl": "https://agent.backsteros.com/api/v1/chat/threads/{threadId}/messages",
   "message": { "id": "…", "role": "user", "text": "…", "createdAt": "…" },
-  "context": [ /* last ~10 messages, oldest → newest; may include choices/choicesAnswer */ ],
+  "context": [ /* last ~10 messages, oldest → newest; may include choices/choicesAnswer and approval/approvalAnswer */ ],
   "deliveryId": "…",
   "timestamp": "…"
 }

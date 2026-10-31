@@ -594,6 +594,146 @@ test("OS-151/150 agents + chat loop: secret write-only, webhook fire, agent repl
   );
   assert.equal(answeredAgain.status, 409);
 
+  // Agent posts an approval card; owner approves once (creates user msg + webhook).
+  webhookHit = null;
+  const approvalReply = await json(
+    app,
+    `/api/v1/chat/threads/${threadId}/messages`,
+    agentSecret,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        body: "Ready to ship?",
+        approval: {
+          title: "Deploy production",
+          kind: "deploy",
+          summary: "Ship commit abc123",
+          fields: [
+            { label: "Commit", value: "abc123" },
+            { label: "Target", value: "production" },
+          ],
+          approveLabel: "Deploy",
+        },
+      }),
+    },
+  );
+  assert.equal(approvalReply.status, 201);
+  const approvalMessage = approvalReply.body?.message as {
+    id: string;
+    approval?: { title: string; kind: string };
+    approvalAnswer: unknown;
+  };
+  assert.equal(approvalMessage?.approval?.title, "Deploy production");
+  assert.equal(approvalMessage?.approval?.kind, "deploy");
+  assert.equal(approvalMessage.approvalAnswer, null);
+
+  // User posts cannot attach approval.
+  const userApprovalDenied = await json(
+    app,
+    `/api/v1/chat/threads/${threadId}/messages`,
+    ownerSecret,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        body: "nope",
+        approval: {
+          title: "Nope",
+          summary: "Should fail",
+        },
+      }),
+    },
+  );
+  assert.equal(userApprovalDenied.status, 400);
+
+  // Agent cannot answer approval.
+  const agentApprovalDenied = await app.request(
+    `/api/v1/chat/threads/${threadId}/messages/${approvalMessage.id}/answer`,
+    {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${agentSecret}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ decision: "approved" }),
+    },
+  );
+  assert.equal(agentApprovalDenied.status, 403);
+
+  webhookHit = null;
+  const approved = await json(
+    app,
+    `/api/v1/chat/threads/${threadId}/messages/${approvalMessage.id}/answer`,
+    ownerSecret,
+    {
+      method: "POST",
+      body: JSON.stringify({ decision: "approved" }),
+    },
+  );
+  assert.equal(approved.status, 201);
+  assert.equal(
+    (approved.body?.message as { approvalAnswer?: { decision: string } })
+      ?.approvalAnswer?.decision,
+    "approved",
+  );
+  assert.equal(
+    (approved.body?.reply as { message?: { body?: string } })?.message?.body,
+    "Approved: Deploy production",
+  );
+  assert.ok(webhookHit);
+  const approvalPayload = JSON.parse(webhookHit.body) as {
+    message: { text: string };
+  };
+  assert.equal(approvalPayload.message.text, "Approved: Deploy production");
+
+  const approvedAgain = await json(
+    app,
+    `/api/v1/chat/threads/${threadId}/messages/${approvalMessage.id}/answer`,
+    ownerSecret,
+    {
+      method: "POST",
+      body: JSON.stringify({ decision: "rejected", note: "too late" }),
+    },
+  );
+  assert.equal(approvedAgain.status, 409);
+
+  // Second approval → reject with note.
+  const approval2 = await json(
+    app,
+    `/api/v1/chat/threads/${threadId}/messages`,
+    agentSecret,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        body: "Pay invoice?",
+        approval: {
+          title: "Invoice INV-9",
+          kind: "invoice",
+          summary: "€500 to Acme",
+          destructive: true,
+        },
+      }),
+    },
+  );
+  assert.equal(approval2.status, 201);
+  const approval2Id = (approval2.body?.message as { id: string }).id;
+  const rejected = await json(
+    app,
+    `/api/v1/chat/threads/${threadId}/messages/${approval2Id}/answer`,
+    ownerSecret,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        decision: "rejected",
+        note: "Wrong amount",
+      }),
+    },
+  );
+  assert.equal(rejected.status, 201);
+  assert.equal(
+    (rejected.body?.reply as { message?: { body?: string } })?.message?.body,
+    "Rejected: Invoice INV-9 — Wrong amount",
+  );
+
   // Agent keys cannot delete.
   const agentDeleteDenied = await app.request(
     `/api/v1/chat/threads/${threadId}/messages/${assistant.id}`,

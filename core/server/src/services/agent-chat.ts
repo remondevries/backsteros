@@ -1,12 +1,15 @@
 import { and, asc, desc, eq, inArray, isNull } from "drizzle-orm";
 import {
   chatThreadLinkPreviewSchema,
+  chatThreadMessageApprovalAnswerSchema,
+  chatThreadMessageApprovalSchema,
   chatThreadMessageChoicesAnswerSchema,
   chatThreadMessageChoicesSchema,
   chatThreadMessageProgressSchema,
   isChatThreadProgressTerminal,
   type AgentWebhookTestResult,
   type AnswerChatThreadMessageChoicesResult,
+  type AnswerChatThreadMessageResult,
   type ChatResolvedMention,
   type ChatThread,
   type ChatThreadAgentStatus,
@@ -15,6 +18,9 @@ import {
   type ChatThreadLinkPreview,
   type ChatThreadListItem,
   type ChatThreadMessage,
+  type ChatThreadMessageApproval,
+  type ChatThreadMessageApprovalAnswer,
+  type ChatThreadMessageApprovalDecision,
   type ChatThreadMessageChoices,
   type ChatThreadMessageChoicesAnswer,
   type ChatThreadMessageProgress,
@@ -158,6 +164,47 @@ function parseChoicesAnswerColumn(
   return parsed.success ? parsed.data : null;
 }
 
+function parseApprovalColumn(
+  value: unknown,
+): ChatThreadMessageApproval | undefined {
+  if (value == null) return undefined;
+  const parsed = chatThreadMessageApprovalSchema.safeParse(value);
+  return parsed.success ? parsed.data : undefined;
+}
+
+function parseApprovalAnswerColumn(
+  value: unknown,
+): ChatThreadMessageApprovalAnswer | null | undefined {
+  if (value === undefined) return undefined;
+  if (value == null) return null;
+  const parsed = chatThreadMessageApprovalAnswerSchema.safeParse(value);
+  return parsed.success ? parsed.data : null;
+}
+
+function approvalMentionSource(
+  approval: ChatThreadMessageApproval | undefined,
+): string {
+  if (!approval) return "";
+  const parts = [approval.summary];
+  for (const field of approval.fields ?? []) {
+    parts.push(field.label, field.value);
+  }
+  if (approval.details) parts.push(approval.details);
+  return parts.join("\n");
+}
+
+export function formatApprovalAnswerBody(
+  title: string,
+  decision: ChatThreadMessageApprovalDecision,
+  note?: string | null,
+): string {
+  const safeTitle = title.trim() || "Request";
+  if (decision === "approved") return `Approved: ${safeTitle}`;
+  const trimmedNote = note?.trim();
+  if (trimmedNote) return `Rejected: ${safeTitle} — ${trimmedNote}`;
+  return `Rejected: ${safeTitle}`;
+}
+
 function parseLinkPreviewsColumn(
   value: unknown,
 ): ChatThreadLinkPreview[] | undefined {
@@ -189,6 +236,8 @@ type MessageRow = {
   status: string;
   choices?: unknown;
   choicesAnswer?: unknown;
+  approval?: unknown;
+  approvalAnswer?: unknown;
   progress?: unknown;
   linkPreviews?: unknown;
   createdAt: Date;
@@ -210,6 +259,12 @@ function toWebhookMessage(
       ? {
           choices: message.choices,
           choicesAnswer: message.choicesAnswer ?? null,
+        }
+      : {}),
+    ...(message.approval
+      ? {
+          approval: message.approval,
+          approvalAnswer: message.approvalAnswer ?? null,
         }
       : {}),
     ...(message.progress ? { progress: message.progress } : {}),
@@ -239,6 +294,10 @@ function toMessage(
   const choicesAnswer = choices
     ? (parseChoicesAnswerColumn(row.choicesAnswer) ?? null)
     : undefined;
+  const approval = parseApprovalColumn(row.approval);
+  const approvalAnswer = approval
+    ? (parseApprovalAnswerColumn(row.approvalAnswer) ?? null)
+    : undefined;
   const progress = parseProgressColumn(row.progress);
   const linkPreviews = parseLinkPreviewsColumn(row.linkPreviews);
   return {
@@ -253,6 +312,7 @@ function toMessage(
     updatedAt: row.updatedAt.toISOString(),
     ...(mentions && mentions.length > 0 ? { mentions } : {}),
     ...(choices ? { choices, choicesAnswer: choicesAnswer ?? null } : {}),
+    ...(approval ? { approval, approvalAnswer: approvalAnswer ?? null } : {}),
     ...(progress ? { progress } : {}),
     ...(attachments && attachments.length > 0 ? { attachments } : {}),
     ...(linkPreviews ? { linkPreviews } : {}),
@@ -269,7 +329,13 @@ async function hydrateMessages(
   );
   return Promise.all(
     rows.map(async (row) => {
-      const mentions = await resolveChatMentionsInBody(workspaceId, row.body);
+      const approval = parseApprovalColumn(row.approval);
+      const mentionText = [row.body, approvalMentionSource(approval)]
+        .filter((part) => part.trim().length > 0)
+        .join("\n");
+      const mentions = mentionText
+        ? await resolveChatMentionsInBody(workspaceId, mentionText)
+        : [];
       return toMessage(row, mentions, attachmentMap.get(row.id));
     }),
   );
@@ -326,6 +392,12 @@ function publishShellMessageEvent(input: {
         ? {
             choices: input.message.choices,
             choicesAnswer: input.message.choicesAnswer ?? null,
+          }
+        : {}),
+      ...(input.message.approval
+        ? {
+            approval: input.message.approval,
+            approvalAnswer: input.message.approvalAnswer ?? null,
           }
         : {}),
       ...(input.message.progress
@@ -673,6 +745,7 @@ export async function deliverAgentChatWebhook(
 
 export type PostChatThreadMessageOptions = {
   choices?: ChatThreadMessageChoices;
+  approval?: ChatThreadMessageApproval;
   progress?: ChatThreadMessageProgress;
   attachmentIds?: string[];
   skipLinkPreviews?: boolean;
@@ -681,7 +754,7 @@ export type PostChatThreadMessageOptions = {
 /**
  * Post a message as Remon (user) or as the agent (assistant).
  * User messages look up the agent webhook dynamically and fire it.
- * `choices` is allowed only on agent (assistant) replies.
+ * `choices` / `approval` / `progress` are allowed only on agent (assistant) replies.
  */
 export async function postChatThreadMessage(
   workspaceId: string,
@@ -730,6 +803,9 @@ export async function postChatThreadMessage(
   if (options.choices && !isAgentReply) {
     throw badRequest("choices are only allowed on assistant messages");
   }
+  if (options.approval && !isAgentReply) {
+    throw badRequest("approval is only allowed on assistant messages");
+  }
   if (options.progress && !isAgentReply) {
     throw badRequest("progress is only allowed on assistant messages");
   }
@@ -754,6 +830,8 @@ export async function postChatThreadMessage(
         status: "done",
         choices: options.choices ?? null,
         choicesAnswer: null,
+        approval: options.approval ?? null,
+        approvalAnswer: null,
         progress: options.progress ?? null,
         linkPreviews: linkPreviews.length > 0 ? linkPreviews : null,
         createdAt: now,
@@ -774,9 +852,18 @@ export async function postChatThreadMessage(
       .where(eq(chatThreads.id, threadId))
       .returning();
 
+    const mentionText = [
+      text,
+      approvalMentionSource(options.approval),
+    ]
+      .filter((part) => part.trim().length > 0)
+      .join("\n");
+    const mentions = mentionText
+      ? await resolveChatMentionsInBody(workspaceId, mentionText)
+      : [];
     const message = toMessage(
       messageRow!,
-      undefined,
+      mentions,
       attachments.length > 0 ? attachments : undefined,
     );
     publishShellMessageEvent({
@@ -1124,6 +1211,109 @@ export async function answerChatThreadMessageChoices(
   }
 
   const body = cleaned.join(", ");
+  const reply = await postChatThreadMessage(
+    workspaceId,
+    threadId,
+    body,
+    { ...auth, apiKeyId: null },
+    deps,
+  );
+
+  return { message: answeredMessage, reply };
+}
+
+/**
+ * Owner answers an assistant approval card once, then posts a normal user
+ * message (`Approved: …` / `Rejected: …`) so the usual agent webhook fires.
+ */
+export async function answerChatThreadMessageApproval(
+  workspaceId: string,
+  threadId: string,
+  messageId: string,
+  decision: ChatThreadMessageApprovalDecision,
+  note: string | undefined,
+  auth: PostMessageAuth,
+  deps: DeliverDeps = {},
+): Promise<AnswerChatThreadMessageResult> {
+  const [row] = await db
+    .select()
+    .from(chatThreadMessages)
+    .where(
+      and(
+        eq(chatThreadMessages.workspaceId, workspaceId),
+        eq(chatThreadMessages.threadId, threadId),
+        eq(chatThreadMessages.id, messageId),
+        isNull(chatThreadMessages.deletedAt),
+      ),
+    )
+    .limit(1);
+  if (!row) throw notFound("Message");
+  if (row.role !== "assistant") {
+    throw badRequest("Only assistant messages can have approval");
+  }
+
+  const approval = parseApprovalColumn(row.approval);
+  if (!approval) throw badRequest("Message has no approval");
+
+  const existingAnswer = parseApprovalAnswerColumn(row.approvalAnswer);
+  if (existingAnswer) {
+    throw conflict("Approval already answered");
+  }
+
+  const trimmedNote = note?.trim() || undefined;
+
+  const now = deps.now?.() ?? new Date();
+  const answer: ChatThreadMessageApprovalAnswer = {
+    decision,
+    ...(trimmedNote ? { note: trimmedNote } : {}),
+    answeredAt: now.toISOString(),
+  };
+
+  const [updatedRow] = await db
+    .update(chatThreadMessages)
+    .set({
+      approvalAnswer: answer,
+      updatedAt: now,
+    })
+    .where(
+      and(
+        eq(chatThreadMessages.workspaceId, workspaceId),
+        eq(chatThreadMessages.threadId, threadId),
+        eq(chatThreadMessages.id, messageId),
+        isNull(chatThreadMessages.approvalAnswer),
+      ),
+    )
+    .returning();
+
+  if (!updatedRow) {
+    throw conflict("Approval already answered");
+  }
+
+  const answeredMessage = toMessage(updatedRow);
+  const [threadRow] = await db
+    .select({ agentId: chatThreads.agentId })
+    .from(chatThreads)
+    .where(
+      and(
+        eq(chatThreads.workspaceId, workspaceId),
+        eq(chatThreads.id, threadId),
+      ),
+    )
+    .limit(1);
+  if (threadRow) {
+    publishShellMessageEvent({
+      workspaceId,
+      threadId,
+      agentId: threadRow.agentId,
+      message: answeredMessage,
+    });
+  }
+
+  const body = formatApprovalAnswerBody(
+    approval.title,
+    decision,
+    trimmedNote,
+  );
   const reply = await postChatThreadMessage(
     workspaceId,
     threadId,

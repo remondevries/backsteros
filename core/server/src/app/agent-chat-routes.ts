@@ -4,7 +4,7 @@
 import type { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import {
-  answerChatThreadMessageChoicesInputSchema,
+  answerChatThreadMessageInputSchema,
   createChatThreadMessageInputSchema,
   deleteChatThreadMessagesInputSchema,
   getOrCreateChatThreadInputSchema,
@@ -248,6 +248,7 @@ export function registerAgentChatRoutes(app: Hono) {
         undefined,
         {
           choices: parsed.data.choices,
+          approval: parsed.data.approval,
           progress: parsed.data.progress,
           attachmentIds: parsed.data.attachmentIds,
           skipLinkPreviews: parsed.data.skipLinkPreviews,
@@ -339,7 +340,7 @@ export function registerAgentChatRoutes(app: Hono) {
   );
 
   /**
-   * Answer assistant choice buttons once — owner / Access keys only.
+   * Answer assistant choices or approval once — owner / Access keys only.
    * Records the answer and posts a normal user message (webhook path unchanged).
    */
   app.post(
@@ -353,30 +354,42 @@ export function registerAgentChatRoutes(app: Hono) {
       } catch {
         return c.json({ error: "Invalid JSON body", code: "bad_request" }, 400);
       }
-      const parsed = answerChatThreadMessageChoicesInputSchema.safeParse(body);
+      const parsed = answerChatThreadMessageInputSchema.safeParse(body);
       if (!parsed.success) {
         return c.json(
           { error: "Invalid answer payload", code: "bad_request" },
           400,
         );
       }
+      const postAuth = {
+        apiKeyId: null as string | null,
+        authorContactId: auth.contactId ?? null,
+        authorName: "Remon",
+      };
       try {
+        if ("decision" in parsed.data) {
+          const result = await agentChat.answerChatThreadMessageApproval(
+            auth.workspaceId,
+            c.req.param("threadId"),
+            c.req.param("messageId"),
+            parsed.data.decision,
+            parsed.data.note,
+            postAuth,
+          );
+          return c.json(result, 201);
+        }
         const result = await agentChat.answerChatThreadMessageChoices(
           auth.workspaceId,
           c.req.param("threadId"),
           c.req.param("messageId"),
           parsed.data.values,
-          {
-            apiKeyId: null,
-            authorContactId: auth.contactId ?? null,
-            authorName: "Remon",
-          },
+          postAuth,
         );
         return c.json(result, 201);
       } catch (error) {
         const status = errorStatus(error);
         const message =
-          error instanceof Error ? error.message : "Could not answer choices";
+          error instanceof Error ? error.message : "Could not answer message";
         return c.json({ error: message, code: errorCode(status) }, status);
       }
     },

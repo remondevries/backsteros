@@ -7,8 +7,8 @@ import {
   agentsListSchema,
   badRequestSchema,
   createAgentInputSchema,
-  answerChatThreadMessageChoicesInputSchema,
-  answerChatThreadMessageChoicesResultSchema,
+  answerChatThreadMessageInputSchema,
+  answerChatThreadMessageResultSchema,
   createChatThreadMessageInputSchema,
   createChatThreadMessageResultSchema,
   updateChatThreadMessageInputSchema,
@@ -226,9 +226,9 @@ export const agentsChatRoutes: AppRouter = c.router({
       threadId: z.string(),
       messageId: z.string(),
     }),
-    body: answerChatThreadMessageChoicesInputSchema,
+    body: answerChatThreadMessageInputSchema,
     responses: {
-      201: answerChatThreadMessageChoicesResultSchema,
+      201: answerChatThreadMessageResultSchema,
       400: badRequestSchema,
       401: errorSchema,
       403: errorSchema,
@@ -236,7 +236,7 @@ export const agentsChatRoutes: AppRouter = c.router({
       409: errorSchema,
     },
     summary:
-      "Answer assistant choice buttons once (owner); posts a normal user message",
+      "Answer assistant choices or approval once (owner); posts a normal user message",
   },
   updateChatThreadMessage: {
     method: "PATCH",

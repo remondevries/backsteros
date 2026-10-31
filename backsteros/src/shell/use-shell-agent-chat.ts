@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type {
   Agent,
   AnswerChatThreadMessageChoicesResult,
+  AnswerChatThreadMessageResult,
   ChatThreadMessage,
   ChatThreadWithMessages,
   CreateChatThreadMessageResult,
@@ -66,6 +67,12 @@ export type ShellAgentChatApi = {
     messageId: string,
     values: readonly string[],
   ) => Promise<AnswerChatThreadMessageChoicesResult>;
+  answerApproval: (
+    threadId: string,
+    messageId: string,
+    decision: "approved" | "rejected",
+    note?: string,
+  ) => Promise<AnswerChatThreadMessageResult>;
 };
 
 /**
@@ -253,6 +260,27 @@ export function useShellAgentChat(): ShellAgentChatApi {
     [],
   );
 
+  const answerApproval = useCallback(
+    async (
+      threadId: string,
+      messageId: string,
+      decision: "approved" | "rejected",
+      note?: string,
+    ) => {
+      return cloudCoreRequestJson<AnswerChatThreadMessageResult>(
+        `/api/v1/chat/threads/${encodeURIComponent(threadId)}/messages/${encodeURIComponent(messageId)}/answer`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            decision,
+            ...(note?.trim() ? { note: note.trim() } : {}),
+          }),
+        },
+      );
+    },
+    [],
+  );
+
   return useMemo(
     (): ShellAgentChatApi => ({
       agents,
@@ -267,11 +295,13 @@ export function useShellAgentChat(): ShellAgentChatApi {
       listMessages,
       deleteMessages,
       answerChoices,
+      answerApproval,
     }),
     [
       agents,
       agentsByContactId,
       agentsLoadError,
+      answerApproval,
       answerChoices,
       deleteMessages,
       getThread,

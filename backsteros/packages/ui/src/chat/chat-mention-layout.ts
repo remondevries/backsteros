@@ -826,19 +826,50 @@ export function taskMentionTokensInText(
   );
 }
 
+function approvalCardMentionTexts(part: {
+  type: string;
+  cardType?: string;
+  data?: Record<string, unknown>;
+}): string[] {
+  if (part.type !== "card" || part.cardType !== "approval") return [];
+  const data = part.data ?? {};
+  const texts: string[] = [];
+  if (typeof data.summary === "string") texts.push(data.summary);
+  if (typeof data.details === "string") texts.push(data.details);
+  if (Array.isArray(data.fields)) {
+    for (const field of data.fields) {
+      if (!field || typeof field !== "object") continue;
+      const record = field as { label?: unknown; value?: unknown };
+      if (typeof record.label === "string") texts.push(record.label);
+      if (typeof record.value === "string") texts.push(record.value);
+    }
+  }
+  return texts;
+}
+
 /** Unique below-card mention tokens on a message, in first-seen order. */
 export function belowCardMentionTokensInMessage(
   message: ChatUiMessage,
 ): ParsedMentionToken[] {
   const seen = new Set<string>();
   const out: ParsedMentionToken[] = [];
-  for (const part of message.parts) {
-    if (part.type !== "text") continue;
-    for (const token of belowCardMentionTokensInText(part.text)) {
+  const pushFromText = (text: string) => {
+    for (const token of belowCardMentionTokensInText(text)) {
       const key = mentionDedupeKey(token);
       if (!key || seen.has(key)) continue;
       seen.add(key);
       out.push(token);
+    }
+  };
+  for (const part of message.parts) {
+    if (part.type === "text") {
+      pushFromText(part.text);
+      continue;
+    }
+    if (part.type === "card") {
+      for (const text of approvalCardMentionTexts(part)) {
+        pushFromText(text);
+      }
     }
   }
   return out;
@@ -1062,6 +1093,26 @@ export function collectChatMentionCardsBelow(
 
     const card = asCardPart(part);
     if (!card || isInlineChatCardType(card.cardType)) continue;
+    // Interactive agent cards are rendered by dedicated components — do not
+    // treat them as entity mention cards. Still harvest mention tokens from
+    // approval summary / fields / details.
+    if (
+      card.cardType === "choices" ||
+      card.cardType === "approval" ||
+      card.cardType === "progress" ||
+      card.cardType === "attachments" ||
+      card.cardType === "link-previews"
+    ) {
+      for (const text of approvalCardMentionTexts(card)) {
+        for (const token of belowCardMentionTokensInText(text)) {
+          const key = mentionDedupeKey(token);
+          if (!key) continue;
+          const slot = ensureSlot(key);
+          if (!slot.token) slot.token = token;
+        }
+      }
+      continue;
+    }
     const key = cardPartDedupeKey(card);
     if (!key) continue;
     const slot = ensureSlot(key);

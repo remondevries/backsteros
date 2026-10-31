@@ -126,6 +126,50 @@ export const chatThreadMessageChoicesAnswerSchema = z.object({
   answeredAt: z.string().datetime(),
 });
 
+/** Approval card kinds (icon + framing on desktop). */
+export const chatThreadMessageApprovalKindSchema = z.enum([
+  "deploy",
+  "invoice",
+  "email",
+  "payment",
+  "delete",
+  "generic",
+]);
+
+export const chatThreadMessageApprovalFieldSchema = z.object({
+  label: z.string().trim().min(1).max(40),
+  value: z.string().trim().min(1).max(200),
+});
+
+/**
+ * Interactive approve/reject card on an assistant message. Optional alongside
+ * `choices`; desktop renders below the bubble.
+ */
+export const chatThreadMessageApprovalSchema = z.object({
+  title: z.string().trim().min(1).max(120),
+  kind: chatThreadMessageApprovalKindSchema.default("generic"),
+  summary: z.string().trim().min(1).max(500),
+  fields: z.array(chatThreadMessageApprovalFieldSchema).max(12).optional(),
+  /** Longer markdown / diff summary; collapsible on desktop. */
+  details: z.string().trim().min(1).max(8192).optional(),
+  approveLabel: z.string().trim().min(1).max(40).optional(),
+  rejectLabel: z.string().trim().min(1).max(40).optional(),
+  /** When true, Approve uses the danger button style. */
+  destructive: z.boolean().default(false),
+});
+
+export const chatThreadMessageApprovalDecisionSchema = z.enum([
+  "approved",
+  "rejected",
+]);
+
+/** Server-set once the owner answers; null while unanswered. */
+export const chatThreadMessageApprovalAnswerSchema = z.object({
+  decision: chatThreadMessageApprovalDecisionSchema,
+  note: z.string().trim().min(1).max(500).optional(),
+  answeredAt: z.string().datetime(),
+});
+
 /** Live progress card on an assistant message (agent updates via PATCH). */
 export const chatThreadMessageProgressStateSchema = z.enum([
   "running",
@@ -229,6 +273,10 @@ export const chatThreadMessageSchema = z.object({
   choices: chatThreadMessageChoicesSchema.optional(),
   /** Present (possibly null) when `choices` is set. */
   choicesAnswer: chatThreadMessageChoicesAnswerSchema.nullable().optional(),
+  /** Assistant-only approve/reject card. */
+  approval: chatThreadMessageApprovalSchema.optional(),
+  /** Present (possibly null) when `approval` is set. */
+  approvalAnswer: chatThreadMessageApprovalAnswerSchema.nullable().optional(),
   /** Assistant-only live progress / status card. */
   progress: chatThreadMessageProgressSchema.optional(),
   /** Files linked to this message (upload then reference by id). */
@@ -280,6 +328,11 @@ export const createChatThreadMessageInputSchema = z
      * Desktop renders buttons below the bubble; `body` is still the copy.
      */
     choices: chatThreadMessageChoicesSchema.optional(),
+    /**
+     * Assistant replies only. Approve/reject card below the bubble; owner
+     * answers via the same `/answer` endpoint as choices.
+     */
+    approval: chatThreadMessageApprovalSchema.optional(),
     /**
      * Assistant replies only. Live status / progress card below the bubble;
      * agents PATCH the same message to update it.
@@ -351,15 +404,34 @@ export const answerChatThreadMessageChoicesInputSchema = z.object({
   values: z.array(z.string().trim().min(1).max(500)).min(1).max(6),
 });
 
+/** Owner answers an assistant approval card (once). */
+export const answerChatThreadMessageApprovalInputSchema = z.object({
+  decision: chatThreadMessageApprovalDecisionSchema,
+  note: z.string().trim().min(1).max(500).optional(),
+});
+
+/**
+ * Body for `POST …/messages/{id}/answer` — choices (`values`) or approval
+ * (`decision`). Prefer approval when `decision` is present.
+ */
+export const answerChatThreadMessageInputSchema = z.union([
+  answerChatThreadMessageApprovalInputSchema,
+  answerChatThreadMessageChoicesInputSchema,
+]);
+
 export const answerChatThreadMessageChoicesResultSchema = z.object({
-  /** Assistant message with `choicesAnswer` recorded. */
+  /** Assistant message with `choicesAnswer` / `approvalAnswer` recorded. */
   message: chatThreadMessageSchema,
   /**
-   * Normal user-message post for the chosen value(s) — same webhook path as
-   * typing a reply. Agents need no new logic.
+   * Normal user-message post for the chosen value(s) / decision — same webhook
+   * path as typing a reply. Agents need no new logic.
    */
   reply: createChatThreadMessageResultSchema,
 });
+
+/** Alias — same shape for choices and approval answers. */
+export const answerChatThreadMessageResultSchema =
+  answerChatThreadMessageChoicesResultSchema;
 
 /** Soft-delete one or more messages in a thread (owner only). */
 export const deleteChatThreadMessagesInputSchema = z.object({
@@ -456,6 +528,21 @@ export type ChatThreadMessageChoices = z.infer<
 export type ChatThreadMessageChoicesAnswer = z.infer<
   typeof chatThreadMessageChoicesAnswerSchema
 >;
+export type ChatThreadMessageApprovalKind = z.infer<
+  typeof chatThreadMessageApprovalKindSchema
+>;
+export type ChatThreadMessageApprovalField = z.infer<
+  typeof chatThreadMessageApprovalFieldSchema
+>;
+export type ChatThreadMessageApproval = z.infer<
+  typeof chatThreadMessageApprovalSchema
+>;
+export type ChatThreadMessageApprovalDecision = z.infer<
+  typeof chatThreadMessageApprovalDecisionSchema
+>;
+export type ChatThreadMessageApprovalAnswer = z.infer<
+  typeof chatThreadMessageApprovalAnswerSchema
+>;
 export type ChatThreadMessageProgressState = z.infer<
   typeof chatThreadMessageProgressStateSchema
 >;
@@ -500,9 +587,16 @@ export type CreateChatThreadMessageResult = z.infer<
 export type AnswerChatThreadMessageChoicesInput = z.infer<
   typeof answerChatThreadMessageChoicesInputSchema
 >;
+export type AnswerChatThreadMessageApprovalInput = z.infer<
+  typeof answerChatThreadMessageApprovalInputSchema
+>;
+export type AnswerChatThreadMessageInput = z.infer<
+  typeof answerChatThreadMessageInputSchema
+>;
 export type AnswerChatThreadMessageChoicesResult = z.infer<
   typeof answerChatThreadMessageChoicesResultSchema
 >;
+export type AnswerChatThreadMessageResult = AnswerChatThreadMessageChoicesResult;
 export type DeleteChatThreadMessagesInput = z.infer<
   typeof deleteChatThreadMessagesInputSchema
 >;

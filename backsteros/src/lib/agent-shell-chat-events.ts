@@ -6,12 +6,16 @@
 import {
   chatThreadAttachmentSchema,
   chatThreadLinkPreviewSchema,
+  chatThreadMessageApprovalAnswerSchema,
+  chatThreadMessageApprovalSchema,
   chatThreadMessageChoicesAnswerSchema,
   chatThreadMessageChoicesSchema,
   chatThreadMessageProgressSchema,
   sanitizeChatThreadStatusLabel,
   type ChatThreadAttachment,
   type ChatThreadLinkPreview,
+  type ChatThreadMessageApproval,
+  type ChatThreadMessageApprovalAnswer,
   type ChatThreadMessageChoices,
   type ChatThreadMessageChoicesAnswer,
   type ChatThreadMessageProgress,
@@ -45,6 +49,8 @@ export type AgentShellChatMessagePayload = {
     updatedAt?: string;
     choices?: ChatThreadMessageChoices;
     choicesAnswer?: ChatThreadMessageChoicesAnswer | null;
+    approval?: ChatThreadMessageApproval;
+    approvalAnswer?: ChatThreadMessageApprovalAnswer | null;
     progress?: ChatThreadMessageProgress;
     attachments?: ChatThreadAttachment[];
     linkPreviews?: ChatThreadLinkPreview[];
@@ -119,6 +125,8 @@ export function parseAgentShellChatMessagePayload(
         updatedAt?: unknown;
         choices?: unknown;
         choicesAnswer?: unknown;
+        approval?: unknown;
+        approvalAnswer?: unknown;
         progress?: unknown;
         attachments?: unknown;
         linkPreviews?: unknown;
@@ -160,6 +168,20 @@ export function parseAgentShellChatMessagePayload(
           ? null
           : null
       : undefined;
+    const approvalParsed = chatThreadMessageApprovalSchema.safeParse(
+      parsed.message?.approval,
+    );
+    const approval = approvalParsed.success ? approvalParsed.data : undefined;
+    const approvalAnswerParsed = chatThreadMessageApprovalAnswerSchema.safeParse(
+      parsed.message?.approvalAnswer,
+    );
+    const approvalAnswer = approval
+      ? approvalAnswerParsed.success
+        ? approvalAnswerParsed.data
+        : parsed.message?.approvalAnswer == null
+          ? null
+          : null
+      : undefined;
     const progressParsed = chatThreadMessageProgressSchema.safeParse(
       parsed.message?.progress,
     );
@@ -188,6 +210,9 @@ export function parseAgentShellChatMessagePayload(
         createdAt,
         ...(updatedAt ? { updatedAt } : {}),
         ...(choices ? { choices, choicesAnswer: choicesAnswer ?? null } : {}),
+        ...(approval
+          ? { approval, approvalAnswer: approvalAnswer ?? null }
+          : {}),
         ...(progress ? { progress } : {}),
         ...(attachments.length > 0 ? { attachments } : {}),
         ...(linkPreviews.length > 0 ? { linkPreviews } : {}),
