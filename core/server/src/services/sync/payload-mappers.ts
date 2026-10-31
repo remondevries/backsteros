@@ -620,6 +620,32 @@ export function mapProjectUpsert(
     productionLocation: asNullableString(
       payloadValue(payload, "production_location", "productionLocation"),
     ),
+    development: (() => {
+      const raw = payloadValue(payload, "development", "development");
+      if (raw === undefined) return undefined;
+      if (raw == null) return null;
+      if (typeof raw === "string") {
+        try {
+          return JSON.parse(raw) as CreateProjectInput["development"];
+        } catch {
+          return null;
+        }
+      }
+      return raw as CreateProjectInput["development"];
+    })(),
+    production: (() => {
+      const raw = payloadValue(payload, "production", "production");
+      if (raw === undefined) return undefined;
+      if (raw == null) return null;
+      if (typeof raw === "string") {
+        try {
+          return JSON.parse(raw) as CreateProjectInput["production"];
+        } catch {
+          return null;
+        }
+      }
+      return raw as CreateProjectInput["production"];
+    })(),
     localLocation: asNullableString(
       payloadValue(payload, "local_location", "localLocation"),
     ),

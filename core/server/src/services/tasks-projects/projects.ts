@@ -1,6 +1,18 @@
 import path from "node:path";
 import { and, asc, desc, eq, gte, inArray, isNull, sql, type SQL } from "drizzle-orm";
-import type { CreateProjectInput, UpdateProjectInput } from "@backsteros/contracts";
+import type {
+  CreateProjectInput,
+  ProjectDevelopment,
+  ProjectProduction,
+  UpdateProjectInput,
+} from "@backsteros/contracts";
+import {
+  developmentFromLegacyLocations,
+  mirrorProjectLocationCompat,
+  normalizeProjectDevelopment,
+  normalizeProjectProduction,
+  productionFromLegacyLocations,
+} from "@backsteros/contracts";
 
 import {
   assertProjectVaultRenameAllowed,
@@ -29,8 +41,11 @@ export type ProjectWriteOptions = {
 };
 
 type ProjectLocationInput = {
+  development?: ProjectDevelopment | null;
+  production?: ProjectProduction | null;
   developmentLocation?: string | null;
   productionLocation?: string | null;
+  localWorkingDirectory?: string | null;
 };
 
 function assertCodebaseLocationFields(
@@ -38,6 +53,8 @@ function assertCodebaseLocationFields(
   input: ProjectLocationInput,
 ): void {
   const hasLocation =
+    input.development != null ||
+    input.production != null ||
     (input.developmentLocation != null &&
       String(input.developmentLocation).trim() !== "") ||
     (input.productionLocation != null &&
@@ -45,6 +62,109 @@ function assertCodebaseLocationFields(
   if (hasLocation && type !== "codebase") {
     throw new Error("LOCATION_REQUIRES_CODEBASE");
   }
+}
+
+function resolveStructuredLocations(input: {
+  type: string;
+  development?: ProjectDevelopment | null;
+  production?: ProjectProduction | null;
+  localWorkingDirectory?: string | null;
+  developmentLocation?: string | null;
+  productionLocation?: string | null;
+  previousLocalWorkingDirectory?: string | null;
+  previousDevelopment?: ProjectDevelopment | null;
+  previousProduction?: ProjectProduction | null;
+  leavingCodebase?: boolean;
+}): {
+  development: ProjectDevelopment | null;
+  production: ProjectProduction | null;
+  localWorkingDirectory: string | null;
+  developmentLocation: string | null;
+  productionLocation: string | null;
+} {
+  if (input.leavingCodebase || input.type !== "codebase") {
+    return {
+      development: null,
+      production: null,
+      localWorkingDirectory:
+        input.localWorkingDirectory !== undefined
+          ? input.localWorkingDirectory?.trim() || null
+          : (input.previousLocalWorkingDirectory ?? null),
+      developmentLocation: null,
+      productionLocation: null,
+    };
+  }
+
+  const previousDevelopment = input.previousDevelopment ?? null;
+  let development: ProjectDevelopment | null;
+  if (input.development !== undefined) {
+    development = normalizeProjectDevelopment(input.development);
+  } else if (
+    input.localWorkingDirectory !== undefined &&
+    input.developmentLocation === undefined &&
+    previousDevelopment?.kind === "server"
+  ) {
+    // Mac cwd-only patch: keep remote Development; mirror updates cwd only.
+    development = previousDevelopment;
+  } else if (
+    input.localWorkingDirectory !== undefined ||
+    input.developmentLocation !== undefined
+  ) {
+    const nextLocal =
+      input.localWorkingDirectory !== undefined
+        ? input.localWorkingDirectory
+        : input.previousLocalWorkingDirectory;
+    const nextRemote =
+      input.developmentLocation !== undefined
+        ? input.developmentLocation
+        : previousDevelopment?.kind === "server"
+          ? previousDevelopment.path
+          : null;
+    if (
+      input.developmentLocation !== undefined &&
+      nextRemote?.trim() &&
+      nextLocal?.trim() &&
+      nextRemote.trim() !== nextLocal.trim()
+    ) {
+      // Explicit distinct developmentLocation → remote Development; keep Mac cwd.
+      development = {
+        kind: "server",
+        path: nextRemote.trim(),
+        host: null,
+      };
+    } else {
+      development = developmentFromLegacyLocations({
+        localWorkingDirectory: nextLocal,
+        developmentLocation: nextRemote,
+      });
+    }
+  } else {
+    development = previousDevelopment;
+  }
+
+  const production =
+    input.production !== undefined
+      ? normalizeProjectProduction(input.production)
+      : input.productionLocation !== undefined
+        ? productionFromLegacyLocations({
+            productionLocation: input.productionLocation,
+          })
+        : (input.previousProduction ?? null);
+
+  const mirrors = mirrorProjectLocationCompat({
+    development,
+    production,
+    previousLocalWorkingDirectory:
+      input.localWorkingDirectory !== undefined
+        ? input.localWorkingDirectory
+        : input.previousLocalWorkingDirectory,
+  });
+
+  return {
+    development,
+    production,
+    ...mirrors,
+  };
 }
 
 /**
@@ -236,13 +356,24 @@ export async function createProject(
     throw new Error("GITHUB_REPO_REQUIRES_CODEBASE");
   }
   assertCodebaseLocationFields(type, {
+    development: input.development,
+    production: input.production,
     developmentLocation: input.developmentLocation,
     productionLocation: input.productionLocation,
+    localWorkingDirectory: input.localWorkingDirectory,
   });
 
   const consolidatedCreate = consolidateLocalPaths({
     localWorkingDirectory: input.localWorkingDirectory,
     localLocation: input.localLocation,
+  });
+  const createLocations = resolveStructuredLocations({
+    type,
+    development: input.development,
+    production: input.production,
+    localWorkingDirectory: consolidatedCreate.localWorkingDirectory,
+    developmentLocation: input.developmentLocation,
+    productionLocation: input.productionLocation,
   });
 
   const writeAt = options?.updatedAt ?? new Date();
@@ -268,9 +399,11 @@ export async function createProject(
       githubRepository: input.githubRepository ?? null,
       cloudflareZoneId: input.cloudflareZoneId ?? null,
       penpotProjectId: input.penpotProjectId ?? null,
-      localWorkingDirectory: consolidatedCreate.localWorkingDirectory ?? null,
-      developmentLocation: input.developmentLocation ?? null,
-      productionLocation: input.productionLocation ?? null,
+      localWorkingDirectory: createLocations.localWorkingDirectory,
+      developmentLocation: createLocations.developmentLocation,
+      productionLocation: createLocations.productionLocation,
+      development: createLocations.development,
+      production: createLocations.production,
       localLocation: null,
       developmentSetupStatus: input.developmentSetupStatus ?? null,
       developmentSetupError: input.developmentSetupError ?? null,
@@ -301,14 +434,28 @@ export async function createProject(
     // Deprecated localLocation is never written.
     const patch: {
       localWorkingDirectory?: string | null;
+      developmentLocation?: string | null;
+      development?: ProjectDevelopment | null;
       localLocation: null;
       updatedAt: Date;
     } = { localLocation: null, updatedAt: writeAt };
     if (!row.localWorkingDirectory?.trim()) {
-      patch.localWorkingDirectory = defaultWorkingDirectoryForType(
+      const cwd = defaultWorkingDirectoryForType(
         type,
         ensured.projectVaultPath,
       );
+      patch.localWorkingDirectory = cwd;
+      if (type === "codebase") {
+        const development: ProjectDevelopment = { kind: "local", path: cwd };
+        const mirrors = mirrorProjectLocationCompat({
+          development,
+          production: row.production ?? null,
+          previousLocalWorkingDirectory: cwd,
+        });
+        patch.development = development;
+        patch.developmentLocation = mirrors.developmentLocation;
+        patch.localWorkingDirectory = mirrors.localWorkingDirectory;
+      }
     }
     const [updated] = await executor
       .update(projects)
@@ -365,8 +512,11 @@ export async function updateProject(
   // Reject non-empty Dev/Prod location writes unless the resulting type is codebase.
   // When leaving codebase, existing Dev/Prod columns are cleared below.
   assertCodebaseLocationFields(nextType, {
+    development: input.development,
+    production: input.production,
     developmentLocation: input.developmentLocation,
     productionLocation: input.productionLocation,
+    localWorkingDirectory: input.localWorkingDirectory,
   });
 
   // Droping codebase type clears any linked repository.
@@ -386,10 +536,6 @@ export async function updateProject(
       : input.healthCheckDomain;
   const leavingCodebase =
     input.type !== undefined && input.type !== "codebase";
-  const developmentLocation = leavingCodebase
-    ? null
-    : input.developmentLocation;
-  const productionLocation = leavingCodebase ? null : input.productionLocation;
 
   // Fold deprecated localLocation into localWorkingDirectory; always clear column.
   const consolidatedUpdate = consolidateLocalPaths({
@@ -402,13 +548,33 @@ export async function updateProject(
         ? input.localLocation
         : existing.localLocation,
   });
-  const shouldPatchLocalWorkingDirectory =
+  const shouldPatchLocations =
+    leavingCodebase ||
+    input.development !== undefined ||
+    input.production !== undefined ||
     input.localWorkingDirectory !== undefined ||
     input.localLocation !== undefined ||
+    input.developmentLocation !== undefined ||
+    input.productionLocation !== undefined ||
     Boolean(existing.localLocation?.trim());
-  const nextLocalWorkingDirectory = shouldPatchLocalWorkingDirectory
-    ? (consolidatedUpdate.localWorkingDirectory ?? null)
-    : undefined;
+  const nextLocations = shouldPatchLocations
+    ? resolveStructuredLocations({
+        type: nextType,
+        leavingCodebase,
+        development: input.development,
+        production: input.production,
+        localWorkingDirectory:
+          input.localWorkingDirectory !== undefined ||
+          input.localLocation !== undefined
+            ? consolidatedUpdate.localWorkingDirectory
+            : undefined,
+        developmentLocation: input.developmentLocation,
+        productionLocation: input.productionLocation,
+        previousLocalWorkingDirectory: existing.localWorkingDirectory,
+        previousDevelopment: existing.development ?? null,
+        previousProduction: existing.production ?? null,
+      })
+    : null;
 
   // Leaving email type clears the provider category.
   const category =
@@ -456,19 +622,18 @@ export async function updateProject(
         githubRepository,
         cloudflareZoneId: input.cloudflareZoneId,
         penpotProjectId: input.penpotProjectId,
-        ...(nextLocalWorkingDirectory !== undefined
-          ? { localWorkingDirectory: nextLocalWorkingDirectory }
-          : {}),
-        // Clear deprecated localLocation when folding or leaving leftover values.
-        ...(shouldPatchLocalWorkingDirectory || existing.localLocation
-          ? { localLocation: null }
-          : {}),
-        ...(leavingCodebase || input.developmentLocation !== undefined
-          ? { developmentLocation }
-          : {}),
-        ...(leavingCodebase || input.productionLocation !== undefined
-          ? { productionLocation }
-          : {}),
+        ...(nextLocations
+          ? {
+              localWorkingDirectory: nextLocations.localWorkingDirectory,
+              developmentLocation: nextLocations.developmentLocation,
+              productionLocation: nextLocations.productionLocation,
+              development: nextLocations.development,
+              production: nextLocations.production,
+              localLocation: null,
+            }
+          : existing.localLocation
+            ? { localLocation: null }
+            : {}),
         ...(input.developmentSetupStatus !== undefined
           ? { developmentSetupStatus: input.developmentSetupStatus }
           : {}),
@@ -518,10 +683,17 @@ export async function updateProject(
             renamed.projectVaultPath,
           );
           if (nextCwd && nextCwd !== row.localWorkingDirectory) {
+            const nextDevelopment =
+              row.development?.kind === "local"
+                ? { ...row.development, path: nextCwd }
+                : row.development;
             const [cwdUpdated] = await tx
               .update(projects)
               .set({
                 localWorkingDirectory: nextCwd,
+                development: nextDevelopment ?? null,
+                developmentLocation:
+                  nextDevelopment?.path ?? row.developmentLocation,
                 updatedAt: writeAt,
               })
               .where(

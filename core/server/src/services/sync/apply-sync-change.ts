@@ -195,6 +195,8 @@ export async function applySyncChange(
           localWorkingDirectory: input.localWorkingDirectory,
           developmentLocation: input.developmentLocation,
           productionLocation: input.productionLocation,
+          development: input.development,
+          production: input.production,
           localLocation: input.localLocation,
           healthCheckMode: input.healthCheckMode,
           healthCheckDomain: input.healthCheckDomain,

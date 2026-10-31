@@ -48,7 +48,10 @@ Opening a project (desktop or mobile) calls `POST /api/v1/projects/:id/ensure-va
 so the folder + `.cursor` skills are created on the fly if missing. Every project
 vault includes `Codebase/`, `Documents/`, and `Updates/`. When
 `localWorkingDirectory` is empty, codebase projects default to
-`{vault}/Codebase` and other types to the vault project root.
+`{vault}/Codebase` (and Development `{ kind: "local", path }` mirrors that path)
+and other types to the vault project root. Prefer writing structured
+`development` / `production` on the project API; compat string columns stay
+mirrored for older clients and OS-106 path resolution.
 
 ## Object storage
 

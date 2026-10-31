@@ -92,6 +92,8 @@ export function toProject(row: DbProject): Project {
     localWorkingDirectory: row.localWorkingDirectory ?? null,
     developmentLocation: row.developmentLocation ?? null,
     productionLocation: row.productionLocation ?? null,
+    development: row.development ?? null,
+    production: row.production ?? null,
     localLocation: row.localLocation ?? null,
     developmentSetupStatus:
       row.developmentSetupStatus === "pending" ||

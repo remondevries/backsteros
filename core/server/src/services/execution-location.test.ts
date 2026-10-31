@@ -51,4 +51,42 @@ describe("execution-location", () => {
     assert.equal(executionLocationEnvironmentLabel("local"), null);
     assert.equal(executionLocationEnvironmentLabel(null), null);
   });
+
+  it("prefers structured development/production path over legacy mirrors", () => {
+    assert.equal(
+      resolveExecutionWorkspacePath(
+        {
+          ...project,
+          development: { kind: "server", path: "/srv/dev/app", host: null },
+          production: { path: "/srv/prod/app" },
+        },
+        "development",
+      ),
+      "/srv/dev/app",
+    );
+    assert.equal(
+      resolveExecutionWorkspacePath(
+        {
+          ...project,
+          development: {
+            kind: "local",
+            path: "/Users/me/Projects/app",
+          },
+          production: { path: "/srv/prod/app" },
+        },
+        "development",
+      ),
+      "/Users/me/Projects/app",
+    );
+    assert.equal(
+      resolveExecutionWorkspacePath(
+        {
+          ...project,
+          production: { path: "/srv/prod/app" },
+        },
+        "production",
+      ),
+      "/srv/prod/app",
+    );
+  });
 });

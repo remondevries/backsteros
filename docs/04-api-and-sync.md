@@ -101,6 +101,22 @@ Unknown filter ids return **400** (not an empty 200). Bad enum values
 (`status=bogus`, `mode=bogus`, `type=bogus` on search/documents) likewise return **400**
 with a `field` in the body.
 
+#### Codebase project locations (agents)
+
+`GET` / `PATCH /api/v1/projects/:id` expose GitHub + Development + Production for
+`type=codebase` projects:
+
+| Field | Shape |
+| --- | --- |
+| `githubRepository` | `owner/repo` or `null` |
+| `development` | `{ kind: "local" \| "server", path, host? }` or `null` — Local is folded into `kind: "local"` |
+| `production` | `{ server?, url?, deployMethod?, branch?, path? }` or `null` (at least one field when set) |
+
+Compat mirrors (still written): `localWorkingDirectory` (Development path when
+`kind=local`), `developmentLocation` / `productionLocation` (path mirrors for
+OS-106 execution resolution). Prefer structured `development` / `production` on
+write. See [03-data-model.md](03-data-model.md).
+
 #### `GET /search` (agents)
 
 | Param | Behaviour |

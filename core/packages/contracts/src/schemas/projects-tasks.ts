@@ -10,6 +10,26 @@ import {
   projectTypeSchema,
   taskStatusSchema,
 } from "./common.js";
+import {
+  nullableProjectDevelopmentSchema,
+  nullableProjectProductionSchema,
+} from "./project-locations.js";
+export {
+  PROJECT_DEVELOPMENT_KINDS,
+  projectDevelopmentKindSchema,
+  projectDevelopmentSchema,
+  projectProductionSchema,
+  nullableProjectDevelopmentSchema,
+  nullableProjectProductionSchema,
+  normalizeProjectDevelopment,
+  normalizeProjectProduction,
+  mirrorProjectLocationCompat,
+  developmentFromLegacyLocations,
+  productionFromLegacyLocations,
+  type ProjectDevelopmentKind,
+  type ProjectDevelopment,
+  type ProjectProduction,
+} from "./project-locations.js";
 /** Project short ID — 2–3 alphanumeric characters (any case; stored uppercase). */
 export const projectKeySchema = z
   .string()
@@ -44,15 +64,28 @@ export const projectSchema = z.object({
   /**
    * Absolute local folder for agent/PTY and `executionLocation = local`
    * (machine-specific). For codebase projects, defaults to `{vault}/Codebase`.
+   * Mirrored from {@link development} when `development.kind = local`.
    */
   localWorkingDirectory: z.string().max(4096).nullable(),
   /**
-   * Path on the development server for agent execution (codebase projects, OS-106).
-   * Distinct from {@link localWorkingDirectory}.
+   * @deprecated Prefer {@link development}.path. Kept as a mirror for OS-106
+   * resolvers and older clients.
    */
   developmentLocation: z.string().max(4096).nullable(),
-  /** Path on the production server for agent execution (codebase projects, OS-106). */
+  /**
+   * @deprecated Prefer {@link production}.path. Kept as a mirror for OS-106
+   * resolvers and older clients.
+   */
   productionLocation: z.string().max(4096).nullable(),
+  /**
+   * Codebase Development location (`local` Mac folder or `server` host+path).
+   * Folds the former Local chip into Development.
+   */
+  development: nullableProjectDevelopmentSchema,
+  /**
+   * Codebase Production deploy target (server, URL, method, branch, path).
+   */
+  production: nullableProjectProductionSchema,
   /**
    * @deprecated Folded into {@link localWorkingDirectory}. Still accepted on
    * write (mapped then cleared); always null on read after ensure/update.
@@ -125,6 +158,8 @@ export const createProjectSchema = z.object({
   localWorkingDirectory: z.string().max(4096).nullable().optional(),
   developmentLocation: z.string().max(4096).nullable().optional(),
   productionLocation: z.string().max(4096).nullable().optional(),
+  development: nullableProjectDevelopmentSchema.optional(),
+  production: nullableProjectProductionSchema.optional(),
   /** @deprecated Folded into localWorkingDirectory on write. */
   localLocation: z.string().max(4096).nullable().optional(),
   /** Legacy; core no longer writes these on location set. */

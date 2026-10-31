@@ -34,6 +34,8 @@ const projects = new Table(
     local_working_directory: column.text,
     development_location: column.text,
     production_location: column.text,
+    development: column.text,
+    production: column.text,
     local_location: column.text,
     development_setup_status: column.text,
     development_setup_error: column.text,

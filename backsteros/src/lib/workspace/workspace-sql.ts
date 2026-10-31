@@ -70,6 +70,8 @@ export const PROJECT_LIST_COLUMNS = [
   "local_working_directory",
   "development_location",
   "production_location",
+  "development",
+  "production",
   "local_location",
   "development_setup_status",
   "development_setup_error",

@@ -145,6 +145,11 @@ function toApiProject(project: CodebaseWorkbenchProject): ApiProject {
     localWorkingDirectory: project.localWorkingDirectory ?? null,
     developmentLocation: project.developmentLocation ?? null,
     productionLocation: project.productionLocation ?? null,
+    development:
+      (project as { development?: ApiProject["development"] }).development ??
+      null,
+    production:
+      (project as { production?: ApiProject["production"] }).production ?? null,
     localLocation: project.localLocation ?? null,
     developmentSetupStatus: project.developmentSetupStatus ?? null,
     developmentSetupError: project.developmentSetupError ?? null,

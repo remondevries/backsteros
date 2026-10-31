@@ -77,15 +77,87 @@ import type { SelectProjectFileHandler } from "./select-project-file.js";
 import { TerminalDirectoryGate } from "./terminal-directory-gate.js";
 import { useRequestResource } from "./use-request-resource.js";
 
-const LOCATION_FIELD_TARGET: Record<
-  "developmentLocation" | "productionLocation",
-  LocationFsTarget
-> = {
-  developmentLocation: "development",
-  productionLocation: "production",
-};
-
 const NONE_REPO_VALUE = "__none__";
+
+function parseJsonObjectField(value: unknown): Record<string, unknown> | null {
+  if (value == null) return null;
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value) as unknown;
+      return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+        ? (parsed as Record<string, unknown>)
+        : null;
+    } catch {
+      return null;
+    }
+  }
+  if (typeof value === "object" && !Array.isArray(value)) {
+    return value as Record<string, unknown>;
+  }
+  return null;
+}
+
+function projectDevelopment(
+  project: ApiProject,
+): { kind: "local" | "server"; path: string; host?: string | null } | null {
+  const raw = parseJsonObjectField(
+    (project as { development?: unknown }).development,
+  );
+  if (raw) {
+    const kind = raw.kind === "server" ? "server" : raw.kind === "local" ? "local" : null;
+    const path = typeof raw.path === "string" ? raw.path.trim() : "";
+    if (kind && path) {
+      return {
+        kind,
+        path,
+        host:
+          typeof raw.host === "string" && raw.host.trim()
+            ? raw.host.trim()
+            : null,
+      };
+    }
+  }
+  const local = project.localWorkingDirectory?.trim() || null;
+  const remote = project.developmentLocation?.trim() || null;
+  if (local && remote && local !== remote) {
+    return { kind: "local", path: local };
+  }
+  if (local) return { kind: "local", path: local };
+  if (remote) return { kind: "server", path: remote, host: null };
+  return null;
+}
+
+function projectProduction(
+  project: ApiProject,
+): {
+  server?: string | null;
+  url?: string | null;
+  deployMethod?: string | null;
+  branch?: string | null;
+  path?: string | null;
+} | null {
+  const raw = parseJsonObjectField(
+    (project as { production?: unknown }).production,
+  );
+  if (raw) {
+    const next = {
+      server: typeof raw.server === "string" ? raw.server : null,
+      url: typeof raw.url === "string" ? raw.url : null,
+      deployMethod:
+        typeof raw.deployMethod === "string" ? raw.deployMethod : null,
+      branch: typeof raw.branch === "string" ? raw.branch : null,
+      path: typeof raw.path === "string" ? raw.path : null,
+    };
+    const hasAny = Object.values(next).some(
+      (entry) => typeof entry === "string" && entry.trim().length > 0,
+    );
+    return hasAny ? next : null;
+  }
+  const path = project.productionLocation?.trim() || null;
+  return path
+    ? { path, server: null, url: null, deployMethod: null, branch: null }
+    : null;
+}
 
 const CODEBASE_LIST_TAB_OPTIONS = [
   { value: "overview" as const, label: "Overview" },
@@ -207,14 +279,17 @@ function withPickedWorkingDirectory(
   project: ApiProject,
   directory: string,
 ): ApiProject {
+  const development = { kind: "local" as const, path: directory };
   return {
     ...project,
     localWorkingDirectory: directory,
+    developmentLocation: directory,
+    development,
     updatedAt: new Date().toISOString(),
   };
 }
 
-function ProjectWorkingDirectoryField({
+function ProjectDevelopmentField({
   project,
   onProjectUpdated,
   requestJson,
@@ -226,35 +301,69 @@ function ProjectWorkingDirectoryField({
   const [saving, setSaving] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const directory = normalizeWorkingDirectory(project.localWorkingDirectory);
-
+  const development = projectDevelopment(project);
+  const kind = development?.kind ?? "local";
+  const directory = normalizeWorkingDirectory(
+    development?.path ?? project.localWorkingDirectory,
+  );
   const hasDirectory = Boolean(directory);
   const basename = hasDirectory ? workingDirectoryLabel(directory!) : null;
-  const label = basename ?? "Set folder…";
+  const label = basename
+    ? kind === "server"
+      ? `Server: ${basename}`
+      : basename
+    : "Set folder…";
+  const target: LocationFsTarget = kind === "server" ? "development" : "local";
 
   async function saveLocation(next: string | null) {
     if (!next) return;
     setSaving(true);
     setError(null);
     const previous = project;
+    const body =
+      kind === "server"
+        ? {
+            development: {
+              kind: "server" as const,
+              path: next,
+              host: development?.host ?? null,
+            },
+          }
+        : {
+            development: { kind: "local" as const, path: next },
+          };
     try {
-      // Apply the picked path immediately — leader-first PATCH can return
-      // a stale row before local replication catches up, which left the
-      // chip stuck on the previous value (or empty).
-      onProjectUpdated(withPickedWorkingDirectory(project, next));
+      onProjectUpdated(
+        kind === "local"
+          ? withPickedWorkingDirectory(project, next)
+          : {
+              ...project,
+              development: body.development,
+              developmentLocation: next,
+              updatedAt: new Date().toISOString(),
+            },
+      );
       const updated = await requestJson<ApiProject>(
         `/api/v1/projects/${encodeURIComponent(project.id)}`,
         {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ localWorkingDirectory: next }),
+          body: JSON.stringify(body),
         },
       );
-      onProjectUpdated(withPickedWorkingDirectory(updated, next));
+      onProjectUpdated(
+        kind === "local"
+          ? withPickedWorkingDirectory(updated, next)
+          : {
+              ...updated,
+              development: body.development,
+              developmentLocation: next,
+            },
+      );
       setPickerOpen(false);
     } catch (err) {
       onProjectUpdated(previous);
-      setError(apiErrorMessage(err) || "Could not save working directory.");
+      setError(apiErrorMessage(err) || "Could not save Development location.");
     } finally {
       setSaving(false);
     }
@@ -275,14 +384,14 @@ function ProjectWorkingDirectoryField({
         title={
           error ??
           directory ??
-          "Local working directory (required before starting an agent)"
+          "Development location (required before starting an agent)"
         }
         aria-label={
           error
             ? error
             : hasDirectory
-              ? `Local location: ${directory}`
-              : "Choose local working directory (required before starting an agent)"
+              ? `Development location: ${directory}`
+              : "Choose Development location (required before starting an agent)"
         }
         aria-invalid={error ? true : undefined}
         disabled={saving}
@@ -295,10 +404,10 @@ function ProjectWorkingDirectoryField({
       </button>
       <LocationFolderPicker
         open={pickerOpen}
-        target="local"
-        title="Local location"
+        target={target}
+        title="Development location"
         initialPath={directory}
-        projectId={project.id}
+        projectId={target === "local" ? project.id : null}
         requestJson={requestJson}
         onClose={() => setPickerOpen(false)}
         onSelect={(path) => {
@@ -309,54 +418,61 @@ function ProjectWorkingDirectoryField({
   );
 }
 
-function ProjectLocationPathField({
+function ProjectProductionField({
   project,
-  field,
-  labelPrefix,
-  emptyLabel,
   onProjectUpdated,
   requestJson,
 }: {
   project: ApiProject;
-  field: "developmentLocation" | "productionLocation";
-  labelPrefix: string;
-  emptyLabel: string;
   onProjectUpdated: (project: ApiProject) => void;
   requestJson: CodebaseRequestJson;
 }) {
   const [saving, setSaving] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const value = project[field]?.trim() || null;
+  const production = projectProduction(project);
+  const value = production?.path?.trim() || null;
   const basename = value ? workingDirectoryLabel(value) : null;
-  const label = basename
-    ? labelPrefix
-      ? `${labelPrefix}: ${basename}`
-      : basename
-    : emptyLabel;
-  const target = LOCATION_FIELD_TARGET[field];
+  const label = basename ?? "Set folder…";
 
   async function saveLocation(next: string | null) {
     setSaving(true);
     setError(null);
     const previous = project;
+    const body = {
+      production: next
+        ? {
+            server: production?.server ?? null,
+            url: production?.url ?? null,
+            deployMethod: production?.deployMethod ?? null,
+            branch: production?.branch ?? null,
+            path: next,
+          }
+        : null,
+    };
     try {
-      onProjectUpdated({ ...project, [field]: next });
+      onProjectUpdated({
+        ...project,
+        production: body.production,
+        productionLocation: next,
+      });
       const updated = await requestJson<ApiProject>(
         `/api/v1/projects/${encodeURIComponent(project.id)}`,
         {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ [field]: next }),
+          body: JSON.stringify(body),
         },
       );
-      onProjectUpdated({ ...updated, [field]: next });
+      onProjectUpdated({
+        ...updated,
+        production: body.production,
+        productionLocation: next,
+      });
       setPickerOpen(false);
     } catch (err) {
       onProjectUpdated(previous);
-      setError(
-        apiErrorMessage(err) || `Could not save ${labelPrefix} location.`,
-      );
+      setError(apiErrorMessage(err) || "Could not save Production location.");
     } finally {
       setSaving(false);
     }
@@ -373,9 +489,10 @@ function ProjectLocationPathField({
         ]
           .filter(Boolean)
           .join(" ")}
-        title={error ?? value ?? emptyLabel}
+        title={error ?? value ?? "Set Production location"}
         aria-label={
-          error ?? (value ? `${labelPrefix} location: ${value}` : emptyLabel)
+          error ??
+          (value ? `Production location: ${value}` : "Set Production location")
         }
         aria-invalid={error ? true : undefined}
         disabled={saving}
@@ -388,18 +505,10 @@ function ProjectLocationPathField({
       </button>
       <LocationFolderPicker
         open={pickerOpen}
-        target={target}
-        title={
-          field === "developmentLocation"
-            ? "Development location"
-            : field === "productionLocation"
-              ? "Production location"
-              : labelPrefix
-                ? `${labelPrefix} location`
-                : "Location"
-        }
+        target="production"
+        title="Production location"
         initialPath={value}
-        projectId={target === "local" ? project.id : null}
+        projectId={null}
         requestJson={requestJson}
         onClose={() => setPickerOpen(false)}
         onSelect={(path) => {
@@ -1991,29 +2100,16 @@ export function CodebaseProjectOverviewPane({
                         githubRefreshToken={githubRefreshToken}
                       />
                     </EntityOverviewField>
-                    <EntityOverviewField label="Local">
-                      <ProjectWorkingDirectoryField
-                        project={project}
-                        onProjectUpdated={onProjectUpdated}
-                        requestJson={requestJson}
-                      />
-                    </EntityOverviewField>
                     <EntityOverviewField label="Development">
-                      <ProjectLocationPathField
+                      <ProjectDevelopmentField
                         project={project}
-                        field="developmentLocation"
-                        labelPrefix=""
-                        emptyLabel="Set folder…"
                         onProjectUpdated={onProjectUpdated}
                         requestJson={requestJson}
                       />
                     </EntityOverviewField>
                     <EntityOverviewField label="Production">
-                      <ProjectLocationPathField
+                      <ProjectProductionField
                         project={project}
-                        field="productionLocation"
-                        labelPrefix=""
-                        emptyLabel="Set folder…"
                         onProjectUpdated={onProjectUpdated}
                         requestJson={requestJson}
                       />

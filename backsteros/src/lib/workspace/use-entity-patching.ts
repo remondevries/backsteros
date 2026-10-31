@@ -1080,6 +1080,8 @@ export function useWorkspaceEntityPatching({
           "localWorkingDirectory" in values ||
           "developmentLocation" in values ||
           "productionLocation" in values ||
+          "development" in values ||
+          "production" in values ||
           "localLocation" in values ||
           "healthCheckMode" in values ||
           "healthCheckDomain" in values ||

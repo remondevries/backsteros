@@ -15,6 +15,16 @@ export type ProjectLocationFields = {
   readonly localLocation?: string | null;
   /** Canonical local path (agent/PTY cwd and `executionLocation = local`). */
   readonly localWorkingDirectory?: string | null;
+  /** Structured Development location (preferred over developmentLocation). */
+  readonly development?: {
+    readonly kind: "local" | "server";
+    readonly path: string;
+    readonly host?: string | null;
+  } | null;
+  /** Structured Production deploy target (preferred path over productionLocation). */
+  readonly production?: {
+    readonly path?: string | null;
+  } | null;
 };
 
 export function isExecutionLocation(
@@ -32,12 +42,19 @@ export function resolveExecutionWorkspacePath(
   executionLocation: ExecutionLocation | null | undefined,
 ): string | null {
   if (executionLocation === "development") {
-    return trimPath(project.developmentLocation);
+    return (
+      trimPath(project.development?.path) ??
+      trimPath(project.developmentLocation)
+    );
   }
   if (executionLocation === "production") {
-    return trimPath(project.productionLocation);
+    return (
+      trimPath(project.production?.path) ??
+      trimPath(project.productionLocation)
+    );
   }
-  // `local` and unset both use the single canonical local working directory.
+  // `local` and unset both use the single canonical local working directory
+  // (mirrored from development when kind=local).
   return trimPath(project.localWorkingDirectory);
 }
 

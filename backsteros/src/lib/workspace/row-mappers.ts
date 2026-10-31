@@ -220,6 +220,18 @@ export function mapProject(project: ApiProject): ProjectOverviewRowProject & {
   localWorkingDirectory?: string | null;
   developmentLocation?: string | null;
   productionLocation?: string | null;
+  development?: {
+    kind: "local" | "server";
+    path: string;
+    host?: string | null;
+  } | null;
+  production?: {
+    server?: string | null;
+    url?: string | null;
+    deployMethod?: string | null;
+    branch?: string | null;
+    path?: string | null;
+  } | null;
   localLocation?: string | null;
   developmentSetupStatus?: "pending" | "ready" | "failed" | null;
   developmentSetupError?: string | null;
@@ -296,6 +308,60 @@ export function mapProject(project: ApiProject): ProjectOverviewRowProject & {
     }
   }
 
+  const parseLocationObject = (value: unknown): Record<string, unknown> | null => {
+    if (value == null) return null;
+    if (typeof value === "string") {
+      try {
+        const parsed = JSON.parse(value) as unknown;
+        return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+          ? (parsed as Record<string, unknown>)
+          : null;
+      } catch {
+        return null;
+      }
+    }
+    if (typeof value === "object" && !Array.isArray(value)) {
+      return value as Record<string, unknown>;
+    }
+    return null;
+  };
+
+  const developmentRaw = parseLocationObject(
+    (project as { development?: unknown }).development,
+  );
+  const development =
+    developmentRaw &&
+    (developmentRaw.kind === "local" || developmentRaw.kind === "server") &&
+    typeof developmentRaw.path === "string" &&
+    developmentRaw.path.trim()
+      ? {
+          kind: developmentRaw.kind as "local" | "server",
+          path: developmentRaw.path.trim(),
+          host:
+            typeof developmentRaw.host === "string" && developmentRaw.host.trim()
+              ? developmentRaw.host.trim()
+              : null,
+        }
+      : ((project as { development?: null }).development ?? null);
+
+  const productionRaw = parseLocationObject(
+    (project as { production?: unknown }).production,
+  );
+  const production = productionRaw
+    ? {
+        server:
+          typeof productionRaw.server === "string" ? productionRaw.server : null,
+        url: typeof productionRaw.url === "string" ? productionRaw.url : null,
+        deployMethod:
+          typeof productionRaw.deployMethod === "string"
+            ? productionRaw.deployMethod
+            : null,
+        branch:
+          typeof productionRaw.branch === "string" ? productionRaw.branch : null,
+        path: typeof productionRaw.path === "string" ? productionRaw.path : null,
+      }
+    : ((project as { production?: null }).production ?? null);
+
   return {
     id: project.id,
     key: project.key,
@@ -310,6 +376,8 @@ export function mapProject(project: ApiProject): ProjectOverviewRowProject & {
     localWorkingDirectory: project.localWorkingDirectory ?? null,
     developmentLocation: project.developmentLocation ?? null,
     productionLocation: project.productionLocation ?? null,
+    development,
+    production,
     localLocation: project.localLocation ?? null,
     developmentSetupStatus: project.developmentSetupStatus ?? null,
     developmentSetupError: project.developmentSetupError ?? null,

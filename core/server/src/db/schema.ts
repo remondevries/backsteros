@@ -843,14 +843,37 @@ export const projects = pgTable(
     /**
      * Absolute path on the developer's machine for agent/PTY cwd and local
      * execution. Not multi-device; for codebase defaults to `{vault}/Codebase`.
+     * Mirrored from {@link development} when `development.kind = local`.
      */
     localWorkingDirectory: text("local_working_directory"),
     /**
-     * Remote execution paths for `type = codebase` (OS-106).
-     * Local runs use {@link localWorkingDirectory} only.
+     * @deprecated Prefer {@link development}.path — kept as OS-106 / client mirror.
      */
     developmentLocation: text("development_location"),
+    /**
+     * @deprecated Prefer {@link production}.path — kept as OS-106 / client mirror.
+     */
     productionLocation: text("production_location"),
+    /**
+     * Codebase Development: `{ kind: local|server, path, host? }`.
+     * Folds the former Local chip into Development.
+     */
+    development: jsonb("development").$type<{
+      kind: "local" | "server";
+      path: string;
+      host?: string | null;
+    } | null>(),
+    /**
+     * Codebase Production deploy target:
+     * `{ server?, url?, deployMethod?, branch?, path? }`.
+     */
+    production: jsonb("production").$type<{
+      server?: string | null;
+      url?: string | null;
+      deployMethod?: string | null;
+      branch?: string | null;
+      path?: string | null;
+    } | null>(),
     /** @deprecated Folded into local_working_directory; kept for sync compat. */
     localLocation: text("local_location"),
     /** Legacy: `pending` | `ready` | `failed` — core no longer auto-clones. */
