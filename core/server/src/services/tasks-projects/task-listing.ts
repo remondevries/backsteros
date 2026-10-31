@@ -32,8 +32,13 @@ import {
   decodeUpdatedAtCursor,
   encodeUpdatedAtCursor,
   LIST_DEFAULT_LIMIT,
+  LIST_MAX_LIMIT,
   type ParsedDueTasksListQuery,
 } from "../../lib/list-query.js";
+
+/** Hard cap for legacy (non-paginated) task lists and bootstrap pages (OS-162). */
+export const LEGACY_TASK_LIST_HARD_CAP = LIST_MAX_LIMIT;
+
 export async function listTasks(
   workspaceId: string,
   filters: {
@@ -47,6 +52,11 @@ export async function listTasks(
     inbox?: boolean;
     support?: boolean;
     notification?: boolean;
+    /**
+     * Page size. Defaults to {@link LEGACY_TASK_LIST_HARD_CAP}; never exceeds it.
+     * Prefer `listTasksPaginated` for cursor pagination.
+     */
+    limit?: number;
   } = {},
   executor: DbExecutor = db,
 ) {
@@ -83,11 +93,24 @@ export async function listTasks(
     conditions.push(eq(tasks.notification, filters.notification));
   }
 
+  const limit = Math.min(
+    Math.max(
+      1,
+      Math.trunc(
+        filters.limit != null && Number.isFinite(filters.limit)
+          ? filters.limit
+          : LEGACY_TASK_LIST_HARD_CAP,
+      ),
+    ),
+    LEGACY_TASK_LIST_HARD_CAP,
+  );
+
   return executor
     .select()
     .from(tasks)
     .where(and(...conditions))
-    .orderBy(tasks.sortOrder, desc(tasks.updatedAt));
+    .orderBy(tasks.sortOrder, desc(tasks.updatedAt))
+    .limit(limit);
 }
 
 /** contactId → display name (name, else email). Soft-deleted contacts omitted. */

@@ -1081,19 +1081,20 @@ export async function searchDocuments(input: {
 }) {
   const pattern = `%${input.q}%`;
   const tsQuery = documentsPlainQuerySql(input.q);
+  // FTS (GIN on search_tsv) + title/path/snippet ILIKE only — no properties::text.
   const conditions = [
     eq(documents.workspaceId, input.workspaceId),
     isNull(documents.deletedAt),
     or(
-      ilike(documents.title, pattern),
-      ilike(documents.path, pattern),
-      ilike(documents.snippet, pattern),
       sql`EXISTS (
         SELECT 1 FROM document_search_index dsi
         WHERE dsi.document_id = ${documents.id}
           AND dsi.search_tsv @@ ${tsQuery}
       )`,
-    ),
+      ilike(documents.title, pattern),
+      ilike(documents.path, pattern),
+      ilike(documents.snippet, pattern),
+    )!,
   ];
 
   if (input.type) {
@@ -1302,7 +1303,8 @@ export async function retrieveDocuments(input: {
     eq(documents.workspaceId, input.workspaceId),
     isNull(documents.deletedAt),
     eq(documents.kind, "document"),
-    // FTS includes body lexemes; ILIKE keeps substring hits on metadata.
+    // FTS (body) + title/path/snippet ILIKE. No properties::text ILIKE — that
+    // cast defeats indexes and dominated retrieve cost (OS-162 / audit #7).
     or(
       sql`EXISTS (
         SELECT 1 FROM document_search_index dsi
@@ -1312,7 +1314,6 @@ export async function retrieveDocuments(input: {
       ilike(documents.title, pattern),
       ilike(documents.path, pattern),
       ilike(documents.snippet, pattern),
-      sql`(${documents.properties})::text ILIKE ${pattern}`,
     )!,
   ];
   if (input.propertyType?.length) {
@@ -1347,7 +1348,7 @@ export async function retrieveDocuments(input: {
     )
     .where(and(...conditions))
     .orderBy(
-      // Prefer title/path hits over snippet/properties, then FTS rank, then recency.
+      // Prefer title/path/snippet hits, then FTS rank, then recency.
       sql`(CASE
         WHEN ${documents.title} ILIKE ${pattern} THEN 3
         WHEN ${documents.path} ILIKE ${pattern} THEN 2

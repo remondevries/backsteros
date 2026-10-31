@@ -731,6 +731,10 @@ export const syncBootstrapSchema = z.object({
   /** Alias of `cursor` — Linear-style lastSyncId on this core. */
   last_sync_id: z.number().int().optional(),
   spaces_configured: z.boolean(),
+  /** True when any snapshot collection hit the server page cap (OS-162). */
+  truncated: z.boolean().optional(),
+  has_more: z.boolean().optional(),
+  page_size: z.number().int().positive().optional(),
   snapshot: z.object({
     projects: z.array(syncProjectSchema),
     tasks: z.array(syncTaskSchema),
