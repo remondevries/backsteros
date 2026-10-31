@@ -14,7 +14,12 @@ export const desktopManualChunks: ManualChunksOption = (id) => {
   ) {
     return "vendor-powersync";
   }
-  if (id.includes("@codemirror/")) {
+  if (
+    id.includes("@codemirror/") ||
+    id.includes("@uiw/react-codemirror") ||
+    id.includes("@uiw/codemirror") ||
+    id.includes("@replit/codemirror")
+  ) {
     return "vendor-codemirror";
   }
   if (id.includes("pdfjs") || id.includes("react-pdf")) {
