@@ -2668,30 +2668,21 @@ function ProjectDetailScreen({
         <PropertyInlineChip
           label={(() => {
             const raw = (project as { channel?: unknown }).channel;
-            let channel: { uri?: string; name?: string | null } | null = null;
+            let uri = "";
             if (raw && typeof raw === "object" && !Array.isArray(raw)) {
-              channel = raw as { uri?: string; name?: string | null };
+              uri =
+                typeof (raw as { uri?: unknown }).uri === "string"
+                  ? ((raw as { uri: string }).uri.trim() || "")
+                  : "";
             } else if (typeof raw === "string" && raw.trim()) {
               try {
-                channel = JSON.parse(raw) as {
-                  uri?: string;
-                  name?: string | null;
-                };
+                const parsed = JSON.parse(raw) as { uri?: string };
+                uri = parsed.uri?.trim() || "";
               } catch {
-                channel = { uri: raw };
+                uri = raw.trim();
               }
             }
-            const name = channel?.name?.trim();
-            if (name) return name;
-            const uri = channel?.uri?.trim() || "";
-            if (!uri) return "No channel";
-            if (uri.startsWith("grokbot://")) return "Grok Bot room";
-            const colon = uri.indexOf(":");
-            if (colon > 0) {
-              const scheme = uri.slice(0, colon);
-              return scheme.charAt(0).toUpperCase() + scheme.slice(1);
-            }
-            return "Channel";
+            return uri ? "Active" : "Inactive";
           })()}
         />
       </PropertyFieldGroup>
