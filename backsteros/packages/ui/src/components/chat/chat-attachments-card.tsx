@@ -286,3 +286,84 @@ export function findAttachmentsCardPart(
   }
   return null;
 }
+
+/** Letter PDF path served by local-core (`GET /api/v1/letters/:id/pdf`). */
+export function letterPdfApiPath(letterId: string): string {
+  return `/api/v1/letters/${encodeURIComponent(letterId)}/pdf`;
+}
+
+/**
+ * First-page PDF thumb for expanded letter chat cards. Uses the same
+ * resolve / thumb / openPdf hooks as chat PDF attachments. Renders nothing
+ * when the letter has no PDF or resolve fails (no empty broken box).
+ */
+export function ChatLetterPdfPreview({
+  letterId,
+  filename,
+  enabled,
+}: {
+  letterId: string;
+  filename: string;
+  /** Only fetch while the parent expandable card is open. */
+  enabled: boolean;
+}) {
+  const { openPdf, resolveUrl, renderPdfThumb } = useContext(
+    ChatAttachmentActionsContext,
+  );
+  const [resolved, setResolved] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    if (!enabled || !resolveUrl || !letterId.trim()) {
+      setResolved(null);
+      setFailed(false);
+      return;
+    }
+    let cancelled = false;
+    let objectUrl: string | null = null;
+    setResolved(null);
+    setFailed(false);
+    void (async () => {
+      try {
+        const next = await resolveUrl(letterPdfApiPath(letterId));
+        if (cancelled) return;
+        if (next.startsWith("blob:")) objectUrl = next;
+        setResolved(next);
+      } catch {
+        if (!cancelled) {
+          setResolved(null);
+          setFailed(true);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [enabled, letterId, resolveUrl]);
+
+  if (!enabled || failed || !resolved || !renderPdfThumb) {
+    return null;
+  }
+
+  const label = filename.trim() || "Letter.pdf";
+
+  return (
+    <button
+      type="button"
+      className="chat-ui-file-card is-pdf chat-ui-card--letter__pdf"
+      onClick={() => {
+        if (!openPdf) return;
+        void openPdf(resolved, label);
+      }}
+    >
+      <span className="chat-ui-file-card__preview">
+        {renderPdfThumb(resolved, label)}
+      </span>
+      <span className="chat-ui-file-card__meta">
+        <span className="chat-ui-file-card__name">{label}</span>
+        <span className="chat-ui-file-card__sub">PDF</span>
+      </span>
+    </button>
+  );
+}

@@ -16,6 +16,7 @@ import {
   ChatPdfPageThumb,
 } from "../components/chat-pdf-overlay";
 import { markAgentDmSeen } from "../lib/agent-dm-seen";
+import { useDesktopApi } from "../lib/api-context";
 import { useDesktopAvatarSrcMap } from "../lib/avatar-src";
 import {
   useDesktopWorkspacePeople,
@@ -24,6 +25,20 @@ import {
 import { navigateToHref } from "../router/navigate-href";
 import { useShellAgentChat } from "./use-shell-agent-chat";
 import { useShellChatProjects } from "./use-shell-chat-projects";
+
+const LETTER_PDF_PATH_RE = /^\/api\/v1\/letters\/([^/]+)\/pdf\/?$/i;
+
+function attachmentUrlPath(url: string): string {
+  if (url.startsWith("http://") || url.startsWith("https://")) {
+    try {
+      const parsed = new URL(url);
+      return `${parsed.pathname}${parsed.search}`;
+    } catch {
+      return url;
+    }
+  }
+  return url;
+}
 
 function markLatestAssistantSeen(thread: {
   id: string;
@@ -46,6 +61,7 @@ function markLatestAssistantSeen(thread: {
  */
 export function ShellChatPanel() {
   const navigate = useNavigate();
+  const { client } = useDesktopApi();
   const { contacts } = useDesktopWorkspacePeople();
   const { allTasks } = useDesktopWorkspaceTasks();
   const projects = useShellChatProjects();
@@ -85,6 +101,22 @@ export function ShellChatPanel() {
     }));
   }, [avatarSrcById, webhookContacts]);
 
+  const resolveAttachmentUrl = useCallback(
+    async (url: string) => {
+      const path = attachmentUrlPath(url);
+      const letterMatch = path.match(LETTER_PDF_PATH_RE);
+      if (letterMatch?.[1]) {
+        // Letter PDFs are local-core only (cloud returns pdf_requires_local_core).
+        const blob = await client.downloadLetterPdf(
+          decodeURIComponent(letterMatch[1]),
+        );
+        return URL.createObjectURL(blob);
+      }
+      return agentChat.resolveAttachmentUrl(url);
+    },
+    [agentChat, client],
+  );
+
   const liveAgentChat = useMemo((): LiveAgentChatHandlers => {
     const agentIdByContactId = new Map<string, string>();
     for (const [contactId, agent] of agentChat.agentsByContactId) {
@@ -99,7 +131,7 @@ export function ShellChatPanel() {
       },
       sendMessage: agentChat.sendMessage,
       uploadAttachment: agentChat.uploadAttachment,
-      resolveAttachmentUrl: agentChat.resolveAttachmentUrl,
+      resolveAttachmentUrl,
       openPdfAttachment: (url, filename) => {
         setPdfOverlay({ url, filename });
       },
@@ -114,7 +146,7 @@ export function ShellChatPanel() {
       deleteMessages: agentChat.deleteMessages,
       answerChoices: agentChat.answerChoices,
     };
-  }, [agentChat]);
+  }, [agentChat, resolveAttachmentUrl]);
 
   // Resolve [@task:OS-144] against workspace rows (not only the mention catalog).
   const mentionResolve = useMemo(() => {

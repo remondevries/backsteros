@@ -35,6 +35,7 @@ import {
   type TaskMentionBlockChipTask,
 } from "../tasks/task-mention-block-chip.js";
 import { TaskDueDateIcon } from "../tasks/task-due-date-icon.js";
+import { ChatLetterPdfPreview } from "./chat-attachments-card.js";
 import { ChatEntityBlockChip } from "./chat-entity-block-chip.js";
 import {
   ChatCardGoLink,
@@ -646,6 +647,7 @@ function ChatLetterCard({ part }: ChatCardRendererProps) {
   const dueMs = parseDueMs(data.dueDate);
   const dueDateLabel =
     dueMs != null ? formatTaskDueMetaLabel(dueMs) : null;
+  const pdfFilename = `${title.replace(/[\\/:*?"<>|]+/g, " ").trim() || displayId}.pdf`;
   return (
     <ChatExpandableCard
       cardClassName="chat-ui-card--letter"
@@ -681,23 +683,30 @@ function ChatLetterCard({ part }: ChatCardRendererProps) {
         </span>
       }
     >
-      <div className="chat-ui-card--entity__details">
-        <LetterMentionHoverDetails
-          letter={{
-            id: data.letterId,
-            displayId,
-            title,
-            status,
-            dueDate: dueMs,
-            projectId: null,
-            projectKey: null,
-            projectName: data.projectName ?? null,
-          }}
-        />
-        <div className="chat-ui-card--entity__footer">
-          <ChatCardGoLink href={href}>Go to letter</ChatCardGoLink>
+      {({ open }) => (
+        <div className="chat-ui-card--entity__details">
+          <ChatLetterPdfPreview
+            letterId={data.letterId}
+            filename={pdfFilename}
+            enabled={open}
+          />
+          <LetterMentionHoverDetails
+            letter={{
+              id: data.letterId,
+              displayId,
+              title,
+              status,
+              dueDate: dueMs,
+              projectId: null,
+              projectKey: null,
+              projectName: data.projectName ?? null,
+            }}
+          />
+          <div className="chat-ui-card--entity__footer">
+            <ChatCardGoLink href={href}>Go to letter</ChatCardGoLink>
+          </div>
         </div>
-      </div>
+      )}
     </ChatExpandableCard>
   );
 }

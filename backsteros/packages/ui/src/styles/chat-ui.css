@@ -1017,6 +1017,11 @@
   border-top: 1px solid color-mix(in oklab, var(--foreground, #fff) 8%, transparent);
 }
 
+.chat-ui-card--letter__pdf {
+  margin-bottom: 10px;
+  max-width: 100%;
+}
+
 .chat-ui-card--entity__details {
   display: flex;
   flex-direction: column;

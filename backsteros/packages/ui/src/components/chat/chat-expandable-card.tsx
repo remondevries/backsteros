@@ -4,11 +4,13 @@ import { useState, type ReactNode } from "react";
 
 import { ChatCardHref } from "./chat-card-navigate.js";
 
+export type ChatExpandableCardOpenState = { open: boolean };
+
 export type ChatExpandableCardProps = {
   /** Modifier class, e.g. `chat-ui-card--task`. */
   cardClassName: string;
   summary: ReactNode;
-  children: ReactNode;
+  children: ReactNode | ((state: ChatExpandableCardOpenState) => ReactNode);
   defaultOpen?: boolean;
 };
 
@@ -20,6 +22,8 @@ export function ChatExpandableCard({
   defaultOpen = false,
 }: ChatExpandableCardProps) {
   const [open, setOpen] = useState(defaultOpen);
+  const body =
+    typeof children === "function" ? children({ open }) : children;
   return (
     <details
       className={["chat-ui-card", "chat-ui-card--entity", cardClassName]
@@ -29,7 +33,7 @@ export function ChatExpandableCard({
       onToggle={(event) => setOpen(event.currentTarget.open)}
     >
       <summary className="chat-ui-card--entity__summary">{summary}</summary>
-      <div className="chat-ui-card--entity__body">{children}</div>
+      <div className="chat-ui-card--entity__body">{body}</div>
     </details>
   );
 }
