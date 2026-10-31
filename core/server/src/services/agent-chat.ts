@@ -70,7 +70,11 @@ import {
   decryptAgentChatWebhookSecret,
 } from "../lib/agent-chat-webhook.js";
 import { resolveChatLinkPreviews } from "../lib/chat-link-preview.js";
-import { getAgentRowForWebhook } from "./agents.js";
+import {
+  clearAgentWebhookVerified,
+  getAgentRowForWebhook,
+  markAgentWebhookVerified,
+} from "./agents.js";
 import {
   linkAttachmentsToMessage,
   listAttachmentsForMessages,
@@ -1075,6 +1079,11 @@ export async function testAgentWebhook(
     },
     deps,
   );
+  if (result.ok) {
+    await markAgentWebhookVerified(workspaceId, agentId);
+  } else {
+    await clearAgentWebhookVerified(workspaceId, agentId);
+  }
   return {
     ok: result.ok,
     error: result.error,

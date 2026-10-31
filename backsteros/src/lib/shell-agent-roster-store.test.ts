@@ -17,6 +17,7 @@ function stubAgent(
     sortOrder: 0,
     webhookUrl: null,
     webhookSecretConfigured: false,
+    webhookVerifiedAt: null,
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
     ...partial,
@@ -36,6 +37,7 @@ describe("mergeAgentRosters", () => {
           name: "Niels",
           webhookUrl: "https://example.com/niels",
           webhookSecretConfigured: true,
+          webhookVerifiedAt: "2026-11-01T00:00:00.000Z",
         }),
       ],
     );
@@ -43,6 +45,7 @@ describe("mergeAgentRosters", () => {
     const niels = merged.find((row) => row.id === "a1");
     assert.equal(niels?.webhookUrl, "https://example.com/niels");
     assert.equal(niels?.webhookSecretConfigured, true);
+    assert.equal(niels?.webhookVerifiedAt, "2026-11-01T00:00:00.000Z");
     assert.equal(merged.find((row) => row.id === "a2")?.webhookUrl, null);
   });
 });

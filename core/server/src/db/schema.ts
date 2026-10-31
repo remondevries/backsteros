@@ -3161,6 +3161,11 @@ export const agents = pgTable(
     webhookUrl: text("webhook_url"),
     /** AES-GCM ciphertext — never returned to the frontend or PowerSync. */
     webhookSecretCiphertext: text("webhook_secret_ciphertext"),
+    /**
+     * Set when Settings → Test succeeds. Cleared when URL/secret change or a
+     * test fails. Chat roster reads this instead of desktop localStorage.
+     */
+    webhookVerifiedAt: timestamp("webhook_verified_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),

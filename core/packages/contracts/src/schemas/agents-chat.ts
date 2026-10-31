@@ -18,6 +18,11 @@ export const agentSchema = z.object({
   webhookUrl: z.string().nullable(),
   /** True when a secret is stored; plaintext is never returned. */
   webhookSecretConfigured: z.boolean(),
+  /**
+   * ISO timestamp of the last successful Settings webhook Test.
+   * Null until tested (or after URL/secret change / failed test).
+   */
+  webhookVerifiedAt: z.string().datetime().nullable(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
 });

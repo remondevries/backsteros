@@ -48,10 +48,6 @@ import {
   writeAgentSortOrderIds,
 } from "../lib/shell-agent-order";
 import { notifyShellAgentRosterChanged } from "../lib/shell-agent-roster";
-import {
-  clearAgentWebhookVerified,
-  markAgentWebhookVerified,
-} from "../lib/shell-agent-webhook-verified";
 import { SettingsAccountTab } from "../components/settings-account-tab";
 import { SettingsLabelsTab } from "../components/settings-labels-tab";
 import { SettingsDocumentPropertiesTab } from "../components/settings-document-properties-tab";
@@ -367,9 +363,8 @@ function SettingsApiTab({
           return ordered;
         });
       }
-      // Saving URL/secret is not enough for chat — clear prior Connected state
-      // until SettingsTestConnectionSwap succeeds.
-      if (saved.id) clearAgentWebhookVerified(saved.id);
+      // Server clears webhookVerifiedAt only when URL/secret actually change.
+      // Refresh roster so chat strip drops unverified agents immediately.
       notifyShellAgentRosterChanged();
       return toAgentWebhookSettings({
         ...saved,
@@ -492,11 +487,11 @@ function SettingsApiTab({
       }
     }
     if (!result.ok) {
-      clearAgentWebhookVerified(agentId);
+      // Server clears webhookVerifiedAt on failed delivery.
       notifyShellAgentRosterChanged();
       throw new Error(result.error?.trim() || "Webhook test failed");
     }
-    markAgentWebhookVerified(agentId);
+    // Server sets webhookVerifiedAt on successful delivery — refresh roster.
     notifyShellAgentRosterChanged();
 
     const threadId = result.threadId?.trim() || null;

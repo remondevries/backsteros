@@ -21,21 +21,25 @@ import {
   getShellAgentRosterSnapshot,
   subscribeShellAgentRoster,
 } from "../lib/shell-agent-roster-store";
-import { isAgentWebhookVerified } from "../lib/shell-agent-webhook-verified";
-
 /** True when a non-empty webhook URL is stored (settings may still need a test). */
 export function agentHasWebhookUrl(agent: Agent): boolean {
   return Boolean(agent.webhookUrl?.trim());
 }
 
+/** True when Settings → Test last succeeded (server-persisted). */
+export function agentHasWebhookVerified(agent: Agent): boolean {
+  return Boolean(agent.webhookVerifiedAt?.trim());
+}
+
 /**
- * Shell chat roster gate: URL + secret + successful Settings test on this device.
+ * Shell chat roster gate: URL + secret + successful Settings webhook Test
+ * (webhookVerifiedAt on the agent record — not localStorage).
  */
 export function agentReadyForChatRoster(agent: Agent): boolean {
   return (
     agentHasWebhookUrl(agent) &&
     agent.webhookSecretConfigured &&
-    isAgentWebhookVerified(agent.id)
+    agentHasWebhookVerified(agent)
   );
 }
 

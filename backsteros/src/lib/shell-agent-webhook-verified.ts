@@ -1,7 +1,7 @@
 /**
- * Desktop-local gate: an agent only joins the shell chat roster after a
- * successful webhook test (SettingsTestConnectionSwap). Cleared when URL or
- * secret changes so a stale green check cannot keep a broken hook in chat.
+ * @deprecated OS-164 — chat roster reads `agent.webhookVerifiedAt` from the
+ * server. These localStorage helpers are unused; kept only until Remon
+ * confirms they can be deleted.
  */
 
 const STORAGE_PREFIX = "backsteros:agent-webhook-verified:";

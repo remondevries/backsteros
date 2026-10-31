@@ -9,6 +9,7 @@ import { db } from "../db/index.js";
 import { agents, apiKeys, contacts } from "../db/schema.js";
 import { newId } from "../lib/crypto.js";
 import {
+  decryptAgentChatWebhookSecret,
   encryptAgentChatWebhookSecret,
   validateAgentChatWebhookUrl,
 } from "../lib/agent-chat-webhook.js";
@@ -25,6 +26,7 @@ function toPublic(row: {
   sortOrder: number;
   webhookUrl: string | null;
   webhookSecretCiphertext: string | null;
+  webhookVerifiedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }): Agent {
@@ -40,6 +42,9 @@ function toPublic(row: {
     sortOrder: row.sortOrder,
     webhookUrl: row.webhookUrl,
     webhookSecretConfigured: Boolean(row.webhookSecretCiphertext?.trim()),
+    webhookVerifiedAt: row.webhookVerifiedAt
+      ? row.webhookVerifiedAt.toISOString()
+      : null,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
@@ -226,19 +231,60 @@ export async function updateAgent(
   if ("role" in input) patch.role = input.role ?? null;
   if (input.enabled !== undefined) patch.enabled = input.enabled;
   if (input.sortOrder !== undefined) patch.sortOrder = input.sortOrder;
+  let clearWebhookVerified = false;
   if ("webhookUrl" in input) {
-    patch.webhookUrl = normalizeWebhookUrl(input.webhookUrl ?? null);
+    const nextUrl = normalizeWebhookUrl(input.webhookUrl ?? null);
+    if (nextUrl !== (existing.webhookUrl ?? null)) {
+      clearWebhookVerified = true;
+    }
+    patch.webhookUrl = nextUrl;
   }
   if ("webhookSecret" in input) {
-    const raw = input.webhookSecret ?? "";
-    patch.webhookSecretCiphertext = raw.trim()
-      ? encryptAgentChatWebhookSecret(raw.trim())
+    const raw = (input.webhookSecret ?? "").trim();
+    const previousPlain = decryptAgentChatWebhookSecret(
+      existing.webhookSecretCiphertext,
+    );
+    if ((previousPlain ?? "") !== raw) {
+      clearWebhookVerified = true;
+    }
+    patch.webhookSecretCiphertext = raw
+      ? encryptAgentChatWebhookSecret(raw)
       : null;
+  }
+  if (clearWebhookVerified) {
+    patch.webhookVerifiedAt = null;
   }
 
   const [row] = await db
     .update(agents)
     .set(patch)
+    .where(and(eq(agents.workspaceId, workspaceId), eq(agents.id, agentId)))
+    .returning();
+  return row ? toPublic(row) : null;
+}
+
+/** Mark Settings webhook Test as passed (chat roster gate). */
+export async function markAgentWebhookVerified(
+  workspaceId: string,
+  agentId: string,
+  verifiedAt: Date = new Date(),
+): Promise<Agent | null> {
+  const [row] = await db
+    .update(agents)
+    .set({ webhookVerifiedAt: verifiedAt, updatedAt: new Date() })
+    .where(and(eq(agents.workspaceId, workspaceId), eq(agents.id, agentId)))
+    .returning();
+  return row ? toPublic(row) : null;
+}
+
+/** Clear Settings webhook Test pass (URL/secret change or failed test). */
+export async function clearAgentWebhookVerified(
+  workspaceId: string,
+  agentId: string,
+): Promise<Agent | null> {
+  const [row] = await db
+    .update(agents)
+    .set({ webhookVerifiedAt: null, updatedAt: new Date() })
     .where(and(eq(agents.workspaceId, workspaceId), eq(agents.id, agentId)))
     .returning();
   return row ? toPublic(row) : null;

@@ -83,6 +83,7 @@ test("OS-151/150 agents + chat loop: secret write-only, webhook fire, agent repl
     headers: IncomingMessage["headers"];
     body: string;
   } | null = null;
+  let webhookStatusCode = 200;
 
   const server = createServer((req: IncomingMessage, res: ServerResponse) => {
     const chunks: Buffer[] = [];
@@ -92,8 +93,8 @@ test("OS-151/150 agents + chat loop: secret write-only, webhook fire, agent repl
         headers: req.headers,
         body: Buffer.concat(chunks).toString("utf8"),
       };
-      res.writeHead(200, { "content-type": "text/plain" });
-      res.end("ok");
+      res.writeHead(webhookStatusCode, { "content-type": "text/plain" });
+      res.end(webhookStatusCode >= 400 ? "boom" : "ok");
     });
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -324,6 +325,64 @@ test("OS-151/150 agents + chat loop: secret write-only, webhook fire, agent repl
     `https://agent.backsteros.com/api/v1/chat/threads/${threadId}/messages`,
   );
   assert.equal(webhookHit.body.includes(webhookPlain), false);
+
+  // OS-164: successful Test persists webhookVerifiedAt on the agent row.
+  const afterTest = await json(app, `/api/v1/agents/${agentId}`, ownerSecret);
+  assert.equal(afterTest.status, 200);
+  assert.ok(
+    typeof afterTest.body?.webhookVerifiedAt === "string" &&
+      afterTest.body.webhookVerifiedAt.length > 0,
+    "webhookVerifiedAt set after successful test",
+  );
+  const verifiedAt = String(afterTest.body.webhookVerifiedAt);
+
+  // Same secret plaintext must not clear verified-at.
+  const sameSecret = await json(app, `/api/v1/agents/${agentId}`, ownerSecret, {
+    method: "PATCH",
+    body: JSON.stringify({ webhookSecret: webhookPlain }),
+  });
+  assert.equal(sameSecret.status, 200);
+  assert.equal(sameSecret.body?.webhookVerifiedAt, verifiedAt);
+
+  // URL change clears verified-at.
+  const urlChanged = await json(app, `/api/v1/agents/${agentId}`, ownerSecret, {
+    method: "PATCH",
+    body: JSON.stringify({ webhookUrl: `${webhookUrl}/rotated` }),
+  });
+  assert.equal(urlChanged.status, 200);
+  assert.equal(urlChanged.body?.webhookVerifiedAt, null);
+
+  // Restore URL + re-test, then a failed delivery clears verified-at.
+  await json(app, `/api/v1/agents/${agentId}`, ownerSecret, {
+    method: "PATCH",
+    body: JSON.stringify({ webhookUrl }),
+  });
+  webhookHit = null;
+  const retested = await json(
+    app,
+    `/api/v1/agents/${agentId}/webhook/test`,
+    ownerSecret,
+    { method: "POST", body: "{}" },
+  );
+  assert.equal(retested.status, 200);
+  assert.equal(retested.body?.ok, true);
+  const afterRetest = await json(app, `/api/v1/agents/${agentId}`, ownerSecret);
+  assert.ok(afterRetest.body?.webhookVerifiedAt);
+
+  webhookStatusCode = 500;
+  webhookHit = null;
+  const failed = await json(
+    app,
+    `/api/v1/agents/${agentId}/webhook/test`,
+    ownerSecret,
+    { method: "POST", body: "{}" },
+  );
+  webhookStatusCode = 200;
+  assert.equal(failed.status, 200);
+  assert.equal(failed.body?.ok, false);
+  const afterFail = await json(app, `/api/v1/agents/${agentId}`, ownerSecret);
+  assert.equal(afterFail.status, 200);
+  assert.equal(afterFail.body?.webhookVerifiedAt, null);
 
   // Agent persona cannot subscribe to owner DM SSE.
   const agentSseDenied = await app.request("/api/v1/chat/threads/events", {
