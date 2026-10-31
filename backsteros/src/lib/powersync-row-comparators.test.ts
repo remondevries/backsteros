@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  CRM_ACTIVITY_ROW_COMPARATOR,
   DOCUMENT_VERSION_ROW_COMPARATOR,
   WORKSPACE_LIST_ROW_COMPARATOR,
 } from "./powersync-row-comparators.ts";

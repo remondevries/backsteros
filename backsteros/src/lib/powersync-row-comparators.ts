@@ -31,3 +31,15 @@ export const DOCUMENT_VERSION_ROW_COMPARATOR: PowerSyncRowComparator<
   compareBy: (row) =>
     `${row.content_version ?? ""}\0${row.content_etag ?? ""}\0${row.updated_at ?? ""}`,
 };
+
+/**
+ * CRM activity feed — include body / preview so edits invalidate without
+ * JSON.stringify of the whole row (OS-163 / audit #11).
+ */
+export const CRM_ACTIVITY_ROW_COMPARATOR: PowerSyncRowComparator<
+  Record<string, unknown>
+> = {
+  keyBy: (row) => String(row.id ?? ""),
+  compareBy: (row) =>
+    `${row.updated_at ?? ""}\0${row.occurred_at ?? ""}\0${row.body ?? ""}\0${row.body_preview ?? ""}\0${row.deleted_at ?? ""}`,
+};

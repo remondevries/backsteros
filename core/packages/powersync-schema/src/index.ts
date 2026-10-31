@@ -111,6 +111,10 @@ const tasks = new Table(
       habit: ["habit_id"],
       support: ["support"],
       notification: ["notification"],
+      // Hot list/calendar filters (OS-163 / audit #11).
+      deleted_at: ["deleted_at"],
+      inbox: ["inbox"],
+      due_date: ["due_date"],
     },
   },
 );
@@ -155,6 +159,9 @@ const documents = new Table(
       type: ["type"],
       project: ["project_id"],
       parent: ["parent_id"],
+      // Journal / soft-delete filters (OS-163 / audit #11).
+      journal_date: ["journal_date"],
+      deleted_at: ["deleted_at"],
     },
   },
 );
@@ -370,29 +377,37 @@ const habits = new Table({
   ...commonDates,
 });
 
-const meetings = new Table({
-  number: column.integer,
-  title: column.text,
-  summary: column.text,
-  notes: column.text,
-  transcription: column.text,
-  status: column.text,
-  format: column.text,
-  location: column.text,
-  location_organization_id: column.text,
-  project_id: column.text,
-  organization_id: column.text,
-  attendee_contact_ids: column.text,
-  attendee_portal_emails: column.text,
-  start_at: column.text,
-  end_at: column.text,
-  tracked_minutes: column.integer,
-  tracked_duration_seconds: column.integer,
-  external_calendar_event_id: column.text,
-  inbox_updated_at: column.text,
-  sort_order: column.integer,
-  ...commonDates,
-});
+const meetings = new Table(
+  {
+    number: column.integer,
+    title: column.text,
+    summary: column.text,
+    notes: column.text,
+    transcription: column.text,
+    status: column.text,
+    format: column.text,
+    location: column.text,
+    location_organization_id: column.text,
+    project_id: column.text,
+    organization_id: column.text,
+    attendee_contact_ids: column.text,
+    attendee_portal_emails: column.text,
+    start_at: column.text,
+    end_at: column.text,
+    tracked_minutes: column.integer,
+    tracked_duration_seconds: column.integer,
+    external_calendar_event_id: column.text,
+    inbox_updated_at: column.text,
+    sort_order: column.integer,
+    ...commonDates,
+  },
+  {
+    indexes: {
+      start_at: ["start_at"],
+      deleted_at: ["deleted_at"],
+    },
+  },
+);
 
 const task_comments = new Table(
   {

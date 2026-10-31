@@ -670,7 +670,8 @@ export function usePowerSyncQuery<T>(
         >,
       })
       .differentialWatch({
-        throttleMs: 32,
+        // 150ms (~6.5 Hz) — 32ms was ~30 Hz and too chatty for large list watches (OS-163 #11).
+        throttleMs: 150,
         // Avoid extra React commits from isFetching flips when only data matters.
         reportFetching: false,
         rowComparator: comparator as {

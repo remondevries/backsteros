@@ -46,6 +46,7 @@ import {
   CRM_GROUPS_LIST_SQL,
   CRM_RELATIONSHIP_LABELS_SQL,
 } from "./workspace/workspace-sql";
+import { CRM_ACTIVITY_ROW_COMPARATOR } from "./powersync-row-comparators";
 import {
   WORKSPACE_CRM_DATA_UPDATED_EVENT,
   WORKSPACE_CRM_GROUPS_UPDATED_EVENT,
@@ -97,6 +98,7 @@ export function useCrmActivityFeed(
   const activityQuery = usePowerSyncQuery<CrmActivityRow>(
     localEnabled ? CRM_ACTIVITIES_FOR_SUBJECT_SQL : null,
     localEnabled && subjectId ? [subjectType, subjectId] : [],
+    { rowComparator: CRM_ACTIVITY_ROW_COMPARATOR },
   );
   const [visibleCount, setVisibleCount] = useState(CRM_ACTIVITY_PAGE_SIZE);
   const [restState, setRestState] = useState<FeedState>({
