@@ -6,6 +6,7 @@ import {
   RegisterEntityDeleteAction,
   RegisterEntityDuplicateAction,
   RegisterPageTitle,
+  TASK_SIDE_PANEL_TERMINAL_ID,
   TaskDetailSkeleton,
   TaskDetailView,
   TaskLinkedCommitSection,
@@ -40,6 +41,8 @@ import {
   type TaskSpellcheckAppliedPayload,
 } from "../components/desktop-task-activity-panel";
 import { DesktopTaskLayout } from "../components/desktop-task-layout";
+import { TaskShellTerminal } from "../components/task-shell-terminal";
+import { resolveTaskShellCwd } from "../lib/task-shell-cwd";
 import { navigateToHref } from "../router/navigate-href";
 import {
   listReturnHrefFromState,
@@ -305,7 +308,11 @@ export function TaskDetailPage({
   const [fetchedLinks, setFetchedLinks] = useState<TaskLink[]>([]);
   /** Immediate UI after attach/remove — wins over stale SQLite/hydrate. */
   const [linksOverride, setLinksOverride] = useState<TaskLink[] | null>(null);
-  const [activeCommitSha, setActiveCommitSha] = useState<string | null>(null);
+  const [activeSideSurfaceId, setActiveSideSurfaceId] = useState<string | null>(
+    TASK_SIDE_PANEL_TERMINAL_ID,
+  );
+  /** Bump to force a fresh shell after closing the Terminal tab. */
+  const [terminalSessionKey, setTerminalSessionKey] = useState(0);
   const [openCommitPickerRequest, setOpenCommitPickerRequest] = useState(0);
   const spellcheckNonceRef = useRef(0);
   /** Keeps the open task stable while project-change URL rewrite catches up. */
@@ -721,7 +728,8 @@ export function TaskDetailPage({
   }, [base?.id, client]);
 
   useEffect(() => {
-    setActiveCommitSha(null);
+    setActiveSideSurfaceId(TASK_SIDE_PANEL_TERMINAL_ID);
+    setTerminalSessionKey((n) => n + 1);
   }, [task?.id]);
 
   useEffect(() => {
@@ -847,13 +855,46 @@ export function TaskDetailPage({
   const project =
     projects.find((entry) => entry.key === task.projectKey) ?? null;
   const workingDirectory = project?.localWorkingDirectory ?? null;
+  const isCodebaseProject =
+    project?.type === "codebase" && Boolean(project.id);
   const canLinkCommit =
-    project?.type === "codebase" &&
-    Boolean(project.id) &&
-    Boolean(project.githubRepository?.trim());
+    Boolean(isCodebaseProject) &&
+    Boolean(project?.githubRepository?.trim());
+  const shellCwd = resolveTaskShellCwd(
+    project as
+      | {
+          development?: {
+            kind: "local" | "server";
+            path: string;
+            host?: string | null;
+          } | null;
+          developmentLocation?: string | null;
+          localWorkingDirectory?: string | null;
+        }
+      | null,
+  );
   const linkedCommitShas = Array.isArray(task.linkedCommitShas)
     ? task.linkedCommitShas
     : [];
+  const sidePanelSurfaces = isCodebaseProject
+    ? [
+        {
+          id: TASK_SIDE_PANEL_TERMINAL_ID,
+          label: "Terminal",
+          kind: "terminal" as const,
+        },
+        ...linkedCommitShas.map((sha) => ({
+          id: sha,
+          label: sha.slice(0, 7),
+          kind: "commit" as const,
+        })),
+      ]
+    : [];
+  const activeSideSurface =
+    sidePanelSurfaces.find((surface) => surface.id === activeSideSurfaceId)
+      ?.id ??
+    sidePanelSurfaces[0]?.id ??
+    null;
 
   const patchStatus = (next: string) => {
     const patch: { status: string; followUpDate?: string } = { status: next };
@@ -1057,17 +1098,47 @@ export function TaskDetailPage({
   );
 
   const linkedCommitPanel =
-    canLinkCommit && project
-      ? ({ hide }: { hide: () => void }) => (
+    isCodebaseProject && project
+      ? ({
+          hide,
+          collapsed,
+        }: {
+          hide: () => void;
+          collapsed: boolean;
+        }) => (
           <TaskLinkedCommitSection
             projectId={project.id}
             defaultBranch={null}
             linkedCommitShas={linkedCommitShas}
-            activeSha={activeCommitSha}
-            onActiveShaChange={setActiveCommitSha}
+            activeSurfaceId={activeSideSurface}
+            onActiveSurfaceChange={setActiveSideSurfaceId}
             openPickerRequest={openCommitPickerRequest}
             requestJson={requestJson}
             onHidePanel={hide}
+            canLinkCommits={canLinkCommit}
+            terminalTabVisible
+            terminalPane={
+              <TaskShellTerminal
+                key={`${task.id}-${terminalSessionKey}`}
+                active={
+                  !collapsed &&
+                  activeSideSurface === TASK_SIDE_PANEL_TERMINAL_ID
+                }
+                taskId={task.id}
+                cwd={shellCwd ?? workingDirectory}
+              />
+            }
+            onCloseTerminal={() => {
+              // Kill the live PTY; collapse when no commit tab remains.
+              setTerminalSessionKey((n) => n + 1);
+              const nextCommit =
+                linkedCommitShas[linkedCommitShas.length - 1] ?? null;
+              if (nextCommit) {
+                setActiveSideSurfaceId(nextCommit);
+              } else {
+                hide();
+              }
+            }}
             onLinkCommit={async (sha) => {
               const next = [
                 ...linkedCommitShas.filter(
@@ -1078,7 +1149,7 @@ export function TaskDetailPage({
               setLinkedCommitShasOverride(next);
               setFetchedLinkedCommitShas(next);
               await workspace.patchTask(task.id, { linkedCommitShas: next });
-              setActiveCommitSha(sha);
+              setActiveSideSurfaceId(sha);
             }}
             onUnlinkCommit={async (sha) => {
               const next = linkedCommitShas.filter(
@@ -1087,7 +1158,11 @@ export function TaskDetailPage({
               setLinkedCommitShasOverride(next);
               setFetchedLinkedCommitShas(next);
               await workspace.patchTask(task.id, { linkedCommitShas: next });
-              setActiveCommitSha(next[next.length - 1] ?? null);
+              setActiveSideSurfaceId(
+                activeSideSurface === sha
+                  ? next[next.length - 1] ?? TASK_SIDE_PANEL_TERMINAL_ID
+                  : activeSideSurface,
+              );
             }}
           />
         )
@@ -1191,15 +1266,12 @@ export function TaskDetailPage({
         <DesktopTaskLayout
           key={`task-layout-${task.id}`}
           taskId={task.id}
-          preferWideTaskPanel={!canLinkCommit}
+          preferWideTaskPanel={!isCodebaseProject}
           sidePanel={linkedCommitPanel}
-          sidePanelSurfaces={linkedCommitShas.map((sha) => ({
-            id: sha,
-            label: sha.slice(0, 7),
-          }))}
-          sidePanelActiveSurfaceId={activeCommitSha}
-          onActivateSidePanelSurface={setActiveCommitSha}
-          sidePanelCanAddSurface={linkedCommitShas.length < 20}
+          sidePanelSurfaces={sidePanelSurfaces}
+          sidePanelActiveSurfaceId={activeSideSurface}
+          onActivateSidePanelSurface={setActiveSideSurfaceId}
+          sidePanelCanAddSurface={canLinkCommit && linkedCommitShas.length < 20}
           onAddSidePanelSurface={() => {
             setOpenCommitPickerRequest((n) => n + 1);
           }}

@@ -30,15 +30,22 @@
  *   POST /agent/acp/cancel — cancel in-flight ACP turn
  *   POST /agent/create-chat — `agent create-chat`
  *   GET/DELETE /sessions — list / kill shell PTYs and ACP agent sessions
+ *   POST /task-shell/sessions — mint a one-shot desktop task-shell session
+ *     (loopback-only; returns sessionId + per-session token; never via cloud)
  *
  * Cursor Agent hooks POST to /agent-hook so the UI can mark working/idle.
  * Hook POSTs stay unauthenticated (local Cursor → loopback).
+ *
+ * Task-shell WebSockets (`kind=task-shell`) require the minted per-session
+ * token, reject disallowed browser Origins, and kill the PTY when the last
+ * viewer disconnects (no persistence / agent attach).
  */
 import { createServer } from "node:http";
 import net from "node:net";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { randomBytes } from "node:crypto";
 import { fileURLToPath } from "node:url";
 
 import pty from "node-pty";
@@ -141,13 +148,29 @@ const SCROLLBACK_MAX_CHARS = 200_000;
 const sessionsById = new Map();
 
 /**
+ * Pending desktop task-shell mints (POST /task-shell/sessions → WS connect).
+ * @type {Map<string, {
+ *   token: string,
+ *   cwd: string,
+ *   taskId: string | null,
+ *   cols: number,
+ *   rows: number,
+ *   createdAt: number,
+ * }>}
+ */
+const taskShellPendingById = new Map();
+const TASK_SHELL_PENDING_TTL_MS = 60_000;
+
+/**
  * Live shell PTY processes keyed by session id.
  * @type {Map<string, {
  *   pty: import("node-pty").IPty,
  *   cwd: string,
- *   kind?: "agent" | "shell",
+ *   kind?: "agent" | "shell" | "task-shell",
  *   taskId?: string | null,
  *   label?: string | null,
+ *   sessionToken?: string | null,
+ *   ephemeral?: boolean,
  *   createdAt?: string,
  *   lastActivity?: "working" | "idle" | null,
  *   scrollback?: string,
@@ -1023,18 +1046,58 @@ function handleAgentHook(sessionId, payloadText) {
   return true;
 }
 
+function isAllowedBrowserOrigin(origin) {
+  if (typeof origin !== "string" || !origin.trim()) return false;
+  try {
+    if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(origin)) return true;
+    if (/^tauri:\/\//i.test(origin)) return true;
+    if (/\.localhost$/i.test(new URL(origin).hostname)) return true;
+    if (/^https?:\/\/.*\.exp\.direct(:\d+)?$/i.test(origin)) return true;
+    if (/^https?:\/\/.*\.exp\.host(:\d+)?$/i.test(origin)) return true;
+  } catch {
+    return false;
+  }
+  return false;
+}
+
+function isLoopbackAddress(addr) {
+  if (typeof addr !== "string" || !addr) return false;
+  return (
+    addr === "127.0.0.1" ||
+    addr === "::1" ||
+    addr === "::ffff:127.0.0.1" ||
+    addr.startsWith("127.")
+  );
+}
+
+function resolveRequestRemoteAddress(req) {
+  const raw = req.socket?.remoteAddress ?? "";
+  return typeof raw === "string" ? raw : "";
+}
+
+function pruneTaskShellPending() {
+  const cutoff = Date.now() - TASK_SHELL_PENDING_TTL_MS;
+  for (const [id, pending] of taskShellPendingById) {
+    if (pending.createdAt < cutoff) taskShellPendingById.delete(id);
+  }
+}
+
+function resolveShellCwd(cwdParam) {
+  let cwd = DEFAULT_CWD;
+  if (!cwdParam) return cwd;
+  if (cwdParam === "~") return os.homedir();
+  if (cwdParam.startsWith("~/")) {
+    return path.join(os.homedir(), cwdParam.slice(2));
+  }
+  if (path.isAbsolute(cwdParam)) return cwdParam;
+  return cwd;
+}
+
 function applyLocalCors(req, res) {
   const origin = req.headers.origin;
   // Desktop UI is localhost:1420 / Tauri; PTY is 127.0.0.1 — different origins.
   // Native Expo WebViews often omit Origin; token auth covers those clients.
-  if (
-    typeof origin === "string" &&
-    (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(origin) ||
-      /^tauri:\/\//i.test(origin) ||
-      /\.localhost$/i.test(new URL(origin).hostname) ||
-      /^https?:\/\/.*\.exp\.direct(:\d+)?$/i.test(origin) ||
-      /^https?:\/\/.*\.exp\.host(:\d+)?$/i.test(origin))
-  ) {
+  if (isAllowedBrowserOrigin(origin)) {
     res.setHeader("Access-Control-Allow-Origin", origin);
     res.setHeader("Vary", "Origin");
   }
@@ -2525,11 +2588,104 @@ const httpServer = createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === "POST" && url.pathname === "/task-shell/sessions") {
+    // Desktop task Terminal only — never mint from Tailscale / non-loopback.
+    if (!isLoopbackAddress(resolveRequestRemoteAddress(req))) {
+      res.writeHead(403, { "Content-Type": "application/json; charset=utf-8" });
+      res.end(
+        JSON.stringify({
+          error:
+            "Task shell sessions are local-desktop only (loopback). Not available via cloud or remote cores.",
+          code: "task_shell_local_only",
+        }),
+      );
+      return;
+    }
+    const origin = req.headers.origin;
+    if (typeof origin === "string" && origin && !isAllowedBrowserOrigin(origin)) {
+      res.writeHead(403, { "Content-Type": "application/json; charset=utf-8" });
+      res.end(
+        JSON.stringify({
+          error: "Origin not allowed for task shell sessions.",
+          code: "origin_forbidden",
+        }),
+      );
+      return;
+    }
+    if (!isAuthorized(req, url)) {
+      rejectUnauthorized(res);
+      return;
+    }
+    try {
+      const raw = await readRequestBody(req);
+      /** @type {{ cwd?: unknown, taskId?: unknown, cols?: unknown, rows?: unknown }} */
+      let body = {};
+      if (raw.trim()) {
+        body = JSON.parse(raw);
+      }
+      pruneTaskShellPending();
+      const sessionId = `task-shell-${Date.now().toString(36)}-${randomBytes(4).toString("hex")}`;
+      const token = randomBytes(24).toString("base64url");
+      let cols = Number(body.cols ?? 80);
+      let rows = Number(body.rows ?? 24);
+      if (!Number.isFinite(cols) || cols < 2) cols = 80;
+      if (!Number.isFinite(rows) || rows < 1) rows = 24;
+      const cwd =
+        typeof body.cwd === "string" ? resolveShellCwd(body.cwd.trim()) : DEFAULT_CWD;
+      const taskId =
+        typeof body.taskId === "string" && body.taskId.trim()
+          ? body.taskId.trim()
+          : null;
+      taskShellPendingById.set(sessionId, {
+        token,
+        cwd,
+        taskId,
+        cols,
+        rows,
+        createdAt: Date.now(),
+      });
+      const wsOrigin = `ws://${HOST === "0.0.0.0" ? "127.0.0.1" : HOST}:${PORT}`;
+      res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
+      res.end(
+        JSON.stringify({
+          sessionId,
+          token,
+          cwd,
+          wsUrl: `${wsOrigin}/?kind=task-shell&sessionId=${encodeURIComponent(sessionId)}&token=${encodeURIComponent(token)}`,
+        }),
+      );
+      return;
+    } catch (error) {
+      res.writeHead(400, { "Content-Type": "application/json; charset=utf-8" });
+      res.end(
+        JSON.stringify({
+          error:
+            error instanceof Error ? error.message : "Invalid task-shell request.",
+        }),
+      );
+      return;
+    }
+  }
+
   res.writeHead(200, { "Content-Type": "text/plain; charset=utf-8" });
   res.end("BacksterOS PTY bridge — connect via WebSocket.\n");
 });
 
-const wss = new WebSocketServer({ server: httpServer });
+const wss = new WebSocketServer({
+  server: httpServer,
+  verifyClient(info, done) {
+    const origin = info.origin;
+    // Browsers send Origin — reject cross-site upgrades. Native / mobile
+    // clients often omit Origin; connection handler still enforces tokens.
+    if (typeof origin === "string" && origin.length > 0) {
+      if (!isAllowedBrowserOrigin(origin)) {
+        done(false, 403, "Origin not allowed");
+        return;
+      }
+    }
+    done(true);
+  },
+});
 
 function serializeSession(sessionId, entry) {
   return {
@@ -2792,38 +2948,45 @@ function bindSocketToPty(ws, sessionId, entry, { reattached, cols, rows }) {
   ws.on("close", () => {
     removeSessionSocket(sessionId, ws);
     const remaining = sessionSocketCount(sessionId);
+    const ephemeral = Boolean(entry.ephemeral) || entry.kind === "task-shell";
+    if (ephemeral && remaining === 0) {
+      console.log(
+        `[pty] detach session=${sessionId} viewers=0 (ephemeral — killing)`,
+      );
+      destroyPty(sessionId, "viewer-closed");
+      return;
+    }
     console.log(
       `[pty] detach session=${sessionId} viewers=${remaining} (process kept alive)`,
     );
-    // Do NOT kill the PTY — other viewers / later reattach keep the agent alive.
+    // Durable agent/shell PTYs survive UI detach for reattach / other viewers.
   });
 }
 
 wss.on("connection", (ws, req) => {
   const url = new URL(req.url ?? "/", `http://${HOST}:${PORT}`);
-  if (!isAuthorized(req, url)) {
+  const kindRaw = url.searchParams.get("kind")?.trim().toLowerCase() || "shell";
+  const kind =
+    kindRaw === "agent"
+      ? "agent"
+      : kindRaw === "task-shell"
+        ? "task-shell"
+        : "shell";
+
+  if (kind !== "task-shell" && !isAuthorized(req, url)) {
     send(ws, { type: "error", message: "Unauthorized" });
     ws.close(1008, "Unauthorized");
     return;
   }
-  const cwdParam = url.searchParams.get("cwd")?.trim() || null;
-  let cwd = DEFAULT_CWD;
-  if (cwdParam) {
-    if (cwdParam === "~") {
-      cwd = os.homedir();
-    } else if (cwdParam.startsWith("~/")) {
-      cwd = path.join(os.homedir(), cwdParam.slice(2));
-    } else if (path.isAbsolute(cwdParam)) {
-      cwd = cwdParam;
-    }
-  }
+
+  pruneTaskShellPending();
+
   let sessionId =
     url.searchParams.get("sessionId")?.trim() ||
     `anon-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
 
-  const kindRaw = url.searchParams.get("kind")?.trim().toLowerCase() || "shell";
-  const kind = kindRaw === "agent" ? "agent" : "shell";
-  const taskId = url.searchParams.get("taskId")?.trim() || null;
+  let cwd = resolveShellCwd(url.searchParams.get("cwd")?.trim() || null);
+  let taskId = url.searchParams.get("taskId")?.trim() || null;
   const label = url.searchParams.get("label")?.trim() || null;
   const tabLabel = url.searchParams.get("tabLabel")?.trim() || null;
   const chatId = url.searchParams.get("chatId")?.trim().toLowerCase() || null;
@@ -2837,6 +3000,44 @@ wss.on("connection", (ws, req) => {
   let rows = Number(url.searchParams.get("rows") ?? 24);
   if (!Number.isFinite(cols) || cols < 2) cols = 80;
   if (!Number.isFinite(rows) || rows < 1) rows = 24;
+
+  /** @type {string | null} */
+  let sessionToken = null;
+  let ephemeral = false;
+
+  if (kind === "task-shell") {
+    const pending = taskShellPendingById.get(sessionId);
+    const provided = extractBearerToken(req, url);
+    if (!pending) {
+      send(ws, {
+        type: "error",
+        message:
+          "Unknown or expired task-shell session. Open Terminal again from the desktop app.",
+      });
+      ws.close(1008, "Unknown session");
+      return;
+    }
+    if (!provided || provided !== pending.token) {
+      send(ws, { type: "error", message: "Unauthorized" });
+      ws.close(1008, "Unauthorized");
+      return;
+    }
+    if (!isLoopbackAddress(resolveRequestRemoteAddress(req))) {
+      send(ws, {
+        type: "error",
+        message: "Task shell is local-desktop only.",
+      });
+      ws.close(1008, "Forbidden");
+      return;
+    }
+    taskShellPendingById.delete(sessionId);
+    cwd = pending.cwd;
+    taskId = pending.taskId;
+    cols = pending.cols;
+    rows = pending.rows;
+    sessionToken = pending.token;
+    ephemeral = true;
+  }
 
   if (kind === "agent") {
     void (async () => {
@@ -2866,6 +3067,15 @@ wss.on("connection", (ws, req) => {
   let existing = ptysById.get(sessionId);
 
   if (existing) {
+    // Task-shell sessions are single-shot — never reattach after mint consume.
+    if (kind === "task-shell" || existing.kind === "task-shell") {
+      send(ws, {
+        type: "error",
+        message: "Task shell session already used. Open Terminal again.",
+      });
+      ws.close(1008, "Session consumed");
+      return;
+    }
     if (kind) existing.kind = kind;
     if (taskId) existing.taskId = taskId;
     if (label) existing.label = label;
@@ -2915,9 +3125,11 @@ wss.on("connection", (ws, req) => {
   /** @type {{
    *   pty: import("node-pty").IPty,
    *   cwd: string,
-   *   kind: "agent" | "shell",
+   *   kind: "agent" | "shell" | "task-shell",
    *   taskId: string | null,
    *   label: string | null,
+   *   sessionToken: string | null,
+   *   ephemeral: boolean,
    *   createdAt: string,
    *   lastActivity: "working" | "idle" | null,
    *   dataDisposable: { dispose: () => void },
@@ -2929,6 +3141,8 @@ wss.on("connection", (ws, req) => {
     kind,
     taskId,
     label,
+    sessionToken,
+    ephemeral,
     createdAt: new Date().toISOString(),
     lastActivity: null,
     scrollback: "",

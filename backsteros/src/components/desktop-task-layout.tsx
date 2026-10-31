@@ -31,6 +31,8 @@ const LAYOUT_COLLAPSE_DURATION_MS = 220;
 export type DesktopTaskSidePanelControls = {
   /** Collapse the Changes / side column to the icon strip. */
   hide: () => void;
+  /** True while the Changes / Terminal rail is collapsed to the strip. */
+  collapsed: boolean;
 };
 
 export type { DesktopTaskChangesSurface };
@@ -286,7 +288,7 @@ export function DesktopTaskLayout({
 
   const sidePanelNode =
     typeof sidePanel === "function"
-      ? sidePanel({ hide: hideSidePanel })
+      ? sidePanel({ hide: hideSidePanel, collapsed: sideCollapsed })
       : sidePanel;
 
   return (

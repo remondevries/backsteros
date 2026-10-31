@@ -5484,6 +5484,7 @@ export {
   type CommitDetailPaneProps,
 } from "./components/codebase/commit-detail-pane.js";
 export {
+  TASK_SIDE_PANEL_TERMINAL_ID,
   TaskLinkedCommitSection,
   type TaskLinkedCommitSectionProps,
 } from "./components/codebase/task-linked-commit-section.js";

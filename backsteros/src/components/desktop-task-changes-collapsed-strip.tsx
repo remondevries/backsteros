@@ -1,9 +1,11 @@
-import { FileDiff, Plus } from "lucide-react";
+import { FileDiff, Plus, TerminalSquare } from "lucide-react";
 import { ProjectsSidePanelIcon } from "@backsteros/ui";
 
 export type DesktopTaskChangesSurface = {
   id: string;
   label: string;
+  /** Optional icon variant — Terminal tab uses a console glyph. */
+  kind?: "commit" | "terminal";
 };
 
 export type DesktopTaskChangesCollapsedStripProps = {
@@ -52,6 +54,8 @@ export function DesktopTaskChangesCollapsedStrip({
         {hasSurfaces
           ? surfaces.map((surface) => {
               const active = surface.id === activeId;
+              const Icon =
+                surface.kind === "terminal" ? TerminalSquare : FileDiff;
               return (
                 <button
                   key={surface.id}
@@ -72,7 +76,7 @@ export function DesktopTaskChangesCollapsedStrip({
                     onExpand();
                   }}
                 >
-                  <FileDiff
+                  <Icon
                     className="desktop-agent-surface-tab-icon"
                     size={14}
                     aria-hidden

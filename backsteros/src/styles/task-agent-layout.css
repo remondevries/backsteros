@@ -291,6 +291,53 @@
   color: #ff453a;
 }
 
+.desktop-task-layout__side-body .task-linked-commit__terminal {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.desktop-task-layout__side-body .task-shell-terminal {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  background: #0f1115;
+}
+
+.desktop-task-layout__side-body .task-shell-terminal__host {
+  flex: 1 1 0;
+  min-height: 0;
+  min-width: 0;
+  padding: 6px 8px 8px;
+  overflow: hidden;
+}
+
+.desktop-task-layout__side-body .task-shell-terminal__host .xterm {
+  height: 100%;
+}
+
+.desktop-task-layout__side-body .task-shell-terminal__host .xterm-viewport {
+  overflow-y: auto !important;
+}
+
+.desktop-task-layout__side-body .task-shell-terminal__status,
+.desktop-task-layout__side-body .task-shell-terminal__error {
+  margin: 0;
+  padding: 8px 12px 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: color-mix(in srgb, #e8e8e8 70%, transparent);
+}
+
+.desktop-task-layout__side-body .task-shell-terminal__error {
+  color: #ff7b72;
+}
+
 /*
  * Commit Changes rail: `.console-pane` defaults to height:100%, which ignores
  * the Changes toolbar and clips the Pierre CodeView scrollport. Size with flex

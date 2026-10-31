@@ -6,6 +6,7 @@ import {
   HairlineEmptyFigure,
   RegisterEntityDeleteAction,
   RegisterEntityDuplicateAction,
+  TASK_SIDE_PANEL_TERMINAL_ID,
   TaskDetailView,
   TaskLinkedCommitSection,
   buildAssigneeDropdownOptions,
@@ -28,6 +29,8 @@ import {
 
 import { DesktopTaskActivityPanel } from "../components/desktop-task-activity-panel";
 import { DesktopTaskLayout } from "../components/desktop-task-layout";
+import { TaskShellTerminal } from "../components/task-shell-terminal";
+import { resolveTaskShellCwd } from "../lib/task-shell-cwd";
 import { navigateToHref } from "../router/navigate-href";
 import { useDesktopSectionBreadcrumb } from "../lib/use-desktop-breadcrumb";
 import { useTaskFileAttachments } from "../lib/use-task-file-attachments";
@@ -182,7 +185,10 @@ function InboxPageBody() {
   const [linkedCommitShasOverride, setLinkedCommitShasOverride] = useState<
     string[] | null
   >(null);
-  const [activeCommitSha, setActiveCommitSha] = useState<string | null>(null);
+  const [activeSideSurfaceId, setActiveSideSurfaceId] = useState<string | null>(
+    TASK_SIDE_PANEL_TERMINAL_ID,
+  );
+  const [terminalSessionKey, setTerminalSessionKey] = useState(0);
   const [openCommitPickerRequest, setOpenCommitPickerRequest] = useState(0);
 
   // Side panel owns opening the first row at `/inbox`. Detail only follows
@@ -330,7 +336,8 @@ function InboxPageBody() {
 
   useEffect(() => {
     setMovedNotice(null);
-    setActiveCommitSha(null);
+    setActiveSideSurfaceId(TASK_SIDE_PANEL_TERMINAL_ID);
+    setTerminalSessionKey((n) => n + 1);
     setLinkedCommitShasOverride(null);
   }, [itemId]);
 
@@ -577,10 +584,24 @@ function InboxPageBody() {
   const workingDirectory = project?.localWorkingDirectory ?? null;
   const hasProject = Boolean(project?.id ?? selectedTask.projectId);
   const statusDisabled = !hasProject;
+  const isCodebaseProject =
+    project?.type === "codebase" && Boolean(project.id);
   const canLinkCommit =
-    project?.type === "codebase" &&
-    Boolean(project.id) &&
-    Boolean(project.githubRepository?.trim());
+    Boolean(isCodebaseProject) &&
+    Boolean(project?.githubRepository?.trim());
+  const shellCwd = resolveTaskShellCwd(
+    project as
+      | {
+          development?: {
+            kind: "local" | "server";
+            path: string;
+            host?: string | null;
+          } | null;
+          developmentLocation?: string | null;
+          localWorkingDirectory?: string | null;
+        }
+      | null,
+  );
   const linkedCommitShas = (() => {
     if (linkedCommitShasOverride != null) {
       return linkedCommitShasOverride;
@@ -612,18 +633,67 @@ function InboxPageBody() {
         ? getProjectTaskHref(project.key, selectedTask.number)
         : null;
 
+  const sidePanelSurfaces = isCodebaseProject
+    ? [
+        {
+          id: TASK_SIDE_PANEL_TERMINAL_ID,
+          label: "Terminal",
+          kind: "terminal" as const,
+        },
+        ...linkedCommitShas.map((sha) => ({
+          id: sha,
+          label: sha.slice(0, 7),
+          kind: "commit" as const,
+        })),
+      ]
+    : [];
+  const activeSideSurface =
+    sidePanelSurfaces.find((surface) => surface.id === activeSideSurfaceId)
+      ?.id ??
+    sidePanelSurfaces[0]?.id ??
+    null;
+
   const linkedCommitPanel =
-    canLinkCommit && project
-      ? ({ hide }: { hide: () => void }) => (
+    isCodebaseProject && project
+      ? ({
+          hide,
+          collapsed,
+        }: {
+          hide: () => void;
+          collapsed: boolean;
+        }) => (
           <TaskLinkedCommitSection
             projectId={project.id}
             defaultBranch={null}
             linkedCommitShas={linkedCommitShas}
-            activeSha={activeCommitSha}
-            onActiveShaChange={setActiveCommitSha}
+            activeSurfaceId={activeSideSurface}
+            onActiveSurfaceChange={setActiveSideSurfaceId}
             openPickerRequest={openCommitPickerRequest}
             requestJson={requestJson}
             onHidePanel={hide}
+            canLinkCommits={canLinkCommit}
+            terminalTabVisible
+            terminalPane={
+              <TaskShellTerminal
+                key={`${selectedTask.id}-${terminalSessionKey}`}
+                active={
+                  !collapsed &&
+                  activeSideSurface === TASK_SIDE_PANEL_TERMINAL_ID
+                }
+                taskId={selectedTask.id}
+                cwd={shellCwd ?? workingDirectory}
+              />
+            }
+            onCloseTerminal={() => {
+              setTerminalSessionKey((n) => n + 1);
+              const nextCommit =
+                linkedCommitShas[linkedCommitShas.length - 1] ?? null;
+              if (nextCommit) {
+                setActiveSideSurfaceId(nextCommit);
+              } else {
+                hide();
+              }
+            }}
             onLinkCommit={async (sha) => {
               const next = [
                 ...linkedCommitShas.filter(
@@ -636,7 +706,7 @@ function InboxPageBody() {
               await workspace.patchTask(selectedTask.id, {
                 linkedCommitShas: next,
               });
-              setActiveCommitSha(sha);
+              setActiveSideSurfaceId(sha);
             }}
             onUnlinkCommit={async (sha) => {
               const next = linkedCommitShas.filter(
@@ -647,7 +717,11 @@ function InboxPageBody() {
               await workspace.patchTask(selectedTask.id, {
                 linkedCommitShas: next,
               });
-              setActiveCommitSha(next[next.length - 1] ?? null);
+              setActiveSideSurfaceId(
+                activeSideSurface === sha
+                  ? next[next.length - 1] ?? TASK_SIDE_PANEL_TERMINAL_ID
+                  : activeSideSurface,
+              );
             }}
           />
         )
@@ -666,15 +740,12 @@ function InboxPageBody() {
       ) : null}
       <DesktopTaskLayout
         taskId={selectedTask.id}
-        preferWideTaskPanel={!canLinkCommit}
+        preferWideTaskPanel={!isCodebaseProject}
         sidePanel={linkedCommitPanel}
-        sidePanelSurfaces={linkedCommitShas.map((sha) => ({
-          id: sha,
-          label: sha.slice(0, 7),
-        }))}
-        sidePanelActiveSurfaceId={activeCommitSha}
-        onActivateSidePanelSurface={setActiveCommitSha}
-        sidePanelCanAddSurface={linkedCommitShas.length < 20}
+        sidePanelSurfaces={sidePanelSurfaces}
+        sidePanelActiveSurfaceId={activeSideSurface}
+        onActivateSidePanelSurface={setActiveSideSurfaceId}
+        sidePanelCanAddSurface={canLinkCommit && linkedCommitShas.length < 20}
         onAddSidePanelSurface={() => {
           setOpenCommitPickerRequest((n) => n + 1);
         }}

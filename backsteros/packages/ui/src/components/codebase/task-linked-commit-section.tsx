@@ -9,6 +9,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
 
@@ -19,6 +20,9 @@ import type { CodebaseRequestJson } from "./project-fs-types.js";
 
 const MAX_LINKED_COMMITS = 20;
 const MAX_PICKER_RESULTS = 40;
+
+/** Side-panel tab id for the plain local shell (not a commit SHA). */
+export const TASK_SIDE_PANEL_TERMINAL_ID = "terminal";
 
 function commitSubject(message: string): string {
   const line = message.split("\n")[0]?.trim() ?? "";
@@ -84,6 +88,12 @@ export type TaskLinkedCommitSectionProps = {
   /** Which linked commit’s diff is shown (controlled). */
   activeSha?: string | null;
   onActiveShaChange?: (sha: string | null) => void;
+  /**
+   * Active tab across Terminal + commit SHAs. Prefer this over `activeSha`
+   * when the Terminal tab is enabled.
+   */
+  activeSurfaceId?: string | null;
+  onActiveSurfaceChange?: (id: string | null) => void;
   requestJson: CodebaseRequestJson;
   /** Append a commit (caller dedupes / persists full list). */
   onLinkCommit: (sha: string) => void | Promise<void>;
@@ -97,6 +107,16 @@ export type TaskLinkedCommitSectionProps = {
    * Ignored when already at the link cap.
    */
   openPickerRequest?: number;
+  /**
+   * When set, show a Terminal tab before commit chips. Closing that tab (X)
+   * calls `onCloseTerminal` and should kill the shell session.
+   */
+  terminalPane?: ReactNode;
+  /** When false, hide the Terminal tab entirely. Default true if `terminalPane` set. */
+  terminalTabVisible?: boolean;
+  onCloseTerminal?: () => void;
+  /** Allow linking commits (GitHub-backed). Default true. */
+  canLinkCommits?: boolean;
 };
 
 /**
@@ -109,15 +129,23 @@ export function TaskLinkedCommitSection({
   linkedCommitShas,
   activeSha: activeShaProp = null,
   onActiveShaChange,
+  activeSurfaceId: activeSurfaceIdProp = null,
+  onActiveSurfaceChange,
   requestJson,
   onLinkCommit,
   onUnlinkCommit,
   linking = false,
   onHidePanel,
   openPickerRequest = 0,
+  terminalPane = null,
+  terminalTabVisible,
+  onCloseTerminal,
+  canLinkCommits = true,
 }: TaskLinkedCommitSectionProps) {
   const shas = normalizeShaList(linkedCommitShas);
-  const canAddMore = shas.length < MAX_LINKED_COMMITS;
+  const showTerminalTab =
+    terminalTabVisible ?? terminalPane != null;
+  const canAddMore = canLinkCommits && shas.length < MAX_LINKED_COMMITS;
   const [picking, setPicking] = useState(false);
   const [commits, setCommits] = useState<GithubCommit[]>([]);
   const [resolvedBranch, setResolvedBranch] = useState<string | null>(
@@ -142,13 +170,62 @@ export function TaskLinkedCommitSection({
     setResolvedBranch(next);
   }, [defaultBranch]);
 
+  const activeSurfaceId = (() => {
+    if (
+      activeSurfaceIdProp === TASK_SIDE_PANEL_TERMINAL_ID &&
+      showTerminalTab
+    ) {
+      return TASK_SIDE_PANEL_TERMINAL_ID;
+    }
+    if (
+      activeSurfaceIdProp &&
+      shas.some(
+        (sha) => sha.toLowerCase() === activeSurfaceIdProp.toLowerCase(),
+      )
+    ) {
+      return (
+        shas.find(
+          (sha) => sha.toLowerCase() === activeSurfaceIdProp.toLowerCase(),
+        ) ?? null
+      );
+    }
+    if (
+      activeShaProp &&
+      shas.some((sha) => sha.toLowerCase() === activeShaProp.toLowerCase())
+    ) {
+      return (
+        shas.find(
+          (sha) => sha.toLowerCase() === activeShaProp.toLowerCase(),
+        ) ?? null
+      );
+    }
+    if (showTerminalTab) return TASK_SIDE_PANEL_TERMINAL_ID;
+    return shas[shas.length - 1] ?? null;
+  })();
+
   const activeSha =
-    (activeShaProp &&
-    shas.some((sha) => sha.toLowerCase() === activeShaProp.toLowerCase())
-      ? shas.find((sha) => sha.toLowerCase() === activeShaProp.toLowerCase())
-      : null) ??
-    shas[shas.length - 1] ??
-    null;
+    activeSurfaceId && activeSurfaceId !== TASK_SIDE_PANEL_TERMINAL_ID
+      ? activeSurfaceId
+      : null;
+  const terminalActive = activeSurfaceId === TASK_SIDE_PANEL_TERMINAL_ID;
+
+  const setActiveSurface = useCallback(
+    (id: string | null) => {
+      onActiveSurfaceChange?.(id);
+      if (id && id !== TASK_SIDE_PANEL_TERMINAL_ID) {
+        onActiveShaChange?.(id);
+      } else if (id === TASK_SIDE_PANEL_TERMINAL_ID) {
+        onActiveShaChange?.(null);
+      }
+    },
+    [onActiveShaChange, onActiveSurfaceChange],
+  );
+
+  useEffect(() => {
+    if (activeSurfaceId == null) return;
+    if (activeSurfaceId === (activeSurfaceIdProp ?? null)) return;
+    onActiveSurfaceChange?.(activeSurfaceId);
+  }, [activeSurfaceId, activeSurfaceIdProp, onActiveSurfaceChange]);
 
   useEffect(() => {
     if (!onActiveShaChange) return;
@@ -293,10 +370,10 @@ export function TaskLinkedCommitSection({
       }
       setFormError(null);
       await onLinkCommit(sha);
-      onActiveShaChange?.(sha);
+      setActiveSurface(sha);
       closePicker();
     },
-    [closePicker, linkedAlready, onActiveShaChange, onLinkCommit],
+    [closePicker, linkedAlready, onLinkCommit, setActiveSurface],
   );
 
   const query = searchQuery.trim().toLowerCase();
@@ -332,15 +409,52 @@ export function TaskLinkedCommitSection({
   return (
     <section
       className="task-linked-commit"
-      aria-label="Linked commit changes"
+      aria-label="Task changes"
     >
       <div className="task-linked-commit__toolbar">
-        {shas.length > 0 || canAddMore ? (
+        {showTerminalTab || shas.length > 0 || canAddMore ? (
           <div
             className="task-linked-commit__sha-chips"
             role="tablist"
-            aria-label="Linked commits"
+            aria-label="Terminal and linked commits"
           >
+            {showTerminalTab ? (
+              <div
+                className={[
+                  "task-linked-commit__sha-chip",
+                  "task-linked-commit__sha-chip--terminal",
+                  terminalActive ? "is-selected" : null,
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
+              >
+                {onCloseTerminal ? (
+                  <button
+                    type="button"
+                    className="task-linked-commit__sha-chip-remove"
+                    title="Close terminal"
+                    aria-label="Close terminal"
+                    onClick={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      onCloseTerminal();
+                    }}
+                  >
+                    <XIcon size={10} />
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={terminalActive}
+                  className="task-linked-commit__sha-chip-select"
+                  title="Terminal"
+                  onClick={() => setActiveSurface(TASK_SIDE_PANEL_TERMINAL_ID)}
+                >
+                  Terminal
+                </button>
+              </div>
+            ) : null}
             {shas.map((sha) => {
               const selected =
                 activeSha != null &&
@@ -375,7 +489,7 @@ export function TaskLinkedCommitSection({
                     aria-selected={selected}
                     className="task-linked-commit__sha-chip-select"
                     title={sha}
-                    onClick={() => onActiveShaChange?.(sha)}
+                    onClick={() => setActiveSurface(sha)}
                   >
                     <code>{shortSha(sha)}</code>
                   </button>
@@ -401,13 +515,19 @@ export function TaskLinkedCommitSection({
         </div>
       </div>
 
-      {shas.length === 0 ? (
+      {terminalActive && showTerminalTab ? (
+        <div className="task-linked-commit__terminal">{terminalPane}</div>
+      ) : null}
+
+      {!terminalActive && shas.length === 0 ? (
         <p className="task-linked-commit__hint">
-          Link a GitHub commit to keep a durable diff for this task.
+          {canLinkCommits
+            ? "Link a GitHub commit to keep a durable diff for this task."
+            : "Connect a GitHub repository on the project to link commits."}
         </p>
       ) : null}
 
-      {activeSha ? (
+      {!terminalActive && activeSha ? (
         <>
           {commitLoading ? (
             <p className="task-linked-commit__status">Loading commit…</p>
