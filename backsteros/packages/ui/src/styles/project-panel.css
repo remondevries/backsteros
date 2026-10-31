@@ -422,55 +422,32 @@
   justify-content: center;
 }
 
+.project-channel-badge__icon--live {
+  color: #22c55e;
+  /* Always pulse — Remon: ignore prefers-reduced-motion. */
+  animation: project-channel-icon-pulse 1.6s ease-in-out infinite;
+}
+
 .project-channel-badge__mark {
   display: block;
+  color: inherit;
+  fill: currentColor;
 }
 
-.project-channel-badge__status {
-  display: inline-flex;
-  min-width: 0;
-  align-items: center;
-  gap: 6px;
-}
-
-.project-channel-badge__dot {
-  display: inline-flex;
-  flex: 0 0 auto;
-  box-sizing: border-box;
-  width: 8px;
-  height: 8px;
-  min-width: 8px;
-  min-height: 8px;
-  align-items: center;
-  justify-content: center;
-  line-height: 0;
-  /* Always pulse — Remon: ignore prefers-reduced-motion. */
-  animation: project-channel-dot-pulse 1.6s ease-in-out infinite;
-}
-
-.project-channel-badge__dot svg {
-  display: block;
-  width: 8px;
-  height: 8px;
-  overflow: visible;
-}
-
-@keyframes project-channel-dot-pulse {
+@keyframes project-channel-icon-pulse {
   0%,
   100% {
     opacity: 1;
-    transform: scale(1);
   }
 
   50% {
-    opacity: 0.4;
-    transform: scale(0.85);
+    opacity: 0.35;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .project-channel-badge__dot {
-    animation: project-channel-dot-pulse 1.6s ease-in-out infinite !important;
+  .project-channel-badge__icon--live {
+    animation: project-channel-icon-pulse 1.6s ease-in-out infinite !important;
   }
 }
 

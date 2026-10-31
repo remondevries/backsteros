@@ -129,21 +129,17 @@ export function ProjectChannelField({
             void openProjectChannelUri(channel!.uri);
           }}
         >
-          <span className="project-channel-badge__icon" aria-hidden="true">
+          <span
+            className="project-channel-badge__icon project-channel-badge__icon--live"
+            aria-hidden="true"
+          >
             {isGrok ? (
               <XaiMarkIcon size={14} className="project-channel-badge__mark" />
             ) : (
               <ProjectOcticon icon="comment-discussion" size={14} />
             )}
           </span>
-          <span className="project-channel-badge__status">
-            <span className="project-channel-badge__dot" aria-hidden="true">
-              <svg width="8" height="8" viewBox="0 0 8 8" focusable="false">
-                <circle cx="4" cy="4" r="4" fill="#22c55e" />
-              </svg>
-            </span>
-            <span className="project-channel-badge__label">Active</span>
-          </span>
+          <span className="project-channel-badge__label">Active</span>
         </button>
         <button
           type="button"
