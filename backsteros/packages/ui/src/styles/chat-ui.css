@@ -1551,9 +1551,16 @@
   color: var(--surface, #0b1220);
 }
 
+/* Solid danger fill with dark text — same contrast pattern as primary. */
 .chat-ui-choices__option.is-danger {
-  border-color: color-mix(in oklab, #ef4444 50%, transparent);
-  background: color-mix(in oklab, #ef4444 14%, transparent);
+  border-color: transparent;
+  background: var(--danger, #ef4444);
+  color: var(--surface, #0b1220);
+}
+
+.chat-ui-choices__option.is-danger:hover:not(:disabled) {
+  background: color-mix(in oklab, var(--danger, #ef4444) 88%, #0b1220);
+  color: var(--surface, #0b1220);
 }
 
 .chat-ui-choices__option.is-selected {
@@ -1565,13 +1572,18 @@
   outline-color: color-mix(in oklab, var(--surface, #0b1220) 35%, transparent);
 }
 
+.chat-ui-choices__option.is-danger.is-selected {
+  outline-color: color-mix(in oklab, var(--surface, #0b1220) 40%, transparent);
+}
+
 .chat-ui-choices__option:disabled {
   cursor: default;
   opacity: 0.85;
 }
 
-/* Keep answered primary readable when the disabled opacity kicks in. */
-.chat-ui-choices.is-answered .chat-ui-choices__option.is-primary:disabled {
+/* Keep answered primary/danger readable when the disabled opacity kicks in. */
+.chat-ui-choices.is-answered .chat-ui-choices__option.is-primary:disabled,
+.chat-ui-choices.is-answered .chat-ui-choices__option.is-danger:disabled {
   opacity: 1;
 }
 
