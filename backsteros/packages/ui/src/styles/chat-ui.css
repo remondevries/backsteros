@@ -1510,12 +1510,13 @@
   padding: 12px;
   border-radius: 10px;
   border: 1px solid color-mix(in srgb, #3a3a3a 55%, black);
-  /* Tiny light fade in the top-right only; rest of the card stays dark. */
+  /* Light top-right corner fade into dark — a bit larger, more diagonal. */
   background: linear-gradient(
-    to bottom left,
-    color-mix(in srgb, #ffffff 14%, #1a1a1a) 0%,
-    #1a1a1a 16%,
-    #161616 28%,
+    215deg,
+    color-mix(in srgb, #ffffff 16%, #1a1a1a) 0%,
+    color-mix(in srgb, #ffffff 6%, #1a1a1a) 18%,
+    #1a1a1a 34%,
+    #161616 48%,
     #161616 100%
   );
   box-sizing: border-box;
