@@ -50,7 +50,7 @@ export async function bootstrapSync(workspaceId: string) {
     settings,
   ] = await Promise.all([
     taskProjectService.listProjects(workspaceId),
-    taskProjectService.listTasks(workspaceId, { limit: fetchCap }),
+    taskProjectService.listTasks(workspaceId, { limit: page }),
     documentService.listDocuments(workspaceId, { limit: fetchCap }),
     circleService.listOrganizations(workspaceId),
     circleService.listContacts(workspaceId),
@@ -58,9 +58,9 @@ export async function bootstrapSync(workspaceId: string) {
     circleService.getSettings(workspaceId),
   ]);
 
-  const taskTruncated = taskRowsRaw.length > page;
+  const taskTruncated = taskRowsRaw.hasMore;
   const documentTruncated = documentRowsRaw.length > page;
-  const taskRows = taskTruncated ? taskRowsRaw.slice(0, page) : taskRowsRaw;
+  const taskRows = taskRowsRaw.rows;
   const documentRows = documentTruncated
     ? documentRowsRaw.slice(0, page)
     : documentRowsRaw;

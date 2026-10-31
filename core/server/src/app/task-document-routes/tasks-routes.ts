@@ -110,7 +110,7 @@ export function registerTasksRoutes(app: Hono) {
         parsed,
         { strict: false },
       );
-      const rows = await taskProjectService.listTasks(auth.workspaceId, {
+      const page = await taskProjectService.listTasks(auth.workspaceId, {
         projectId: resolved.projectIds,
         contactId: resolved.contactIds,
         assigneeId: resolved.assigneeIds,
@@ -130,7 +130,17 @@ export function registerTasksRoutes(app: Hono) {
             ? undefined
             : c.req.query("notification") === "true",
       });
-      return c.json({ tasks: await tasksWithKeys(auth.workspaceId, rows) });
+      if (page.hasMore) {
+        c.header(
+          "X-BacksterOS-Hint",
+          `Legacy task list capped at ${page.limit}. has_more=true — use paginated=true for cursor pages.`,
+        );
+      }
+      return c.json({
+        tasks: await tasksWithKeys(auth.workspaceId, page.rows),
+        has_more: page.hasMore,
+        limit: page.limit,
+      });
     }
 
     try {

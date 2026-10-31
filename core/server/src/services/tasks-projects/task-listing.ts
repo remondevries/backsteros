@@ -105,13 +105,23 @@ export async function listTasks(
     LEGACY_TASK_LIST_HARD_CAP,
   );
 
-  return executor
+  // Fetch limit+1 so callers can expose has_more honestly (OS-162 review).
+  const rows = await executor
     .select()
     .from(tasks)
     .where(and(...conditions))
     .orderBy(tasks.sortOrder, desc(tasks.updatedAt))
-    .limit(limit);
+    .limit(limit + 1);
+  const hasMore = rows.length > limit;
+  return {
+    rows: hasMore ? rows.slice(0, limit) : rows,
+    hasMore,
+    limit,
+  };
 }
+
+/** @deprecated Prefer destructuring {@link listTasks}; kept for call-site clarity. */
+export type ListTasksResult = Awaited<ReturnType<typeof listTasks>>;
 
 /** contactId → display name (name, else email). Soft-deleted contacts omitted. */
 export async function getContactNameMap(
