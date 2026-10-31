@@ -64,7 +64,6 @@ import {
   preloadKeepAliveSectionChunks,
   preloadShellSidePanels,
 } from "../lib/preload-shell-route-chunk";
-import { preloadShellRouteChunks } from "../router/shell-route-modules";
 import { useComposeGlobalShortcut } from "../lib/use-compose-global-shortcut";
 import { useCommandPaletteGlobalShortcut } from "../lib/use-command-palette-global-shortcut";
 import { useTauriWindowFullscreen } from "../lib/use-tauri-window-fullscreen";
@@ -456,18 +455,19 @@ export function useShellBootEffects({
   const firstLetterId = firstLetterIdForWarm(letters);
 
   useEffect(() => {
-    preloadKeepAliveSectionChunks();
-    const preloadRest = () => {
-      void preloadShellRouteChunks();
+    // After first paint only: warm keep-alive surfaces + their side panels.
+    // Do not preload every lazy route — that cancelled code-splitting on startup.
+    const preloadLikely = () => {
+      preloadKeepAliveSectionChunks();
       void preloadShellSidePanels();
     };
     // `"requestIdleCallback" in window` narrows `window` to `never` in the
     // fallback branch (lib.dom always declares it) — use a typeof check.
     if (typeof window.requestIdleCallback === "function") {
-      const idleId = window.requestIdleCallback(preloadRest);
+      const idleId = window.requestIdleCallback(preloadLikely);
       return () => window.cancelIdleCallback(idleId);
     }
-    const timeoutId = window.setTimeout(preloadRest, 300);
+    const timeoutId = window.setTimeout(preloadLikely, 300);
     return () => window.clearTimeout(timeoutId);
   }, []);
 

@@ -164,7 +164,3 @@ const ALL_PAGES = [
 export function preloadShellRouteChunks(): Promise<void> {
   return Promise.all(ALL_PAGES.map((page) => page.load())).then(() => undefined);
 }
-
-if (typeof window !== "undefined") {
-  void preloadShellRouteChunks();
-}

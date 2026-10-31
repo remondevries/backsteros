@@ -163,7 +163,3 @@ export function schedulePreloadGoNavigationRouteChunks(): void {
 export function preloadShellRouteChunkForPathname(pathname: string): void {
   preloadShellRouteChunkForHref(parseNavigationPathname(pathname));
 }
-
-if (typeof window !== "undefined") {
-  preloadKeepAliveSectionChunks();
-}
