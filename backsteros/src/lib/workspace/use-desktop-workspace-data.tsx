@@ -702,7 +702,8 @@ function useDesktopWorkspaceDataImpl(): {
           fillFrom,
         ),
         fillFrom,
-        ["summary", "notes", "transcription"],
+        // notes / transcription load on detail via useDesktopMeetingNotes.
+        ["summary"],
       ),
       liveMeetingsById,
       { deletedIds: liveDeletedMeetingIds },

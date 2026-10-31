@@ -5,6 +5,7 @@
  * Long text (`description` / `summary` / `context` / `notes` / `transcription`)
  * is omitted from list watches. Task descriptions load via one-row PowerSync
  * (`useDesktopTaskDescription`). Letter notes load via `useDesktopLetterContext`.
+ * Meeting notes/transcription load via `useDesktopMeetingNotes`.
  */
 
 import { INBOX_TASKS_WHERE_SQL } from "./inbox-task-query";
@@ -259,8 +260,7 @@ export const MEETING_LIST_COLUMNS = [
   "number",
   "title",
   "summary",
-  "notes",
-  "transcription",
+  // notes / transcription: detail-only via useDesktopMeetingNotes
   "status",
   "format",
   "location",

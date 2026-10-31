@@ -81,6 +81,7 @@ import { useDesktopApi } from "../lib/api-context";
 import { useMeetingSchedulingSettings } from "../lib/use-meeting-scheduling-settings";
 import { useDesktopSectionBreadcrumb } from "../lib/use-desktop-breadcrumb";
 import { useMeetingDetailViewProps } from "../lib/use-meeting-detail-props";
+import { useDesktopMeetingNotes } from "../lib/use-meeting-notes";
 import { useMeetingContactNavigation } from "../lib/use-meeting-contact-navigation";
 import { useMeetingPortalEmailActions } from "../lib/use-meeting-portal-email-actions";
 import {
@@ -332,6 +333,11 @@ function CalendarPageBody() {
       return displayId === normalized;
     });
   }, [isAvailabilityMode, openMeetingId, workspace.meetings]);
+
+  const { notes: detailNotes, transcription: detailTranscription } =
+    useDesktopMeetingNotes(meeting?.id, {
+      enabled: Boolean(meeting?.id) && keepAliveActive,
+    });
 
   const displayId = meeting ? formatMeetingDisplayId(meeting.number) : null;
 
@@ -1666,8 +1672,8 @@ function CalendarPageBody() {
                   meetingDraft ? discardMeetingDraft : undefined
                 }
                 summary={meeting?.summary ?? ""}
-                notes={meeting?.notes ?? ""}
-                transcription={meeting?.transcription ?? ""}
+                notes={detailNotes}
+                transcription={detailTranscription}
                 contentTab={meetingContentTab}
                 onContentTabChange={setMeetingContentTab}
                 onTitleChange={
@@ -1726,8 +1732,8 @@ function CalendarPageBody() {
         displayId={displayId ?? "M-?"}
         title={meeting?.title ?? ""}
         summary={meeting?.summary ?? ""}
-        notes={meeting?.notes ?? ""}
-        transcription={meeting?.transcription ?? ""}
+        notes={detailNotes}
+        transcription={detailTranscription}
         contentTab={meetingContentTab}
         onContentTabChange={setMeetingContentTab}
         onTitleChange={(title) => patchMeeting({ title })}

@@ -9,6 +9,7 @@ import {
 } from "@backsteros/ui";
 
 import { useDesktopSectionBreadcrumb } from "../lib/use-desktop-breadcrumb";
+import { useDesktopMeetingNotes } from "../lib/use-meeting-notes";
 import { useMeetingDetailViewProps } from "../lib/use-meeting-detail-props";
 import { useMeetingContactNavigation } from "../lib/use-meeting-contact-navigation";
 import { useMeetingPortalEmailActions } from "../lib/use-meeting-portal-email-actions";
@@ -71,6 +72,8 @@ export function MeetingDetailPage({
   }, [meeting]);
 
   const displayId = meeting ? formatMeetingDisplayId(meeting.number) : null;
+  const { notes: detailNotes, transcription: detailTranscription } =
+    useDesktopMeetingNotes(meeting?.id);
   const backHref = backHrefProp ?? "/calendar";
   const meetingLabel = displayId ?? meeting?.title ?? "Meeting";
 
@@ -161,8 +164,8 @@ export function MeetingDetailPage({
         displayId={displayId ?? "M-?"}
         title={meeting.title}
         summary={meeting.summary ?? ""}
-        notes={meeting.notes ?? ""}
-        transcription={meeting.transcription ?? ""}
+        notes={detailNotes}
+        transcription={detailTranscription}
         onTitleChange={(title) => patchMeeting({ title })}
         onSummaryChange={(summary) => patchMeeting({ summary })}
         onNotesChange={(notes) => patchMeeting({ notes })}
