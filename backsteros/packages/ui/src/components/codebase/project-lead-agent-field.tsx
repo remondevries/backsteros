@@ -2,14 +2,12 @@
 
 import { useMemo, useState } from "react";
 
-import {
-  buildAssigneeDropdownOptions,
-  DROPDOWN_NONE_VALUE,
-  type AssigneeDropdownContact,
-} from "../dropdowns/dropdown-options.js";
+import { DROPDOWN_NONE_VALUE } from "../dropdowns/dropdown-options.js";
+import type { AssigneeDropdownContact } from "../dropdowns/dropdown-options.js";
 import { PropertyDropdown } from "../dropdowns/property-dropdown.js";
 import { apiErrorMessage } from "./api-error-message.js";
 import type { CodebaseRequestJson } from "./codebase-request-json.js";
+import { buildLeadAgentDropdownOptions } from "./lead-agent-dropdown-options.js";
 
 export type ProjectLeadAgentFieldProject = {
   id: string;
@@ -29,6 +27,22 @@ export type ProjectLeadAgentFieldProps = {
   avatarSrcById?: Readonly<Record<string, string | null | undefined>>;
 };
 
+const NO_LEAD_AGENT_LABEL = "No lead agent";
+
+/**
+ * Closed-chip label for Lead agent. Always a non-empty string so the inline
+ * chip cannot collapse when the roster is empty or the lead is missing from it.
+ */
+export function resolveLeadAgentChipLabel(
+  selectedId: string | null,
+  options: ReadonlyArray<{ value: string; label: string }>,
+): string {
+  if (!selectedId) return NO_LEAD_AGENT_LABEL;
+  const matched = options.find((option) => option.value === selectedId);
+  const name = matched?.label?.trim() || "";
+  return name || NO_LEAD_AGENT_LABEL;
+}
+
 /**
  * Agents → Lead agent. Avatar chip + picker of agent contacts.
  * Default none.
@@ -43,37 +57,17 @@ export function ProjectLeadAgentField({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const options = useMemo(() => {
-    const titleById = new Map(
-      agentContacts.map((contact) => [
-        contact.id,
-        contact.title?.trim() || null,
-      ]),
-    );
-    return buildAssigneeDropdownOptions([...agentContacts], {
-      avatarSrcById,
-    }).map((option) => {
-      if (option.value === DROPDOWN_NONE_VALUE) {
-        return {
-          ...option,
-          label: "No lead agent",
-          searchTerms: "none no lead agent unassigned",
-        };
-      }
-      const title = titleById.get(option.value) ?? null;
-      if (!title) return option;
-      return {
-        ...option,
-        secondaryLabel: title,
-        searchTerms: `${option.searchTerms ?? ""} ${title}`.trim(),
-      };
-    });
-  }, [agentContacts, avatarSrcById]);
-
   const selectedId = project.leadAgentContactId?.trim() || null;
+
+  const options = useMemo(
+    () => buildLeadAgentDropdownOptions(agentContacts, { avatarSrcById }),
+    [agentContacts, avatarSrcById],
+  );
+
   // Name only on the closed chip; job title stays on list options via secondaryLabel.
-  const selectedDisplayLabel =
-    options.find((option) => option.value === selectedId)?.label ?? null;
+  // Always a non-empty string — empty selectedDisplayLabel + empty option label
+  // collapses the inline chip once the roster resolves.
+  const selectedDisplayLabel = resolveLeadAgentChipLabel(selectedId, options);
 
   async function setLeadAgent(nextContactId: string | null) {
     setSaving(true);
@@ -117,7 +111,7 @@ export function ProjectLeadAgentField({
         }}
         searchPlaceholder="Lead agent…"
         ariaLabel="Lead agent"
-        fallbackLabel="No lead agent"
+        fallbackLabel={NO_LEAD_AGENT_LABEL}
         fallbackIcon={null}
         selectedDisplayLabel={selectedDisplayLabel}
         triggerVariant="inlineChip"

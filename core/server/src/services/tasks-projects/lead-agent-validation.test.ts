@@ -31,4 +31,20 @@ describe("lead agent validation (REST + sync)", () => {
     assert.match(apply, /taskProjectService\.updateProject/);
     assert.match(apply, /taskProjectService\.createProject/);
   });
+
+  it("desktop PROJECT_LIST_COLUMNS selects lead_agent_contact_id from PowerSync SQLite", () => {
+    const sql = readFileSync(
+      join(
+        here,
+        "../../../../../backsteros/src/lib/workspace/workspace-sql.ts",
+      ),
+      "utf8",
+    );
+    assert.match(sql, /"lead_agent_contact_id"/);
+    assert.match(sql, /"channel_status"/);
+    assert.match(sql, /"channel_pending_link"/);
+    assert.match(sql, /"channel_requested_at"/);
+  });
 });
+
+

@@ -5483,6 +5483,7 @@ export { buildLeadAgentDropdownOptions } from "./components/codebase/lead-agent-
 
 export {
   ProjectLeadAgentField,
+  resolveLeadAgentChipLabel,
   type ProjectLeadAgentFieldProps,
   type ProjectLeadAgentFieldProject,
 } from "./components/codebase/project-lead-agent-field.js";

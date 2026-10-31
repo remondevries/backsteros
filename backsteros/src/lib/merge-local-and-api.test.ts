@@ -788,6 +788,42 @@ test("fillMissingCodebaseFieldsFromApi keeps local channel when present", () => 
   assert.deepEqual(filled[0]?.channel, localChannel);
 });
 
+test("fillMissingCodebaseFieldsFromApi copies leadAgentContactId when local omitted it", () => {
+  const filled = fillMissingCodebaseFieldsFromApi(
+    [
+      {
+        id: "1",
+        leadAgentContactId: null,
+      },
+    ],
+    [
+      {
+        id: "1",
+        leadAgentContactId: "Vxxot5Rh1uAzqgfxkRvEQ",
+      },
+    ],
+  );
+  assert.equal(filled[0]?.leadAgentContactId, "Vxxot5Rh1uAzqgfxkRvEQ");
+});
+
+test("fillMissingCodebaseFieldsFromApi keeps local leadAgentContactId when present", () => {
+  const filled = fillMissingCodebaseFieldsFromApi(
+    [
+      {
+        id: "1",
+        leadAgentContactId: "local-lead",
+      },
+    ],
+    [
+      {
+        id: "1",
+        leadAgentContactId: "api-lead",
+      },
+    ],
+  );
+  assert.equal(filled[0]?.leadAgentContactId, "local-lead");
+});
+
 test("fillMissingMeetingPropertiesFromApi copies project when local omitted", () => {
   const filled = fillMissingMeetingPropertiesFromApi(
     [

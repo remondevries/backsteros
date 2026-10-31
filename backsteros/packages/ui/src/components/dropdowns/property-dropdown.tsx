@@ -188,10 +188,14 @@ export function PropertyDropdown<T extends string>({
         const mutedTrigger =
           (!selected && mutedFallback) || (Boolean(selected) && mutedSelected);
         const displayOverride = selectedDisplayLabel?.trim() || null;
+        // Prefer override when selected; never leave the chip with an empty
+        // label (empty string is not nullish for `??`, and collapses inline chips).
         const label =
-          selected && displayOverride
-            ? displayOverride
-            : (selected?.label ?? fallbackLabel);
+          (
+            (selected && displayOverride
+              ? displayOverride
+              : (selected?.label ?? fallbackLabel)) || fallbackLabel
+          ).trim() || fallbackLabel;
         const secondary =
           selected && !displayOverride
             ? selected.secondaryLabel?.trim() || null

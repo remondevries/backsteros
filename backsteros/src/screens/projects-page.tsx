@@ -309,19 +309,6 @@ function ProjectDetailScreen({
     organizations);
   // Lead picker: any enabled local persona with a contact — not chat webhook gate.
   const { agents: shellAgents } = useShellAgentChat();
-  const agentContactsForLead = useMemo(() => {
-    const byId = new Map(contacts.map((contact) => [contact.id, contact]));
-    const ordered: typeof contacts = [];
-    const seen = new Set<string>();
-    for (const agent of shellAgents) {
-      const contactId = agent.contactId?.trim();
-      if (!contactId || seen.has(contactId)) continue;
-      seen.add(contactId);
-      const contact = byId.get(contactId);
-      if (contact) ordered.push(contact);
-    }
-    return ordered;
-  }, [contacts, shellAgents]);
   const projects = useProjectsWithOverlay(workspace.projects, projectOverlay);
   const documents = useMemo(() => {
     const omitted = new Set(omittedDocumentIds);
@@ -344,6 +331,28 @@ function ProjectDetailScreen({
           project.id === routeSlug) ?? null
     );
   }, [projects, routeSlug]);
+
+  const agentContactsForLead = useMemo(() => {
+    const byId = new Map(contacts.map((contact) => [contact.id, contact]));
+    const ordered: typeof contacts = [];
+    const seen = new Set<string>();
+    for (const agent of shellAgents) {
+      const contactId = agent.contactId?.trim();
+      if (!contactId || seen.has(contactId)) continue;
+      seen.add(contactId);
+      const contact = byId.get(contactId);
+      if (contact) ordered.push(contact);
+    }
+    // Keep the project's current lead in the picker even if the roster omits it.
+    const leadId =
+      (selected as { leadAgentContactId?: string | null } | null)
+        ?.leadAgentContactId?.trim() || null;
+    if (leadId && !seen.has(leadId)) {
+      const contact = byId.get(leadId);
+      if (contact) ordered.unshift(contact);
+    }
+    return ordered;
+  }, [contacts, selected, shellAgents]);
 
   const navTypeForDocs = projectTypeFromLocationState(location.state);
   const selectedIsCodebase = Boolean(

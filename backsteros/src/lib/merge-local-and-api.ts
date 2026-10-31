@@ -592,6 +592,7 @@ export function fillMissingCodebaseFieldsFromApi<
     localWorkingDirectory?: string | null;
     healthCheckMode?: "simple" | "advanced" | null;
     healthCheckDomain?: string | null;
+    leadAgentContactId?: string | null;
     channel?: unknown;
     development?: unknown;
     production?: unknown;
@@ -626,6 +627,12 @@ export function fillMissingCodebaseFieldsFromApi<
       !textMissing(api.healthCheckDomain)
     ) {
       next = { ...next, healthCheckDomain: api.healthCheckDomain };
+    }
+    if (
+      textMissing(row.leadAgentContactId) &&
+      !textMissing(api.leadAgentContactId)
+    ) {
+      next = { ...next, leadAgentContactId: api.leadAgentContactId };
     }
     if (channelMissing(row.channel) && !channelMissing(api.channel)) {
       next = { ...next, channel: api.channel as T["channel"] };
