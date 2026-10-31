@@ -311,7 +311,6 @@ export function ChatTaskCard({ part }: ChatCardRendererProps) {
       summary={
         <TaskMentionBlockChip
           task={toMentionBlockTask(data)}
-          href={href}
           titleAttr={data.displayId ?? data.title ?? data.taskId}
         />
       }
@@ -367,7 +366,6 @@ function ChatContactCard({ part }: ChatCardRendererProps) {
       summary={
         <ChatEntityBlockChip
           kindClassName="mention-chip-lite--contact"
-          href={href}
           icon={
             <EntityAvatarIcon
               src={data.avatarSrc}
@@ -434,7 +432,6 @@ function ChatDocumentCard({ part }: ChatCardRendererProps) {
       summary={
         <ChatEntityBlockChip
           kindClassName="mention-chip-lite--document"
-          href={href}
           icon={<DocumentIcon size={14} />}
           title={title}
           titleAttr={title}
@@ -494,7 +491,6 @@ function ChatProjectCard({ part }: ChatCardRendererProps) {
       summary={
         <ChatEntityBlockChip
           kindClassName="mention-chip-lite--project"
-          href={href}
           icon={<ProjectOcticon icon={data.icon} size={14} />}
           id={key}
           title={name}
@@ -546,7 +542,6 @@ function ChatOrganizationCard({ part }: ChatCardRendererProps) {
       summary={
         <ChatEntityBlockChip
           kindClassName="mention-chip-lite--organization"
-          href={href}
           icon={
             data.avatarSrc ? (
               <EntityAvatarIcon
@@ -609,7 +604,6 @@ function ChatEmailCard({ part }: ChatCardRendererProps) {
             projectName: data.projectName ?? null,
             contactName: data.contactName ?? null,
           }}
-          href={href}
           titleAttr={title}
         />
       }
@@ -653,7 +647,6 @@ function ChatLetterCard({ part }: ChatCardRendererProps) {
       summary={
         <ChatEntityBlockChip
           kindClassName="mention-chip-lite--letter"
-          href={href}
           icon={<LetterIcon size={14} />}
           id={displayId}
           title={title}

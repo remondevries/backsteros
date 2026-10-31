@@ -1,6 +1,7 @@
 /**
- * Chat display layout for task mentions: compact chips stay in the bubble;
- * full task cards render once below, outside the bubble, in mention order.
+ * Chat display layout for task mentions: each task renders once as a full
+ * card below the bubble. Matching `[@task:…]` tokens are stripped from the
+ * bubble text so they never also appear as inline chips.
  */
 import type {
   ChatUiCardPart,
@@ -155,13 +156,74 @@ export function taskMentionTokensInMessage(
 }
 
 /**
- * Parts that stay inside the message bubble — task cards are lifted out.
- * Other card types (contact, project, …) stay inline for now.
+ * Remove `[@task:…]` tokens whose display ids are in `displayIds` (lowercased),
+ * then tidy leftover whitespace / a dangling trailing colon / empty paragraphs.
+ */
+export function stripTaskMentionsFromText(
+  text: string,
+  displayIds: ReadonlySet<string>,
+): string {
+  if (!text || displayIds.size === 0) return text;
+
+  const pieces: string[] = [];
+  for (const segment of segmentMarkdownWithMentions(text)) {
+    if (
+      segment.type === "mention" &&
+      segment.token.kind === "task" &&
+      displayIds.has(segment.token.displayId.trim().toLowerCase())
+    ) {
+      continue;
+    }
+    if (segment.type === "markdown") {
+      pieces.push(segment.content);
+      continue;
+    }
+    pieces.push(segment.raw);
+  }
+
+  let out = pieces.join("");
+  // Collapse horizontal whitespace; keep newlines for paragraph structure.
+  out = out.replace(/[^\S\n]+/g, " ");
+  // Drop spaces left hanging before sentence punctuation.
+  out = out.replace(/ +([.,;:!?])/g, "$1");
+  // Trim spaces around newlines, then drop empty paragraphs.
+  out = out.replace(/ *\n */g, "\n");
+  out = out.replace(/\n{3,}/g, "\n\n");
+  out = out.trim();
+  // "Here it is, Remon:" after a trailing mention → "Here it is, Remon"
+  out = out.replace(/:\s*$/u, "").trim();
+  return out;
+}
+
+export type ChatMessageBubblePartsOptions = {
+  /**
+   * Lowercased task display ids that already have a card below the bubble —
+   * strip matching tokens from bubble text so the task is not shown twice.
+   */
+  stripTaskDisplayIds?: ReadonlySet<string> | null;
+};
+
+/**
+ * Parts that stay inside the message bubble — task cards are lifted out, and
+ * text mentions for below-cards are stripped. Empty text parts are dropped.
  */
 export function chatMessageBubbleParts(
   parts: readonly ChatUiMessagePart[],
+  options?: ChatMessageBubblePartsOptions | null,
 ): ChatUiMessagePart[] {
-  return parts.filter((part) => asTaskCardPart(part) == null);
+  const stripIds = options?.stripTaskDisplayIds ?? null;
+  const out: ChatUiMessagePart[] = [];
+  for (const part of parts) {
+    if (asTaskCardPart(part) != null) continue;
+    if (part.type === "text" && stripIds && stripIds.size > 0) {
+      const text = stripTaskMentionsFromText(part.text, stripIds);
+      if (!text.trim()) continue;
+      out.push(text === part.text ? part : { ...part, text });
+      continue;
+    }
+    out.push(part);
+  }
+  return out;
 }
 
 export type CollectChatTaskCardsBelowOptions = {

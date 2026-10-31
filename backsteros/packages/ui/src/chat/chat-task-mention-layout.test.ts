@@ -8,6 +8,7 @@ import {
   chatMessageBubbleParts,
   collectChatTaskCardsBelow,
   hrefFromTaskDisplayId,
+  stripTaskMentionsFromText,
   taskCardPlainText,
   taskMentionTokensInText,
 } from "./chat-task-mention-layout.js";
@@ -82,6 +83,51 @@ describe("taskMentionTokensInText", () => {
   });
 });
 
+describe("stripTaskMentionsFromText", () => {
+  it("removes carded tokens, collapses whitespace, and drops a trailing colon", () => {
+    assert.equal(
+      stripTaskMentionsFromText("Here it is, Remon: [@task:OS-144]", new Set([
+        "os-144",
+      ])),
+      "Here it is, Remon",
+    );
+  });
+
+  it("keeps surrounding prose and non-task mentions", () => {
+    assert.equal(
+      stripTaskMentionsFromText(
+        "See [@task:OS-12] and [@project:BSH] please.",
+        new Set(["os-12"]),
+      ),
+      "See and [@project:BSH] please.",
+    );
+  });
+
+  it("returns empty when the body was only a task mention", () => {
+    assert.equal(
+      stripTaskMentionsFromText("[@task:OS-153]", new Set(["os-153"])),
+      "",
+    );
+  });
+
+  it("drops empty paragraphs left behind by stripped mentions", () => {
+    assert.equal(
+      stripTaskMentionsFromText(
+        "Intro\n\n[@task:OS-153]\n\nOutro",
+        new Set(["os-153"]),
+      ),
+      "Intro\n\nOutro",
+    );
+  });
+
+  it("leaves text alone when the display id is not in the strip set", () => {
+    assert.equal(
+      stripTaskMentionsFromText("Keep [@task:OS-12]", new Set(["os-999"])),
+      "Keep [@task:OS-12]",
+    );
+  });
+});
+
 describe("chatMessageBubbleParts", () => {
   it("keeps text and non-task cards, lifts task cards out", () => {
     const parts = chatMessageBubbleParts([
@@ -100,6 +146,32 @@ describe("chatMessageBubbleParts", () => {
     if (parts[1]?.type === "card") {
       assert.equal(parts[1].cardType, "project");
     }
+  });
+
+  it("strips carded task tokens from bubble text", () => {
+    const parts = chatMessageBubbleParts(
+      [
+        {
+          type: "text",
+          markdown: true,
+          text: "Here it is, Remon: [@task:OS-144] — done.",
+        },
+      ],
+      { stripTaskDisplayIds: new Set(["os-144"]) },
+    );
+    assert.equal(parts.length, 1);
+    assert.equal(parts[0]?.type, "text");
+    if (parts[0]?.type === "text") {
+      assert.equal(parts[0].text, "Here it is, Remon: — done.");
+    }
+  });
+
+  it("drops the bubble text part when only a mention remains", () => {
+    const parts = chatMessageBubbleParts(
+      [{ type: "text", text: "[@task:OS-153]", markdown: true }, TASK_CARD],
+      { stripTaskDisplayIds: new Set(["os-153"]) },
+    );
+    assert.deepEqual(parts, []);
   });
 });
 

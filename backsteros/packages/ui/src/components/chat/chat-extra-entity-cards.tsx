@@ -239,7 +239,6 @@ export function ChatMeetingCard({ part }: ChatCardRendererProps) {
             projectIcon: data.projectIcon,
             organizationName: data.organizationName,
           }}
-          href={href}
         />
       }
     >
@@ -280,7 +279,6 @@ export function ChatJournalCard({ part }: ChatCardRendererProps) {
       summary={
         <ChatEntityBlockChip
           kindClassName="mention-chip-lite--journal"
-          href={href}
           icon={<JournalIcon size={14} />}
           id="Journal"
           title={data.date}
@@ -317,7 +315,6 @@ export function ChatHabitCard({ part }: ChatCardRendererProps) {
       summary={
         <ChatEntityBlockChip
           kindClassName="mention-chip-lite--habit"
-          href={href}
           icon={<FlameIcon size={14} />}
           id="Habit"
           title={title}
@@ -382,7 +379,6 @@ export function ChatMessageCard({ part }: ChatCardRendererProps) {
       summary={
         <ChatEntityBlockChip
           kindClassName="mention-chip-lite--message"
-          href={href}
           icon={
             <MentionMessageChannelIcon
               channelType={data.channelType}
@@ -441,7 +437,6 @@ export function ChatPostCard({ part }: ChatCardRendererProps) {
       summary={
         <ChatEntityBlockChip
           kindClassName="mention-chip-lite--post"
-          href={href}
           icon={<LinkedInIcon size={14} />}
           id={data.platform}
           title={title}
@@ -500,7 +495,6 @@ export function ChatTransactionCard({ part }: ChatCardRendererProps) {
       summary={
         <ChatEntityBlockChip
           kindClassName="mention-chip-lite--transaction"
-          href={href}
           icon={<ArrowSwitchIcon size={14} />}
           id={data.bookedOn}
           title={title}
@@ -552,7 +546,6 @@ export function ChatInvoiceCard({ part }: ChatCardRendererProps) {
       summary={
         <ChatEntityBlockChip
           kindClassName="mention-chip-lite--invoice"
-          href={href}
           icon={<MoneybirdIcon size={14} withTile={false} />}
           id={data.invoiceNumber}
           title={title}
@@ -603,7 +596,6 @@ export function ChatEstimateCard({ part }: ChatCardRendererProps) {
       summary={
         <ChatEntityBlockChip
           kindClassName="mention-chip-lite--estimate"
-          href={href}
           icon={<LemoDesignMarkIcon size={14} />}
           id={data.displayId}
           title={title}

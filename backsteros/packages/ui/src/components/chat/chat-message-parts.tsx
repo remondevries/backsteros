@@ -133,8 +133,8 @@ function ChatTextPartView({
 }: {
   part: Extract<ChatUiMessagePart, { type: "text" }>;
 }) {
-  // Mention-aware preview: task mentions stay compact inline chips in the
-  // bubble; full task cards are lifted below the message.
+  // Mention-aware preview. Task tokens that already have a below-card are
+  // stripped before we get here — remaining mentions stay inline chips.
   if (part.markdown || /\[@[a-z]+:/i.test(part.text)) {
     return (
       <div className="chat-ui-text chat-ui-text--markdown">
@@ -263,10 +263,6 @@ export function ChatUiMessageBody({
     return map.size > 0 ? map : null;
   }, [taskResolve, taskTokens]);
 
-  const bubbleParts = useMemo(
-    () => chatMessageBubbleParts(message.parts),
-    [message.parts],
-  );
   const taskCardsBelow = useMemo(
     () =>
       collectChatTaskCardsBelow(message, {
@@ -275,6 +271,17 @@ export function ChatUiMessageBody({
         lookingUp: !lookupSettled,
       }),
     [lookupSettled, mentionCatalog, message, resolvedByDisplayId],
+  );
+  const stripTaskDisplayIds = useMemo(() => {
+    if (taskCardsBelow.length === 0) return null;
+    return new Set(taskCardsBelow.map((entry) => entry.key));
+  }, [taskCardsBelow]);
+  const bubbleParts = useMemo(
+    () =>
+      chatMessageBubbleParts(message.parts, {
+        stripTaskDisplayIds,
+      }),
+    [message.parts, stripTaskDisplayIds],
   );
 
   const isStatusOnly =
@@ -356,11 +363,13 @@ export function ChatUiMessageBody({
         </div>
       ) : null}
       <div className="chat-ui-message__main">
-        <div className={bodyClass}>
-          {bubbleParts.map((part, index) => (
-            <ChatUiPartView key={`${message.id}-${index}`} part={part} />
-          ))}
-        </div>
+        {bubbleParts.length > 0 ? (
+          <div className={bodyClass}>
+            {bubbleParts.map((part, index) => (
+              <ChatUiPartView key={`${message.id}-${index}`} part={part} />
+            ))}
+          </div>
+        ) : null}
         {!selectMode ? (
           <ChatMessageHoverActions
             plainText={plainText}

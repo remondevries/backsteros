@@ -5610,6 +5610,7 @@ export {
   collectChatTaskCardsBelow,
   fallbackTaskCardPart,
   hrefFromTaskDisplayId,
+  stripTaskMentionsFromText,
   taskMentionTokensInMessage,
 } from "./chat/chat-task-mention-layout.js";
 
