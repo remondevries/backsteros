@@ -211,6 +211,15 @@ export type AgentChatWebhookMessage = {
   linkPreviews?: AgentChatWebhookLinkPreview[];
 };
 
+/** Present on project-room chat webhooks (not DMs / webhook tests). */
+export type AgentChatWebhookProject = {
+  id: string;
+  key: string;
+  name: string;
+  /** Channel JSON from the project (`{ uri, name? }`), or null. */
+  channel: { uri: string; name?: string | null } | null;
+};
+
 type AgentWebhookPayloadBase = {
   workspaceId: string;
   agentId: string;
@@ -223,6 +232,11 @@ type AgentWebhookPayloadBase = {
   context: AgentChatWebhookMessage[];
   deliveryId: string;
   timestamp: string;
+  /**
+   * Project room context when the thread is linked to a project. Agents should
+   * reply to the same `threadId` / `replyUrl` (not the Grok Bot DM room).
+   */
+  project?: AgentChatWebhookProject;
 };
 
 export type AgentChatWebhookPayload = AgentWebhookPayloadBase & {

@@ -182,7 +182,10 @@ export function registerAgentChatRoutes(app: Hono) {
     try {
       const thread = await agentChat.getOrCreateChatThread(
         auth.workspaceId,
-        parsed.data.agentId,
+        {
+          agentId: parsed.data.agentId,
+          projectId: parsed.data.projectId,
+        },
       );
       return c.json(thread);
     } catch (error) {

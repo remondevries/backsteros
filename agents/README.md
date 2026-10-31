@@ -91,8 +91,11 @@ reply with the agent’s API key to `replyUrl` (same as
 
 | `event` | When | Handler rule |
 | --- | --- | --- |
-| `agent.chat.message` | Remon sent a chat message | Normal chat turn |
+| `agent.chat.message` | Remon sent a chat message | Normal chat turn. When `project` is present, this is a **project room** — reply to the same `threadId` / `replyUrl` only (do not mirror into the Grok Bot DM). |
 | `agent.webhook.test` | Settings → Test connection | Match **only** on `event`; never on message text. Optional short welcome via `replyUrl` |
+
+Project-room payloads include `project: { id, key, name, channel }`. Only the
+project's **current lead agent** may POST replies / status on that thread.
 
 **Live progress cards:** attach optional `progress` on the reply POST (`title`, `state`, optional `steps` ≤20 / labels ≤80, `current`/`total`, `detail`). Update the same message with:
 

@@ -55,6 +55,7 @@ describe("OS-150 agent chat webhook delivery", () => {
         webhookSecretCiphertext: encryptAgentChatWebhookSecret(secret),
       },
       {
+        skipCloudForward: true,
         fetchImpl: async (url, init) => {
           const headers = new Headers(init?.headers);
           posted = {
@@ -119,6 +120,7 @@ describe("OS-150 agent chat webhook delivery", () => {
         webhookSecretCiphertext: null,
       },
       {
+        skipCloudForward: true,
         fetchImpl: async () => new Response("nope", { status: 500 }),
       },
     );

@@ -1317,6 +1317,13 @@
       "when": 1796220000000,
       "tag": "0186_project_lead_agent",
       "breakpoints": true
+    },
+    {
+      "idx": 188,
+      "version": "7",
+      "when": 1796230000000,
+      "tag": "0187_chat_thread_project",
+      "breakpoints": true
     }
   ]
 }

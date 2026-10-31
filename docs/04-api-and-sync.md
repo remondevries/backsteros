@@ -1016,6 +1016,26 @@ Or discard:
   Structured `emailDraft` / `emailDraftResult` also appear on thread, SSE, and
   webhook context.
 
+**Open a thread** — DM or project room (exactly one):
+
+```http
+POST /api/v1/chat/threads
+{ "agentId": "…" }
+```
+
+```http
+POST /api/v1/chat/threads
+{ "projectId": "…" }
+```
+
+Project rooms are one thread per project (`chat_threads.project_id`). Human
+messages route to the project's **current** lead agent
+(`projects.lead_agent_contact_id` → enabled `agents` row). Replies and
+`POST …/status` are allowed only for that lead's API key (not other agents,
+and not the Grok Bot DM room). If the lead changes, the new lead takes over
+for new messages. Missing lead / webhook → a clear **system** notice in the
+thread (not a silent drop).
+
 **Human message** (`event` must be matched exactly):
 
 ```json
@@ -1029,9 +1049,22 @@ Or discard:
   "message": { "id": "…", "role": "user", "text": "…", "createdAt": "…" },
   "context": [ /* last ~10 messages, oldest → newest; may include choices/choicesAnswer, approval/approvalAnswer, form/formAnswer, emailDraft/emailDraftResult */ ],
   "deliveryId": "…",
-  "timestamp": "…"
+  "timestamp": "…",
+  "project": {
+    "id": "…",
+    "key": "OS",
+    "name": "BacksterOS",
+    "channel": { "uri": "grokbot://…", "name": "BacksterOS" }
+  }
 }
 ```
+
+`project` is present only for project-room threads. Always reply to the same
+`threadId` / `replyUrl` — do **not** mirror into the agent's DM / Grok Bot room.
+On hybrid local-core, webhook secrets are not replicated; local forwards
+`agent.chat.message` to cloud via
+`POST /internal/core-replication/agent-chat-webhook` (same pattern as Channel
+Connect).
 
 **Settings Test connection** — never treat this as a normal chat turn. Match on
 `event == "agent.webhook.test"` only (ignore message text). Payload uses a real

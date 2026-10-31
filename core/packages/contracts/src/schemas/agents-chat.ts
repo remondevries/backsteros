@@ -744,6 +744,11 @@ export const chatThreadSchema = z.object({
   id: z.string(),
   workspaceId: z.string(),
   agentId: z.string(),
+  /**
+   * Project chat room id when this thread is a project channel (one per
+   * project). Null for direct agent DMs.
+   */
+  projectId: z.string().nullable(),
   /** ISO timestamp while waiting for an agent reply; null otherwise. */
   pendingReplyAt: z.string().datetime().nullable(),
   createdAt: z.string().datetime(),
@@ -771,9 +776,26 @@ export const chatThreadMessagesListSchema = z.object({
   messages: z.array(chatThreadMessageSchema),
 });
 
-export const getOrCreateChatThreadInputSchema = z.object({
-  agentId: z.string().trim().min(1),
-});
+/**
+ * Open a DM (`agentId`) or a project room (`projectId`). Exactly one required.
+ * Project rooms route human messages to the project's current lead agent.
+ */
+export const getOrCreateChatThreadInputSchema = z
+  .object({
+    agentId: z.string().trim().min(1).optional(),
+    projectId: z.string().trim().min(1).optional(),
+  })
+  .superRefine((value, ctx) => {
+    const hasAgent = Boolean(value.agentId?.trim());
+    const hasProject = Boolean(value.projectId?.trim());
+    if (hasAgent === hasProject) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Provide exactly one of agentId or projectId",
+        path: hasAgent ? ["projectId"] : ["agentId"],
+      });
+    }
+  });
 
 export const createChatThreadMessageInputSchema = z
   .object({

@@ -98,6 +98,7 @@ export function useShellChatProjects(): {
             overlay?.channelPendingLink !== undefined
               ? overlay.channelPendingLink
               : (project.channelPendingLink ?? null),
+          leadAgentContactId: project.leadAgentContactId ?? null,
         };
       }),
     [overlayById, projects],

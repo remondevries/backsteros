@@ -65,6 +65,13 @@ import {
   postChannelConnectWebhook,
   type ChannelConnectWebhookPayload,
 } from "../../lib/channel-connect-webhook.js";
+import {
+  AGENT_CHAT_WEBHOOK_EVENT,
+  AGENT_WEBHOOK_TEST_EVENT,
+  type AgentOutboundWebhookPayload,
+} from "../../lib/agent-chat-webhook.js";
+import { deliverAgentChatWebhook } from "../agent-chat.js";
+import { getAgentRowForWebhook } from "../agents.js";
 
 function unauthorized() {
   return { error: "Unauthorized", code: "unauthorized" as const };
@@ -1010,6 +1017,87 @@ export function registerCoreReplicationRoutes(app: Hono) {
         payload,
         skipCloudForward: true,
       });
+      if (!result.ok) {
+        return c.json({ ok: false, error: result.error }, 200);
+      }
+      return c.json({ ok: true });
+    },
+  );
+
+  /**
+   * Local-core → cloud-core: POST agent chat webhook using cloud secrets.
+   * Agent webhook ciphertext is not replicated; chat dispatch on local must forward.
+   */
+  app.post(
+    "/internal/core-replication/agent-chat-webhook",
+    async (c) => {
+      if (!replicationAuth(c.req.header("Authorization"))) {
+        return c.json(unauthorized(), 401);
+      }
+      const config = getCoreReplicationConfig();
+      if (!config || config.role !== "cloud") {
+        return c.json(
+          {
+            error: "Agent chat webhook dispatch is cloud-only",
+            code: "forbidden" as const,
+          },
+          403,
+        );
+      }
+
+      const body = (await c.req.json().catch(() => null)) as {
+        workspace_id?: string;
+        agent_id?: string;
+        payload?: AgentOutboundWebhookPayload;
+      } | null;
+
+      const workspaceId = body?.workspace_id?.trim();
+      const agentId = body?.agent_id?.trim();
+      const payload = body?.payload;
+      const eventOk =
+        payload &&
+        typeof payload === "object" &&
+        (payload.event === AGENT_CHAT_WEBHOOK_EVENT ||
+          payload.event === AGENT_WEBHOOK_TEST_EVENT) &&
+        typeof payload.threadId === "string" &&
+        payload.threadId.trim().length > 0;
+
+      if (!workspaceId || !agentId || !eventOk) {
+        return c.json(
+          {
+            error:
+              "workspace_id, agent_id, and a valid agent-chat payload are required",
+            code: "bad_request" as const,
+          },
+          400,
+        );
+      }
+
+      const agent = await getAgentRowForWebhook(workspaceId, agentId);
+      const webhookUrl = agent?.webhookUrl?.trim() ?? "";
+      if (!agent || !agent.enabled || !webhookUrl) {
+        return c.json(
+          {
+            ok: false,
+            error: !agent
+              ? "Agent not found"
+              : !agent.enabled
+                ? "Agent is disabled"
+                : "Agent webhook URL is not configured",
+          },
+          200,
+        );
+      }
+
+      const result = await deliverAgentChatWebhook(
+        payload,
+        {
+          id: agent.id,
+          webhookUrl,
+          webhookSecretCiphertext: agent.webhookSecretCiphertext,
+        },
+        { skipCloudForward: true },
+      );
       if (!result.ok) {
         return c.json({ ok: false, error: result.error }, 200);
       }

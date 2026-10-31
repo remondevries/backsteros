@@ -244,11 +244,20 @@ export function ShellChatPanel() {
     }
     return {
       agentIdByContactId,
-      openThread: async (agentId) => {
-        const thread = await agentChat.openThread(agentId);
+      openThread: async (input) => {
+        const thread = await agentChat.openThread(input);
         markLatestAssistantSeen(thread);
         return thread;
       },
+      leadAgentByContactId: new Map(
+        leadAgentContacts.map((contact) => [
+          contact.id,
+          {
+            name: contact.name,
+            title: contact.title?.trim() || null,
+          },
+        ]),
+      ),
       sendMessage: agentChat.sendMessage,
       uploadAttachment: agentChat.uploadAttachment,
       resolveAttachmentUrl,
@@ -269,7 +278,7 @@ export function ShellChatPanel() {
       answerForm: agentChat.answerForm,
       answerEmailDraft: agentChat.answerEmailDraft,
     };
-  }, [agentChat, resolveAttachmentUrl]);
+  }, [agentChat, leadAgentContacts, resolveAttachmentUrl]);
 
   // Resolve [@task:OS-144] against workspace rows (not only the mention catalog).
   const mentionResolve = useMemo(() => {

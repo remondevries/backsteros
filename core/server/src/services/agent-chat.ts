@@ -48,15 +48,21 @@ import {
   agents,
   chatThreadMessages,
   chatThreads,
+  projects,
 } from "../db/schema.js";
 import { newId } from "../lib/crypto.js";
 import { logger } from "../lib/logger.js";
+import {
+  forwardAgentChatWebhookToCloud,
+  shouldForwardAgentChatWebhookToCloud,
+} from "../lib/agent-chat-cloud-forward.js";
 import {
   AGENT_CHAT_WEBHOOK_EVENT,
   AGENT_CHAT_WEBHOOK_TIMEOUT_MS,
   AGENT_WEBHOOK_TEST_EVENT,
   type AgentChatWebhookMessage,
   type AgentChatWebhookPayload,
+  type AgentChatWebhookProject,
   type AgentOutboundWebhookPayload,
   type AgentWebhookTestPayload,
   buildAgentChatReplyUrl,
@@ -98,17 +104,41 @@ export function isChatThreadPendingReplyStale(
   return now.getTime() - pendingReplyAt.getTime() > CHAT_THREAD_WORKING_STALE_MS;
 }
 
-async function clearStalePendingReplyAt(
-  thread: {
+type ChatThreadRow = {
+  id: string;
+  workspaceId: string;
+  agentId: string;
+  projectId: string | null;
+  pendingReplyAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+type AgentAuthRow = {
+  id: string;
+  name: string;
+  enabled: boolean;
+  contactId: string | null;
+  apiKeyId: string | null;
+  webhookUrl: string | null;
+  webhookSecretCiphertext: string | null;
+};
+
+type ProjectLeadContext = {
+  project: {
     id: string;
-    workspaceId: string;
-    agentId: string;
-    pendingReplyAt: Date | null;
-    createdAt: Date;
-    updatedAt: Date;
-  },
+    key: string;
+    name: string;
+    channel: { uri: string; name?: string | null } | null;
+    leadAgentContactId: string | null;
+  };
+  leadAgent: AgentAuthRow | null;
+};
+
+async function clearStalePendingReplyAt(
+  thread: ChatThreadRow,
   now: Date = new Date(),
-): Promise<typeof thread> {
+): Promise<ChatThreadRow> {
   if (!isChatThreadPendingReplyStale(thread.pendingReplyAt, now)) {
     return thread;
   }
@@ -123,6 +153,137 @@ async function clearStalePendingReplyAt(
     )
     .returning();
   return updated ?? { ...thread, pendingReplyAt: null, updatedAt: now };
+}
+
+async function resolveProjectLeadContext(
+  workspaceId: string,
+  projectId: string,
+): Promise<ProjectLeadContext | null> {
+  const [project] = await db
+    .select({
+      id: projects.id,
+      key: projects.key,
+      name: projects.name,
+      channel: projects.channel,
+      leadAgentContactId: projects.leadAgentContactId,
+    })
+    .from(projects)
+    .where(and(eq(projects.workspaceId, workspaceId), eq(projects.id, projectId)))
+    .limit(1);
+  if (!project) return null;
+
+  const contactId = project.leadAgentContactId?.trim() || "";
+  if (!contactId) {
+    return { project, leadAgent: null };
+  }
+
+  const [leadAgent] = await db
+    .select({
+      id: agents.id,
+      name: agents.name,
+      enabled: agents.enabled,
+      contactId: agents.contactId,
+      apiKeyId: agents.apiKeyId,
+      webhookUrl: agents.webhookUrl,
+      webhookSecretCiphertext: agents.webhookSecretCiphertext,
+    })
+    .from(agents)
+    .where(
+      and(
+        eq(agents.workspaceId, workspaceId),
+        eq(agents.contactId, contactId),
+        eq(agents.enabled, true),
+      ),
+    )
+    .limit(1);
+
+  return { project, leadAgent: leadAgent ?? null };
+}
+
+function toWebhookProject(
+  project: ProjectLeadContext["project"],
+): AgentChatWebhookProject {
+  return {
+    id: project.id,
+    key: project.key,
+    name: project.name,
+    channel: project.channel ?? null,
+  };
+}
+
+function forbiddenAgentThread(): Error {
+  return Object.assign(
+    new Error("This API key cannot post to this agent thread"),
+    { status: 403, code: "forbidden" },
+  );
+}
+
+/**
+ * DM threads: only the thread's agent key.
+ * Project threads: only the project's *current* lead agent key (lead can change).
+ */
+async function resolveAgentAllowedToWrite(
+  workspaceId: string,
+  thread: ChatThreadRow,
+  apiKeyId: string,
+): Promise<AgentAuthRow> {
+  if (thread.projectId) {
+    const ctx = await resolveProjectLeadContext(workspaceId, thread.projectId);
+    if (!ctx?.leadAgent?.apiKeyId || ctx.leadAgent.apiKeyId !== apiKeyId) {
+      throw forbiddenAgentThread();
+    }
+    return ctx.leadAgent;
+  }
+
+  const [agent] = await db
+    .select({
+      id: agents.id,
+      name: agents.name,
+      enabled: agents.enabled,
+      contactId: agents.contactId,
+      apiKeyId: agents.apiKeyId,
+      webhookUrl: agents.webhookUrl,
+      webhookSecretCiphertext: agents.webhookSecretCiphertext,
+    })
+    .from(agents)
+    .where(and(eq(agents.workspaceId, workspaceId), eq(agents.id, thread.agentId)))
+    .limit(1);
+  if (!agent?.apiKeyId || agent.apiKeyId !== apiKeyId) {
+    throw forbiddenAgentThread();
+  }
+  return agent;
+}
+
+async function insertSystemNotice(
+  workspaceId: string,
+  threadId: string,
+  agentId: string,
+  body: string,
+  now: Date,
+): Promise<ChatThreadMessage> {
+  const [messageRow] = await db
+    .insert(chatThreadMessages)
+    .values({
+      id: newId(),
+      workspaceId,
+      threadId,
+      role: "system",
+      authorContactId: null,
+      authorName: "BacksterOS",
+      body,
+      status: "done",
+      createdAt: now,
+      updatedAt: now,
+    })
+    .returning();
+  const message = toMessage(messageRow!);
+  publishShellMessageEvent({
+    workspaceId,
+    threadId,
+    agentId,
+    message,
+  });
+  return message;
 }
 
 function publishStatusEvent(input: {
@@ -155,6 +316,7 @@ function toThread(row: {
   id: string;
   workspaceId: string;
   agentId: string;
+  projectId?: string | null;
   pendingReplyAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
@@ -163,6 +325,7 @@ function toThread(row: {
     id: row.id,
     workspaceId: row.workspaceId,
     agentId: row.agentId,
+    projectId: row.projectId ?? null,
     pendingReplyAt: row.pendingReplyAt?.toISOString() ?? null,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
@@ -532,7 +695,11 @@ export async function listChatThreads(
   workspaceId: string,
   agentId?: string,
 ): Promise<ChatThreadListItem[]> {
-  const conditions = [eq(chatThreads.workspaceId, workspaceId)];
+  // DM notification list — project rooms are opened via projectId, not here.
+  const conditions = [
+    eq(chatThreads.workspaceId, workspaceId),
+    isNull(chatThreads.projectId),
+  ];
   if (agentId) conditions.push(eq(chatThreads.agentId, agentId));
   const rows = await db
     .select({
@@ -625,8 +792,70 @@ export async function getChatThreadWithMessages(
 
 export async function getOrCreateChatThread(
   workspaceId: string,
-  agentId: string,
+  input: { agentId?: string; projectId?: string },
 ): Promise<ChatThreadWithMessages> {
+  const projectId = input.projectId?.trim() || "";
+  const agentId = input.agentId?.trim() || "";
+  if (Boolean(projectId) === Boolean(agentId)) {
+    throw badRequest("Provide exactly one of agentId or projectId");
+  }
+
+  if (projectId) {
+    const ctx = await resolveProjectLeadContext(workspaceId, projectId);
+    if (!ctx) throw notFound("Project");
+    if (!ctx.leadAgent) {
+      throw badRequest(
+        "Set an enabled lead agent on this project before opening its chat room.",
+      );
+    }
+    const lead = ctx.leadAgent;
+
+    const [existing] = await db
+      .select()
+      .from(chatThreads)
+      .where(
+        and(
+          eq(chatThreads.workspaceId, workspaceId),
+          eq(chatThreads.projectId, projectId),
+        ),
+      )
+      .limit(1);
+
+    let thread = existing;
+    const now = new Date();
+    if (!thread) {
+      const [created] = await db
+        .insert(chatThreads)
+        .values({
+          id: newId(),
+          workspaceId,
+          agentId: lead.id,
+          projectId,
+          pendingReplyAt: null,
+          createdAt: now,
+          updatedAt: now,
+        })
+        .returning();
+      thread = created!;
+    } else if (thread.agentId !== lead.id) {
+      // Lead changed since the room was opened — keep the same thread id.
+      const [updated] = await db
+        .update(chatThreads)
+        .set({ agentId: lead.id, updatedAt: now })
+        .where(eq(chatThreads.id, thread.id))
+        .returning();
+      thread = updated ?? { ...thread, agentId: lead.id, updatedAt: now };
+    }
+
+    const freshThread = await clearStalePendingReplyAt(thread);
+    const messages = await loadMessages(workspaceId, freshThread.id);
+    return {
+      ...toThread(freshThread),
+      agentName: lead.name,
+      messages,
+    };
+  }
+
   const [agent] = await db
     .select()
     .from(agents)
@@ -642,6 +871,7 @@ export async function getOrCreateChatThread(
       and(
         eq(chatThreads.workspaceId, workspaceId),
         eq(chatThreads.agentId, agentId),
+        isNull(chatThreads.projectId),
       ),
     )
     .limit(1);
@@ -655,6 +885,7 @@ export async function getOrCreateChatThread(
         id: newId(),
         workspaceId,
         agentId,
+        projectId: null,
         pendingReplyAt: null,
         createdAt: now,
         updatedAt: now,
@@ -700,6 +931,8 @@ type PostMessageAuth = {
 type DeliverDeps = {
   fetchImpl?: typeof fetch;
   now?: () => Date;
+  /** When true, skip local→cloud forward (cloud internal handler / tests). */
+  skipCloudForward?: boolean;
 };
 
 async function recentContext(
@@ -757,7 +990,7 @@ export async function testAgentWebhook(
 
   let thread;
   try {
-    thread = await getOrCreateChatThread(workspaceId, agentId);
+    thread = await getOrCreateChatThread(workspaceId, { agentId });
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Could not open chat thread";
@@ -800,6 +1033,7 @@ export async function testAgentWebhook(
   const result = await deliverAgentChatWebhook(
     payload,
     {
+      id: agent.id,
       webhookUrl: agent.webhookUrl,
       webhookSecretCiphertext: agent.webhookSecretCiphertext,
     },
@@ -817,11 +1051,24 @@ export async function testAgentWebhook(
 export async function deliverAgentChatWebhook(
   payload: AgentOutboundWebhookPayload,
   agent: {
+    id?: string;
     webhookUrl: string;
     webhookSecretCiphertext: string | null;
   },
   deps: DeliverDeps = {},
 ): Promise<{ ok: boolean; error: string | null }> {
+  if (
+    !deps.skipCloudForward &&
+    shouldForwardAgentChatWebhookToCloud()
+  ) {
+    return forwardAgentChatWebhookToCloud({
+      workspaceId: payload.workspaceId,
+      agentId: agent.id ?? payload.agentId,
+      payload,
+      fetchImpl: deps.fetchImpl,
+    });
+  }
+
   const fetchImpl = deps.fetchImpl ?? fetch;
   const secret = decryptAgentChatWebhookSecret(agent.webhookSecretCiphertext);
   const body = JSON.stringify(payload);
@@ -889,13 +1136,9 @@ export async function postChatThreadMessage(
     throw badRequest("Message body or attachments are required");
   }
 
-  const [threadRow] = await db
-    .select({
-      thread: chatThreads,
-      agent: agents,
-    })
+  const [thread] = await db
+    .select()
     .from(chatThreads)
-    .innerJoin(agents, eq(agents.id, chatThreads.agentId))
     .where(
       and(
         eq(chatThreads.workspaceId, workspaceId),
@@ -903,20 +1146,35 @@ export async function postChatThreadMessage(
       ),
     )
     .limit(1);
-  if (!threadRow) throw notFound("Thread");
+  if (!thread) throw notFound("Thread");
 
-  const { agent } = threadRow;
   const now = deps.now?.() ?? new Date();
-  const isAgentReply =
-    auth.apiKeyId != null &&
-    agent.apiKeyId != null &&
-    auth.apiKeyId === agent.apiKeyId;
-
-  if (auth.apiKeyId && !isAgentReply) {
-    throw Object.assign(
-      new Error("This API key cannot post to this agent thread"),
-      { status: 403, code: "forbidden" },
+  let agent: AgentAuthRow | null = null;
+  const isAgentReply = auth.apiKeyId != null;
+  if (isAgentReply) {
+    agent = await resolveAgentAllowedToWrite(
+      workspaceId,
+      thread,
+      auth.apiKeyId!,
     );
+  } else {
+    const [row] = await db
+      .select({
+        id: agents.id,
+        name: agents.name,
+        enabled: agents.enabled,
+        contactId: agents.contactId,
+        apiKeyId: agents.apiKeyId,
+        webhookUrl: agents.webhookUrl,
+        webhookSecretCiphertext: agents.webhookSecretCiphertext,
+      })
+      .from(agents)
+      .where(
+        and(eq(agents.workspaceId, workspaceId), eq(agents.id, thread.agentId)),
+      )
+      .limit(1);
+    agent = row ?? null;
+    if (!agent) throw notFound("Agent");
   }
 
   if (options.choices && !isAgentReply) {
@@ -940,7 +1198,7 @@ export async function postChatThreadMessage(
     fetchImpl: deps.fetchImpl,
   });
 
-  if (isAgentReply) {
+  if (isAgentReply && agent) {
     const emailDraftDeps = options.emailDraftDeps ?? defaultChatEmailDraftDeps;
     const resolvedEmailDraft = options.emailDraft
       ? await resolveChatThreadEmailDraft(
@@ -1061,11 +1319,6 @@ export async function postChatThreadMessage(
     attachmentIds,
   );
 
-  const agentForWebhook = await getAgentRowForWebhook(workspaceId, agent.id);
-  const webhookUrl = agentForWebhook?.webhookUrl?.trim() ?? "";
-  let thinking = false;
-  let webhookError: string | null = null;
-
   const mentions = text
     ? await resolveChatMentionsInBody(workspaceId, text)
     : [];
@@ -1075,48 +1328,128 @@ export async function postChatThreadMessage(
     attachments.length > 0 ? attachments : undefined,
   );
 
-  if (!agentForWebhook?.enabled) {
-    webhookError = `${agent.name} is disabled.`;
-  } else if (!webhookUrl) {
-    webhookError = `No webhook URL configured for ${agent.name}. Add one in Settings → API → Agents.`;
-  } else {
-    const context = await recentContext(
-      workspaceId,
-      threadId,
-      CONTEXT_MESSAGE_LIMIT,
-    );
-    const deliveryId = newId();
-    const payload: AgentChatWebhookPayload = {
-      event: AGENT_CHAT_WEBHOOK_EVENT,
-      workspaceId,
-      agentId: agent.id,
-      agentName: agent.name,
-      threadId,
-      replyUrl: buildAgentChatReplyUrl(threadId),
-      message: toWebhookMessage(userMessage),
-      context,
-      deliveryId,
-      timestamp: now.toISOString(),
-    };
-    const result = await deliverAgentChatWebhook(
-      payload,
-      {
-        webhookUrl,
-        webhookSecretCiphertext:
-          agentForWebhook.webhookSecretCiphertext ?? null,
-      },
-      deps,
-    );
-    if (result.ok) {
-      thinking = true;
-    } else {
-      webhookError =
-        result.error ??
-        `Could not reach ${agent.name}'s webhook.`;
-      logger.warn(
-        { agentId: agent.id, threadId, error: result.error },
-        "agent chat webhook delivery failed",
+  let thinking = false;
+  let webhookError: string | null = null;
+  let routeAgent = agent!;
+  let webhookProject: AgentChatWebhookProject | undefined;
+
+  if (thread.projectId) {
+    const ctx = await resolveProjectLeadContext(workspaceId, thread.projectId);
+    if (!ctx) {
+      webhookError = "This project no longer exists.";
+      await insertSystemNotice(
+        workspaceId,
+        threadId,
+        routeAgent.id,
+        webhookError,
+        now,
       );
+    } else if (!ctx.leadAgent) {
+      webhookError =
+        "No lead agent is set on this project. Assign a lead agent to route chat messages.";
+      await insertSystemNotice(
+        workspaceId,
+        threadId,
+        routeAgent.id,
+        webhookError,
+        now,
+      );
+    } else {
+      routeAgent = ctx.leadAgent;
+      webhookProject = toWebhookProject(ctx.project);
+      if (thread.agentId !== routeAgent.id) {
+        await db
+          .update(chatThreads)
+          .set({ agentId: routeAgent.id, updatedAt: now })
+          .where(eq(chatThreads.id, threadId));
+      }
+    }
+  }
+
+  if (!webhookError) {
+    const forwardToCloud =
+      !deps.skipCloudForward && shouldForwardAgentChatWebhookToCloud();
+    const agentForWebhook = await getAgentRowForWebhook(
+      workspaceId,
+      routeAgent.id,
+    );
+    const webhookUrl = agentForWebhook?.webhookUrl?.trim() ?? "";
+
+    if (!agentForWebhook?.enabled) {
+      webhookError = `${routeAgent.name} is disabled.`;
+      if (thread.projectId) {
+        await insertSystemNotice(
+          workspaceId,
+          threadId,
+          routeAgent.id,
+          webhookError,
+          now,
+        );
+      }
+    } else if (!webhookUrl && !forwardToCloud) {
+      webhookError = thread.projectId
+        ? `No webhook URL configured for lead agent ${routeAgent.name}. Add one in Settings → API → Agents.`
+        : `No webhook URL configured for ${routeAgent.name}. Add one in Settings → API → Agents.`;
+      if (thread.projectId) {
+        await insertSystemNotice(
+          workspaceId,
+          threadId,
+          routeAgent.id,
+          webhookError,
+          now,
+        );
+      }
+    } else {
+      const context = await recentContext(
+        workspaceId,
+        threadId,
+        CONTEXT_MESSAGE_LIMIT,
+      );
+      const deliveryId = newId();
+      const payload: AgentChatWebhookPayload = {
+        event: AGENT_CHAT_WEBHOOK_EVENT,
+        workspaceId,
+        agentId: routeAgent.id,
+        agentName: routeAgent.name,
+        threadId,
+        replyUrl: buildAgentChatReplyUrl(threadId),
+        message: toWebhookMessage(userMessage),
+        context,
+        deliveryId,
+        timestamp: now.toISOString(),
+        ...(webhookProject ? { project: webhookProject } : {}),
+      };
+      // On local-core, webhook_url is stripped from the roster — forward the
+      // payload to cloud (where secrets live) instead of requiring a local URL.
+      const result = await deliverAgentChatWebhook(
+        payload,
+        {
+          id: routeAgent.id,
+          webhookUrl: webhookUrl || "https://agent-chat.forward.local",
+          webhookSecretCiphertext:
+            agentForWebhook.webhookSecretCiphertext ?? null,
+        },
+        deps,
+      );
+      if (result.ok) {
+        thinking = true;
+      } else {
+        webhookError =
+          result.error ?? `Could not reach ${routeAgent.name}'s webhook.`;
+        logger.warn(
+          { agentId: routeAgent.id, threadId, error: result.error },
+          "agent chat webhook delivery failed",
+        );
+        if (thread.projectId) {
+          await insertSystemNotice(
+            workspaceId,
+            threadId,
+            routeAgent.id,
+            `Could not reach lead agent ${routeAgent.name}: ${webhookError}`,
+            now,
+          );
+        }
+      }
     }
   }
 
@@ -1156,13 +1489,9 @@ export async function updateChatThreadMessage(
     throw badRequest("At least one of progress or body is required");
   }
 
-  const [threadRow] = await db
-    .select({
-      thread: chatThreads,
-      agent: agents,
-    })
+  const [thread] = await db
+    .select()
     .from(chatThreads)
-    .innerJoin(agents, eq(agents.id, chatThreads.agentId))
     .where(
       and(
         eq(chatThreads.workspaceId, workspaceId),
@@ -1170,14 +1499,26 @@ export async function updateChatThreadMessage(
       ),
     )
     .limit(1);
-  if (!threadRow) throw notFound("Thread");
+  if (!thread) throw notFound("Thread");
 
-  const { agent } = threadRow;
-  if (!agent.apiKeyId || agent.apiKeyId !== auth.apiKeyId) {
-    throw Object.assign(
-      new Error("This API key cannot update messages in this agent thread"),
-      { status: 403, code: "forbidden" },
+  let agent: AgentAuthRow;
+  try {
+    agent = await resolveAgentAllowedToWrite(
+      workspaceId,
+      thread,
+      auth.apiKeyId,
     );
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      (error as { status?: number }).status === 403
+    ) {
+      throw Object.assign(
+        new Error("This API key cannot update messages in this agent thread"),
+        { status: 403, code: "forbidden" },
+      );
+    }
+    throw error;
   }
 
   const [row] = await db
@@ -1704,13 +2045,9 @@ export async function setChatThreadAgentStatus(
   auth: StatusAuth,
   label: string | null = null,
 ): Promise<ChatThreadAgentStatus> {
-  const [row] = await db
-    .select({
-      thread: chatThreads,
-      agent: agents,
-    })
+  const [thread] = await db
+    .select()
     .from(chatThreads)
-    .innerJoin(agents, eq(agents.id, chatThreads.agentId))
     .where(
       and(
         eq(chatThreads.workspaceId, workspaceId),
@@ -1718,14 +2055,26 @@ export async function setChatThreadAgentStatus(
       ),
     )
     .limit(1);
-  if (!row) throw notFound("Thread");
+  if (!thread) throw notFound("Thread");
 
-  const { agent } = row;
-  if (!agent.apiKeyId || agent.apiKeyId !== auth.apiKeyId) {
-    throw Object.assign(
-      new Error("This API key cannot update status for this agent thread"),
-      { status: 403, code: "forbidden" },
+  let agent: AgentAuthRow;
+  try {
+    agent = await resolveAgentAllowedToWrite(
+      workspaceId,
+      thread,
+      auth.apiKeyId,
     );
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      (error as { status?: number }).status === 403
+    ) {
+      throw Object.assign(
+        new Error("This API key cannot update status for this agent thread"),
+        { status: 403, code: "forbidden" },
+      );
+    }
+    throw error;
   }
 
   const now = new Date();

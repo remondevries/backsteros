@@ -13,6 +13,8 @@ export type ChatProjectOption = {
   channelUri?: string | null;
   /** Needs-details deep link (`backsteros://chat/…?message=…`). */
   channelPendingLink?: string | null;
+  /** CRM contact id for the project's lead agent (routes project-room chat). */
+  leadAgentContactId?: string | null;
 };
 
 /**

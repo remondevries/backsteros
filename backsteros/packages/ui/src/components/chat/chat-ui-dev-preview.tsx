@@ -66,7 +66,22 @@ export const SHELL_CHAT_OPEN_THREAD_WINDOW_EVENT =
 export type LiveAgentChatHandlers = {
   /** contactId → agent id for peers that have an agents record. */
   agentIdByContactId: ReadonlyMap<string, string>;
-  openThread: (agentId: string) => Promise<ChatThreadWithMessages>;
+  /**
+   * Open a DM (`agentId`) or project room (`projectId`). Project rooms route
+   * to the project's current lead agent on the server.
+   */
+  openThread: (input: {
+    agentId?: string;
+    projectId?: string;
+  }) => Promise<ChatThreadWithMessages>;
+  /**
+   * Lead agent display (name + muted job title) for project-room headers.
+   * Same roster as {@link buildLeadAgentDropdownOptions}.
+   */
+  leadAgentByContactId?: ReadonlyMap<
+    string,
+    { name: string; title: string | null }
+  >;
   sendMessage: (
     threadId: string,
     body: string,
@@ -239,8 +254,8 @@ export type ChatUiDevPreviewProps = {
   /** Same navigate callback as the shell chat column (navigateToHref). */
   onNavigate?: ChatCardNavigate | null;
   /**
-   * When set, peers that map to an agents record use the real chat loop
-   * (OS-150) instead of the in-memory demo thread. Project rooms stay demo.
+   * When set, peers that map to an agents record (and active project rooms)
+   * use the real chat loop (OS-150) instead of the in-memory demo thread.
    */
   liveAgentChat?: LiveAgentChatHandlers | null;
   /**
@@ -443,6 +458,18 @@ export function ChatUiDevPreview({
     [resolvedPeers],
   );
 
+  const leadSubtitleForProject = useCallback(
+    (project: ChatProjectOption): string | null => {
+      const contactId = project.leadAgentContactId?.trim();
+      if (!contactId || !liveAgentChat?.leadAgentByContactId) return null;
+      const lead = liveAgentChat.leadAgentByContactId.get(contactId);
+      if (!lead) return null;
+      const title = lead.title?.trim();
+      return title ? `${lead.name} · ${title}` : lead.name;
+    },
+    [liveAgentChat],
+  );
+
   const stripProjectPeers = useMemo((): readonly ChatThreadPeer[] => {
     return resolveRecentChatProjectsForStrip(
       resolvedProjects,
@@ -454,15 +481,21 @@ export function ChatUiDevPreview({
       name: project.name,
       icon: project.icon,
       type: project.type,
+      subtitle: leadSubtitleForProject(project),
     }));
-  }, [projectId, recentProjectIds, resolvedProjects]);
+  }, [
+    leadSubtitleForProject,
+    projectId,
+    recentProjectIds,
+    resolvedProjects,
+  ]);
 
   const visiblePeers = useMemo(
     (): readonly ChatThreadPeer[] => [...stripProjectPeers, ...agentPeers],
     [agentPeers, stripProjectPeers],
   );
 
-  /** Agent used for messages — Niels inside a project room, else the focused agent. */
+  /** Agent used for demo fallback — Niels inside a project room, else focused agent. */
   const threadAgent =
     (projectId
       ? projectPeer
@@ -481,10 +514,13 @@ export function ChatUiDevPreview({
     allowEmptyPeers && peersLoading && !projectId && agentPeers.length === 0;
 
   const threadKey = chatDemoThreadKey(threadAgent.id, projectId);
+  /** Live key: `project:{id}` for rooms, else agent persona id. */
   const liveAgentId =
-    !projectId && liveAgentChat
-      ? (liveAgentChat.agentIdByContactId.get(threadAgent.id) ?? null)
-      : null;
+    liveAgentChat == null
+      ? null
+      : projectId
+        ? `project:${projectId}`
+        : (liveAgentChat.agentIdByContactId.get(threadAgent.id) ?? null);
   const [live, dispatchLive] = useReducer(
     liveAgentThreadReducer,
     null,
@@ -492,10 +528,8 @@ export function ChatUiDevPreview({
   );
   const liveRef = useRef(live);
   const liveAgentChatRef = useRef(liveAgentChat);
-  const threadAgentNameRef = useRef(threadAgent.name);
   liveRef.current = live;
   liveAgentChatRef.current = liveAgentChat;
-  threadAgentNameRef.current = threadAgent.name;
   const liveThreadId = live.agentId === liveAgentId ? live.threadId : null;
 
   // Every refetch (push reconcile, idle, poll, focus) shares one in-flight GET.
@@ -517,15 +551,19 @@ export function ChatUiDevPreview({
   );
 
   useEffect(() => {
-    if (!projectId || !activeProject) return;
+    // Live project rooms load from the API — skip demo seed messages.
+    if (!projectId || !activeProject || liveAgentId) return;
     setThreads((prev) =>
       ensureThreadMessages(prev, threadKey, () =>
         buildProjectRoomMessages(activeProject, threadAgent),
       ),
     );
-  }, [activeProject, projectId, threadAgent, threadKey]);
+  }, [activeProject, liveAgentId, projectId, threadAgent, threadKey]);
 
-  // Open / refresh the live agent thread when Sander (etc.) is selected.
+  const liveThreadDisplayName =
+    projectId && activeProject ? activeProject.name : threadAgent.name;
+
+  // Open / refresh the live agent or project thread when selection changes.
   // Depend on liveAgentId only — liveAgentChat identity used to thrash this
   // effect and let a stale openThread overwrite a newer SSE refresh.
   // The reducer ignores opens for an agent that is no longer selected, so no
@@ -534,14 +572,14 @@ export function ChatUiDevPreview({
     dispatchLive({
       type: "reset",
       agentId: liveAgentId,
-      agentName: threadAgent.name,
+      agentName: liveThreadDisplayName,
     });
-  }, [liveAgentId, threadAgent.name]);
+  }, [liveAgentId, liveThreadDisplayName]);
 
   useEffect(() => {
     const chat = liveAgentChatRef.current;
     if (!liveAgentId || !chat) return;
-    const agentName = threadAgentNameRef.current;
+    const agentName = liveThreadDisplayName;
     const pending = pendingDeepLinkRef.current;
     const preferThreadId =
       pending &&
@@ -552,14 +590,35 @@ export function ChatUiDevPreview({
     if (preferThreadId) {
       pendingDeepLinkRef.current = null;
     }
+    const openInput = liveAgentId.startsWith("project:")
+      ? { projectId: liveAgentId.slice("project:".length) }
+      : { agentId: liveAgentId };
     void (async () => {
       try {
         const thread = preferThreadId
           ? await chat.getThread(preferThreadId)
-          : await chat.openThread(liveAgentId);
-        if (preferThreadId && thread.agentId !== liveAgentId) {
+          : await chat.openThread(openInput);
+        if (
+          preferThreadId &&
+          openInput.agentId &&
+          thread.agentId !== openInput.agentId
+        ) {
           // Wrong agent for this peer — fall back to default DM.
-          const fallback = await chat.openThread(liveAgentId);
+          const fallback = await chat.openThread(openInput);
+          dispatchLive({
+            type: "opened",
+            agentId: liveAgentId,
+            thread: fallback,
+            nowMs: Date.now(),
+          });
+          return;
+        }
+        if (
+          preferThreadId &&
+          openInput.projectId &&
+          thread.projectId !== openInput.projectId
+        ) {
+          const fallback = await chat.openThread(openInput);
           dispatchLive({
             type: "opened",
             agentId: liveAgentId,
@@ -585,7 +644,7 @@ export function ChatUiDevPreview({
         });
       }
     })();
-  }, [deepLinkNonce, liveAgentId]);
+  }, [deepLinkNonce, liveAgentId, liveThreadDisplayName]);
 
   // Expire provisional / working timers without dropping real messages.
   useEffect(() => {

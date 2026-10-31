@@ -48,7 +48,10 @@ export type ShellAgentChatApi = {
   agentsLoading: boolean;
   /** Set when the cloud agents door could not be loaded (e.g. missing owner key). */
   agentsLoadError: string | null;
-  openThread: (agentId: string) => Promise<ChatThreadWithMessages>;
+  openThread: (input: {
+    agentId?: string;
+    projectId?: string;
+  }) => Promise<ChatThreadWithMessages>;
   sendMessage: (
     threadId: string,
     body: string,
@@ -134,12 +137,22 @@ export function useShellAgentChat(): ShellAgentChatApi {
     return map;
   }, [webhookReadyAgents]);
 
-  const openThread = useCallback(async (agentId: string) => {
-    return cloudCoreRequestJson<ChatThreadWithMessages>("/api/v1/chat/threads", {
-      method: "POST",
-      body: JSON.stringify({ agentId }),
-    });
-  }, []);
+  const openThread = useCallback(
+    async (input: { agentId?: string; projectId?: string }) => {
+      const agentId = input.agentId?.trim() || undefined;
+      const projectId = input.projectId?.trim() || undefined;
+      return cloudCoreRequestJson<ChatThreadWithMessages>(
+        "/api/v1/chat/threads",
+        {
+          method: "POST",
+          body: JSON.stringify(
+            projectId ? { projectId } : { agentId },
+          ),
+        },
+      );
+    },
+    [],
+  );
 
   const sendMessage = useCallback(
     async (

@@ -3169,6 +3169,13 @@ export const chatThreads = pgTable(
       .notNull()
       .references(() => agents.id, { onDelete: "cascade" }),
     /**
+     * When set, this is a project chat room (one per project). Null = DM with
+     * the agent. Lead agent for routing is resolved from projects.lead_agent_contact_id.
+     */
+    projectId: text("project_id").references(() => projects.id, {
+      onDelete: "cascade",
+    }),
+    /**
      * When set, Remon is waiting for an agent reply ("Sander is thinking…").
      * Cleared when an assistant message lands or the webhook is missing/fails.
      */
@@ -3181,12 +3188,15 @@ export const chatThreads = pgTable(
       .defaultNow(),
   },
   (table) => [
-    uniqueIndex("chat_threads_workspace_agent_uidx").on(
-      table.workspaceId,
-      table.agentId,
-    ),
+    uniqueIndex("chat_threads_workspace_agent_dm_uidx")
+      .on(table.workspaceId, table.agentId)
+      .where(sql`${table.projectId} is null`),
+    uniqueIndex("chat_threads_workspace_project_uidx")
+      .on(table.workspaceId, table.projectId)
+      .where(sql`${table.projectId} is not null`),
     index("chat_threads_workspace_id_idx").on(table.workspaceId),
     index("chat_threads_agent_id_idx").on(table.agentId),
+    index("chat_threads_project_id_idx").on(table.projectId),
   ],
 );
 
