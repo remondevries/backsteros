@@ -5601,18 +5601,30 @@ export {
 } from "./chat/agent-chat-message-adapter.js";
 
 export {
+  ChatMentionResolveProvider,
   ChatTaskResolveProvider,
+  useChatMentionResolveOptional,
   useChatTaskResolveOptional,
+  type ChatMentionResolveContextValue,
   type ChatTaskResolveContextValue,
-} from "./chat/chat-task-resolve-context.js";
+} from "./chat/chat-mention-resolve-context.js";
 
 export {
+  CHAT_INLINE_MENTION_KINDS,
+  belowCardMentionTokensInMessage,
+  cardPartFromCatalogToken,
+  chatMessageBubbleParts,
+  collectChatMentionCardsBelow,
   collectChatTaskCardsBelow,
+  fallbackMentionCardPart,
   fallbackTaskCardPart,
   hrefFromTaskDisplayId,
+  isChatBelowCardMentionKind,
+  mentionDedupeKey,
+  stripBelowCardMentionsFromText,
   stripTaskMentionsFromText,
   taskMentionTokensInMessage,
-} from "./chat/chat-task-mention-layout.js";
+} from "./chat/chat-mention-layout.js";
 
 export {
   CHAT_THINKING_OFF,

@@ -2,7 +2,7 @@ import { useCallback, useMemo } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import type { ChatUiCardPart } from "@backsteros/contracts";
 import {
-  ChatTaskResolveProvider,
+  ChatMentionResolveProvider,
   ChatUiDevPreview,
   getScopedProjectTaskHref,
   getTaskDisplayId,
@@ -100,8 +100,8 @@ export function ShellChatPanel() {
   }, [agentChat]);
 
   // Resolve [@task:OS-144] against workspace rows (not only the mention catalog).
-  const taskResolve = useMemo(() => {
-    const byDisplayId = new Map<string, ChatUiCardPart>();
+  const mentionResolve = useMemo(() => {
+    const byKey = new Map<string, ChatUiCardPart>();
     for (const task of allTasks) {
       if (!isTaskStatus(task.status)) continue;
       const displayId = getTaskDisplayId(task);
@@ -115,7 +115,7 @@ export function ShellChatPanel() {
           : typeof task.dueDate === "number"
             ? task.dueDate
             : null;
-      byDisplayId.set(displayId.toLowerCase(), {
+      byKey.set(`task:${displayId.toLowerCase()}`, {
         type: "card",
         cardType: "task",
         id: `task-ws-${task.id}`,
@@ -133,13 +133,13 @@ export function ShellChatPanel() {
       });
     }
     return {
-      resolveByDisplayId: (displayId: string) =>
-        byDisplayId.get(displayId.trim().toLowerCase()) ?? null,
+      resolveByKey: (dedupeKey: string) =>
+        byKey.get(dedupeKey.trim().toLowerCase()) ?? null,
     };
   }, [allTasks]);
 
   return (
-    <ChatTaskResolveProvider value={taskResolve}>
+    <ChatMentionResolveProvider value={mentionResolve}>
       <ChatUiDevPreview
         peers={peers}
         projects={projects}
@@ -149,6 +149,6 @@ export function ShellChatPanel() {
         webhookSetupHref="/settings/api?type=agent"
         webhookSetupMessage={agentChat.agentsLoadError}
       />
-    </ChatTaskResolveProvider>
+    </ChatMentionResolveProvider>
   );
 }

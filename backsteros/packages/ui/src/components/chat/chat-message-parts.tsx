@@ -9,11 +9,12 @@ import type {
 
 import { chatMessagePlainText } from "../../chat/chat-message-plain-text.js";
 import {
+  belowCardMentionTokensInMessage,
   chatMessageBubbleParts,
-  collectChatTaskCardsBelow,
-  taskMentionTokensInMessage,
-} from "../../chat/chat-task-mention-layout.js";
-import { useChatTaskResolveOptional } from "../../chat/chat-task-resolve-context.js";
+  collectChatMentionCardsBelow,
+  mentionDedupeKey,
+} from "../../chat/chat-mention-layout.js";
+import { useChatMentionResolveOptional } from "../../chat/chat-mention-resolve-context.js";
 import { isChatMessageSelectable } from "../../chat/chat-select-mode.js";
 import {
   useMentionCatalogOptional,
@@ -25,7 +26,7 @@ import { TerminalConsoleIcon } from "../icons/terminal-console-icon.js";
 import { PolishedCheckbox } from "../shared/polished-checkbox.js";
 import { TaskStatusIcon } from "../tasks/task-status-icon.js";
 import { TaskStatusWorkingPulse } from "../tasks/task-status-working-pulse.js";
-import { ChatCardPartView, ChatTaskCard } from "./chat-card-registry.js";
+import { ChatCardPartView } from "./chat-card-registry.js";
 import { ChatMessageHoverActions } from "./chat-message-hover-actions.js";
 
 function formatJson(value: unknown): string {
@@ -233,55 +234,57 @@ export function ChatUiMessageBody({
   onToggleSelect = null,
 }: ChatUiMessageBodyProps) {
   const mentionCatalog = useMentionCatalogOptional()?.catalog ?? null;
-  const taskResolve = useChatTaskResolveOptional();
-  const taskTokens = useMemo(
-    () => taskMentionTokensInMessage(message),
+  const mentionResolve = useChatMentionResolveOptional();
+  const belowTokens = useMemo(
+    () => belowCardMentionTokensInMessage(message),
     [message],
   );
-  useResolveMentionTokensInContent(taskTokens);
+  useResolveMentionTokensInContent(belowTokens);
 
   // After a short beat, unresolved stubs flip from "Looking up…" to
-  // "Task not found" so a cold catalog does not stay on a spinner forever.
-  const [lookupSettled, setLookupSettled] = useState(taskTokens.length === 0);
+  // "… not found" so a cold catalog does not stay on a spinner forever.
+  const [lookupSettled, setLookupSettled] = useState(belowTokens.length === 0);
   useEffect(() => {
-    if (taskTokens.length === 0) {
+    if (belowTokens.length === 0) {
       setLookupSettled(true);
       return;
     }
     setLookupSettled(false);
     const handle = window.setTimeout(() => setLookupSettled(true), 500);
     return () => window.clearTimeout(handle);
-  }, [message.id, taskTokens]);
+  }, [message.id, belowTokens]);
 
-  const resolvedByDisplayId = useMemo(() => {
-    if (!taskResolve || taskTokens.length === 0) return null;
+  const resolvedByKey = useMemo(() => {
+    if (!mentionResolve || belowTokens.length === 0) return null;
     const map = new Map<string, ChatUiCardPart>();
-    for (const token of taskTokens) {
-      const part = taskResolve.resolveByDisplayId(token.displayId);
-      if (part) map.set(token.displayId.trim().toLowerCase(), part);
+    for (const token of belowTokens) {
+      const key = mentionDedupeKey(token);
+      if (!key) continue;
+      const part = mentionResolve.resolveByKey(key);
+      if (part) map.set(key, part);
     }
     return map.size > 0 ? map : null;
-  }, [taskResolve, taskTokens]);
+  }, [mentionResolve, belowTokens]);
 
-  const taskCardsBelow = useMemo(
+  const mentionCardsBelow = useMemo(
     () =>
-      collectChatTaskCardsBelow(message, {
+      collectChatMentionCardsBelow(message, {
         catalog: mentionCatalog,
-        resolvedByDisplayId,
+        resolvedByKey,
         lookingUp: !lookupSettled,
       }),
-    [lookupSettled, mentionCatalog, message, resolvedByDisplayId],
+    [lookupSettled, mentionCatalog, message, resolvedByKey],
   );
-  const stripTaskDisplayIds = useMemo(() => {
-    if (taskCardsBelow.length === 0) return null;
-    return new Set(taskCardsBelow.map((entry) => entry.key));
-  }, [taskCardsBelow]);
+  const stripMentionKeys = useMemo(() => {
+    if (mentionCardsBelow.length === 0) return null;
+    return new Set(mentionCardsBelow.map((entry) => entry.key));
+  }, [mentionCardsBelow]);
   const bubbleParts = useMemo(
     () =>
       chatMessageBubbleParts(message.parts, {
-        stripTaskDisplayIds,
+        stripMentionKeys,
       }),
-    [message.parts, stripTaskDisplayIds],
+    [message.parts, stripMentionKeys],
   );
 
   const isStatusOnly =
@@ -381,10 +384,10 @@ export function ChatUiMessageBody({
             }
           />
         ) : null}
-        {taskCardsBelow.length > 0 ? (
+        {mentionCardsBelow.length > 0 ? (
           <div className="chat-ui-message__task-cards">
-            {taskCardsBelow.map((entry) => (
-              <ChatTaskCard key={entry.key} part={entry.part} />
+            {mentionCardsBelow.map((entry) => (
+              <ChatCardPartView key={entry.key} part={entry.part} />
             ))}
           </div>
         ) : null}

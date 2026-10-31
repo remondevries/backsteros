@@ -1,6 +1,6 @@
 import type { ChatUiMessage, ChatUiMessagePart } from "@backsteros/contracts";
 
-import { taskCardPlainText } from "./chat-task-mention-layout.js";
+import { taskCardPlainText } from "./chat-mention-layout.js";
 
 function partPlainText(
   part: ChatUiMessagePart,

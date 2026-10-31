@@ -684,6 +684,55 @@ function ChatLetterCard({ part }: ChatCardRendererProps) {
   );
 }
 
+/** Fallback when a mention kind has no dedicated card renderer yet. */
+function ChatGenericCard({ part }: ChatCardRendererProps) {
+  const data = part.data;
+  if (!data || typeof data !== "object") return <ChatCardInvalid label="generic" />;
+  const record = data as Record<string, unknown>;
+  const title =
+    (typeof record.title === "string" && record.title.trim()) ||
+    (typeof record.ref === "string" && record.ref.trim()) ||
+    part.cardType;
+  const kind =
+    (typeof record.kind === "string" && record.kind.trim()) || "mention";
+  const status =
+    (typeof record.status === "string" && record.status.trim()) || null;
+  const href = typeof record.href === "string" ? record.href : undefined;
+  return (
+    <ChatExpandableCard
+      cardClassName="chat-ui-card--generic"
+      summary={
+        <ChatEntityBlockChip
+          kindClassName="mention-chip-lite--generic"
+          icon={<DocumentIcon size={14} />}
+          id={kind}
+          title={title}
+          titleAttr={title}
+          trailing={
+            status ? (
+              <span className="mention-chip-lite__status">{status}</span>
+            ) : null
+          }
+        />
+      }
+    >
+      <div className="chat-ui-card--entity__details">
+        <div className="chat-ui-card--entity__footer">
+          <dl className="chat-ui-card--entity__props">
+            <ChatCardProp label="Kind" value={kind} />
+            <ChatCardProp
+              label="Status"
+              value={status ?? "—"}
+              muted={!status}
+            />
+          </dl>
+          {href ? <ChatCardGoLink href={href}>Open</ChatCardGoLink> : null}
+        </div>
+      </div>
+    </ChatExpandableCard>
+  );
+}
+
 export const DEFAULT_CHAT_CARD_REGISTRY: ChatCardRegistry = {
   task: ChatTaskCard,
   contact: ChatContactCard,
@@ -700,6 +749,7 @@ export const DEFAULT_CHAT_CARD_REGISTRY: ChatCardRegistry = {
   transaction: ChatTransactionCard,
   invoice: ChatInvoiceCard,
   estimate: ChatEstimateCard,
+  generic: ChatGenericCard,
 };
 
 export function mergeChatCardRegistry(
