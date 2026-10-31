@@ -15,10 +15,14 @@ export type WorkspaceProject = ProjectOverviewRowProject & {
   category?: string | null;
   healthCheckMode?: "simple" | "advanced" | null;
   healthCheckDomain?: string | null;
+  leadAgentContactId?: string | null;
   channel?: {
     uri: string;
     name?: string | null;
   } | null;
+  channelStatus?: "inactive" | "connecting" | "needs_details" | "active" | null;
+  channelPendingLink?: string | null;
+  channelRequestedAt?: string | null;
 };
 
 /** Optimistic per-project patches applied before sync confirms them. */

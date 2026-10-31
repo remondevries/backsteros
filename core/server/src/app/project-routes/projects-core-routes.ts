@@ -519,15 +519,30 @@ export function registerProjectCoreRoutes(app: Hono) {
       },
     });
 
-    await recordProjectRestSyncEvent(auth.workspaceId, row, "upsert");
+    let syncWarning: string | null = null;
+    try {
+      await recordProjectRestSyncEvent(auth.workspaceId, row, "upsert");
+    } catch (error) {
+      // Never 500 the Connect UI on twin/leader forward failure — local row
+      // already has connecting; peer catches up on the next tick.
+      syncWarning =
+        error instanceof Error
+          ? error.message
+          : "Could not replicate Channel Connect status to peer";
+    }
     publishProjectLive(auth, row.id, "upsert");
 
     const body = toProject(row);
-    if (!webhook.ok) {
+    const warning = !webhook.ok
+      ? webhook.error
+      : syncWarning
+        ? `Channel Connect saved locally, but peer sync failed: ${syncWarning}`
+        : null;
+    if (warning) {
       return c.json(
         {
           ...body,
-          channelConnectWarning: webhook.error,
+          channelConnectWarning: warning,
         },
         200,
       );

@@ -59,10 +59,11 @@ describe("postChannelConnectWebhook", () => {
     );
   });
 
-  it("POSTs payload with secret header and never requires a live network", async () => {
+  it("POSTs with the same auth as agent chat (secret header + Bearer)", async () => {
     let hit: {
       url: string;
       secretHeader: string | null;
+      authorization: string | null;
       body: string;
     } | null = null;
 
@@ -86,6 +87,7 @@ describe("postChannelConnectWebhook", () => {
         hit = {
           url: String(input),
           secretHeader: headers?.[CHANNEL_CONNECT_WEBHOOK_SECRET_HEADER] ?? null,
+          authorization: headers?.authorization ?? null,
           body: String(init?.body ?? ""),
         };
         return { ok: true, status: 204 } as Response;
@@ -96,6 +98,7 @@ describe("postChannelConnectWebhook", () => {
     assert.ok(hit);
     assert.equal(hit.url, "https://example.com/channel-connect");
     assert.equal(hit.secretHeader, "whsec_test_secret");
+    assert.equal(hit.authorization, "Bearer whsec_test_secret");
     const body = JSON.parse(hit.body) as {
       event: string;
       projectKey: string;
@@ -104,6 +107,31 @@ describe("postChannelConnectWebhook", () => {
     assert.equal(body.event, CHANNEL_CONNECT_WEBHOOK_EVENT);
     assert.equal(body.projectKey, "OS");
     assert.equal(body.leadAgentContactId, "contact_niels");
+  });
+
+  it("returns a clear error when the webhook responds non-2xx", async () => {
+    const result = await postChannelConnectWebhook({
+      workspaceId: "ws_test",
+      payload: {
+        event: CHANNEL_CONNECT_WEBHOOK_EVENT,
+        projectId: "proj_1",
+        projectKey: "OS",
+        projectName: "BacksterOS",
+        type: "codebase",
+        requestedAt: "2026-10-31T12:00:00.000Z",
+        leadAgentContactId: "contact_niels",
+      },
+      configOverride: {
+        url: "https://example.com/channel-connect",
+        secret: "whsec_test_secret",
+      },
+      fetchImpl: (async () =>
+        ({ ok: false, status: 401 }) as Response) as typeof fetch,
+    });
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.match(result.error, /HTTP 401/);
+    }
   });
 
   it("returns a clear error when webhook is not configured", async () => {

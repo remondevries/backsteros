@@ -183,8 +183,9 @@ webhook secret can resolve where it lives — local does not need ciphertext.
 }
 ```
 
-Headers: `Content-Type: application/json`,
-`x-backsteros-webhook-secret: <secret>`.
+Headers match agent chat delivery (Cursor automations):
+`Content-Type: application/json`, `x-backsteros-webhook-secret: <secret>`,
+`Authorization: Bearer <secret>`, plus `x-backsteros-delivery-id`.
 
 **Webhook destination (never hard-code, never log the secret)**
 

@@ -146,12 +146,18 @@ export async function applySyncChange(
         executor,
       );
       const input = mapProjectUpsert(change.payload);
-      const projectWriteOptions = options?.peerReplay
-        ? {
-            updatedAt: options.peerReplay.updatedAt,
-            skipVaultSideEffects: true,
-          }
-        : undefined;
+      const projectWriteOptions =
+        options?.peerReplay || options?.allowChannelConnectStatus
+          ? {
+              ...(options.peerReplay
+                ? {
+                    updatedAt: options.peerReplay.updatedAt,
+                    skipVaultSideEffects: true,
+                  }
+                : {}),
+              allowChannelConnectStatus: true,
+            }
+          : undefined;
 
       if (existing) {
         const row = await taskProjectService.updateProject(

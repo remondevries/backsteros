@@ -13,7 +13,11 @@ import { db } from "../db/index.js";
 import { agents, workspaceIntegrationSecrets } from "../db/schema.js";
 import { logger } from "./logger.js";
 import { validateAutoReviewWebhookUrl } from "./auto-review-webhook.js";
-import { decryptAgentChatWebhookSecret } from "./agent-chat-webhook.js";
+import {
+  AGENT_CHAT_WEBHOOK_SECRET_HEADER,
+  buildAgentChatWebhookHeaders,
+  decryptAgentChatWebhookSecret,
+} from "./agent-chat-webhook.js";
 import {
   forwardChannelConnectWebhookToCloud,
   shouldForwardChannelConnectWebhookToCloud,
@@ -21,8 +25,9 @@ import {
 
 export const CHANNEL_CONNECT_WEBHOOK_EVENT = "project.channel.connect" as const;
 export const CHANNEL_CONNECT_WEBHOOK_TIMEOUT_MS = 10_000;
+/** Same secret header as agent chat (Cursor automations accept Bearer too). */
 export const CHANNEL_CONNECT_WEBHOOK_SECRET_HEADER =
-  "x-backsteros-webhook-secret" as const;
+  AGENT_CHAT_WEBHOOK_SECRET_HEADER;
 
 export type ChannelConnectWebhookPayload = {
   event: typeof CHANNEL_CONNECT_WEBHOOK_EVENT;
@@ -163,6 +168,12 @@ export async function postChannelConnectWebhook(
   }
 
   const fetchImpl = input.fetchImpl ?? fetch;
+  const deliveryId = `channel-connect:${input.payload.projectId}:${input.payload.requestedAt}`;
+  // Same auth as agent chat → Cursor automations (Bearer + secret header).
+  const headers = buildAgentChatWebhookHeaders({
+    secret: config.secret,
+    deliveryId,
+  });
   const controller = new AbortController();
   const timer = setTimeout(
     () => controller.abort(),
@@ -171,10 +182,7 @@ export async function postChannelConnectWebhook(
   try {
     const response = await fetchImpl(config.url, {
       method: "POST",
-      headers: {
-        "content-type": "application/json",
-        [CHANNEL_CONNECT_WEBHOOK_SECRET_HEADER]: config.secret,
-      },
+      headers,
       body: JSON.stringify(input.payload),
       signal: controller.signal,
     });

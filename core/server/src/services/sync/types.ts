@@ -30,4 +30,9 @@ export type ApplySyncChangeOptions = {
   peerReplay?: {
     updatedAt: Date;
   };
+  /**
+   * Allow project channelStatus=connecting (Channel Connect twin).
+   * Leader mutations and peerReplay always allow; client PowerSync must not.
+   */
+  allowChannelConnectStatus?: boolean;
 };

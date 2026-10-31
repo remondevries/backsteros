@@ -236,6 +236,10 @@ export function mapProject(project: ApiProject): ProjectOverviewRowProject & {
     uri: string;
     name?: string | null;
   } | null;
+  leadAgentContactId?: string | null;
+  channelStatus?: "inactive" | "connecting" | "needs_details" | "active" | null;
+  channelPendingLink?: string | null;
+  channelRequestedAt?: string | null;
   localLocation?: string | null;
   developmentSetupStatus?: "pending" | "ready" | "failed" | null;
   developmentSetupError?: string | null;

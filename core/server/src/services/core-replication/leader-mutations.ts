@@ -154,6 +154,8 @@ export async function acceptLeaderMutations(input: {
       try {
         await applySyncChange(input.workspaceId, toSyncChange(change), tx, {
           habitTaskChangesOut,
+          // Connect stamps channelStatus=connecting via REST then twins here.
+          allowChannelConnectStatus: true,
         });
       } catch (error) {
         // Same set as the local PowerSync apply path. A 500 makes the client

@@ -129,6 +129,8 @@ export const POWERSYNC_SKIPPABLE_ERRORS = new Set([
   "INVALID_OCCURRED_AT",
   "SELF_RELATIONSHIP",
   "RELATIONSHIP_EXISTS",
+  // Stale client PATCH of connecting — Connect twin uses allowChannelConnectStatus.
+  "CHANNEL_CONNECT_VIA_ENDPOINT",
 ]);
 
 /** Permanent client/data errors must not 500 the upload queue. */

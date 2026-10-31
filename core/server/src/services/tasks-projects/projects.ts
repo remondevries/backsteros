@@ -81,6 +81,12 @@ export type ProjectWriteOptions = {
   updatedAt?: Date;
   /** Skip vault folder rename/ensure (replica apply must not touch disks). */
   skipVaultSideEffects?: boolean;
+  /**
+   * Allow channelStatus=connecting on PATCH/sync apply.
+   * Owner Connect uses POST …/channel/connect; clients must not PATCH connecting.
+   * Leader mutations / peer sync_event replay must be allowed to twin the field.
+   */
+  allowChannelConnectStatus?: boolean;
 };
 
 type ProjectLocationInput = {
@@ -121,7 +127,7 @@ type ChannelConnectExisting = {
  * `needs_details` requires `channelPendingLink`. Agents must not set `connecting`
  * via PATCH — use POST …/channel/connect (owner-only).
  */
-function resolveChannelConnectPatch(input: {
+export function resolveChannelConnectPatch(input: {
   existing: ChannelConnectExisting;
   input: {
     channel?: ProjectChannel | null;
@@ -129,6 +135,8 @@ function resolveChannelConnectPatch(input: {
     channelPendingLink?: string | null;
     channelRequestedAt?: string | null;
   };
+  /** Twin / leader apply may set connecting; REST/PowerSync clients may not. */
+  allowConnectingStatus?: boolean;
 }): {
   channelStatus?: ProjectChannelStatus;
   channelPendingLink?: string | null;
@@ -170,8 +178,10 @@ function resolveChannelConnectPatch(input: {
   }
 
   if (statusTouched && input.input.channelStatus === "connecting") {
-    // PATCH must not enter connecting — owner uses Connect endpoint.
-    throw new Error("CHANNEL_CONNECT_VIA_ENDPOINT");
+    if (!input.allowConnectingStatus) {
+      // PATCH must not enter connecting — owner uses Connect endpoint.
+      throw new Error("CHANNEL_CONNECT_VIA_ENDPOINT");
+    }
   }
 
   let nextLink =
@@ -765,6 +775,7 @@ export async function updateProject(
       channelPendingLink: input.channelPendingLink,
       channelRequestedAt: input.channelRequestedAt,
     },
+    allowConnectingStatus: Boolean(options?.allowChannelConnectStatus),
   });
 
   // Fold deprecated localLocation into localWorkingDirectory; always clear column.
