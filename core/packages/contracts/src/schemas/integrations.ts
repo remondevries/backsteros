@@ -54,6 +54,29 @@ export const cursorTestConnectionResultSchema = z.object({
   modelCount: z.number().int().nonnegative().nullable(),
 });
 
+/**
+ * Cursor plan usage for the desktop sidebar credits bar.
+ * Populated server-side from the Settings API key (never returns the secret).
+ */
+export const cursorUsageSchema = z.object({
+  available: z.boolean(),
+  autoPercentUsed: z.number(),
+  apiPercentUsed: z.number(),
+  totalPercentUsed: z.number(),
+  includedSpendCents: z.number().int().nullable().optional(),
+  limitCents: z.number().int().nullable().optional(),
+  remainingCents: z.number().int().nullable().optional(),
+  displayMessage: z.string().nullable().optional(),
+  billingCycleEndMs: z.number().int().nullable().optional(),
+  grokBotPercentUsed: z.number().nullable().optional(),
+  grokBotResetMs: z.number().int().nullable().optional(),
+  /** Human error; should name the credential source that failed. */
+  error: z.string().nullable().optional(),
+  /** Which credential path produced this sample (e.g. settings_api_key). */
+  source: z.string().nullable().optional(),
+  sampledAt: z.number().int().nonnegative(),
+});
+
 /** Moneybird integration (personal API token + administration). */
 export const moneybirdSettingsSchema = z.object({
   apiTokenConfigured: z.boolean(),
@@ -869,6 +892,8 @@ export type UpdateCursorSettingsInput = z.infer<typeof updateCursorSettingsSchem
 export type CursorTestConnectionResult = z.infer<
   typeof cursorTestConnectionResultSchema
 >;
+
+export type CursorUsage = z.infer<typeof cursorUsageSchema>;
 
 export type MoneybirdSettings = z.infer<typeof moneybirdSettingsSchema>;
 

@@ -20,6 +20,7 @@ import {
   cursorSettingsService,
   forbidden,
   getAuth,
+  getCursorUsageForWorkspace,
   githubSettingsService,
   googleCalendarSettingsService,
   isRestLeaderFirstWrite,
@@ -268,6 +269,11 @@ export function registerSettingsRoutes(app: Hono) {
     const auth = getAuth(c);
     if (!can(auth, "settings:read")) return c.json(forbidden(), 403);
     return c.json(await testCursorConnection(auth.workspaceId));
+  });
+  app.get("/api/v1/settings/cursor/usage", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "settings:read")) return c.json(forbidden(), 403);
+    return c.json(await getCursorUsageForWorkspace(auth.workspaceId));
   });
   registerIntegrationSecretSettingsRoutes(app, [
     integrationSettingsRoute({

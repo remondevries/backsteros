@@ -84,6 +84,17 @@ export const integrationsRoutes: AppRouter = c.router({
     },
     summary: "Test Cursor API key by listing models",
   },
+  getCursorUsage: {
+    method: "GET",
+    path: "/api/v1/settings/cursor/usage",
+    responses: {
+      200: s.cursorUsageSchema,
+      401: errorSchema,
+      403: errorSchema,
+    },
+    summary:
+      "Cursor plan usage via the Settings API key (server-side; key never returned)",
+  },
   getMoneybirdSettings: {
     method: "GET",
     path: "/api/v1/settings/moneybird",

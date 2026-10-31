@@ -3,6 +3,7 @@ import { invoke } from "../lib/tauri-invoke-instrumentation";
 import { isTauriRuntime } from "../lib/tauri-runtime";
 
 import { useAgentMail } from "../lib/agentmail-context";
+import { useDesktopApi } from "../lib/api-context";
 import {
   cursorUsageTitle,
   formatDaysUntilReset,
@@ -110,6 +111,59 @@ function CursorCreditsBody({
   );
 }
 
+function unavailableUsage(error: string): CursorUsage {
+  return {
+    available: false,
+    autoPercentUsed: 0,
+    apiPercentUsed: 0,
+    totalPercentUsed: 0,
+    error,
+    sampledAt: Date.now(),
+  };
+}
+
+/**
+ * Prefer core Settings Cursor key (server never returns the secret), then local
+ * Tauri token sources (env / IDE / CLI keychain).
+ */
+async function loadCursorUsage(
+  requestJson: <T>(path: string) => Promise<T>,
+): Promise<CursorUsage> {
+  let settingsError: string | null = null;
+
+  try {
+    const fromSettings = await requestJson<CursorUsage>(
+      "/api/v1/settings/cursor/usage",
+    );
+    if (fromSettings.available) {
+      return fromSettings;
+    }
+    settingsError =
+      fromSettings.error?.trim() ||
+      "Settings Cursor API key did not return usage.";
+  } catch {
+    settingsError = "Settings Cursor usage request failed.";
+  }
+
+  if (isTauriRuntime()) {
+    try {
+      const fromLocal = await invoke<CursorUsage>("cursor_usage");
+      if (fromLocal.available) {
+        return fromLocal;
+      }
+      const localError =
+        fromLocal.error?.trim() || "Local Cursor session unavailable.";
+      return unavailableUsage(`${settingsError} Local fallback: ${localError}`);
+    } catch {
+      return unavailableUsage(
+        `${settingsError} Local fallback: Cursor credits invoke failed.`,
+      );
+    }
+  }
+
+  return unavailableUsage(settingsError);
+}
+
 type CursorCreditsUsageBarProps = {
   /** Opens Settings → Syncing in a new product tab (sync-conflict prototype). */
   onOpenSyncingSettings?: () => void;
@@ -125,34 +179,25 @@ export function CursorCreditsUsageBar({
   onOpenSyncingSettings,
 }: CursorCreditsUsageBarProps = {}) {
   const { degraded: agentMailDegraded } = useAgentMail();
+  const { client } = useDesktopApi();
   const [usage, setUsage] = useState<CursorUsage | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!isTauriRuntime()) {
-      setLoading(false);
-      return;
-    }
-
     let cancelled = false;
 
     const load = async () => {
       try {
-        const data = await invoke<CursorUsage>("cursor_usage");
+        const data = await loadCursorUsage((path) =>
+          client.requestJson(path),
+        );
         if (!cancelled) {
           setUsage(data);
           setLoading(false);
         }
       } catch {
         if (!cancelled) {
-          setUsage({
-            available: false,
-            autoPercentUsed: 0,
-            apiPercentUsed: 0,
-            totalPercentUsed: 0,
-            error: "Cursor credits unavailable",
-            sampledAt: Date.now(),
-          });
+          setUsage(unavailableUsage("Cursor credits unavailable"));
           setLoading(false);
         }
       }
@@ -167,7 +212,7 @@ export function CursorCreditsUsageBar({
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, []);
+  }, [client]);
 
   return (
     <div className="sidebar-footer-status-stack">

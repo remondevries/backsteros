@@ -332,6 +332,7 @@ export * as crmActivitiesService from "../services/crm-activities.js";
 export * as crmGroupsService from "../services/crm-groups.js";
 export * as crmRelationshipLabelsService from "../services/crm-relationship-labels.js";
 export * as cursorSettingsService from "../services/cursor-settings.js";
+export { getCursorUsageForWorkspace } from "../services/cursor-usage.js";
 export {
   listCursorModels,
   researchText,

@@ -13,6 +13,8 @@ export type CursorUsage = {
   grokBotPercentUsed?: number | null;
   grokBotResetMs?: number | null;
   error?: string | null;
+  /** Credential path that produced this sample (e.g. settings_api_key, ide_vscdb). */
+  source?: string | null;
   sampledAt: number;
 };
 

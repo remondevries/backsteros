@@ -1,11 +1,14 @@
-//! Cursor monthly included-usage for the sidebar credits bar.
+//! Cursor monthly included-usage for the sidebar credits bar (local fallback).
 //!
-//! Resolves the signed-in Cursor access token from (in order): env
-//! (`CURSOR_ACCESS_TOKEN` / `CURSOR_API_KEY`), the IDE `state.vscdb`, then the
-//! Cursor CLI macOS Keychain entry used by `agent login`. Calls Cursor's
-//! dashboard usage endpoints. Mirrors Development `apps/server/src/cursorUsage.ts`,
-//! plus Grok weekly quota from `GetSandUsageStatus` ("Sand" is Cursor's Grok
-//! product).
+//! Prefer the core Settings API key via `GET /api/v1/settings/cursor/usage`
+//! (server exchanges the key). This module is the local fallback when Settings
+//! has no key or that path fails.
+//!
+//! Resolves a credential from (in order): env (`CURSOR_ACCESS_TOKEN` /
+//! `CURSOR_API_KEY`), the IDE `state.vscdb`, then the Cursor CLI macOS Keychain
+//! entry used by `agent login`. Dashboard Connect RPCs need a session JWT —
+//! raw API keys are exchanged via `POST /auth/exchange_user_api_key` first.
+//! Errors name the source that failed. Never log tokens.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -18,6 +21,7 @@ const ACCESS_KEY: &str = "cursorAuth/accessToken";
 /// macOS Keychain item written by Cursor CLI (`agent login`).
 const CLI_KEYCHAIN_SERVICE: &str = "cursor-access-token";
 const CLI_KEYCHAIN_ACCOUNT: &str = "cursor-user";
+const EXCHANGE_URL: &str = "https://api2.cursor.sh/auth/exchange_user_api_key";
 const USAGE_URL: &str =
     "https://api2.cursor.sh/aiserver.v1.DashboardService/GetCurrentPeriodUsage";
 const GROK_BOT_USAGE_URL: &str =
@@ -39,6 +43,7 @@ pub struct CursorUsage {
     pub grok_bot_percent_used: Option<f64>,
     pub grok_bot_reset_ms: Option<i64>,
     pub error: Option<String>,
+    pub source: Option<String>,
     pub sampled_at: u64,
 }
 
@@ -49,7 +54,7 @@ fn now_ms() -> u64 {
         .unwrap_or(0)
 }
 
-fn unavailable(error: impl Into<String>) -> CursorUsage {
+fn unavailable(error: impl Into<String>, source: Option<&str>) -> CursorUsage {
     CursorUsage {
         available: false,
         auto_percent_used: 0.0,
@@ -63,6 +68,7 @@ fn unavailable(error: impl Into<String>) -> CursorUsage {
         grok_bot_percent_used: None,
         grok_bot_reset_ms: None,
         error: Some(error.into()),
+        source: source.map(|s| s.to_string()),
         sampled_at: now_ms(),
     }
 }
@@ -106,7 +112,7 @@ fn cursor_state_db_path() -> Option<PathBuf> {
 
 fn read_access_token_from_db(db_path: &Path) -> Result<String, String> {
     if !db_path.is_file() {
-        return Err("Cursor is not signed in on this machine.".into());
+        return Err("IDE state.vscdb not found (Cursor not installed or never signed in).".into());
     }
 
     let output = Command::new("sqlite3")
@@ -116,15 +122,17 @@ fn read_access_token_from_db(db_path: &Path) -> Result<String, String> {
             ACCESS_KEY.replace('\'', "''")
         ))
         .output()
-        .map_err(|_| "Could not read Cursor session (sqlite3 unavailable).".to_string())?;
+        .map_err(|_| {
+            "Could not read IDE state.vscdb (sqlite3 unavailable).".to_string()
+        })?;
 
     if !output.status.success() {
-        return Err("Could not read Cursor session database.".into());
+        return Err("Could not read Cursor IDE session database (state.vscdb).".into());
     }
 
     let token = String::from_utf8_lossy(&output.stdout).trim().to_string();
     if token.is_empty() {
-        return Err("Sign in to Cursor on this machine.".into());
+        return Err("IDE state.vscdb has no cursorAuth/accessToken (sign in to Cursor).".into());
     }
     Ok(token)
 }
@@ -132,9 +140,9 @@ fn read_access_token_from_db(db_path: &Path) -> Result<String, String> {
 /// Cursor CLI (`agent login`) stores the session token in the macOS Keychain
 /// when the IDE `state.vscdb` is absent (common for CLI-only / settings-symlink
 /// setups). Without this, the sidebar bars stay stuck on "Sign in to Cursor".
-fn read_access_token_from_cli_keychain() -> Option<String> {
+fn read_access_token_from_cli_keychain() -> Result<String, String> {
     if !cfg!(target_os = "macos") {
-        return None;
+        return Err("CLI keychain is only available on macOS.".into());
     }
     let output = Command::new("security")
         .args([
@@ -146,52 +154,34 @@ fn read_access_token_from_cli_keychain() -> Option<String> {
             "-w",
         ])
         .output()
-        .ok()?;
+        .map_err(|_| "Could not read Cursor CLI keychain (security unavailable).".to_string())?;
     if !output.status.success() {
-        return None;
+        return Err("CLI keychain has no cursor-access-token (run `agent login`).".into());
     }
     let token = String::from_utf8_lossy(&output.stdout).trim().to_string();
     if token.is_empty() {
-        None
-    } else {
-        Some(token)
+        return Err("CLI keychain cursor-access-token was empty.".into());
     }
+    Ok(token)
 }
 
-fn resolve_access_token() -> Result<String, String> {
-    if let Ok(token) = std::env::var("CURSOR_ACCESS_TOKEN") {
-        let trimmed = token.trim();
-        if !trimmed.is_empty() {
-            return Ok(trimmed.to_string());
-        }
-    }
-    if let Ok(token) = std::env::var("CURSOR_API_KEY") {
-        let trimmed = token.trim();
-        if !trimmed.is_empty() {
-            return Ok(trimmed.to_string());
-        }
-    }
-    if let Some(db_path) = cursor_state_db_path() {
-        if let Ok(token) = read_access_token_from_db(&db_path) {
-            return Ok(token);
-        }
-    }
-    if let Some(token) = read_access_token_from_cli_keychain() {
-        return Ok(token);
-    }
-    Err("Sign in to Cursor on this machine.".into())
+/// JWT session tokens start with eyJ; API keys (crsr_/key_/…) do not.
+fn looks_like_session_token(value: &str) -> bool {
+    value.trim().starts_with("eyJ")
 }
 
-fn curl_dashboard(token: &str, url: &str) -> Result<Value, String> {
+fn curl_json_post(bearer: &str, url: &str) -> Result<Value, String> {
     let output = Command::new("curl")
         .args([
             "-sS",
             "--max-time",
             "20",
+            "-w",
+            "\n%{http_code}",
             "-X",
             "POST",
             "-H",
-            &format!("Authorization: Bearer {token}"),
+            &format!("Authorization: Bearer {bearer}"),
             "-H",
             "Accept: application/json",
             "-H",
@@ -205,14 +195,130 @@ fn curl_dashboard(token: &str, url: &str) -> Result<Value, String> {
             url,
         ])
         .output()
-        .map_err(|_| "Could not reach Cursor usage API (curl unavailable).".to_string())?;
+        .map_err(|_| "Could not reach Cursor API (curl unavailable).".to_string())?;
 
     if !output.status.success() {
-        return Err("Cursor usage request failed.".into());
+        return Err("Cursor API request failed (curl).".into());
     }
     let text = String::from_utf8_lossy(&output.stdout);
-    serde_json::from_str(text.trim())
-        .map_err(|_| "Cursor usage response was not valid JSON.".to_string())
+    let trimmed = text.trim();
+    let (body, status_str) = match trimmed.rsplit_once('\n') {
+        Some(parts) => parts,
+        None => (trimmed, "0"),
+    };
+    let status: u16 = status_str.trim().parse().unwrap_or(0);
+    if status == 401 || status == 403 {
+        return Err(format!("Cursor API rejected credentials (HTTP {status})."));
+    }
+    if !(200..300).contains(&status) {
+        return Err(format!("Cursor API request failed (HTTP {status})."));
+    }
+    serde_json::from_str(body.trim())
+        .map_err(|_| "Cursor API response was not valid JSON.".to_string())
+}
+
+/// Exchange a user API key for a short-lived dashboard access token.
+fn exchange_api_key_for_access_token(api_key: &str) -> Result<String, String> {
+    let json = curl_json_post(api_key, EXCHANGE_URL)
+        .map_err(|e| format!("API key exchange failed: {e}"))?;
+    let token = json
+        .get("accessToken")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| "API key exchange returned no accessToken.".to_string())?;
+    Ok(token.to_string())
+}
+
+fn resolve_dashboard_token(secret: &str) -> Result<String, String> {
+    let trimmed = secret.trim();
+    if trimmed.is_empty() {
+        return Err("Empty Cursor credential.".into());
+    }
+    if looks_like_session_token(trimmed) {
+        return Ok(trimmed.to_string());
+    }
+    exchange_api_key_for_access_token(trimmed)
+}
+
+struct ResolvedCredential {
+    access_token: String,
+    source: &'static str,
+}
+
+fn resolve_access_token() -> Result<ResolvedCredential, String> {
+    let mut errors: Vec<String> = Vec::new();
+
+    if let Ok(token) = std::env::var("CURSOR_ACCESS_TOKEN") {
+        let trimmed = token.trim();
+        if !trimmed.is_empty() {
+            match resolve_dashboard_token(trimmed) {
+                Ok(access_token) => {
+                    return Ok(ResolvedCredential {
+                        access_token,
+                        source: "env_cursor_access_token",
+                    });
+                }
+                Err(e) => errors.push(format!("env_cursor_access_token: {e}")),
+            }
+        }
+    }
+    if let Ok(token) = std::env::var("CURSOR_API_KEY") {
+        let trimmed = token.trim();
+        if !trimmed.is_empty() {
+            match resolve_dashboard_token(trimmed) {
+                Ok(access_token) => {
+                    return Ok(ResolvedCredential {
+                        access_token,
+                        source: "env_cursor_api_key",
+                    });
+                }
+                Err(e) => errors.push(format!("env_cursor_api_key: {e}")),
+            }
+        }
+    }
+    if let Some(db_path) = cursor_state_db_path() {
+        match read_access_token_from_db(&db_path) {
+            Ok(token) => match resolve_dashboard_token(&token) {
+                Ok(access_token) => {
+                    return Ok(ResolvedCredential {
+                        access_token,
+                        source: "ide_vscdb",
+                    });
+                }
+                Err(e) => errors.push(format!("ide_vscdb: {e}")),
+            },
+            Err(e) => errors.push(format!("ide_vscdb: {e}")),
+        }
+    } else {
+        errors.push("ide_vscdb: could not resolve Cursor state path.".into());
+    }
+
+    match read_access_token_from_cli_keychain() {
+        Ok(token) => match resolve_dashboard_token(&token) {
+            Ok(access_token) => {
+                return Ok(ResolvedCredential {
+                    access_token,
+                    source: "cli_keychain",
+                });
+            }
+            Err(e) => errors.push(format!("cli_keychain: {e}")),
+        },
+        Err(e) => errors.push(format!("cli_keychain: {e}")),
+    }
+
+    if errors.is_empty() {
+        Err("No local Cursor credential (env, IDE state.vscdb, or CLI keychain).".into())
+    } else {
+        Err(format!(
+            "No usable local Cursor credential. Tried: {}",
+            errors.join(" · ")
+        ))
+    }
+}
+
+fn curl_dashboard(token: &str, url: &str) -> Result<Value, String> {
+    curl_json_post(token, url)
 }
 
 fn clamp_percent(value: Option<f64>) -> f64 {
@@ -322,7 +428,7 @@ fn days_from_civil(year: i32, month: i32, day: i32) -> Option<i32> {
     Some(era * 146_097 + doe - 719_468)
 }
 
-pub(crate) fn parse_plan_usage(json: &Value) -> Option<CursorUsage> {
+pub(crate) fn parse_plan_usage(json: &Value, source: &str) -> Option<CursorUsage> {
     let plan = json.get("planUsage")?;
     if !plan.is_object() {
         return None;
@@ -354,6 +460,7 @@ pub(crate) fn parse_plan_usage(json: &Value) -> Option<CursorUsage> {
         grok_bot_percent_used: None,
         grok_bot_reset_ms: None,
         error: None,
+        source: Some(source.to_string()),
         sampled_at: now_ms(),
     })
 }
@@ -374,17 +481,24 @@ pub(crate) fn apply_grok_bot_usage(usage: &mut CursorUsage, json: &Value) {
 
 #[tauri::command]
 pub fn cursor_usage() -> CursorUsage {
-    let token = match resolve_access_token() {
-        Ok(token) => token,
-        Err(err) => return unavailable(err),
+    let resolved = match resolve_access_token() {
+        Ok(resolved) => resolved,
+        Err(err) => return unavailable(err, None),
     };
-    let mut usage = match curl_dashboard(&token, USAGE_URL) {
-        Ok(json) => parse_plan_usage(&json)
-            .unwrap_or_else(|| unavailable("Cursor usage shape was not recognized.")),
-        Err(err) => return unavailable(err),
+    let source = resolved.source;
+    let mut usage = match curl_dashboard(&resolved.access_token, USAGE_URL) {
+        Ok(json) => parse_plan_usage(&json, source).unwrap_or_else(|| {
+            unavailable(
+                format!("Cursor usage shape was not recognized (source: {source})."),
+                Some(source),
+            )
+        }),
+        Err(err) => {
+            return unavailable(format!("{err} (source: {source})"), Some(source));
+        }
     };
     if usage.available {
-        if let Ok(sand) = curl_dashboard(&token, GROK_BOT_USAGE_URL) {
+        if let Ok(sand) = curl_dashboard(&resolved.access_token, GROK_BOT_USAGE_URL) {
             apply_grok_bot_usage(&mut usage, &sand);
         }
     }
@@ -411,8 +525,9 @@ mod tests {
                 "totalPercentUsed": 2.4096
             }
         });
-        let usage = parse_plan_usage(&json).expect("dashboard");
+        let usage = parse_plan_usage(&json, "ide_vscdb").expect("dashboard");
         assert!(usage.available);
+        assert_eq!(usage.source.as_deref(), Some("ide_vscdb"));
         assert_eq!(usage.limit_cents, Some(40000));
         assert_eq!(usage.remaining_cents, Some(33976));
         assert_eq!(usage.included_spend_cents, Some(6024));
@@ -436,7 +551,7 @@ mod tests {
                 "totalPercentUsed": 32
             }
         });
-        let mut usage = parse_plan_usage(&json).expect("dashboard");
+        let mut usage = parse_plan_usage(&json, "env_cursor_access_token").expect("dashboard");
         apply_grok_bot_usage(
             &mut usage,
             &json!({
@@ -461,7 +576,7 @@ mod tests {
                 "totalPercentUsed": 0
             }
         });
-        let mut usage = parse_plan_usage(&json).expect("dashboard");
+        let mut usage = parse_plan_usage(&json, "cli_keychain").expect("dashboard");
         apply_grok_bot_usage(
             &mut usage,
             &json!({
@@ -481,14 +596,30 @@ mod tests {
     }
 
     #[test]
+    fn looks_like_session_token_detects_jwt() {
+        assert!(looks_like_session_token(
+            "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.e30.sig"
+        ));
+        assert!(!looks_like_session_token("crsr_abc123"));
+        assert!(!looks_like_session_token("key_abc123"));
+    }
+
+    #[test]
     fn resolve_access_token_prefers_env_over_missing_ide_db() {
         // SAFETY: test-only; serial within this module's unit tests.
         unsafe {
-            std::env::set_var("CURSOR_ACCESS_TOKEN", "test-token-from-env");
+            std::env::set_var(
+                "CURSOR_ACCESS_TOKEN",
+                "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.e30.test",
+            );
             std::env::remove_var("CURSOR_API_KEY");
         }
-        let token = resolve_access_token().expect("env token");
-        assert_eq!(token, "test-token-from-env");
+        let resolved = resolve_access_token().expect("env token");
+        assert_eq!(
+            resolved.access_token,
+            "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.e30.test"
+        );
+        assert_eq!(resolved.source, "env_cursor_access_token");
         unsafe {
             std::env::remove_var("CURSOR_ACCESS_TOKEN");
         }
