@@ -34,3 +34,20 @@ test("DOCUMENT_VERSION_ROW_COMPARATOR includes content_version", () => {
   assert.equal(DOCUMENT_VERSION_ROW_COMPARATOR.keyBy(row), "d1");
   assert.match(DOCUMENT_VERSION_ROW_COMPARATOR.compareBy(row), /^3/);
 });
+
+test("CRM_ACTIVITY_ROW_COMPARATOR invalidates on body edits", () => {
+  const a = {
+    id: "a1",
+    updated_at: "2026-01-01",
+    occurred_at: "2026-01-01",
+    body: "hello",
+    body_preview: "hello",
+    deleted_at: null,
+  };
+  const b = { ...a, body: "hello world", body_preview: "hello world" };
+  assert.equal(CRM_ACTIVITY_ROW_COMPARATOR.keyBy(a), "a1");
+  assert.notEqual(
+    CRM_ACTIVITY_ROW_COMPARATOR.compareBy(a),
+    CRM_ACTIVITY_ROW_COMPARATOR.compareBy(b),
+  );
+});
