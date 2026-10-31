@@ -395,6 +395,7 @@ export const CRM_ACTIVITIES_FOR_SUBJECT_SQL = `
     AND a.subject_type = ?
     AND a.subject_id = ?
   ORDER BY a.occurred_at DESC, a.id DESC
+  LIMIT 100
 `.trim();
 
 export const CRM_GROUP_MEMBERS_SQL = `

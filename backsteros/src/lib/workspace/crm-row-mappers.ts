@@ -147,7 +147,8 @@ export function mapCrmActivityRow(row: CrmActivityRow): CrmActivity | null {
     subjectType,
     subjectId: row.subject_id,
     kind,
-    body: row.body,
+    // Full body may be absent after sync preview-only (OS-163 #12).
+    body: row.body?.trim() ? row.body : row.body_preview,
     bodyPreview: row.body_preview,
     meetingId: row.meeting_id,
     meetingTitle:

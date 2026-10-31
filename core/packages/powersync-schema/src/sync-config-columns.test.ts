@@ -41,6 +41,21 @@ function schemaColumnsForTable(tableName: string): Set<string> {
   return new Set(["id", ...table.columns.map((c) => c.name)]);
 }
 
+/**
+ * Client-schema columns kept for REST/detail + local drafts, not bulk-synced
+ * (OS-163 / audit #12). Sync SELECT may omit these; schema may still declare them.
+ */
+const DETAIL_ONLY_SCHEMA_COLUMNS: Readonly<Record<string, readonly string[]>> = {
+  projects: ["description"],
+  tasks: ["description"],
+  organizations: ["notes"],
+  contacts: ["notes"],
+  habits: ["description"],
+  meetings: ["notes", "transcription"],
+  task_comments: ["body"],
+  crm_activities: ["body"],
+};
+
 describe("PowerSync sync-config ↔ powersync-schema columns", () => {
   it("keeps every synced table SELECT in lockstep with the client schema", () => {
     const yaml = readFileSync(syncConfigPath, "utf8");
@@ -50,6 +65,11 @@ describe("PowerSync sync-config ↔ powersync-schema columns", () => {
       yaml.includes("deleted_at IS NULL"),
       false,
       "sync rules must include soft-deleted rows so clients receive tombstones",
+    );
+    assert.equal(
+      yaml.includes("portal_password_hash"),
+      false,
+      "portal_password_hash must never appear in sync SELECT",
     );
 
     const schemaTables = appSchema.tables.map((t) => t.name).sort();
@@ -63,13 +83,27 @@ describe("PowerSync sync-config ↔ powersync-schema columns", () => {
     for (const tableName of schemaTables) {
       const expected = schemaColumnsForTable(tableName);
       const actual = syncByTable.get(tableName)!;
-      const missing = [...expected].filter((c) => !actual.has(c)).sort();
+      const detailOnly = new Set(DETAIL_ONLY_SCHEMA_COLUMNS[tableName] ?? []);
+      const missing = [...expected]
+        .filter((c) => !actual.has(c) && !detailOnly.has(c))
+        .sort();
       const extra = [...actual].filter((c) => !expected.has(c)).sort();
       assert.deepEqual(
         { missing, extra },
         { missing: [], extra: [] },
         `${tableName}: SELECT columns must match powersync-schema (missing=${missing.join(",") || "∅"} extra=${extra.join(",") || "∅"})`,
       );
+      for (const col of detailOnly) {
+        assert.equal(
+          actual.has(col),
+          false,
+          `${tableName}.${col} is detail-only and must not be in sync SELECT`,
+        );
+        assert.ok(
+          expected.has(col),
+          `${tableName}.${col} detail-only allowlist requires schema column`,
+        );
+      }
     }
   });
 
