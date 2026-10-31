@@ -9,14 +9,18 @@
  */
 import type {
   ChatThreadMessage,
+  ChatThreadMessageChoices,
+  ChatThreadMessageChoicesAnswer,
   ChatThreadWithMessages,
   ChatUiMessage,
 } from "@backsteros/contracts";
 
 import {
   chatThreadMessageToUi,
+  chatThreadMessagesToUi,
   thinkingStatusMessage,
   webhookErrorStatusMessage,
+  withChoicesDismissedStates,
 } from "./agent-chat-message-adapter.js";
 import {
   CHAT_THINKING_OFF,
@@ -51,6 +55,8 @@ export type LiveAgentMessagePush = {
   id: string;
   body: string;
   createdAt: string;
+  choices?: ChatThreadMessageChoices;
+  choicesAnswer?: ChatThreadMessageChoicesAnswer | null;
 };
 
 export type LiveAgentThreadAction =
@@ -156,12 +162,14 @@ export function mergeLiveThreadMessages(
   const snapshotIds = new Set<string>();
   let snapshotNewest = 0;
   const merged: ChatUiMessage[] = [];
-  for (const raw of snapshot) {
+  const uiSnapshot = chatThreadMessagesToUi(snapshot);
+  for (let index = 0; index < uiSnapshot.length; index += 1) {
+    const raw = snapshot[index]!;
+    const next = uiSnapshot[index]!;
     snapshotIds.add(raw.id);
     snapshotNewest = Math.max(snapshotNewest, isoMs(raw.createdAt));
-    if (tombstones.has(raw.id)) continue;
-    const next = chatThreadMessageToUi(raw);
-    const existing = currentById.get(raw.id);
+    if (tombstones.has(next.id)) continue;
+    const existing = currentById.get(next.id);
     merged.push(existing && sameMessage(existing, next) ? existing : next);
   }
   for (const message of current) {
@@ -174,7 +182,7 @@ export function mergeLiveThreadMessages(
     }
   }
   merged.sort(byCreatedAt);
-  return stableList(current, merged);
+  return stableList(current, withChoicesDismissedStates(merged));
 }
 
 function thinkingFromSnapshot(
@@ -284,17 +292,32 @@ export function liveAgentThreadReducer(
     case "pushMessage": {
       if (state.threadId !== action.threadId) return state;
       if (state.tombstones.has(action.message.id)) return state;
-      const pushed: ChatUiMessage = {
+      const pushed = chatThreadMessageToUi({
         id: action.message.id,
+        threadId: action.threadId,
         role: "assistant",
-        author: { name: state.agentName },
+        authorContactId: null,
+        authorName: state.agentName,
+        body: action.message.body,
         status: "done",
         createdAt: action.message.createdAt,
-        parts: [{ type: "text", text: action.message.body, markdown: true }],
-      };
+        updatedAt: action.message.createdAt,
+        ...(action.message.choices
+          ? {
+              choices: action.message.choices,
+              choicesAnswer: action.message.choicesAnswer ?? null,
+            }
+          : {}),
+      });
+      // Same id may arrive again with choicesAnswer filled in.
+      const without = state.messages.filter(
+        (message) => message.id !== pushed.id,
+      );
       return {
         ...state,
-        messages: insertMessage(state.messages, pushed),
+        messages: withChoicesDismissedStates(
+          insertMessage(without, pushed),
+        ),
         thinking: CHAT_THINKING_OFF,
         signalAt: Math.max(state.signalAt, isoMs(action.message.createdAt)),
       };
@@ -319,7 +342,9 @@ export function liveAgentThreadReducer(
       return {
         ...state,
         notices: [],
-        messages: insertMessage(state.messages, action.message),
+        messages: withChoicesDismissedStates(
+          insertMessage(state.messages, action.message),
+        ),
       };
 
     case "sendSucceeded": {
@@ -327,7 +352,9 @@ export function liveAgentThreadReducer(
       const withoutPending = state.messages.filter(
         (message) => message.id !== action.pendingId,
       );
-      const messages = insertMessage(withoutPending, real);
+      const messages = withChoicesDismissedStates(
+        insertMessage(withoutPending, real),
+      );
       const sentAt = isoMs(action.message.createdAt);
       const notices = action.webhookError
         ? [webhookErrorStatusMessage(action.webhookError)]

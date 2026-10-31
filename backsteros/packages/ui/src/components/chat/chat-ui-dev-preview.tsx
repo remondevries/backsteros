@@ -9,6 +9,9 @@ import {
   useState,
 } from "react";
 import type {
+  AnswerChatThreadMessageChoicesResult,
+  ChatThreadMessageChoices,
+  ChatThreadMessageChoicesAnswer,
   ChatThreadWithMessages,
   ChatUiFilePart,
   ChatUiMessage,
@@ -55,6 +58,11 @@ export type LiveAgentChatHandlers = {
     threadId: string,
     messageIds: readonly string[],
   ) => Promise<{ deletedIds: string[] }>;
+  answerChoices?: (
+    threadId: string,
+    messageId: string,
+    values: readonly string[],
+  ) => Promise<AnswerChatThreadMessageChoicesResult>;
 };
 
 /** Safety-net refetch while the agent is thinking, in case SSE drops. */
@@ -441,6 +449,8 @@ export function ChatUiDevPreview({
             body?: string;
             fullBody?: string | null;
             createdAt?: string;
+            choices?: ChatThreadMessageChoices;
+            choicesAnswer?: ChatThreadMessageChoicesAnswer | null;
           };
         }>
       ).detail;
@@ -457,6 +467,12 @@ export function ChatUiDevPreview({
             id: messageId,
             body: fullBody ?? detail?.message?.body ?? "",
             createdAt,
+            ...(detail.message?.choices
+              ? {
+                  choices: detail.message.choices,
+                  choicesAnswer: detail.message.choicesAnswer ?? null,
+                }
+              : {}),
           },
         });
       }
@@ -656,6 +672,69 @@ export function ChatUiDevPreview({
     [liveAgentChat, liveAgentId, liveThreadId, projectId, threadAgent.id],
   );
 
+  const onAnswerChoices = useCallback(
+    async (messageId: string, values: readonly string[]) => {
+      if (!liveAgentId || !liveAgentChat?.answerChoices || !liveThreadId) {
+        return;
+      }
+      const pendingId = `pending-choice-${Date.now()}`;
+      const now = new Date().toISOString();
+      const body = [...values].join(", ");
+      dispatchLive({
+        type: "sendStarted",
+        message: {
+          id: pendingId,
+          role: "user",
+          author: { name: "You" },
+          status: "pending",
+          createdAt: now,
+          parts: [{ type: "text", text: body }],
+        },
+      });
+      try {
+        const result = await liveAgentChat.answerChoices(
+          liveThreadId,
+          messageId,
+          values,
+        );
+        dispatchLive({
+          type: "pushMessage",
+          threadId: liveThreadId,
+          message: {
+            id: result.message.id,
+            body: result.message.body,
+            createdAt: result.message.createdAt,
+            ...(result.message.choices
+              ? {
+                  choices: result.message.choices,
+                  choicesAnswer: result.message.choicesAnswer ?? null,
+                }
+              : {}),
+          },
+        });
+        dispatchLive({
+          type: "sendSucceeded",
+          pendingId,
+          message: result.reply.message,
+          thinking: result.reply.thinking,
+          webhookError: result.reply.webhookError,
+          nowMs: Date.now(),
+        });
+      } catch (error) {
+        dispatchLive({
+          type: "sendFailed",
+          pendingId,
+          error:
+            error instanceof Error
+              ? error.message
+              : "Could not submit choice.",
+        });
+        throw error;
+      }
+    },
+    [liveAgentChat, liveAgentId, liveThreadId],
+  );
+
   const liveView = useMemo(() => liveAgentThreadView(live), [live]);
   // While a live agent thread loads, show nothing rather than demo messages.
   const messages: readonly ChatUiMessage[] = liveAgentId
@@ -709,6 +788,11 @@ export function ChatUiDevPreview({
           recentProjectIds={recentProjectIds}
           onSelectProject={onSelectProject}
           onDeleteMessages={onDeleteMessages}
+          onAnswerChoices={
+            liveAgentId && liveAgentChat?.answerChoices
+              ? onAnswerChoices
+              : null
+          }
           emptyState={null}
           placeholder="Message…"
         />

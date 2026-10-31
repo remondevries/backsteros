@@ -609,6 +609,8 @@
   align-self: flex-end;
   align-items: flex-end;
   max-width: min(28rem, 85%);
+  /* Works even when a virtual-list item wrapper isn’t a flex parent. */
+  margin-inline-start: auto;
 }
 
 /* Select mode: checkbox sits outside the bubble (right), not between bubble and thread. */
@@ -640,6 +642,14 @@
 .chat-ui-message.is-system {
   align-self: center;
   max-width: 100%;
+}
+
+/* Live “what the bot is doing” shimmer — left edge of the column (not centered). */
+.chat-ui-message.is-system:has(.live-status-shine) {
+  align-self: stretch;
+  width: 100%;
+  margin-inline: 0;
+  justify-content: flex-start;
 }
 
 .chat-ui-message.is-pending {
@@ -688,6 +698,7 @@
 .chat-ui-message.is-user .chat-ui-message__bubble {
   background: #0a92ff;
   color: #fff;
+  font-weight: 500;
 }
 
 .chat-ui-message__body {
@@ -755,6 +766,54 @@
   white-space: break-spaces;
 }
 
+/* Own blue bubble — darker blue chip, darker outline, white text. */
+.chat-ui-message.is-user .chat-ui-text--markdown :not(pre) > code {
+  color: #fff;
+  background: color-mix(in oklab, #003d7a 55%, #0a92ff);
+  border-color: color-mix(in oklab, #001a33 45%, #0a92ff);
+}
+
+/* Same treatment for inline mention chips inside the blue bubble. */
+.chat-ui-message.is-user .mention-chip-lite:not(.mention-chip-lite--block) {
+  color: #fff;
+  background: color-mix(in oklab, #003d7a 55%, #0a92ff);
+  border: 1px solid color-mix(in oklab, #001a33 45%, #0a92ff);
+}
+
+.chat-ui-message.is-user
+  a.mention-chip-lite:not(.mention-chip-lite--block):hover,
+.chat-ui-message.is-user
+  .mention-chip-lite--link:not(.mention-chip-lite--block):hover {
+  background: color-mix(in oklab, #003d7a 70%, #0a92ff);
+}
+
+.chat-ui-message.is-user
+  .mention-chip-lite:not(.mention-chip-lite--block)
+  .mention-chip-lite__id,
+.chat-ui-message.is-user
+  .mention-chip-lite:not(.mention-chip-lite--block)
+  .mention-chip-lite__kind,
+.chat-ui-message.is-user
+  .mention-chip-lite:not(.mention-chip-lite--block)
+  .mention-chip-lite__status,
+.chat-ui-message.is-user
+  .mention-chip-lite:not(.mention-chip-lite--block)
+  .mention-chip-lite__from,
+.chat-ui-message.is-user
+  .mention-chip-lite:not(.mention-chip-lite--block)
+  .mention-chip-lite__received,
+.chat-ui-message.is-user
+  .mention-chip-lite:not(.mention-chip-lite--block)
+  .mention-chip-lite__project,
+.chat-ui-message.is-user
+  .mention-chip-lite:not(.mention-chip-lite--block)
+  .mention-chip-lite__area,
+.chat-ui-message.is-user
+  .mention-chip-lite:not(.mention-chip-lite--block)
+  .mention-chip-lite__due {
+  color: color-mix(in oklab, #fff 72%, transparent);
+}
+
 .chat-ui-status-line {
   font-size: 0.75rem;
   opacity: 0.55;
@@ -766,6 +825,7 @@
 .chat-ui-status-line.live-status-shine {
   opacity: 1;
   display: inline-block;
+  text-align: left;
 }
 
 .chat-ui-error {
@@ -893,6 +953,15 @@
   margin-block: 6px;
   min-width: 0;
   max-width: 100%;
+}
+
+/* Clickable mention chips / entity cards in the thread. */
+.chat-ui-message .mention-chip-lite,
+.chat-ui-message .mention-chip-hover-shell,
+.chat-ui-message .mention-chip-hover-shell--block,
+.chat-ui-card--entity,
+.chat-ui-card--entity .mention-chip-lite--block {
+  cursor: pointer;
 }
 
 /* Expandable entity cards (task / contact / document / …) — tool-call style. */
@@ -1142,7 +1211,34 @@
   min-width: 0;
 }
 
+.chat-ui-composer__input-shell {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+}
+
+/* Decorative only — never in the contenteditable DOM / selection. */
+.chat-ui-composer__placeholder {
+  position: absolute;
+  inset: 0;
+  padding: 8px 6px;
+  margin: 0;
+  border: 0;
+  font: inherit;
+  font-size: 0.92rem;
+  line-height: 1.45;
+  color: color-mix(in oklab, var(--foreground, #fff) 35%, transparent);
+  pointer-events: none;
+  user-select: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .chat-ui-composer__input.is-mention-editor {
+  position: relative;
+  z-index: 1;
   width: 100%;
   overflow-y: auto;
   white-space: pre-wrap;
@@ -1150,12 +1246,6 @@
   line-height: 1.45;
   font-size: 0.92rem;
   caret-color: var(--foreground, #f5f5f5);
-}
-
-.chat-ui-composer__input.is-mention-editor[data-empty="true"]::before {
-  content: attr(data-placeholder);
-  color: color-mix(in oklab, var(--foreground, #fff) 35%, transparent);
-  pointer-events: none;
 }
 
 .chat-ui-composer__input.is-mention-editor:focus {
@@ -1389,6 +1479,96 @@
   padding: 0;
   gap: 0;
   overflow: hidden;
+}
+
+/* Agent choice buttons — below bubble / mention cards. */
+.chat-ui-choices {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 10px;
+  max-width: 100%;
+}
+
+.chat-ui-choices__prompt {
+  margin: 0;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: color-mix(in oklab, var(--foreground, #fff) 72%, transparent);
+}
+
+.chat-ui-choices__options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.chat-ui-choices__option {
+  margin: 0;
+  padding: 7px 12px;
+  border-radius: 10px;
+  border: 1px solid color-mix(in oklab, var(--foreground, #fff) 16%, transparent);
+  background: color-mix(in oklab, var(--foreground, #fff) 6%, transparent);
+  color: inherit;
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 560;
+  cursor: pointer;
+}
+
+.chat-ui-choices__option:hover:not(:disabled) {
+  background: color-mix(in oklab, var(--foreground, #fff) 10%, transparent);
+}
+
+.chat-ui-choices__option.is-primary {
+  border-color: color-mix(in oklab, #3b82f6 55%, transparent);
+  background: color-mix(in oklab, #3b82f6 18%, transparent);
+}
+
+.chat-ui-choices__option.is-danger {
+  border-color: color-mix(in oklab, #ef4444 50%, transparent);
+  background: color-mix(in oklab, #ef4444 14%, transparent);
+}
+
+.chat-ui-choices__option.is-selected {
+  outline: 2px solid color-mix(in oklab, var(--foreground, #fff) 35%, transparent);
+  outline-offset: 1px;
+}
+
+.chat-ui-choices__option:disabled {
+  cursor: default;
+  opacity: 0.85;
+}
+
+.chat-ui-choices.is-dismissed {
+  opacity: 0.45;
+}
+
+.chat-ui-choices.is-dismissed .chat-ui-choices__option {
+  pointer-events: none;
+}
+
+.chat-ui-choices.is-answered .chat-ui-choices__option:not(.is-selected) {
+  display: none;
+}
+
+.chat-ui-choices__submit {
+  margin: 0;
+  padding: 7px 14px;
+  border-radius: 10px;
+  border: 0;
+  background: color-mix(in oklab, #3b82f6 82%, #0b1220);
+  color: #fff;
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.chat-ui-choices__submit:disabled {
+  opacity: 0.45;
+  cursor: default;
 }
 
 /* Shell right column hosts the same preview chrome. */

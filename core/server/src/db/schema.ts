@@ -3154,6 +3154,16 @@ export const chatThreadMessages = pgTable(
     body: text("body").notNull().default(""),
     /** pending | streaming | done | error */
     status: text("status").notNull().default("done"),
+    /**
+     * Assistant-only choice buttons (`{ prompt?, multiSelect, options[] }`).
+     * Null on user/system rows and older assistant messages.
+     */
+    choices: jsonb("choices").$type<Record<string, unknown> | null>(),
+    /**
+     * Once the owner answers: `{ values: string[], answeredAt }`.
+     * Null while unanswered (or when `choices` is null).
+     */
+    choicesAnswer: jsonb("choices_answer").$type<Record<string, unknown> | null>(),
     /** Soft-delete — excluded from lists / DM last-assistant. */
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })

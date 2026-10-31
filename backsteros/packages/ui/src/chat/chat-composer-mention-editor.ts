@@ -150,8 +150,26 @@ export function readComposerMentionDoc(
   return out.length > 0 ? out : [{ type: "text", text: "" }];
 }
 
+/**
+ * Normalize a serialized editor value: browsers often leave a lone `<br>` /
+ * ZWSP in an "empty" contenteditable — treat that as "".
+ */
+export function normalizeComposerEditorSerialized(text: string): string {
+  if (!text) return "";
+  if (/^[\u200b\n\r]*$/.test(text)) return "";
+  return text;
+}
+
 export function serializeComposerEditorRoot(root: HTMLElement): string {
-  return serializeComposerMentionDoc(readComposerMentionDoc(root));
+  return normalizeComposerEditorSerialized(
+    serializeComposerMentionDoc(readComposerMentionDoc(root)),
+  );
+}
+
+/** Clear browser chrome (`<br>`, ZWSP) so an empty editor stays empty. */
+export function ensureComposerEditorEmptyDom(root: HTMLElement): void {
+  if (serializeComposerEditorRoot(root) !== "") return;
+  root.replaceChildren();
 }
 
 /** Serialized caret offset (mention chips count as their raw token length). */

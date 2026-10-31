@@ -50,6 +50,23 @@ export type AgentChatWebhookMention = {
   path?: string | null;
 };
 
+export type AgentChatWebhookChoicesOption = {
+  label: string;
+  value: string;
+  style?: "default" | "primary" | "danger";
+};
+
+export type AgentChatWebhookChoices = {
+  prompt?: string;
+  multiSelect: boolean;
+  options: AgentChatWebhookChoicesOption[];
+};
+
+export type AgentChatWebhookChoicesAnswer = {
+  values: string[];
+  answeredAt: string;
+};
+
 export type AgentChatWebhookMessage = {
   id: string;
   role: "user" | "assistant" | "system";
@@ -57,6 +74,9 @@ export type AgentChatWebhookMessage = {
   createdAt: string;
   /** Resolved `[@kind:…]` embeds from `text` (additive; body stays raw). */
   mentions?: AgentChatWebhookMention[];
+  /** Assistant-only interactive options (when present on context messages). */
+  choices?: AgentChatWebhookChoices;
+  choicesAnswer?: AgentChatWebhookChoicesAnswer | null;
 };
 
 type AgentWebhookPayloadBase = {

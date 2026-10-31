@@ -497,6 +497,103 @@ test("OS-151/150 agents + chat loop: secret write-only, webhook fire, agent repl
   );
   assert.ok(assistant);
 
+  // Agent posts a choices message; owner answers once (creates user msg + webhook).
+  webhookHit = null;
+  const choicesReply = await json(
+    app,
+    `/api/v1/chat/threads/${threadId}/messages`,
+    agentSecret,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        body: "Which path?",
+        choices: {
+          prompt: "Continue?",
+          options: [
+            { label: "Ship", value: "ship", style: "primary" },
+            { label: "Hold", value: "hold" },
+          ],
+        },
+      }),
+    },
+  );
+  assert.equal(choicesReply.status, 201);
+  const choicesMessage = choicesReply.body?.message as {
+    id: string;
+    choices?: { options: unknown[] };
+    choicesAnswer: unknown;
+  };
+  assert.ok(choicesMessage?.choices?.options?.length === 2);
+  assert.equal(choicesMessage.choicesAnswer, null);
+
+  // User posts cannot attach choices.
+  const userChoicesDenied = await json(
+    app,
+    `/api/v1/chat/threads/${threadId}/messages`,
+    ownerSecret,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        body: "nope",
+        choices: {
+          options: [{ label: "A" }, { label: "B" }],
+        },
+      }),
+    },
+  );
+  assert.equal(userChoicesDenied.status, 400);
+
+  // Agent cannot answer.
+  const agentAnswerDenied = await app.request(
+    `/api/v1/chat/threads/${threadId}/messages/${choicesMessage.id}/answer`,
+    {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${agentSecret}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ values: ["ship"] }),
+    },
+  );
+  assert.equal(agentAnswerDenied.status, 403);
+
+  webhookHit = null;
+  const answered = await json(
+    app,
+    `/api/v1/chat/threads/${threadId}/messages/${choicesMessage.id}/answer`,
+    ownerSecret,
+    {
+      method: "POST",
+      body: JSON.stringify({ values: ["ship"] }),
+    },
+  );
+  assert.equal(answered.status, 201);
+  assert.deepEqual(
+    (answered.body?.message as { choicesAnswer?: { values: string[] } })
+      ?.choicesAnswer?.values,
+    ["ship"],
+  );
+  assert.equal(
+    (answered.body?.reply as { message?: { body?: string } })?.message?.body,
+    "ship",
+  );
+  assert.ok(webhookHit);
+  const answerPayload = JSON.parse(webhookHit.body) as {
+    message: { text: string };
+  };
+  assert.equal(answerPayload.message.text, "ship");
+
+  const answeredAgain = await json(
+    app,
+    `/api/v1/chat/threads/${threadId}/messages/${choicesMessage.id}/answer`,
+    ownerSecret,
+    {
+      method: "POST",
+      body: JSON.stringify({ values: ["hold"] }),
+    },
+  );
+  assert.equal(answeredAgain.status, 409);
+
   // Agent keys cannot delete.
   const agentDeleteDenied = await app.request(
     `/api/v1/chat/threads/${threadId}/messages/${assistant.id}`,

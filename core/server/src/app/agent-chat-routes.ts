@@ -4,6 +4,7 @@
 import type { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import {
+  answerChatThreadMessageChoicesInputSchema,
   createChatThreadMessageInputSchema,
   deleteChatThreadMessagesInputSchema,
   getOrCreateChatThreadInputSchema,
@@ -50,7 +51,7 @@ function canWriteAgentReply(auth: ReturnType<typeof getAuth>): boolean {
   return isAgentPersonaAuth(auth) && Boolean(auth.apiKeyId);
 }
 
-function errorStatus(error: unknown): 400 | 403 | 404 {
+function errorStatus(error: unknown): 400 | 403 | 404 | 409 {
   if (
     error &&
     typeof error === "object" &&
@@ -60,13 +61,15 @@ function errorStatus(error: unknown): 400 | 403 | 404 {
     const status = (error as { status: number }).status;
     if (status === 404) return 404;
     if (status === 403) return 403;
+    if (status === 409) return 409;
   }
   return 400;
 }
 
-function errorCode(status: 400 | 403 | 404): string {
+function errorCode(status: 400 | 403 | 404 | 409): string {
   if (status === 404) return "not_found";
   if (status === 403) return "forbidden";
+  if (status === 409) return "conflict";
   return "bad_request";
 }
 
@@ -239,6 +242,8 @@ export function registerAgentChatRoutes(app: Hono) {
           authorContactId: auth.contactId ?? null,
           authorName: asAgent ? null : "Remon",
         },
+        undefined,
+        parsed.data.choices,
       );
       return c.json(result, 201);
     } catch (error) {
@@ -248,6 +253,50 @@ export function registerAgentChatRoutes(app: Hono) {
       return c.json({ error: message, code: errorCode(status) }, status);
     }
   });
+
+  /**
+   * Answer assistant choice buttons once — owner / Access keys only.
+   * Records the answer and posts a normal user message (webhook path unchanged).
+   */
+  app.post(
+    "/api/v1/chat/threads/:threadId/messages/:messageId/answer",
+    async (c) => {
+      const auth = getAuth(c);
+      if (!canWriteUserMessage(auth)) return c.json(forbidden(), 403);
+      let body: unknown;
+      try {
+        body = await c.req.json();
+      } catch {
+        return c.json({ error: "Invalid JSON body", code: "bad_request" }, 400);
+      }
+      const parsed = answerChatThreadMessageChoicesInputSchema.safeParse(body);
+      if (!parsed.success) {
+        return c.json(
+          { error: "Invalid answer payload", code: "bad_request" },
+          400,
+        );
+      }
+      try {
+        const result = await agentChat.answerChatThreadMessageChoices(
+          auth.workspaceId,
+          c.req.param("threadId"),
+          c.req.param("messageId"),
+          parsed.data.values,
+          {
+            apiKeyId: null,
+            authorContactId: auth.contactId ?? null,
+            authorName: "Remon",
+          },
+        );
+        return c.json(result, 201);
+      } catch (error) {
+        const status = errorStatus(error);
+        const message =
+          error instanceof Error ? error.message : "Could not answer choices";
+        return c.json({ error: message, code: errorCode(status) }, status);
+      }
+    },
+  );
 
   /** Soft-delete one message — owner / Access keys only. */
   app.delete(

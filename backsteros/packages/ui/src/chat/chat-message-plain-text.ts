@@ -30,6 +30,8 @@ function partPlainText(
         if (textBodies.includes(token)) return "";
         return token;
       }
+      // Choice buttons are UI chrome — body text already carries the copy.
+      if (part.cardType === "choices") return "";
       return part.cardType;
     default:
       return "";

@@ -12,6 +12,7 @@ import {
 
 import {
   deleteComposerMentionChipBeforeCaret,
+  ensureComposerEditorEmptyDom,
   getComposerSerializedCaretOffset,
   insertComposerMentionChipAtSelection,
   insertPlainTextAtComposerCaret,
@@ -87,21 +88,19 @@ export function ChatComposerMentionInput({
     syncFromValue(value, Math.min(caret, value.length));
   }, [syncFromValue, value]);
 
-  useEffect(() => {
-    const root = rootRef.current;
-    if (!root) return;
-    const empty = serializeComposerEditorRoot(root).length === 0;
-    root.dataset.empty = empty ? "true" : "false";
-  }, [value]);
-
   const emitFromDom = useCallback(() => {
     const root = rootRef.current;
     if (!root) return;
     const serialized = serializeComposerEditorRoot(root);
+    if (serialized === "") ensureComposerEditorEmptyDom(root);
     lastValueRef.current = serialized;
     onValueChange(serialized);
-    onCaretChange(getComposerSerializedCaretOffset(root));
+    onCaretChange(
+      serialized === "" ? 0 : getComposerSerializedCaretOffset(root),
+    );
   }, [onCaretChange, onValueChange]);
+
+  const showPlaceholder = value.length === 0;
 
   const handleInput = (_event: FormEvent<HTMLDivElement>) => {
     if (composingRef.current) return;
@@ -166,33 +165,39 @@ export function ChatComposerMentionInput({
   };
 
   return (
-    <div
-      ref={rootRef}
-      className={["chat-ui-composer__input", "is-mention-editor", className]
-        .filter(Boolean)
-        .join(" ")}
-      role="textbox"
-      aria-multiline="true"
-      aria-placeholder={placeholder}
-      data-placeholder={placeholder}
-      contentEditable={!disabled}
-      suppressContentEditableWarning
-      spellCheck
-      data-disabled={disabled ? "true" : undefined}
-      onInput={handleInput}
-      onKeyDown={handleKeyDown}
-      onKeyUp={handleKeyUp}
-      onPaste={handlePaste}
-      onClick={handleClick}
-      onSelect={handleClick}
-      onCompositionStart={() => {
-        composingRef.current = true;
-      }}
-      onCompositionEnd={() => {
-        composingRef.current = false;
-        emitFromDom();
-      }}
-    />
+    <div className="chat-ui-composer__input-shell">
+      {showPlaceholder ? (
+        <span className="chat-ui-composer__placeholder" aria-hidden="true">
+          {placeholder}
+        </span>
+      ) : null}
+      <div
+        ref={rootRef}
+        className={["chat-ui-composer__input", "is-mention-editor", className]
+          .filter(Boolean)
+          .join(" ")}
+        role="textbox"
+        aria-multiline="true"
+        aria-placeholder={placeholder}
+        contentEditable={!disabled}
+        suppressContentEditableWarning
+        spellCheck
+        data-disabled={disabled ? "true" : undefined}
+        onInput={handleInput}
+        onKeyDown={handleKeyDown}
+        onKeyUp={handleKeyUp}
+        onPaste={handlePaste}
+        onClick={handleClick}
+        onSelect={handleClick}
+        onCompositionStart={() => {
+          composingRef.current = true;
+        }}
+        onCompositionEnd={() => {
+          composingRef.current = false;
+          emitFromDom();
+        }}
+      />
+    </div>
   );
 }
 

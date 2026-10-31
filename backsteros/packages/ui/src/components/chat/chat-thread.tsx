@@ -26,6 +26,7 @@ import {
   type LegendListRef,
   type LegendListRenderItemProps,
 } from "@legendapp/list/react";
+import { TrashIcon } from "@primer/octicons-react";
 
 import {
   collectPendingChatImagesFromDataTransfer,
@@ -45,6 +46,7 @@ import {
   buildChatSlashMenu,
   flattenChatSlashMenu,
   resolveChatSlashCommand,
+  type ChatSlashActionId,
   type ChatSlashMenuItem,
 } from "../../chat/chat-slash-menu.js";
 import { chatUiMessageToThreadMessageLike } from "../../chat/chat-ui-to-thread-message.js";
@@ -64,6 +66,10 @@ import {
   mergeChatCardRegistry,
   type ChatCardRegistry,
 } from "./chat-card-registry.js";
+import {
+  ChatChoicesAnswerProvider,
+  type ChatChoicesAnswerFn,
+} from "./chat-choices-card.js";
 import { ChatComposerMentionMenu } from "./chat-composer-mention-menu.js";
 import {
   applyMentionItemToComposerInput,
@@ -82,6 +88,11 @@ import {
   isChatMessageSelectable,
   toggleChatMessageSelection,
 } from "../../chat/chat-select-mode.js";
+import {
+  chatThreadStickAnchor,
+  isChatViewportNearBottom,
+  scrollChatViewportToBottom,
+} from "../../chat/chat-thread-stick-to-bottom.js";
 import { useEntityHeaderActionsContextOptional } from "../entity-actions/entity-header-actions-context.js";
 
 /** Window when the thread is long enough that DOM cost matters. */
@@ -142,6 +153,11 @@ export type ChatThreadProps = {
    */
   onDeleteMessages?: ((messageIds: readonly string[]) => void | Promise<void>) | null;
   /**
+   * Answer assistant choice buttons (owner). Posts the chosen value(s) as a
+   * normal user message via the answer API.
+   */
+  onAnswerChoices?: ChatChoicesAnswerFn | null;
+  /**
    * Optional empty state when there are no messages.
    * Pass `null` to show no empty-state copy (composer only).
    * Omit to use the default “No messages yet.” label.
@@ -169,6 +185,16 @@ function readAppendText(message: AppendMessage): string {
 }
 
 function ChatSlashOptionIcon({ item }: { item: ChatSlashMenuItem }) {
+  if (item.kind === "action") {
+    return (
+      <span
+        className="chat-ui-composer__slash-option-icon is-command"
+        aria-hidden="true"
+      >
+        <TrashIcon size={12} />
+      </span>
+    );
+  }
   if (item.kind === "project") {
     return (
       <span className="chat-ui-composer__slash-option-icon is-project" aria-hidden="true">
@@ -208,6 +234,8 @@ function ChatThreadComposer({
   projects,
   recentProjectIds,
   onSelectProject,
+  enabledSlashActions = [],
+  onSlashAction,
   pendingImages,
   onPendingImagesChange,
   onSendAttachmentsOnly,
@@ -219,6 +247,8 @@ function ChatThreadComposer({
   projects: readonly ChatProjectOption[];
   recentProjectIds: readonly string[];
   onSelectProject?: (projectId: string) => void;
+  enabledSlashActions?: readonly ChatSlashActionId[];
+  onSlashAction?: (action: ChatSlashActionId) => void;
   pendingImages: readonly PendingChatImage[];
   onPendingImagesChange: (next: PendingChatImage[]) => void;
   /** Flush image-only sends (assistant-ui skips empty text). */
@@ -245,8 +275,16 @@ function ChatThreadComposer({
       peers,
       projects,
       recentProjectIds,
+      enabledActions: enabledSlashActions,
     });
-  }, [peers, projects, recentProjectIds, slashQuery, value]);
+  }, [
+    enabledSlashActions,
+    peers,
+    projects,
+    recentProjectIds,
+    slashQuery,
+    value,
+  ]);
   const slashItems = useMemo(
     () => flattenChatSlashMenu(slashSections),
     [slashSections],
@@ -285,13 +323,17 @@ function ChatThreadComposer({
   const applySlashItem = useCallback(
     (item: ChatSlashMenuItem) => {
       setText("");
+      if (item.kind === "action") {
+        onSlashAction?.(item.id);
+        return;
+      }
       if (item.kind === "project") {
         onSelectProject?.(item.project.id);
         return;
       }
       onSelectPeer?.(item.peer.id);
     },
-    [onSelectPeer, onSelectProject, setText],
+    [onSelectPeer, onSelectProject, onSlashAction, setText],
   );
 
   const applyMentionItem = useCallback(
@@ -422,7 +464,17 @@ function ChatThreadComposer({
         peers,
         projects,
         recentProjectIds,
+        enabledActions: enabledSlashActions,
       });
+      if (resolved?.type === "action") {
+        applySlashItem({
+          kind: "action",
+          id: resolved.action,
+          label: resolved.action,
+          command: resolved.action,
+        });
+        return;
+      }
       if (resolved?.type === "peer") {
         applySlashItem({
           kind: "peer",
@@ -604,13 +656,19 @@ type ChatMessagesRenderProps = {
   onToggleSelect?: ((messageId: string) => void) | null;
 };
 
+type VirtualizedChatMessagesProps = ChatMessagesRenderProps & {
+  /** Peer / transcript identity — scroll to end when it changes. */
+  stickAnchor: string;
+};
+
 function VirtualizedChatMessages({
   messages,
   onDelete = null,
   selectMode = false,
   selectedIds,
   onToggleSelect = null,
-}: ChatMessagesRenderProps) {
+  stickAnchor,
+}: VirtualizedChatMessagesProps) {
   const listRef = useRef<LegendListRef | null>(null);
   const rows = useMemo(
     () => messages.map((message) => ({ key: message.id, message })),
@@ -629,6 +687,14 @@ function VirtualizedChatMessages({
     ),
     [onDelete, onToggleSelect, selectMode, selectedIds],
   );
+
+  useEffect(() => {
+    void listRef.current?.scrollToEnd?.({ animated: false });
+    const frame = requestAnimationFrame(() => {
+      void listRef.current?.scrollToEnd?.({ animated: false });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [stickAnchor]);
 
   return (
     <LegendList
@@ -690,6 +756,7 @@ export function ChatThread({
   placeholder = "Message…",
   composerDisabled = false,
   onDeleteMessages = null,
+  onAnswerChoices = null,
   emptyState,
   className,
 }: ChatThreadProps) {
@@ -722,6 +789,32 @@ export function ChatThread({
       return Promise.resolve(onDeleteMessages?.([messageId]));
     },
     [onDeleteMessages],
+  );
+
+  const clearableMessageIds = useMemo(
+    () =>
+      messages
+        .filter((message) => isChatMessageSelectable(message.role))
+        .map((message) => message.id),
+    [messages],
+  );
+
+  const enabledSlashActions = useMemo((): readonly ChatSlashActionId[] => {
+    if (!onDeleteMessages || clearableMessageIds.length === 0) return [];
+    return ["clear"];
+  }, [clearableMessageIds.length, onDeleteMessages]);
+
+  const clearConversation = useCallback(() => {
+    if (!onDeleteMessages || clearableMessageIds.length === 0) return;
+    void onDeleteMessages(clearableMessageIds);
+    exitSelectMode();
+  }, [clearableMessageIds, exitSelectMode, onDeleteMessages]);
+
+  const onSlashAction = useCallback(
+    (action: ChatSlashActionId) => {
+      if (action === "clear") clearConversation();
+    },
+    [clearConversation],
   );
 
   const deleteSelected = useCallback(() => {
@@ -879,14 +972,19 @@ export function ChatThread({
       const hasAttachments = pendingImagesRef.current.length > 0;
       if (!text && !hasAttachments) return;
 
-      // `/jaap`, `/bsh` — peer / project switch commands, not messages.
+      // `/jaap`, `/bsh`, `/clear` — commands, not messages.
       if (text && !hasAttachments) {
         const resolved = resolveChatSlashCommand({
           text,
           peers: resolvedPeers,
           projects,
           recentProjectIds,
+          enabledActions: enabledSlashActions,
         });
+        if (resolved?.type === "action") {
+          onSlashAction(resolved.action);
+          return;
+        }
         if (resolved?.type === "peer") {
           onPeerChange?.(resolved.peer.id);
           return;
@@ -901,9 +999,11 @@ export function ChatThread({
     },
     [
       composerDisabled,
+      enabledSlashActions,
       flushSend,
       onPeerChange,
       onSelectProject,
+      onSlashAction,
       projects,
       recentProjectIds,
       resolvedPeers,
@@ -918,6 +1018,52 @@ export function ChatThread({
   });
 
   const virtualize = messages.length >= CHAT_THREAD_VIRTUALIZE_THRESHOLD;
+  const stickAnchor = chatThreadStickAnchor(resolvedActivePeerId, messages);
+  const stickToBottomRef = useRef(true);
+  const prevStickPeerRef = useRef(resolvedActivePeerId);
+
+  // Peer switches do not remount assistant-ui's Viewport, and large markdown
+  // can grow after the first scrollToBottom — reinforce stick-to-bottom.
+  useEffect(() => {
+    if (virtualize) return;
+    const root = threadRootRef.current;
+    if (!root) return;
+    const viewport = root.querySelector(".chat-ui-thread__viewport");
+    if (!(viewport instanceof HTMLElement)) return;
+
+    const peerChanged = prevStickPeerRef.current !== resolvedActivePeerId;
+    prevStickPeerRef.current = resolvedActivePeerId;
+    if (peerChanged) stickToBottomRef.current = true;
+
+    const pin = () => {
+      if (!stickToBottomRef.current) return;
+      scrollChatViewportToBottom(viewport);
+    };
+
+    const onScroll = () => {
+      stickToBottomRef.current = isChatViewportNearBottom(viewport);
+    };
+
+    pin();
+    let raf2 = 0;
+    const raf1 = requestAnimationFrame(() => {
+      pin();
+      raf2 = requestAnimationFrame(pin);
+    });
+
+    const messagesEl = viewport.querySelector(".chat-ui-thread__messages");
+    const resizeObserver =
+      typeof ResizeObserver !== "undefined" ? new ResizeObserver(pin) : null;
+    if (messagesEl && resizeObserver) resizeObserver.observe(messagesEl);
+
+    viewport.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      cancelAnimationFrame(raf1);
+      cancelAnimationFrame(raf2);
+      resizeObserver?.disconnect();
+      viewport.removeEventListener("scroll", onScroll);
+    };
+  }, [resolvedActivePeerId, stickAnchor, virtualize]);
 
   // Local form fallback when assistant-ui composer is disabled or onNew absent.
   const [draft, setDraft] = useState("");
@@ -935,6 +1081,7 @@ export function ChatThread({
   return (
     <ChatCardNavigateProvider navigate={onNavigate}>
       <ChatCardRegistryProvider registry={registry}>
+        <ChatChoicesAnswerProvider onAnswer={onAnswerChoices}>
         <AssistantRuntimeProvider runtime={runtime}>
           <div
             ref={threadRootRef}
@@ -983,6 +1130,7 @@ export function ChatThread({
                 </div>
               ) : null}
               <ThreadPrimitive.Viewport
+                key={resolvedActivePeerId ?? "thread"}
                 className={[
                   "chat-ui-thread__viewport",
                   virtualize ? "is-virtualized" : "",
@@ -1007,6 +1155,7 @@ export function ChatThread({
                     selectMode={selectMode}
                     selectedIds={selectedIds}
                     onToggleSelect={toggleSelect}
+                    stickAnchor={stickAnchor}
                   />
                 ) : (
                   <PlainChatMessages
@@ -1055,6 +1204,8 @@ export function ChatThread({
                     projects={projects}
                     recentProjectIds={recentProjectIds}
                     onSelectProject={onSelectProject}
+                    enabledSlashActions={enabledSlashActions}
+                    onSlashAction={onSlashAction}
                     pendingImages={pendingImages}
                     onPendingImagesChange={setPendingImages}
                     onSendAttachmentsOnly={() => {
@@ -1067,6 +1218,7 @@ export function ChatThread({
             </ThreadPrimitive.Root>
           </div>
         </AssistantRuntimeProvider>
+        </ChatChoicesAnswerProvider>
       </ChatCardRegistryProvider>
     </ChatCardNavigateProvider>
   );

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type {
   Agent,
+  AnswerChatThreadMessageChoicesResult,
   ChatThreadMessage,
   ChatThreadWithMessages,
   CreateChatThreadMessageResult,
@@ -50,6 +51,11 @@ export type ShellAgentChatApi = {
     threadId: string,
     messageIds: readonly string[],
   ) => Promise<DeleteChatThreadMessagesResult>;
+  answerChoices: (
+    threadId: string,
+    messageId: string,
+    values: readonly string[],
+  ) => Promise<AnswerChatThreadMessageChoicesResult>;
 };
 
 /**
@@ -173,6 +179,23 @@ export function useShellAgentChat(): ShellAgentChatApi {
     [],
   );
 
+  const answerChoices = useCallback(
+    async (
+      threadId: string,
+      messageId: string,
+      values: readonly string[],
+    ) => {
+      return cloudCoreRequestJson<AnswerChatThreadMessageChoicesResult>(
+        `/api/v1/chat/threads/${encodeURIComponent(threadId)}/messages/${encodeURIComponent(messageId)}/answer`,
+        {
+          method: "POST",
+          body: JSON.stringify({ values: [...values] }),
+        },
+      );
+    },
+    [],
+  );
+
   return useMemo(
     (): ShellAgentChatApi => ({
       agents,
@@ -184,11 +207,13 @@ export function useShellAgentChat(): ShellAgentChatApi {
       getThread,
       listMessages,
       deleteMessages,
+      answerChoices,
     }),
     [
       agents,
       agentsByContactId,
       agentsLoadError,
+      answerChoices,
       deleteMessages,
       getThread,
       listMessages,

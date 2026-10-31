@@ -10,6 +10,8 @@ import {
   peerCommandSlug,
 } from "./chat-peer-slash-command.js";
 
+export type ChatSlashActionId = "clear";
+
 export type ChatSlashMenuItem =
   | {
       kind: "peer";
@@ -24,17 +26,36 @@ export type ChatSlashMenuItem =
       label: string;
       command: string;
       project: ChatProjectOption;
+    }
+  | {
+      kind: "action";
+      id: ChatSlashActionId;
+      label: string;
+      command: string;
     };
 
 export type ChatSlashMenuSection = {
-  id: "agents" | "projects";
+  id: "commands" | "agents" | "projects";
   label: string;
   items: ChatSlashMenuItem[];
 };
 
 export type ChatSlashResolveResult =
   | { type: "peer"; peer: ChatThreadPeer }
-  | { type: "project"; project: ChatProjectOption };
+  | { type: "project"; project: ChatProjectOption }
+  | { type: "action"; action: ChatSlashActionId };
+
+const CHAT_SLASH_ACTIONS: ReadonlyArray<{
+  id: ChatSlashActionId;
+  command: string;
+  label: string;
+}> = [
+  {
+    id: "clear",
+    command: "clear",
+    label: "Clear conversation",
+  },
+];
 
 function projectCommandLabel(project: ChatProjectOption): string {
   const slug = projectCommandSlug(project);
@@ -45,15 +66,39 @@ function peerCommandLabel(peer: ChatThreadPeer): string {
   return (peer.name.split(/\s+/)[0] ?? peer.name).toLowerCase();
 }
 
+type ChatSlashActionMenuItem = Extract<ChatSlashMenuItem, { kind: "action" }>;
+
+function matchChatSlashActions(
+  query: string,
+  enabledActionIds: ReadonlySet<ChatSlashActionId> | readonly ChatSlashActionId[],
+): ChatSlashActionMenuItem[] {
+  const enabled =
+    enabledActionIds instanceof Set
+      ? enabledActionIds
+      : new Set(enabledActionIds);
+  const q = query.trim().toLowerCase();
+  return CHAT_SLASH_ACTIONS.filter((action) => {
+    if (!enabled.has(action.id)) return false;
+    return q.length === 0 || action.command.startsWith(q);
+  }).map((action) => ({
+    kind: "action" as const,
+    id: action.id,
+    label: action.label,
+    command: action.command,
+  }));
+}
+
 /**
- * Build the composer `/` menu: Agents, then Projects (recent first, then filtered).
- * Switch rooms by picking a peer or project — no leave/exit command.
+ * Build the composer `/` menu: Commands, Agents, then Projects (recent first).
+ * Switch rooms by picking a peer or project; `/clear` wipes the open thread.
  */
 export function buildChatSlashMenu(input: {
   text: string;
   peers: readonly ChatThreadPeer[];
   projects: readonly ChatProjectOption[];
   recentProjectIds?: readonly string[];
+  /** Slash actions to offer (e.g. `clear` when delete is wired). */
+  enabledActions?: ReadonlySet<ChatSlashActionId> | readonly ChatSlashActionId[];
 }): ChatSlashMenuSection[] {
   const query = parsePeerSlashCommand(input.text);
   if (query == null) return [];
@@ -66,8 +111,16 @@ export function buildChatSlashMenu(input: {
     query,
     input.recentProjectIds ?? [],
   ).slice(0, 8);
+  const actions = matchChatSlashActions(query, input.enabledActions ?? []);
 
   const sections: ChatSlashMenuSection[] = [];
+  if (actions.length > 0) {
+    sections.push({
+      id: "commands",
+      label: "Commands",
+      items: actions,
+    });
+  }
   if (peers.length > 0) {
     sections.push({
       id: "agents",
@@ -104,17 +157,24 @@ export function flattenChatSlashMenu(
 }
 
 /**
- * Resolve a submitted `/command`. Peers win exact ties over projects;
- * otherwise unique prefix matches resolve.
+ * Resolve a submitted `/command`. Reserved actions (exact) win first; then
+ * peers win exact ties over projects; otherwise unique prefix matches resolve.
  */
 export function resolveChatSlashCommand(input: {
   text: string;
   peers: readonly ChatThreadPeer[];
   projects: readonly ChatProjectOption[];
   recentProjectIds?: readonly string[];
+  enabledActions?: ReadonlySet<ChatSlashActionId> | readonly ChatSlashActionId[];
 }): ChatSlashResolveResult | null {
   const query = parsePeerSlashCommand(input.text);
   if (query == null || query.length === 0) return null;
+
+  const actions = matchChatSlashActions(query, input.enabledActions ?? []);
+  const exactAction = actions.find((action) => action.command === query);
+  if (exactAction?.kind === "action") {
+    return { type: "action", action: exactAction.id };
+  }
 
   const agentPeers = input.peers.filter((peer) => peer.kind === "contact");
   const peers = matchPeersBySlashQuery(agentPeers, query);
@@ -142,10 +202,16 @@ export function resolveChatSlashCommand(input: {
   });
   if (exactProject) return { type: "project", project: exactProject };
 
-  if (peers.length === 1 && projects.length === 0) {
+  if (actions.length === 1 && peers.length === 0 && projects.length === 0) {
+    const only = actions[0];
+    if (only?.kind === "action") {
+      return { type: "action", action: only.id };
+    }
+  }
+  if (peers.length === 1 && projects.length === 0 && actions.length === 0) {
     return { type: "peer", peer: peers[0]! };
   }
-  if (projects.length === 1 && peers.length === 0) {
+  if (projects.length === 1 && peers.length === 0 && actions.length === 0) {
     return { type: "project", project: projects[0]! };
   }
   return null;

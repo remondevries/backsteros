@@ -531,6 +531,39 @@ plus `x-backsteros-delivery-id`. Agents reply with their own API key:
 POST /api/v1/chat/threads/{threadId}/messages
 ```
 
+**Agent reply with choice buttons** (assistant only — optional `choices`):
+
+```json
+{
+  "body": "Which path should we take?",
+  "choices": {
+    "prompt": "Continue?",
+    "multiSelect": false,
+    "options": [
+      { "label": "Ship", "value": "ship", "style": "primary" },
+      { "label": "Hold", "style": "default" }
+    ]
+  }
+}
+```
+
+- `choices.prompt` optional, ≤200 chars.
+- `choices.multiSelect` defaults to `false`.
+- `choices.options` 2–6 items; `label` 1–60 chars; `value` defaults to `label` (≤500); `style` is `default` | `primary` | `danger`.
+- Desktop keeps `body` as the bubble copy and renders buttons below.
+- Thread/SSE/webhook message objects may include `choices` and `choicesAnswer` (`null` until answered).
+
+**Owner answers once** (Access / owner keys only — not agent keys):
+
+```http
+POST /api/v1/chat/threads/{threadId}/messages/{messageId}/answer
+Content-Type: application/json
+
+{ "values": ["ship"] }
+```
+
+Records `choicesAnswer` on the assistant message (HTTP **409** if already answered) **and** creates a normal user message whose `body` is the joined value(s). That user message fires the usual `agent.chat.message` webhook — agents need no new answer logic.
+
 **Human message** (`event` must be matched exactly):
 
 ```json
@@ -542,7 +575,7 @@ POST /api/v1/chat/threads/{threadId}/messages
   "threadId": "…",
   "replyUrl": "https://agent.backsteros.com/api/v1/chat/threads/{threadId}/messages",
   "message": { "id": "…", "role": "user", "text": "…", "createdAt": "…" },
-  "context": [ /* last ~10 messages, oldest → newest */ ],
+  "context": [ /* last ~10 messages, oldest → newest; may include choices/choicesAnswer */ ],
   "deliveryId": "…",
   "timestamp": "…"
 }

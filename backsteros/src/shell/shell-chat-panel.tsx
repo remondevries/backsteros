@@ -96,6 +96,7 @@ export function ShellChatPanel() {
         return thread;
       },
       deleteMessages: agentChat.deleteMessages,
+      answerChoices: agentChat.answerChoices,
     };
   }, [agentChat]);
 

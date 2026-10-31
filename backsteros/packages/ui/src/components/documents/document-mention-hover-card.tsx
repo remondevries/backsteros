@@ -55,12 +55,15 @@ import { formatTaskDueMetaLabel } from "../../tasks/task-due-date.js";
 import { getTaskPriorityLabel } from "../../tasks/task-priority.js";
 import { getTaskStatusLabel } from "../../tasks/task-status.js";
 import { getProjectStatusLabel } from "../../projects/project-status.js";
-import { getContactsHref } from "../../navigation/entity-routes.js";
+import {
+  getContactsHref,
+  getOrganizationsHref,
+} from "../../navigation/entity-routes.js";
 import { ContactPeekCard } from "../contacts/contact-peek-card.js";
 import { DocumentIcon } from "./document-icon.js";
 import { LetterIcon } from "../letters/letter-icon.js";
 import { ProjectOcticon } from "../projects/project-octicon.js";
-import { OrganizationIcon } from "../organizations/organization-icon.js";
+import { OrganizationPeekCard } from "../organizations/organization-peek-card.js";
 import { useHoverCardClose } from "../shared/hover-card.js";
 import { EmailNavIcon } from "../shell/sidebar-nav-icons.js";
 import { TaskPriorityIcon } from "../tasks/task-priority-icon.js";
@@ -396,36 +399,30 @@ function OrganizationMentionHoverDetails({
 }: {
   organization: MentionCatalogOrganization;
 }) {
+  const closeHoverCard = useHoverCardClose();
+  const profileHref = getOrganizationsHref(
+    organization.number != null
+      ? String(organization.number)
+      : organization.key || organization.id,
+  );
+
   return (
     <MentionHoverPanel variant="structured">
-      <MentionHoverHeader
-        icon={
-          <OrganizationIcon
-            size={16}
-            className="mention-hover-card__icon mention-hover-card__icon--header"
-          />
-        }
-        title={organization.name}
+      <OrganizationPeekCard
+        className="mention-hover-card__contact-peek"
+        organization={{
+          id: organization.id,
+          name: organization.name,
+          key: organization.key,
+          email: organization.email,
+          summary: organization.summary,
+          avatarSrc: organization.avatarSrc,
+        }}
+        viewProfile={{
+          href: profileHref,
+          onClick: () => closeHoverCard?.(),
+        }}
       />
-      <MentionHoverCardSeparator />
-      {organization.summary ? (
-        <>
-          <MentionHoverSection>
-            <MentionHoverDescription>
-              {organization.summary}
-            </MentionHoverDescription>
-          </MentionHoverSection>
-          <MentionHoverCardSeparator />
-        </>
-      ) : null}
-      <MentionHoverSection>
-        <MentionHoverFooterRow>
-          <span className="mention-hover-card__truncate">
-            {organization.email ?? "Organization"}
-          </span>
-          <span className="mention-hover-card__id">{organization.key}</span>
-        </MentionHoverFooterRow>
-      </MentionHoverSection>
     </MentionHoverPanel>
   );
 }

@@ -1,15 +1,20 @@
 import { and, asc, desc, eq, inArray, isNull } from "drizzle-orm";
-import type {
-  AgentWebhookTestResult,
-  ChatResolvedMention,
-  ChatThread,
-  ChatThreadAgentStatus,
-  ChatThreadAgentStatusState,
-  ChatThreadListItem,
-  ChatThreadMessage,
-  ChatThreadWithMessages,
-  CreateChatThreadMessageResult,
-  DeleteChatThreadMessagesResult,
+import {
+  chatThreadMessageChoicesAnswerSchema,
+  chatThreadMessageChoicesSchema,
+  type AgentWebhookTestResult,
+  type AnswerChatThreadMessageChoicesResult,
+  type ChatResolvedMention,
+  type ChatThread,
+  type ChatThreadAgentStatus,
+  type ChatThreadAgentStatusState,
+  type ChatThreadListItem,
+  type ChatThreadMessage,
+  type ChatThreadMessageChoices,
+  type ChatThreadMessageChoicesAnswer,
+  type ChatThreadWithMessages,
+  type CreateChatThreadMessageResult,
+  type DeleteChatThreadMessagesResult,
 } from "@backsteros/contracts";
 
 import { db } from "../db/index.js";
@@ -124,18 +129,59 @@ function toThread(row: {
   };
 }
 
+function parseChoicesColumn(
+  value: unknown,
+): ChatThreadMessageChoices | undefined {
+  if (value == null) return undefined;
+  const parsed = chatThreadMessageChoicesSchema.safeParse(value);
+  return parsed.success ? parsed.data : undefined;
+}
+
+function parseChoicesAnswerColumn(
+  value: unknown,
+): ChatThreadMessageChoicesAnswer | null | undefined {
+  if (value === undefined) return undefined;
+  if (value == null) return null;
+  const parsed = chatThreadMessageChoicesAnswerSchema.safeParse(value);
+  return parsed.success ? parsed.data : null;
+}
+
+type MessageRow = {
+  id: string;
+  threadId: string;
+  role: string;
+  authorContactId: string | null;
+  authorName: string | null;
+  body: string;
+  status: string;
+  choices?: unknown;
+  choicesAnswer?: unknown;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+function toWebhookMessage(
+  message: ChatThreadMessage,
+): AgentChatWebhookMessage {
+  return {
+    id: message.id,
+    role: message.role,
+    text: message.body,
+    createdAt: message.createdAt,
+    ...(message.mentions && message.mentions.length > 0
+      ? { mentions: message.mentions }
+      : {}),
+    ...(message.choices
+      ? {
+          choices: message.choices,
+          choicesAnswer: message.choicesAnswer ?? null,
+        }
+      : {}),
+  };
+}
+
 function toMessage(
-  row: {
-    id: string;
-    threadId: string;
-    role: string;
-    authorContactId: string | null;
-    authorName: string | null;
-    body: string;
-    status: string;
-    createdAt: Date;
-    updatedAt: Date;
-  },
+  row: MessageRow,
   mentions?: ChatResolvedMention[],
 ): ChatThreadMessage {
   const role =
@@ -146,6 +192,10 @@ function toMessage(
     row.status === "error"
       ? row.status
       : "done";
+  const choices = parseChoicesColumn(row.choices);
+  const choicesAnswer = choices
+    ? (parseChoicesAnswerColumn(row.choicesAnswer) ?? null)
+    : undefined;
   return {
     id: row.id,
     threadId: row.threadId,
@@ -157,22 +207,13 @@ function toMessage(
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
     ...(mentions && mentions.length > 0 ? { mentions } : {}),
+    ...(choices ? { choices, choicesAnswer: choicesAnswer ?? null } : {}),
   };
 }
 
 async function toMessageWithMentions(
   workspaceId: string,
-  row: {
-    id: string;
-    threadId: string;
-    role: string;
-    authorContactId: string | null;
-    authorName: string | null;
-    body: string;
-    status: string;
-    createdAt: Date;
-    updatedAt: Date;
-  },
+  row: MessageRow,
 ): Promise<ChatThreadMessage> {
   const mentions = await resolveChatMentionsInBody(workspaceId, row.body);
   return toMessage(row, mentions);
@@ -189,6 +230,38 @@ function notFound(message: string): Error {
   return Object.assign(new Error(message), {
     status: 404,
     code: "not_found",
+  });
+}
+
+function conflict(message: string): Error {
+  return Object.assign(new Error(message), {
+    status: 409,
+    code: "conflict",
+  });
+}
+
+function publishShellMessageEvent(input: {
+  workspaceId: string;
+  threadId: string;
+  agentId: string;
+  message: ChatThreadMessage;
+}): void {
+  publishAgentShellChatMessage({
+    workspaceId: input.workspaceId,
+    threadId: input.threadId,
+    agentId: input.agentId,
+    message: {
+      id: input.message.id,
+      body: previewAgentChatMessageBody(input.message.body),
+      fullBody: input.message.body,
+      createdAt: input.message.createdAt,
+      ...(input.message.choices
+        ? {
+            choices: input.message.choices,
+            choicesAnswer: input.message.choicesAnswer ?? null,
+          }
+        : {}),
+    },
   });
 }
 
@@ -388,16 +461,8 @@ async function recentContext(
   const ordered = rows.reverse();
   const out: AgentChatWebhookMessage[] = [];
   for (const row of ordered) {
-    const role =
-      row.role === "assistant" || row.role === "system" ? row.role : "user";
     const mentions = await resolveChatMentionsInBody(workspaceId, row.body);
-    out.push({
-      id: row.id,
-      role,
-      text: row.body,
-      createdAt: row.createdAt.toISOString(),
-      ...(mentions.length > 0 ? { mentions } : {}),
-    });
+    out.push(toWebhookMessage(toMessage(row, mentions)));
   }
   return out;
 }
@@ -539,6 +604,7 @@ export async function deliverAgentChatWebhook(
 /**
  * Post a message as Remon (user) or as the agent (assistant).
  * User messages look up the agent webhook dynamically and fire it.
+ * `choices` is allowed only on agent (assistant) replies.
  */
 export async function postChatThreadMessage(
   workspaceId: string,
@@ -546,6 +612,7 @@ export async function postChatThreadMessage(
   body: string,
   auth: PostMessageAuth,
   deps: DeliverDeps = {},
+  choices?: ChatThreadMessageChoices,
 ): Promise<CreateChatThreadMessageResult> {
   const text = body.trim();
   if (!text) throw badRequest("Message body is required");
@@ -580,6 +647,10 @@ export async function postChatThreadMessage(
     );
   }
 
+  if (choices && !isAgentReply) {
+    throw badRequest("choices are only allowed on assistant messages");
+  }
+
   if (isAgentReply) {
     const [messageRow] = await db
       .insert(chatThreadMessages)
@@ -592,6 +663,8 @@ export async function postChatThreadMessage(
         authorName: auth.authorName ?? agent.name,
         body: text,
         status: "done",
+        choices: choices ?? null,
+        choicesAnswer: null,
         createdAt: now,
         updatedAt: now,
       })
@@ -604,16 +677,11 @@ export async function postChatThreadMessage(
       .returning();
 
     const message = toMessage(messageRow!);
-    publishAgentShellChatMessage({
+    publishShellMessageEvent({
       workspaceId,
       threadId,
       agentId: agent.id,
-      message: {
-        id: message.id,
-        body: previewAgentChatMessageBody(message.body),
-        fullBody: message.body,
-        createdAt: message.createdAt,
-      },
+      message,
     });
     // Posting a reply implicitly marks the agent idle (clears step label).
     publishStatusEvent({
@@ -657,6 +725,7 @@ export async function postChatThreadMessage(
   let webhookError: string | null = null;
 
   const mentions = await resolveChatMentionsInBody(workspaceId, text);
+  const userMessage = toMessage(messageRow!, mentions);
 
   if (!agentForWebhook?.enabled) {
     webhookError = `${agent.name} is disabled.`;
@@ -676,13 +745,7 @@ export async function postChatThreadMessage(
       agentName: agent.name,
       threadId,
       replyUrl: buildAgentChatReplyUrl(threadId),
-      message: {
-        id: messageRow!.id,
-        role: "user",
-        text,
-        createdAt: messageRow!.createdAt.toISOString(),
-        ...(mentions.length > 0 ? { mentions } : {}),
-      },
+      message: toWebhookMessage(userMessage),
       context,
       deliveryId,
       timestamp: now.toISOString(),
@@ -719,11 +782,126 @@ export async function postChatThreadMessage(
     .returning();
 
   return {
-    message: toMessage(messageRow!, mentions),
+    message: userMessage,
     thread: toThread(updatedThread!),
     thinking,
     webhookError,
   };
+}
+
+/**
+ * Owner answers assistant choice buttons once, then posts a normal user
+ * message with the chosen value(s) so the usual agent webhook fires.
+ */
+export async function answerChatThreadMessageChoices(
+  workspaceId: string,
+  threadId: string,
+  messageId: string,
+  values: readonly string[],
+  auth: PostMessageAuth,
+  deps: DeliverDeps = {},
+): Promise<AnswerChatThreadMessageChoicesResult> {
+  const cleaned = [
+    ...new Set(
+      values.map((value) => value.trim()).filter((value) => value.length > 0),
+    ),
+  ];
+  if (cleaned.length === 0) throw badRequest("At least one value is required");
+  if (cleaned.length > 6) throw badRequest("At most 6 values are allowed");
+
+  const [row] = await db
+    .select()
+    .from(chatThreadMessages)
+    .where(
+      and(
+        eq(chatThreadMessages.workspaceId, workspaceId),
+        eq(chatThreadMessages.threadId, threadId),
+        eq(chatThreadMessages.id, messageId),
+        isNull(chatThreadMessages.deletedAt),
+      ),
+    )
+    .limit(1);
+  if (!row) throw notFound("Message");
+  if (row.role !== "assistant") {
+    throw badRequest("Only assistant messages can have choices");
+  }
+
+  const choices = parseChoicesColumn(row.choices);
+  if (!choices) throw badRequest("Message has no choices");
+
+  const existingAnswer = parseChoicesAnswerColumn(row.choicesAnswer);
+  if (existingAnswer) {
+    throw conflict("Choices already answered");
+  }
+
+  if (!choices.multiSelect && cleaned.length !== 1) {
+    throw badRequest("Single-select choices require exactly one value");
+  }
+
+  const allowed = new Set(choices.options.map((option) => option.value));
+  for (const value of cleaned) {
+    if (!allowed.has(value)) {
+      throw badRequest(`Unknown choice value: ${value}`);
+    }
+  }
+
+  const now = deps.now?.() ?? new Date();
+  const answer: ChatThreadMessageChoicesAnswer = {
+    values: cleaned,
+    answeredAt: now.toISOString(),
+  };
+
+  const [updatedRow] = await db
+    .update(chatThreadMessages)
+    .set({
+      choicesAnswer: answer,
+      updatedAt: now,
+    })
+    .where(
+      and(
+        eq(chatThreadMessages.workspaceId, workspaceId),
+        eq(chatThreadMessages.threadId, threadId),
+        eq(chatThreadMessages.id, messageId),
+        isNull(chatThreadMessages.choicesAnswer),
+      ),
+    )
+    .returning();
+
+  // Race: another answer landed between read and update.
+  if (!updatedRow) {
+    throw conflict("Choices already answered");
+  }
+
+  const answeredMessage = toMessage(updatedRow);
+  const [threadRow] = await db
+    .select({ agentId: chatThreads.agentId })
+    .from(chatThreads)
+    .where(
+      and(
+        eq(chatThreads.workspaceId, workspaceId),
+        eq(chatThreads.id, threadId),
+      ),
+    )
+    .limit(1);
+  if (threadRow) {
+    publishShellMessageEvent({
+      workspaceId,
+      threadId,
+      agentId: threadRow.agentId,
+      message: answeredMessage,
+    });
+  }
+
+  const body = cleaned.join(", ");
+  const reply = await postChatThreadMessage(
+    workspaceId,
+    threadId,
+    body,
+    { ...auth, apiKeyId: null },
+    deps,
+  );
+
+  return { message: answeredMessage, reply };
 }
 
 type StatusAuth = {

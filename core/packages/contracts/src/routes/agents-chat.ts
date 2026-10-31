@@ -7,6 +7,8 @@ import {
   agentsListSchema,
   badRequestSchema,
   createAgentInputSchema,
+  answerChatThreadMessageChoicesInputSchema,
+  answerChatThreadMessageChoicesResultSchema,
   createChatThreadMessageInputSchema,
   createChatThreadMessageResultSchema,
   chatThreadMessagesListSchema,
@@ -176,6 +178,25 @@ export const agentsChatRoutes: AppRouter = c.router({
     },
     summary:
       "Post a message (Remon as user, or agent API key as assistant reply)",
+  },
+  answerChatThreadMessageChoices: {
+    method: "POST",
+    path: "/api/v1/chat/threads/:threadId/messages/:messageId/answer",
+    pathParams: z.object({
+      threadId: z.string(),
+      messageId: z.string(),
+    }),
+    body: answerChatThreadMessageChoicesInputSchema,
+    responses: {
+      201: answerChatThreadMessageChoicesResultSchema,
+      400: badRequestSchema,
+      401: errorSchema,
+      403: errorSchema,
+      404: errorSchema,
+      409: errorSchema,
+    },
+    summary:
+      "Answer assistant choice buttons once (owner); posts a normal user message",
   },
   deleteChatThreadMessage: {
     method: "DELETE",

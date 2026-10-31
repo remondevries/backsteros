@@ -3,7 +3,13 @@
  * Goes through the agents door / Vite `__cloud_core__` proxy.
  */
 
-import { sanitizeChatThreadStatusLabel } from "@backsteros/contracts";
+import {
+  chatThreadMessageChoicesAnswerSchema,
+  chatThreadMessageChoicesSchema,
+  sanitizeChatThreadStatusLabel,
+  type ChatThreadMessageChoices,
+  type ChatThreadMessageChoicesAnswer,
+} from "@backsteros/contracts";
 
 import {
   cloudCoreRequestStream,
@@ -30,6 +36,8 @@ export type AgentShellChatMessagePayload = {
     /** Full markdown body; null from cloud-cores that only send the preview. */
     fullBody: string | null;
     createdAt: string;
+    choices?: ChatThreadMessageChoices;
+    choicesAnswer?: ChatThreadMessageChoicesAnswer | null;
   };
 };
 
@@ -98,6 +106,8 @@ export function parseAgentShellChatMessagePayload(
         body?: unknown;
         fullBody?: unknown;
         createdAt?: unknown;
+        choices?: unknown;
+        choicesAnswer?: unknown;
       };
     };
     const threadId =
@@ -118,10 +128,30 @@ export function parseAgentShellChatMessagePayload(
         ? parsed.message.createdAt.trim()
         : "";
     if (!threadId || !agentId || !messageId || !createdAt) return null;
+    const choicesParsed = chatThreadMessageChoicesSchema.safeParse(
+      parsed.message?.choices,
+    );
+    const choices = choicesParsed.success ? choicesParsed.data : undefined;
+    const answerParsed = chatThreadMessageChoicesAnswerSchema.safeParse(
+      parsed.message?.choicesAnswer,
+    );
+    const choicesAnswer = choices
+      ? answerParsed.success
+        ? answerParsed.data
+        : parsed.message?.choicesAnswer == null
+          ? null
+          : null
+      : undefined;
     return {
       threadId,
       agentId,
-      message: { id: messageId, body, fullBody, createdAt },
+      message: {
+        id: messageId,
+        body,
+        fullBody,
+        createdAt,
+        ...(choices ? { choices, choicesAnswer: choicesAnswer ?? null } : {}),
+      },
     };
   } catch {
     return null;

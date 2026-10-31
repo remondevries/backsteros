@@ -17,6 +17,7 @@ import { getProjectStatusLabel, isProjectStatus } from "../../projects/project-s
 import { isTaskStatus } from "../../tasks/task-status.js";
 import type { TaskPriority } from "../../tasks/task-priority.js";
 import { ContactPeekCard } from "../contacts/contact-peek-card.js";
+import { OrganizationPeekCard } from "../organizations/organization-peek-card.js";
 import { DocumentIcon } from "../documents/document-icon.js";
 import { EmailMentionBlockChip } from "../email/email-mention-block-chip.js";
 import { EntityAvatarIcon } from "../entity/entity-avatar-icon.js";
@@ -535,7 +536,6 @@ function ChatOrganizationCard({ part }: ChatCardRendererProps) {
   const key = data.key?.trim() || data.displayId?.trim() || null;
   const href =
     data.href ?? `/organizations/${encodeURIComponent(data.organizationId)}`;
-  const summary = data.summary?.trim() || null;
   return (
     <ChatExpandableCard
       cardClassName="chat-ui-card--organization"
@@ -559,23 +559,18 @@ function ChatOrganizationCard({ part }: ChatCardRendererProps) {
         />
       }
     >
-      <div className="chat-ui-card--entity__details">
-        {summary ? (
-          <p className="chat-ui-card--entity__description">{summary}</p>
-        ) : (
-          <p className="chat-ui-card--entity__description is-empty">No summary</p>
-        )}
-        <div className="chat-ui-card--entity__footer">
-          <dl className="chat-ui-card--entity__props">
-            <ChatCardProp
-              label="Email"
-              value={data.email?.trim() || "—"}
-              muted={!data.email?.trim()}
-            />
-          </dl>
-          <ChatCardGoLink href={href}>Go to organization</ChatCardGoLink>
-        </div>
-      </div>
+      <OrganizationPeekCard
+        className="chat-ui-card--entity__contact-peek"
+        organization={{
+          id: data.organizationId,
+          name,
+          key,
+          email: data.email,
+          summary: data.summary,
+          avatarSrc: data.avatarSrc,
+        }}
+        viewProfile={{ href }}
+      />
     </ChatExpandableCard>
   );
 }

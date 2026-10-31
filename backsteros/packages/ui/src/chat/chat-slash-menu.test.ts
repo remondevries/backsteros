@@ -39,6 +39,39 @@ describe("buildChatSlashMenu", () => {
     );
   });
 
+  it("offers /clear under Commands when enabled", () => {
+    const sections = buildChatSlashMenu({
+      text: "/",
+      peers,
+      projects,
+      enabledActions: ["clear"],
+    });
+    assert.equal(sections[0]?.id, "commands");
+    assert.deepEqual(
+      sections[0]?.items.map((item) => item.id),
+      ["clear"],
+    );
+  });
+
+  it("filters /clear as you type", () => {
+    const items = flattenChatSlashMenu(
+      buildChatSlashMenu({
+        text: "/cl",
+        peers,
+        projects,
+        enabledActions: ["clear"],
+      }),
+    );
+    assert.deepEqual(
+      items.filter((item) => item.kind === "action").map((item) => item.id),
+      ["clear"],
+    );
+    assert.equal(
+      items.some((item) => item.kind === "peer" || item.kind === "project"),
+      false,
+    );
+  });
+
   it("filters projects as you type", () => {
     const items = flattenChatSlashMenu(
       buildChatSlashMenu({ text: "/back", peers, projects }),
@@ -57,6 +90,23 @@ describe("resolveChatSlashCommand", () => {
     if (result?.type === "project") {
       assert.equal(result.project.id, "p2");
     }
+  });
+
+  it("resolves /clear when the action is enabled", () => {
+    const result = resolveChatSlashCommand({
+      text: "/clear",
+      peers,
+      projects,
+      enabledActions: ["clear"],
+    });
+    assert.deepEqual(result, { type: "action", action: "clear" });
+  });
+
+  it("does not resolve /clear when the action is disabled", () => {
+    assert.equal(
+      resolveChatSlashCommand({ text: "/clear", peers, projects }),
+      null,
+    );
   });
 
   it("resolves agents and projects", () => {

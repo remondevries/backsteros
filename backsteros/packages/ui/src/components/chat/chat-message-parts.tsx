@@ -27,6 +27,10 @@ import { PolishedCheckbox } from "../shared/polished-checkbox.js";
 import { TaskStatusIcon } from "../tasks/task-status-icon.js";
 import { TaskStatusWorkingPulse } from "../tasks/task-status-working-pulse.js";
 import { ChatCardPartView } from "./chat-card-registry.js";
+import {
+  ChatChoicesCard,
+  findChoicesCardPart,
+} from "./chat-choices-card.js";
 import { ChatMessageHoverActions } from "./chat-message-hover-actions.js";
 
 function formatJson(value: unknown): string {
@@ -279,6 +283,10 @@ export function ChatUiMessageBody({
     if (mentionCardsBelow.length === 0) return null;
     return new Set(mentionCardsBelow.map((entry) => entry.key));
   }, [mentionCardsBelow]);
+  const choicesPart = useMemo(
+    () => findChoicesCardPart(message.parts),
+    [message.parts],
+  );
   const bubbleParts = useMemo(
     () =>
       chatMessageBubbleParts(message.parts, {
@@ -391,6 +399,7 @@ export function ChatUiMessageBody({
             ))}
           </div>
         ) : null}
+        {choicesPart ? <ChatChoicesCard part={choicesPart} /> : null}
       </div>
     </div>
   );

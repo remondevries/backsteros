@@ -4,6 +4,21 @@
  * outbound webhook payloads.
  */
 
+export type AgentShellChatMessageChoices = {
+  prompt?: string;
+  multiSelect: boolean;
+  options: Array<{
+    label: string;
+    value: string;
+    style?: "default" | "primary" | "danger";
+  }>;
+};
+
+export type AgentShellChatMessageChoicesAnswer = {
+  values: string[];
+  answeredAt: string;
+};
+
 export type AgentShellChatMessageEvent = {
   workspaceId: string;
   threadId: string;
@@ -15,6 +30,9 @@ export type AgentShellChatMessageEvent = {
     /** Full markdown body so the open thread can render without refetching. */
     fullBody: string;
     createdAt: string;
+    /** Assistant choice buttons (when the reply includes them). */
+    choices?: AgentShellChatMessageChoices;
+    choicesAnswer?: AgentShellChatMessageChoicesAnswer | null;
   };
 };
 

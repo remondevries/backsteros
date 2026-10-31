@@ -399,3 +399,33 @@ export const chatUiEstimateCardDataSchema = z.object({
   currency: z.string().nullable().optional(),
 });
 export type ChatUiEstimateCardData = z.infer<typeof chatUiEstimateCardDataSchema>;
+
+/** Card payload for `cardType: "choices"` (agent interactive buttons). */
+export const chatUiChoicesCardDataSchema = z.object({
+  messageId: z.string(),
+  prompt: z.string().optional(),
+  multiSelect: z.boolean().default(false),
+  options: z
+    .array(
+      z.object({
+        label: z.string().min(1).max(60),
+        value: z.string().min(1).max(500),
+        style: z.enum(["default", "primary", "danger"]).optional(),
+      }),
+    )
+    .min(2)
+    .max(6),
+  answer: z
+    .object({
+      values: z.array(z.string().min(1).max(500)).min(1).max(6),
+      answeredAt: z.string().datetime(),
+    })
+    .nullable()
+    .optional(),
+  /**
+   * True when a later user message exists and this was never answered —
+   * greyed out, no buttons.
+   */
+  dismissed: z.boolean().optional(),
+});
+export type ChatUiChoicesCardData = z.infer<typeof chatUiChoicesCardDataSchema>;

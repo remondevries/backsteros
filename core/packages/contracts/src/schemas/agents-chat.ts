@@ -91,6 +91,41 @@ export const chatResolvedMentionSchema = z.object({
   path: z.string().nullable().optional(),
 });
 
+export const chatThreadMessageChoiceStyleSchema = z.enum([
+  "default",
+  "primary",
+  "danger",
+]);
+
+export const chatThreadMessageChoiceOptionSchema = z
+  .object({
+    label: z.string().trim().min(1).max(60),
+    /** Defaults to `label` when omitted. */
+    value: z.string().trim().min(1).max(500).optional(),
+    style: chatThreadMessageChoiceStyleSchema.optional(),
+  })
+  .transform((option) => ({
+    label: option.label,
+    value: (option.value?.trim() || option.label).slice(0, 500),
+    ...(option.style ? { style: option.style } : {}),
+  }));
+
+/**
+ * Interactive choice buttons on an assistant message. `body` stays the copy;
+ * options render below the bubble on desktop.
+ */
+export const chatThreadMessageChoicesSchema = z.object({
+  prompt: z.string().trim().min(1).max(200).optional(),
+  multiSelect: z.boolean().default(false),
+  options: z.array(chatThreadMessageChoiceOptionSchema).min(2).max(6),
+});
+
+/** Server-set once the owner answers; null while unanswered. */
+export const chatThreadMessageChoicesAnswerSchema = z.object({
+  values: z.array(z.string().min(1).max(500)).min(1).max(6),
+  answeredAt: z.string().datetime(),
+});
+
 export const chatThreadMessageSchema = z.object({
   id: z.string(),
   threadId: z.string(),
@@ -103,6 +138,10 @@ export const chatThreadMessageSchema = z.object({
   updatedAt: z.string().datetime(),
   /** Present when `body` contains mention tokens (resolved server-side). */
   mentions: z.array(chatResolvedMentionSchema).optional(),
+  /** Assistant-only interactive options. */
+  choices: chatThreadMessageChoicesSchema.optional(),
+  /** Present (possibly null) when `choices` is set. */
+  choicesAnswer: chatThreadMessageChoicesAnswerSchema.nullable().optional(),
 });
 
 export const chatThreadSchema = z.object({
@@ -142,6 +181,11 @@ export const getOrCreateChatThreadInputSchema = z.object({
 
 export const createChatThreadMessageInputSchema = z.object({
   body: z.string().trim().min(1).max(32_000),
+  /**
+   * Assistant replies only. Ignored / rejected on user posts.
+   * Desktop renders buttons below the bubble; `body` is still the copy.
+   */
+  choices: chatThreadMessageChoicesSchema.optional(),
 });
 
 export const createChatThreadMessageResultSchema = z.object({
@@ -158,6 +202,21 @@ export const createChatThreadMessageResultSchema = z.object({
    * not be fired (e.g. no URL configured). Shown inline in the chat UI.
    */
   webhookError: z.string().nullable(),
+});
+
+/** Owner answers assistant choice buttons (once). */
+export const answerChatThreadMessageChoicesInputSchema = z.object({
+  values: z.array(z.string().trim().min(1).max(500)).min(1).max(6),
+});
+
+export const answerChatThreadMessageChoicesResultSchema = z.object({
+  /** Assistant message with `choicesAnswer` recorded. */
+  message: chatThreadMessageSchema,
+  /**
+   * Normal user-message post for the chosen value(s) — same webhook path as
+   * typing a reply. Agents need no new logic.
+   */
+  reply: createChatThreadMessageResultSchema,
 });
 
 /** Soft-delete one or more messages in a thread (owner only). */
@@ -243,6 +302,18 @@ export type AgentWebhookTestResult = z.infer<
 >;
 export type ChatThread = z.infer<typeof chatThreadSchema>;
 export type ChatResolvedMention = z.infer<typeof chatResolvedMentionSchema>;
+export type ChatThreadMessageChoiceStyle = z.infer<
+  typeof chatThreadMessageChoiceStyleSchema
+>;
+export type ChatThreadMessageChoiceOption = z.infer<
+  typeof chatThreadMessageChoiceOptionSchema
+>;
+export type ChatThreadMessageChoices = z.infer<
+  typeof chatThreadMessageChoicesSchema
+>;
+export type ChatThreadMessageChoicesAnswer = z.infer<
+  typeof chatThreadMessageChoicesAnswerSchema
+>;
 export type ChatThreadMessage = z.infer<typeof chatThreadMessageSchema>;
 export type ChatThreadWithMessages = z.infer<
   typeof chatThreadWithMessagesSchema
@@ -257,6 +328,12 @@ export type CreateChatThreadMessageInput = z.infer<
 >;
 export type CreateChatThreadMessageResult = z.infer<
   typeof createChatThreadMessageResultSchema
+>;
+export type AnswerChatThreadMessageChoicesInput = z.infer<
+  typeof answerChatThreadMessageChoicesInputSchema
+>;
+export type AnswerChatThreadMessageChoicesResult = z.infer<
+  typeof answerChatThreadMessageChoicesResultSchema
 >;
 export type DeleteChatThreadMessagesInput = z.infer<
   typeof deleteChatThreadMessagesInputSchema

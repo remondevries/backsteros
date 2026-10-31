@@ -3888,6 +3888,13 @@ export {
 } from "./components/contacts/contact-peek-card.js";
 
 export {
+  OrganizationPeekCard,
+  type OrganizationPeekCardProps,
+  type OrganizationPeekCardOrganization,
+  type OrganizationPeekCardAction,
+} from "./components/organizations/organization-peek-card.js";
+
+export {
   listCountries,
   listRegionsForCountry,
   countryHasRegions,
@@ -5561,6 +5568,7 @@ export {
   buildChatSlashMenu,
   flattenChatSlashMenu,
   resolveChatSlashCommand,
+  type ChatSlashActionId,
   type ChatSlashMenuItem,
   type ChatSlashMenuSection,
   type ChatSlashResolveResult,
@@ -5596,6 +5604,8 @@ export {
 
 export {
   chatThreadMessageToUi,
+  chatThreadMessagesToUi,
+  withChoicesDismissedStates,
   thinkingStatusMessage,
   webhookErrorStatusMessage,
 } from "./chat/agent-chat-message-adapter.js";
