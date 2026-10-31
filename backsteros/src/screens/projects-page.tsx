@@ -36,6 +36,7 @@ import {
   ProjectChannelField,
   ProjectHealthCheckProperty,
   ProjectLeadAgentField,
+  ProjectOcticon,
   PillNav,
   RegisterEntityDeleteAction,
   RegisterEntityDuplicateAction,
@@ -2710,7 +2711,7 @@ function ProjectDetailScreen({
     </PropertyFieldGroup>
   );
 
-  // Health / GitHub / Dev / Prod stay codebase-only; Channel + Lead agent are every type.
+  // Health / Repository / Dev / Prod stay codebase-only; Channel + Lead agent are every type.
   const locationsExtra = isCodebaseProject ? (
     <EntityPropertiesSection title="Codebase">
       <PropertyFieldGroup label="Health">
@@ -2720,53 +2721,60 @@ function ProjectDetailScreen({
           onChange={projectPropertyHandlers.onHealthCheckChange}
         />
       </PropertyFieldGroup>
-      <PropertyFieldGroup label="GitHub">
+      <PropertyFieldGroup label="Repository">
         <PropertyInlineChip
+          icon={
+            project.githubRepository?.trim() ? (
+              <ProjectOcticon icon="mark-github" size={14} />
+            ) : null
+          }
           label={project.githubRepository?.trim() || "No repository"}
         />
       </PropertyFieldGroup>
-      <PropertyFieldGroup label="Development">
-        <PropertyInlineChip
-          label={(() => {
-            const development = (
-              project as {
-                development?: {
-                  kind?: string;
-                  path?: string;
-                } | null;
-              }
-            ).development;
-            const path =
-              development?.path?.trim() ||
-              project.localWorkingDirectory?.trim() ||
-              project.developmentLocation?.trim() ||
-              "";
-            if (!path) return "No folder";
-            const leaf =
-              path.split(/[/\\]/).filter(Boolean).at(-1) ?? path;
-            return development?.kind === "server"
-              ? `Server: ${leaf}`
-              : leaf;
-          })()}
-        />
-      </PropertyFieldGroup>
-      <PropertyFieldGroup label="Production">
-        <PropertyInlineChip
-          label={(() => {
-            const production = (
-              project as {
-                production?: { path?: string | null } | null;
-              }
-            ).production;
-            const path =
-              production?.path?.trim() ||
-              project.productionLocation?.trim() ||
-              "";
-            if (!path) return "No folder";
-            return path.split(/[/\\]/).filter(Boolean).at(-1) ?? path;
-          })()}
-        />
-      </PropertyFieldGroup>
+      <div className="project-properties-field-row">
+        <PropertyFieldGroup label="Development">
+          <PropertyInlineChip
+            label={(() => {
+              const development = (
+                project as {
+                  development?: {
+                    kind?: string;
+                    path?: string;
+                  } | null;
+                }
+              ).development;
+              const path =
+                development?.path?.trim() ||
+                project.localWorkingDirectory?.trim() ||
+                project.developmentLocation?.trim() ||
+                "";
+              if (!path) return "No folder";
+              const leaf =
+                path.split(/[/\\]/).filter(Boolean).at(-1) ?? path;
+              return development?.kind === "server"
+                ? `Server: ${leaf}`
+                : leaf;
+            })()}
+          />
+        </PropertyFieldGroup>
+        <PropertyFieldGroup label="Production">
+          <PropertyInlineChip
+            label={(() => {
+              const production = (
+                project as {
+                  production?: { path?: string | null } | null;
+                }
+              ).production;
+              const path =
+                production?.path?.trim() ||
+                project.productionLocation?.trim() ||
+                "";
+              if (!path) return "No folder";
+              return path.split(/[/\\]/).filter(Boolean).at(-1) ?? path;
+            })()}
+          />
+        </PropertyFieldGroup>
+      </div>
     </EntityPropertiesSection>
   ) : null;
 

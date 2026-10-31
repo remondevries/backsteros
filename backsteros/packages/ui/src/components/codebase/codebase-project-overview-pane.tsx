@@ -587,13 +587,15 @@ function ProjectGithubRepositoryField({
   }, [error, repositoriesError]);
 
   const repositoryOptions = useMemo((): SearchableDropdownOption<string>[] => {
-    const repoIcon = <ProjectOcticon icon="mark-github" size={14} />;
+    const githubIcon = () => (
+      <ProjectOcticon icon="mark-github" size={14} />
+    );
     const rows = (repositories ?? getCachedRepositories() ?? []).map(
       (repo) => ({
         value: repo.fullName,
         label: repo.fullName,
         searchTerms: `${repo.fullName} ${repo.description ?? ""}`,
-        icon: repoIcon,
+        icon: githubIcon(),
       }),
     );
     if (
@@ -604,7 +606,7 @@ function ProjectGithubRepositoryField({
         value: project.githubRepository,
         label: project.githubRepository,
         searchTerms: project.githubRepository,
-        icon: repoIcon,
+        icon: githubIcon(),
       });
     }
     return [
@@ -612,7 +614,6 @@ function ProjectGithubRepositoryField({
         value: NONE_REPO_VALUE,
         label: "No repository",
         searchTerms: "none clear unlink",
-        icon: repoIcon,
       },
       ...rows,
     ];
@@ -651,7 +652,7 @@ function ProjectGithubRepositoryField({
   return (
     <span title={message ?? undefined}>
       <PropertyDropdown
-        ariaLabel="GitHub repository"
+        ariaLabel="Repository"
         taskPropertyDropdownId="repository"
         value={project.githubRepository ?? NONE_REPO_VALUE}
         options={repositoryOptions}
@@ -661,7 +662,11 @@ function ProjectGithubRepositoryField({
         panelWidth={320}
         panelAlign="start"
         triggerVariant="inlineChip"
-        fallbackIcon={<ProjectOcticon icon="mark-github" size={14} />}
+        fallbackIcon={
+          project.githubRepository ? (
+            <ProjectOcticon icon="mark-github" size={14} />
+          ) : null
+        }
         fallbackLabel={project.githubRepository ?? "Select repository…"}
         mutedFallback={!project.githubRepository}
         mutedSelected={!project.githubRepository}
@@ -2103,7 +2108,7 @@ export function CodebaseProjectOverviewPane({
           belowDescription={belowDescription}
                 propertiesExtra={
                   <>
-                    <EntityOverviewField label="GitHub">
+                    <EntityOverviewField label="Repository" layout="stacked">
                       <ProjectGithubRepositoryField
                         project={project}
                         onProjectUpdated={onProjectUpdated}
