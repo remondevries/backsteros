@@ -1510,13 +1510,13 @@
   padding: 12px;
   border-radius: 10px;
   border: 1px solid color-mix(in srgb, #3a3a3a 55%, black);
-  /* Light top-right corner fade into dark — a bit larger, more diagonal. */
+  /* Soft light top-right corner fade into dark. */
   background: linear-gradient(
     215deg,
-    color-mix(in srgb, #ffffff 16%, #1a1a1a) 0%,
-    color-mix(in srgb, #ffffff 6%, #1a1a1a) 18%,
-    #1a1a1a 34%,
-    #161616 48%,
+    color-mix(in srgb, #ffffff 9%, #1a1a1a) 0%,
+    color-mix(in srgb, #ffffff 4%, #1a1a1a) 22%,
+    color-mix(in srgb, #ffffff 1.5%, #161616) 40%,
+    #161616 58%,
     #161616 100%
   );
   box-sizing: border-box;
