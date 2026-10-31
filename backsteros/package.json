@@ -20,7 +20,7 @@
     "build:report": "node scripts/copy-pdf-worker.mjs && node scripts/copy-powersync-assets.mjs && tsc && BUNDLE_REPORT=1 vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --import ./src/test/node-test-setup.mjs --test 'src/**/*.test.ts' 'scripts/macos-packaging.test.mjs'",
+    "test": "tsx --import ./src/test/node-test-setup.mjs --test 'src/**/*.test.ts' 'scripts/macos-packaging.test.mjs' 'scripts/task-shell-security.test.mjs'",
     "lint": "eslint src packages/ui/src",
     "whoop:fetch": "node ./scripts/whoop/fetch-day.mjs",
     "tauri": "tauri",

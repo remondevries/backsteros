@@ -31,14 +31,18 @@
  *   POST /agent/create-chat — `agent create-chat`
  *   GET/DELETE /sessions — list / kill shell PTYs and ACP agent sessions
  *   POST /task-shell/sessions — mint a one-shot desktop task-shell session
- *     (loopback-only; returns sessionId + per-session token; never via cloud)
+ *     (loopback-only; requires PTY_AUTH_TOKEN; returns sessionId + per-session
+ *     token; never via cloud). Browser Origin allowlist is localhost /
+ *     127.0.0.1 / tauri / *.localhost only (not Expo tunnel domains).
+ *     Requested `cwd` may be any absolute / `~/…` path the desktop sends —
+ *     owner-only trust, not a chroot.
  *
  * Cursor Agent hooks POST to /agent-hook so the UI can mark working/idle.
  * Hook POSTs stay unauthenticated (local Cursor → loopback).
  *
- * Task-shell WebSockets (`kind=task-shell`) require the minted per-session
- * token, reject disallowed browser Origins, and kill the PTY when the last
- * viewer disconnects (no persistence / agent attach).
+ * Task-shell WebSockets (`kind=task-shell`) require PTY_AUTH_TOKEN (fail
+ * closed), the minted per-session token, the same strict Origin allowlist,
+ * and kill the PTY when the last viewer disconnects (no persistence).
  */
 import { createServer } from "node:http";
 import net from "node:net";
@@ -51,6 +55,11 @@ import { fileURLToPath } from "node:url";
 import pty from "node-pty";
 import { WebSocketServer } from "ws";
 
+import {
+  isTaskShellAuthorized,
+  isTaskShellOriginAcceptable,
+  resolveTaskShellCwd as resolveTaskShellCwdSecure,
+} from "./task-shell-security.mjs";
 import { ensureCursorAgentHooks } from "./ensure-cursor-agent-hooks.mjs";
 import {
   appendChatTranscriptMessage,
@@ -1083,14 +1092,11 @@ function pruneTaskShellPending() {
 }
 
 function resolveShellCwd(cwdParam) {
-  let cwd = DEFAULT_CWD;
-  if (!cwdParam) return cwd;
-  if (cwdParam === "~") return os.homedir();
-  if (cwdParam.startsWith("~/")) {
-    return path.join(os.homedir(), cwdParam.slice(2));
-  }
-  if (path.isAbsolute(cwdParam)) return cwdParam;
-  return cwd;
+  return resolveTaskShellCwdSecure(cwdParam, DEFAULT_CWD, {
+    homedir: () => os.homedir(),
+    join: path.join,
+    isAbsolute: path.isAbsolute,
+  });
 }
 
 function applyLocalCors(req, res) {
@@ -2602,7 +2608,8 @@ const httpServer = createServer(async (req, res) => {
       return;
     }
     const origin = req.headers.origin;
-    if (typeof origin === "string" && origin && !isAllowedBrowserOrigin(origin)) {
+    // Stricter than general PTY CORS: no *.exp.direct / *.exp.host.
+    if (!isTaskShellOriginAcceptable(origin)) {
       res.writeHead(403, { "Content-Type": "application/json; charset=utf-8" });
       res.end(
         JSON.stringify({
@@ -2612,8 +2619,16 @@ const httpServer = createServer(async (req, res) => {
       );
       return;
     }
-    if (!isAuthorized(req, url)) {
-      rejectUnauthorized(res);
+    // Fail closed: PTY_AUTH_TOKEN must be set (isAuthorized allows unset).
+    if (!isTaskShellAuthorized(AUTH_TOKEN, extractBearerToken(req, url))) {
+      res.writeHead(401, { "Content-Type": "application/json; charset=utf-8" });
+      res.end(
+        JSON.stringify({
+          error:
+            "Task shell requires PTY_AUTH_TOKEN on the sidecar and a matching Authorization bearer.",
+          code: "task_shell_auth_required",
+        }),
+      );
       return;
     }
     try {
@@ -2675,8 +2690,29 @@ const wss = new WebSocketServer({
   server: httpServer,
   verifyClient(info, done) {
     const origin = info.origin;
-    // Browsers send Origin — reject cross-site upgrades. Native / mobile
-    // clients often omit Origin; connection handler still enforces tokens.
+    let kind = "shell";
+    try {
+      const reqUrl = new URL(info.req.url ?? "/", `http://${HOST}:${PORT}`);
+      kind = reqUrl.searchParams.get("kind")?.trim().toLowerCase() || "shell";
+    } catch {
+      /* keep shell */
+    }
+
+    if (kind === "task-shell") {
+      // Fail closed + strict Origin (no Expo public tunnels).
+      if (!AUTH_TOKEN) {
+        done(false, 401, "PTY_AUTH_TOKEN required");
+        return;
+      }
+      if (!isTaskShellOriginAcceptable(origin)) {
+        done(false, 403, "Origin not allowed");
+        return;
+      }
+      done(true);
+      return;
+    }
+
+    // Non-task-shell: unchanged — allow Expo tunnel origins for mobile.
     if (typeof origin === "string" && origin.length > 0) {
       if (!isAllowedBrowserOrigin(origin)) {
         done(false, 403, "Origin not allowed");
@@ -3006,6 +3042,23 @@ wss.on("connection", (ws, req) => {
   let ephemeral = false;
 
   if (kind === "task-shell") {
+    // Fail closed even if a stale pending mint somehow exists.
+    if (!AUTH_TOKEN) {
+      send(ws, {
+        type: "error",
+        message: "Task shell requires PTY_AUTH_TOKEN on the sidecar.",
+      });
+      ws.close(1008, "Unauthorized");
+      return;
+    }
+    if (!isTaskShellOriginAcceptable(req.headers.origin)) {
+      send(ws, {
+        type: "error",
+        message: "Origin not allowed for task shell.",
+      });
+      ws.close(1008, "Forbidden");
+      return;
+    }
     const pending = taskShellPendingById.get(sessionId);
     const provided = extractBearerToken(req, url);
     if (!pending) {

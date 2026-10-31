@@ -3,6 +3,12 @@
  *
  * Never goes through cloud-core or agent API keys. Sessions are minted on
  * loopback (`POST /task-shell/sessions`) with a per-session token.
+ *
+ * Requires `VITE_PTY_AUTH_TOKEN` matching the sidecar `PTY_AUTH_TOKEN`
+ * (task-shell fails closed when the sidecar token is unset).
+ *
+ * Requested cwd may be any absolute / `~/…` path the desktop sends — the
+ * sidecar does not chroot; trust is owner-only + loopback + auth.
  */
 
 import { DEFAULT_PTY_HTTP_ORIGIN, getPtyHttpOrigin } from "./pty";
@@ -79,6 +85,14 @@ export async function mintTaskShellSession(options: {
   const originResult = getTaskShellHttpOrigin();
   if (!originResult.ok) return originResult;
 
+  if (!getPtyAuthToken()) {
+    return {
+      ok: false,
+      error:
+        "Task Terminal requires VITE_PTY_AUTH_TOKEN (must match the sidecar PTY_AUTH_TOKEN).",
+    };
+  }
+
   try {
     const response = await fetch(`${originResult.origin}/task-shell/sessions`, {
       method: "POST",
@@ -108,6 +122,19 @@ export async function mintTaskShellSession(options: {
           ok: false,
           error:
             "Task Terminal is local-desktop only. It cannot run against cloud-core.",
+        };
+      }
+      if (body?.code === "task_shell_auth_required" || response.status === 401) {
+        return {
+          ok: false,
+          error:
+            "Task Terminal requires PTY_AUTH_TOKEN on the sidecar and matching VITE_PTY_AUTH_TOKEN in the desktop app.",
+        };
+      }
+      if (body?.code === "origin_forbidden") {
+        return {
+          ok: false,
+          error: "Task Terminal refused this page origin.",
         };
       }
       return {

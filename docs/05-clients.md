@@ -39,7 +39,7 @@ Desktop is **not** Expo. Share **non-UI** packages only (`api-client`, `contract
 
 ### Codebase task Terminal (desktop)
 
-Codebase project tasks reuse the right-hand Changes rail with a **Terminal** tab (alongside linked commit diffs). The shell talks only to the local PTY sidecar (`pnpm --filter @backsteros/desktop pty` on `127.0.0.1:3101`) via a minted per-session token — never through cloud-core or agent API keys. See [12-v2-local-computer.md](12-v2-local-computer.md).
+Codebase project tasks reuse the right-hand Changes rail with a **Terminal** tab (alongside linked commit diffs). The shell talks only to the local PTY sidecar (`pnpm --filter @backsteros/desktop pty` on `127.0.0.1:3101`) via a minted per-session token — never through cloud-core or agent API keys. Task-shell requires `PTY_AUTH_TOKEN` / `VITE_PTY_AUTH_TOKEN` (fail closed) and rejects Expo tunnel Origins. Requested cwd may be any absolute path the desktop sends (owner-only; not sandboxed). See [12-v2-local-computer.md](12-v2-local-computer.md).
 
 ## Mobile — Expo (`mobile/`)
 
