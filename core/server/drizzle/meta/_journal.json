@@ -1282,6 +1282,13 @@
       "when": 1796170000000,
       "tag": "0181_chat_thread_message_form",
       "breakpoints": true
+    },
+    {
+      "idx": 183,
+      "version": "7",
+      "when": 1796180000000,
+      "tag": "0182_chat_thread_message_email_draft",
+      "breakpoints": true
     }
   ]
 }

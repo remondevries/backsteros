@@ -5,14 +5,18 @@ import {
   chatThreadMessageApprovalSchema,
   chatThreadMessageChoicesAnswerSchema,
   chatThreadMessageChoicesSchema,
+  chatThreadMessageEmailDraftResultSchema,
+  chatThreadMessageEmailDraftSchema,
   chatThreadMessageFormAnswerSchema,
   chatThreadMessageFormSchema,
   chatThreadMessageProgressSchema,
+  formatChatThreadEmailDraftResultBody,
   formatChatThreadFormAnswerBody,
   isChatThreadProgressTerminal,
   validateChatThreadFormAnswer,
   type AgentWebhookTestResult,
   type AnswerChatThreadMessageChoicesResult,
+  type AnswerChatThreadMessageEmailDraftEdits,
   type AnswerChatThreadMessageResult,
   type ChatResolvedMention,
   type ChatThread,
@@ -27,6 +31,9 @@ import {
   type ChatThreadMessageApprovalDecision,
   type ChatThreadMessageChoices,
   type ChatThreadMessageChoicesAnswer,
+  type ChatThreadMessageEmailDraft,
+  type ChatThreadMessageEmailDraftInput,
+  type ChatThreadMessageEmailDraftResult,
   type ChatThreadMessageForm,
   type ChatThreadMessageFormAnswer,
   type ChatThreadMessageProgress,
@@ -62,6 +69,14 @@ import {
   linkAttachmentsToMessage,
   listAttachmentsForMessages,
 } from "./chat-attachments.js";
+import {
+  applyEmailDraftEdits,
+  buildEmailDraftResult,
+  defaultChatEmailDraftDeps,
+  resolveChatThreadEmailDraft,
+  sendResolvedEmailDraft,
+  type ChatEmailDraftDeps,
+} from "./agent-chat-email-draft.js";
 import { resolveChatMentionsInBody } from "./resolve-chat-mentions.js";
 import {
   previewAgentChatMessageBody,
@@ -233,6 +248,30 @@ function formMentionSource(form: ChatThreadMessageForm | undefined): string {
   return form.description ?? "";
 }
 
+function parseEmailDraftColumn(
+  value: unknown,
+): ChatThreadMessageEmailDraft | undefined {
+  if (value == null) return undefined;
+  const parsed = chatThreadMessageEmailDraftSchema.safeParse(value);
+  return parsed.success ? parsed.data : undefined;
+}
+
+function parseEmailDraftResultColumn(
+  value: unknown,
+): ChatThreadMessageEmailDraftResult | null | undefined {
+  if (value === undefined) return undefined;
+  if (value == null) return null;
+  const parsed = chatThreadMessageEmailDraftResultSchema.safeParse(value);
+  return parsed.success ? parsed.data : null;
+}
+
+function emailDraftMentionSource(
+  draft: ChatThreadMessageEmailDraft | undefined,
+): string {
+  if (!draft) return "";
+  return draft.note ?? "";
+}
+
 function parseLinkPreviewsColumn(
   value: unknown,
 ): ChatThreadLinkPreview[] | undefined {
@@ -268,6 +307,8 @@ type MessageRow = {
   approvalAnswer?: unknown;
   form?: unknown;
   formAnswer?: unknown;
+  emailDraft?: unknown;
+  emailDraftResult?: unknown;
   progress?: unknown;
   linkPreviews?: unknown;
   createdAt: Date;
@@ -301,6 +342,12 @@ function toWebhookMessage(
       ? {
           form: message.form,
           formAnswer: message.formAnswer ?? null,
+        }
+      : {}),
+    ...(message.emailDraft
+      ? {
+          emailDraft: message.emailDraft,
+          emailDraftResult: message.emailDraftResult ?? null,
         }
       : {}),
     ...(message.progress ? { progress: message.progress } : {}),
@@ -338,6 +385,10 @@ function toMessage(
   const formAnswer = form
     ? (parseFormAnswerColumn(row.formAnswer) ?? null)
     : undefined;
+  const emailDraft = parseEmailDraftColumn(row.emailDraft);
+  const emailDraftResult = emailDraft
+    ? (parseEmailDraftResultColumn(row.emailDraftResult) ?? null)
+    : undefined;
   const progress = parseProgressColumn(row.progress);
   const linkPreviews = parseLinkPreviewsColumn(row.linkPreviews);
   return {
@@ -354,6 +405,9 @@ function toMessage(
     ...(choices ? { choices, choicesAnswer: choicesAnswer ?? null } : {}),
     ...(approval ? { approval, approvalAnswer: approvalAnswer ?? null } : {}),
     ...(form ? { form, formAnswer: formAnswer ?? null } : {}),
+    ...(emailDraft
+      ? { emailDraft, emailDraftResult: emailDraftResult ?? null }
+      : {}),
     ...(progress ? { progress } : {}),
     ...(attachments && attachments.length > 0 ? { attachments } : {}),
     ...(linkPreviews ? { linkPreviews } : {}),
@@ -372,10 +426,12 @@ async function hydrateMessages(
     rows.map(async (row) => {
       const approval = parseApprovalColumn(row.approval);
       const form = parseFormColumn(row.form);
+      const emailDraft = parseEmailDraftColumn(row.emailDraft);
       const mentionText = [
         row.body,
         approvalMentionSource(approval),
         formMentionSource(form),
+        emailDraftMentionSource(emailDraft),
       ]
         .filter((part) => part.trim().length > 0)
         .join("\n");
@@ -450,6 +506,12 @@ function publishShellMessageEvent(input: {
         ? {
             form: input.message.form,
             formAnswer: input.message.formAnswer ?? null,
+          }
+        : {}),
+      ...(input.message.emailDraft
+        ? {
+            emailDraft: input.message.emailDraft,
+            emailDraftResult: input.message.emailDraftResult ?? null,
           }
         : {}),
       ...(input.message.progress
@@ -799,15 +861,18 @@ export type PostChatThreadMessageOptions = {
   choices?: ChatThreadMessageChoices;
   approval?: ChatThreadMessageApproval;
   form?: ChatThreadMessageForm;
+  /** Agent-posted input; resolved to stored shape before insert. */
+  emailDraft?: ChatThreadMessageEmailDraftInput;
   progress?: ChatThreadMessageProgress;
   attachmentIds?: string[];
   skipLinkPreviews?: boolean;
+  emailDraftDeps?: ChatEmailDraftDeps;
 };
 
 /**
  * Post a message as Remon (user) or as the agent (assistant).
  * User messages look up the agent webhook dynamically and fire it.
- * `choices` / `approval` / `form` / `progress` are allowed only on agent replies.
+ * `choices` / `approval` / `form` / `emailDraft` / `progress` are allowed only on agent replies.
  */
 export async function postChatThreadMessage(
   workspaceId: string,
@@ -819,7 +884,7 @@ export async function postChatThreadMessage(
 ): Promise<CreateChatThreadMessageResult> {
   const text = body.trim();
   const attachmentIds = options.attachmentIds ?? [];
-  if (!text && attachmentIds.length === 0) {
+  if (!text && attachmentIds.length === 0 && !options.emailDraft) {
     throw badRequest("Message body or attachments are required");
   }
 
@@ -862,6 +927,9 @@ export async function postChatThreadMessage(
   if (options.form && !isAgentReply) {
     throw badRequest("form is only allowed on assistant messages");
   }
+  if (options.emailDraft && !isAgentReply) {
+    throw badRequest("emailDraft is only allowed on assistant messages");
+  }
   if (options.progress && !isAgentReply) {
     throw badRequest("progress is only allowed on assistant messages");
   }
@@ -872,6 +940,15 @@ export async function postChatThreadMessage(
   });
 
   if (isAgentReply) {
+    const emailDraftDeps = options.emailDraftDeps ?? defaultChatEmailDraftDeps;
+    const resolvedEmailDraft = options.emailDraft
+      ? await resolveChatThreadEmailDraft(
+          workspaceId,
+          threadId,
+          options.emailDraft,
+          emailDraftDeps,
+        )
+      : undefined;
     const messageId = newId();
     const [messageRow] = await db
       .insert(chatThreadMessages)
@@ -882,7 +959,7 @@ export async function postChatThreadMessage(
         role: "assistant",
         authorContactId: agent.contactId,
         authorName: auth.authorName ?? agent.name,
-        body: text,
+        body: text || (resolvedEmailDraft ? "Email draft" : text),
         status: "done",
         choices: options.choices ?? null,
         choicesAnswer: null,
@@ -890,6 +967,8 @@ export async function postChatThreadMessage(
         approvalAnswer: null,
         form: options.form ?? null,
         formAnswer: null,
+        emailDraft: resolvedEmailDraft ?? null,
+        emailDraftResult: null,
         progress: options.progress ?? null,
         linkPreviews: linkPreviews.length > 0 ? linkPreviews : null,
         createdAt: now,
@@ -897,11 +976,15 @@ export async function postChatThreadMessage(
       })
       .returning();
 
+    const draftAttachmentIds = resolvedEmailDraft?.attachmentIds ?? [];
+    const messageAttachmentIds = [
+      ...new Set([...attachmentIds, ...draftAttachmentIds]),
+    ];
     const attachments = await linkAttachmentsToMessage(
       workspaceId,
       threadId,
       messageId,
-      attachmentIds,
+      messageAttachmentIds,
     );
 
     const [updatedThread] = await db
@@ -914,6 +997,7 @@ export async function postChatThreadMessage(
       text,
       approvalMentionSource(options.approval),
       formMentionSource(options.form),
+      emailDraftMentionSource(resolvedEmailDraft),
     ]
       .filter((part) => part.trim().length > 0)
       .join("\n");
@@ -1471,6 +1555,126 @@ export async function answerChatThreadMessageForm(
   }
 
   const body = formatChatThreadFormAnswerBody(form, validated.values);
+  const reply = await postChatThreadMessage(
+    workspaceId,
+    threadId,
+    body,
+    { ...auth, apiKeyId: null },
+    deps,
+  );
+
+  return { message: answeredMessage, reply };
+}
+
+/**
+ * Owner sends or discards an assistant email draft card once.
+ * On send, the server transmits via BacksterOS Messages (AgentMail) with any
+ * Remon edits applied — agents never send. Failures leave the card open.
+ */
+export async function answerChatThreadMessageEmailDraft(
+  workspaceId: string,
+  threadId: string,
+  messageId: string,
+  emailAction: "send" | "discard",
+  edits: AnswerChatThreadMessageEmailDraftEdits | undefined,
+  auth: PostMessageAuth,
+  deps: DeliverDeps = {},
+  emailDraftDeps: ChatEmailDraftDeps = defaultChatEmailDraftDeps,
+): Promise<AnswerChatThreadMessageResult> {
+  const [row] = await db
+    .select()
+    .from(chatThreadMessages)
+    .where(
+      and(
+        eq(chatThreadMessages.workspaceId, workspaceId),
+        eq(chatThreadMessages.threadId, threadId),
+        eq(chatThreadMessages.id, messageId),
+        isNull(chatThreadMessages.deletedAt),
+      ),
+    )
+    .limit(1);
+  if (!row) throw notFound("Message");
+  if (row.role !== "assistant") {
+    throw badRequest("Only assistant messages can have an email draft");
+  }
+
+  const draft = parseEmailDraftColumn(row.emailDraft);
+  if (!draft) throw badRequest("Message has no email draft");
+
+  const existing = parseEmailDraftResultColumn(row.emailDraftResult);
+  if (existing) {
+    throw conflict("Email draft already handled");
+  }
+
+  const now = deps.now?.() ?? new Date();
+  let finalDraft = draft;
+  let sent: { conversationId: string | null; messageId: string | null } | null =
+    null;
+
+  if (emailAction === "send") {
+    finalDraft = await applyEmailDraftEdits(
+      workspaceId,
+      draft,
+      edits,
+      emailDraftDeps,
+    );
+    // Send first — on failure leave emailDraftResult null so Remon can retry.
+    sent = await sendResolvedEmailDraft(
+      workspaceId,
+      finalDraft,
+      emailDraftDeps,
+    );
+  }
+
+  const result = buildEmailDraftResult(
+    emailAction === "send" ? "sent" : "discarded",
+    finalDraft,
+    sent,
+    now,
+  );
+
+  const [updatedRow] = await db
+    .update(chatThreadMessages)
+    .set({
+      emailDraft: finalDraft,
+      emailDraftResult: result,
+      updatedAt: now,
+    })
+    .where(
+      and(
+        eq(chatThreadMessages.workspaceId, workspaceId),
+        eq(chatThreadMessages.threadId, threadId),
+        eq(chatThreadMessages.id, messageId),
+        isNull(chatThreadMessages.emailDraftResult),
+      ),
+    )
+    .returning();
+
+  if (!updatedRow) {
+    throw conflict("Email draft already handled");
+  }
+
+  const answeredMessage = toMessage(updatedRow);
+  const [threadRow] = await db
+    .select({ agentId: chatThreads.agentId })
+    .from(chatThreads)
+    .where(
+      and(
+        eq(chatThreads.workspaceId, workspaceId),
+        eq(chatThreads.id, threadId),
+      ),
+    )
+    .limit(1);
+  if (threadRow) {
+    publishShellMessageEvent({
+      workspaceId,
+      threadId,
+      agentId: threadRow.agentId,
+      message: answeredMessage,
+    });
+  }
+
+  const body = formatChatThreadEmailDraftResultBody(finalDraft, result);
   const reply = await postChatThreadMessage(
     workspaceId,
     threadId,

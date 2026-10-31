@@ -4,6 +4,7 @@ import type {
   ChatUiAttachmentsCardData,
   ChatUiCardPart,
   ChatUiChoicesCardData,
+  ChatUiEmailDraftCardData,
   ChatUiFormCardData,
   ChatUiLinkPreviewsCardData,
   ChatUiMessage,
@@ -18,6 +19,8 @@ export type ChatThreadMessageToUiOptions = {
   dismissedApproval?: boolean;
   /** Unanswered form superseded by a later typed user message. */
   dismissedForm?: boolean;
+  /** Unanswered email draft superseded by a later typed user message. */
+  dismissedEmailDraft?: boolean;
 };
 
 function choicesCardPart(
@@ -113,6 +116,37 @@ function formCardPart(
   };
 }
 
+function emailDraftCardPart(
+  message: ChatThreadMessage,
+  dismissed: boolean,
+): ChatUiCardPart | null {
+  if (!message.emailDraft) return null;
+  const data: ChatUiEmailDraftCardData = {
+    messageId: message.id,
+    to: message.emailDraft.to,
+    ...(message.emailDraft.cc ? { cc: message.emailDraft.cc } : {}),
+    ...(message.emailDraft.bcc ? { bcc: message.emailDraft.bcc } : {}),
+    subject: message.emailDraft.subject,
+    body: message.emailDraft.body,
+    ...(message.emailDraft.from ? { from: message.emailDraft.from } : {}),
+    ...(message.emailDraft.replyToConversationId
+      ? { replyToConversationId: message.emailDraft.replyToConversationId }
+      : {}),
+    ...(message.emailDraft.attachments
+      ? { attachments: message.emailDraft.attachments }
+      : {}),
+    ...(message.emailDraft.note ? { note: message.emailDraft.note } : {}),
+    result: message.emailDraftResult ?? null,
+    ...(dismissed ? { dismissed: true } : {}),
+  };
+  return {
+    type: "card",
+    cardType: "email-draft",
+    id: `email-draft:${message.id}`,
+    data,
+  };
+}
+
 function attachmentsCardPart(message: ChatThreadMessage): ChatUiCardPart | null {
   if (!message.attachments || message.attachments.length === 0) return null;
   const data: ChatUiAttachmentsCardData = {
@@ -204,6 +238,11 @@ export function chatThreadMessageToUi(
   if (approval) parts.push(approval);
   const form = formCardPart(message, options?.dismissedForm === true);
   if (form) parts.push(form);
+  const emailDraft = emailDraftCardPart(
+    message,
+    options?.dismissedEmailDraft === true,
+  );
+  if (emailDraft) parts.push(emailDraft);
 
   return {
     id: message.id,
@@ -240,6 +279,10 @@ export function chatThreadMessagesToUi(
         Boolean(message.approval) && !message.approvalAnswer && laterUser,
       dismissedForm:
         Boolean(message.form) && !message.formAnswer && laterUser,
+      dismissedEmailDraft:
+        Boolean(message.emailDraft) &&
+        !message.emailDraftResult &&
+        laterUser,
     });
   });
 }
@@ -248,7 +291,7 @@ function withCardDismissedState(
   message: ChatUiMessage,
   index: number,
   messages: readonly ChatUiMessage[],
-  cardType: "choices" | "approval" | "form",
+  cardType: "choices" | "approval" | "form" | "email-draft",
 ): ChatUiMessage {
   const partIndex = message.parts.findIndex(
     (part) => part.type === "card" && part.cardType === cardType,
@@ -258,9 +301,10 @@ function withCardDismissedState(
   if (part.type !== "card") return message;
   const data = (part.data ?? {}) as {
     answer?: unknown;
+    result?: unknown;
     dismissed?: boolean;
   };
-  if (data.answer) {
+  if (data.answer || data.result) {
     if (!data.dismissed) return message;
     const nextParts = [...message.parts];
     nextParts[partIndex] = {
@@ -291,6 +335,7 @@ export function withChoicesDismissedStates(
     let next = withCardDismissedState(message, index, messages, "choices");
     next = withCardDismissedState(next, index, messages, "approval");
     next = withCardDismissedState(next, index, messages, "form");
+    next = withCardDismissedState(next, index, messages, "email-draft");
     return next;
   });
 }

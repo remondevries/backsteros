@@ -10,6 +10,8 @@ import {
   chatThreadMessageApprovalSchema,
   chatThreadMessageChoicesAnswerSchema,
   chatThreadMessageChoicesSchema,
+  chatThreadMessageEmailDraftResultSchema,
+  chatThreadMessageEmailDraftSchema,
   chatThreadMessageFormAnswerSchema,
   chatThreadMessageFormSchema,
   chatThreadMessageProgressSchema,
@@ -20,6 +22,8 @@ import {
   type ChatThreadMessageApprovalAnswer,
   type ChatThreadMessageChoices,
   type ChatThreadMessageChoicesAnswer,
+  type ChatThreadMessageEmailDraft,
+  type ChatThreadMessageEmailDraftResult,
   type ChatThreadMessageForm,
   type ChatThreadMessageFormAnswer,
   type ChatThreadMessageProgress,
@@ -57,6 +61,8 @@ export type AgentShellChatMessagePayload = {
     approvalAnswer?: ChatThreadMessageApprovalAnswer | null;
     form?: ChatThreadMessageForm;
     formAnswer?: ChatThreadMessageFormAnswer | null;
+    emailDraft?: ChatThreadMessageEmailDraft;
+    emailDraftResult?: ChatThreadMessageEmailDraftResult | null;
     progress?: ChatThreadMessageProgress;
     attachments?: ChatThreadAttachment[];
     linkPreviews?: ChatThreadLinkPreview[];
@@ -135,6 +141,8 @@ export function parseAgentShellChatMessagePayload(
         approvalAnswer?: unknown;
         form?: unknown;
         formAnswer?: unknown;
+        emailDraft?: unknown;
+        emailDraftResult?: unknown;
         progress?: unknown;
         attachments?: unknown;
         linkPreviews?: unknown;
@@ -204,6 +212,23 @@ export function parseAgentShellChatMessagePayload(
           ? null
           : null
       : undefined;
+    const emailDraftParsed = chatThreadMessageEmailDraftSchema.safeParse(
+      parsed.message?.emailDraft,
+    );
+    const emailDraft = emailDraftParsed.success
+      ? emailDraftParsed.data
+      : undefined;
+    const emailDraftResultParsed =
+      chatThreadMessageEmailDraftResultSchema.safeParse(
+        parsed.message?.emailDraftResult,
+      );
+    const emailDraftResult = emailDraft
+      ? emailDraftResultParsed.success
+        ? emailDraftResultParsed.data
+        : parsed.message?.emailDraftResult == null
+          ? null
+          : null
+      : undefined;
     const progressParsed = chatThreadMessageProgressSchema.safeParse(
       parsed.message?.progress,
     );
@@ -236,6 +261,9 @@ export function parseAgentShellChatMessagePayload(
           ? { approval, approvalAnswer: approvalAnswer ?? null }
           : {}),
         ...(form ? { form, formAnswer: formAnswer ?? null } : {}),
+        ...(emailDraft
+          ? { emailDraft, emailDraftResult: emailDraftResult ?? null }
+          : {}),
         ...(progress ? { progress } : {}),
         ...(attachments.length > 0 ? { attachments } : {}),
         ...(linkPreviews.length > 0 ? { linkPreviews } : {}),

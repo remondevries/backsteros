@@ -250,6 +250,7 @@ export function registerAgentChatRoutes(app: Hono) {
           choices: parsed.data.choices,
           approval: parsed.data.approval,
           form: parsed.data.form,
+          emailDraft: parsed.data.emailDraft,
           progress: parsed.data.progress,
           attachmentIds: parsed.data.attachmentIds,
           skipLinkPreviews: parsed.data.skipLinkPreviews,
@@ -341,8 +342,9 @@ export function registerAgentChatRoutes(app: Hono) {
   );
 
   /**
-   * Answer assistant choices, approval, or form once — owner / Access keys only.
-   * Records the answer and posts a normal user message (webhook path unchanged).
+   * Answer assistant choices, approval, form, or email draft once — owner /
+   * Access keys only. Records the answer and posts a normal user message
+   * (webhook path unchanged). Agents get 403 (cannot send their own draft).
    */
   app.post(
     "/api/v1/chat/threads/:threadId/messages/:messageId/answer",
@@ -375,6 +377,17 @@ export function registerAgentChatRoutes(app: Hono) {
             c.req.param("messageId"),
             parsed.data.decision,
             parsed.data.note,
+            postAuth,
+          );
+          return c.json(result, 201);
+        }
+        if ("emailAction" in parsed.data) {
+          const result = await agentChat.answerChatThreadMessageEmailDraft(
+            auth.workspaceId,
+            c.req.param("threadId"),
+            c.req.param("messageId"),
+            parsed.data.emailAction,
+            parsed.data.edits,
             postAuth,
           );
           return c.json(result, 201);

@@ -78,6 +78,18 @@ export type ShellAgentChatApi = {
     messageId: string,
     values: Record<string, string | number | boolean>,
   ) => Promise<AnswerChatThreadMessageResult>;
+  answerEmailDraft: (
+    threadId: string,
+    messageId: string,
+    emailAction: "send" | "discard",
+    edits?: {
+      to?: string[];
+      cc?: string[];
+      bcc?: string[];
+      subject?: string;
+      body?: string;
+    },
+  ) => Promise<AnswerChatThreadMessageResult>;
 };
 
 /**
@@ -303,6 +315,33 @@ export function useShellAgentChat(): ShellAgentChatApi {
     [],
   );
 
+  const answerEmailDraft = useCallback(
+    async (
+      threadId: string,
+      messageId: string,
+      emailAction: "send" | "discard",
+      edits?: {
+        to?: string[];
+        cc?: string[];
+        bcc?: string[];
+        subject?: string;
+        body?: string;
+      },
+    ) => {
+      return cloudCoreRequestJson<AnswerChatThreadMessageResult>(
+        `/api/v1/chat/threads/${encodeURIComponent(threadId)}/messages/${encodeURIComponent(messageId)}/answer`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            emailAction,
+            ...(edits ? { edits } : {}),
+          }),
+        },
+      );
+    },
+    [],
+  );
+
   return useMemo(
     (): ShellAgentChatApi => ({
       agents,
@@ -319,6 +358,7 @@ export function useShellAgentChat(): ShellAgentChatApi {
       answerChoices,
       answerApproval,
       answerForm,
+      answerEmailDraft,
     }),
     [
       agents,
@@ -326,6 +366,7 @@ export function useShellAgentChat(): ShellAgentChatApi {
       agentsLoadError,
       answerApproval,
       answerChoices,
+      answerEmailDraft,
       answerForm,
       deleteMessages,
       getThread,

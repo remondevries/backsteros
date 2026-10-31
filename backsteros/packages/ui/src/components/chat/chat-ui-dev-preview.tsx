@@ -17,6 +17,8 @@ import type {
   ChatThreadMessageApprovalAnswer,
   ChatThreadMessageChoices,
   ChatThreadMessageChoicesAnswer,
+  ChatThreadMessageEmailDraft,
+  ChatThreadMessageEmailDraftResult,
   ChatThreadMessageForm,
   ChatThreadMessageFormAnswer,
   ChatThreadMessageProgress,
@@ -97,6 +99,18 @@ export type LiveAgentChatHandlers = {
     threadId: string,
     messageId: string,
     values: Record<string, string | number | boolean>,
+  ) => Promise<AnswerChatThreadMessageChoicesResult>;
+  answerEmailDraft?: (
+    threadId: string,
+    messageId: string,
+    emailAction: "send" | "discard",
+    edits?: {
+      to?: string[];
+      cc?: string[];
+      bcc?: string[];
+      subject?: string;
+      body?: string;
+    },
   ) => Promise<AnswerChatThreadMessageChoicesResult>;
 };
 
@@ -491,6 +505,8 @@ export function ChatUiDevPreview({
             approvalAnswer?: ChatThreadMessageApprovalAnswer | null;
             form?: ChatThreadMessageForm;
             formAnswer?: ChatThreadMessageFormAnswer | null;
+            emailDraft?: ChatThreadMessageEmailDraft;
+            emailDraftResult?: ChatThreadMessageEmailDraftResult | null;
             progress?: ChatThreadMessageProgress;
             attachments?: ChatThreadAttachment[];
             linkPreviews?: ChatThreadLinkPreview[];
@@ -528,6 +544,12 @@ export function ChatUiDevPreview({
               ? {
                   form: detail.message.form,
                   formAnswer: detail.message.formAnswer ?? null,
+                }
+              : {}),
+            ...(detail.message?.emailDraft
+              ? {
+                  emailDraft: detail.message.emailDraft,
+                  emailDraftResult: detail.message.emailDraftResult ?? null,
                 }
               : {}),
             ...(detail.message?.progress
@@ -1012,6 +1034,95 @@ export function ChatUiDevPreview({
     [liveAgentChat, liveAgentId, liveThreadId],
   );
 
+  const onAnswerEmailDraft = useCallback(
+    async (
+      messageId: string,
+      emailAction: "send" | "discard",
+      edits?: {
+        to?: string[];
+        cc?: string[];
+        bcc?: string[];
+        subject?: string;
+        body?: string;
+      },
+    ) => {
+      if (!liveAgentId || !liveAgentChat?.answerEmailDraft || !liveThreadId) {
+        return;
+      }
+      const pendingId = `pending-email-${Date.now()}`;
+      const now = new Date().toISOString();
+      const source = liveRef.current.messages.find(
+        (message) => message.id === messageId,
+      );
+      const draftPart = source?.parts.find(
+        (part) => part.type === "card" && part.cardType === "email-draft",
+      );
+      const subjectHint =
+        draftPart &&
+        draftPart.type === "card" &&
+        typeof draftPart.data?.subject === "string"
+          ? draftPart.data.subject
+          : "email";
+      const pendingText =
+        emailAction === "send"
+          ? `Sent: ${subjectHint}`
+          : `Discarded: ${subjectHint}`;
+      dispatchLive({
+        type: "sendStarted",
+        message: {
+          id: pendingId,
+          role: "user",
+          author: { name: "You" },
+          status: "pending",
+          createdAt: now,
+          parts: [{ type: "text", text: pendingText }],
+        },
+      });
+      try {
+        const result = await liveAgentChat.answerEmailDraft(
+          liveThreadId,
+          messageId,
+          emailAction,
+          edits,
+        );
+        dispatchLive({
+          type: "pushMessage",
+          threadId: liveThreadId,
+          message: {
+            id: result.message.id,
+            body: result.message.body,
+            createdAt: result.message.createdAt,
+            ...(result.message.emailDraft
+              ? {
+                  emailDraft: result.message.emailDraft,
+                  emailDraftResult: result.message.emailDraftResult ?? null,
+                }
+              : {}),
+          },
+        });
+        dispatchLive({
+          type: "sendSucceeded",
+          pendingId,
+          message: result.reply.message,
+          thinking: result.reply.thinking,
+          webhookError: result.reply.webhookError,
+          nowMs: Date.now(),
+        });
+      } catch (error) {
+        dispatchLive({
+          type: "sendFailed",
+          pendingId,
+          error:
+            error instanceof Error
+              ? error.message
+              : "Could not complete email draft.",
+        });
+        throw error;
+      }
+    },
+    [liveAgentChat, liveAgentId, liveThreadId],
+  );
+
   const liveView = useMemo(() => liveAgentThreadView(live), [live]);
   // While a live agent thread loads, show nothing rather than demo messages.
   const messages: readonly ChatUiMessage[] = liveAgentId
@@ -1082,6 +1193,11 @@ export function ChatUiDevPreview({
           }
           onAnswerForm={
             liveAgentId && liveAgentChat?.answerForm ? onAnswerForm : null
+          }
+          onAnswerEmailDraft={
+            liveAgentId && liveAgentChat?.answerEmailDraft
+              ? onAnswerEmailDraft
+              : null
           }
           emptyState={null}
           placeholder="Message…"

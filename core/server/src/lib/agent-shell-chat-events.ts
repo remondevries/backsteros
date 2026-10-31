@@ -65,6 +65,44 @@ export type AgentShellChatMessageFormAnswer = {
   answeredAt: string;
 };
 
+export type AgentShellChatMessageEmailDraftRecipient = {
+  email: string;
+  name?: string | null;
+  contactId?: string | null;
+};
+
+export type AgentShellChatMessageEmailDraft = {
+  to: AgentShellChatMessageEmailDraftRecipient[];
+  cc?: AgentShellChatMessageEmailDraftRecipient[];
+  bcc?: AgentShellChatMessageEmailDraftRecipient[];
+  subject: string;
+  body: string;
+  from?: {
+    inboxId: string;
+    email: string;
+    displayName?: string | null;
+  };
+  replyToConversationId?: string;
+  attachmentIds?: string[];
+  attachments?: Array<{
+    id: string;
+    filename: string;
+    mime: string;
+    size: number;
+  }>;
+  note?: string;
+};
+
+export type AgentShellChatMessageEmailDraftResult = {
+  action: "sent" | "discarded";
+  sentAt: string;
+  conversationId?: string | null;
+  messageId?: string | null;
+  finalTo?: AgentShellChatMessageEmailDraftRecipient[];
+  finalSubject?: string;
+  finalBody?: string;
+};
+
 export type AgentShellChatMessageAttachment = {
   id: string;
   filename: string;
@@ -120,6 +158,9 @@ export type AgentShellChatMessageEvent = {
     /** Small form card (when the reply includes one). */
     form?: AgentShellChatMessageForm;
     formAnswer?: AgentShellChatMessageFormAnswer | null;
+    /** Email draft card (when the reply includes one). */
+    emailDraft?: AgentShellChatMessageEmailDraft;
+    emailDraftResult?: AgentShellChatMessageEmailDraftResult | null;
     /** Live progress / status card (agents PATCH to update). */
     progress?: AgentShellChatMessageProgress;
     attachments?: AgentShellChatMessageAttachment[];

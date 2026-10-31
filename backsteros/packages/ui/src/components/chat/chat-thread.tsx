@@ -79,6 +79,10 @@ import {
   ChatFormAnswerProvider,
   type ChatFormAnswerFn,
 } from "./chat-form-card.js";
+import {
+  ChatEmailDraftAnswerProvider,
+  type ChatEmailDraftAnswerFn,
+} from "./chat-email-draft-card.js";
 import { ChatComposerMentionMenu } from "./chat-composer-mention-menu.js";
 import {
   applyMentionItemToComposerInput,
@@ -176,6 +180,11 @@ export type ChatThreadProps = {
    * same answer API.
    */
   onAnswerForm?: ChatFormAnswerFn | null;
+  /**
+   * Send or discard assistant email draft cards (owner). Server sends via
+   * Messages; posts Sent:/Discarded: as a normal user message.
+   */
+  onAnswerEmailDraft?: ChatEmailDraftAnswerFn | null;
   /**
    * Optional empty state when there are no messages.
    * Pass `null` to show no empty-state copy (composer only).
@@ -805,6 +814,7 @@ export function ChatThread({
   onAnswerChoices = null,
   onAnswerApproval = null,
   onAnswerForm = null,
+  onAnswerEmailDraft = null,
   emptyState,
   className,
 }: ChatThreadProps) {
@@ -1132,6 +1142,7 @@ export function ChatThread({
         <ChatChoicesAnswerProvider onAnswer={onAnswerChoices}>
         <ChatApprovalAnswerProvider onAnswer={onAnswerApproval}>
         <ChatFormAnswerProvider onAnswer={onAnswerForm}>
+        <ChatEmailDraftAnswerProvider onAnswer={onAnswerEmailDraft}>
         <AssistantRuntimeProvider runtime={runtime}>
           <div
             ref={threadRootRef}
@@ -1268,6 +1279,7 @@ export function ChatThread({
             </ThreadPrimitive.Root>
           </div>
         </AssistantRuntimeProvider>
+        </ChatEmailDraftAnswerProvider>
         </ChatFormAnswerProvider>
         </ChatApprovalAnswerProvider>
         </ChatChoicesAnswerProvider>

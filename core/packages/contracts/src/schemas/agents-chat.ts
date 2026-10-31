@@ -456,6 +456,138 @@ export function formatChatThreadFormAnswerBody(
   return lines.join("\n");
 }
 
+/**
+ * Recipient ref on an agent-posted email draft — email address, contact display
+ * id (`C-12`), UUID, or `[@contact:C-12]` / `{ contactId }` / `{ email }`.
+ */
+export const chatThreadMessageEmailDraftRecipientRefSchema = z.union([
+  z.string().trim().min(1).max(320),
+  z
+    .object({
+      contactId: z.string().trim().min(1).max(80).optional(),
+      email: z.string().trim().min(1).max(320).optional(),
+      mention: z.string().trim().min(1).max(80).optional(),
+    })
+    .superRefine((value, ctx) => {
+      if (!value.contactId && !value.email && !value.mention) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Recipient needs contactId, email, or mention",
+        });
+      }
+    }),
+]);
+
+/** Resolved recipient stored on the message (after server validation). */
+export const chatThreadMessageEmailDraftRecipientSchema = z.object({
+  email: z.string().trim().email().max(320),
+  name: z.string().trim().min(1).max(200).nullable().optional(),
+  contactId: z.string().trim().min(1).max(80).nullable().optional(),
+});
+
+export const chatThreadMessageEmailDraftFromSchema = z.object({
+  inboxId: z.string().trim().min(1).max(200),
+  email: z.string().trim().email().max(320),
+  displayName: z.string().trim().min(1).max(200).nullable().optional(),
+});
+
+export const chatThreadMessageEmailDraftAttachmentSchema = z.object({
+  id: z.string().trim().min(1),
+  filename: z.string().trim().min(1).max(260),
+  mime: z.string().trim().min(1).max(200),
+  size: z.number().int().nonnegative(),
+});
+
+/**
+ * Interactive email draft card on an assistant message. Desktop shows the mail
+ * exactly as it will go out; owner Send/Discard via the shared `/answer` endpoint.
+ * Recipients on the stored card are always resolved `{ email, name?, contactId? }`.
+ */
+export const chatThreadMessageEmailDraftSchema = z.object({
+  to: z.array(chatThreadMessageEmailDraftRecipientSchema).min(1).max(10),
+  cc: z.array(chatThreadMessageEmailDraftRecipientSchema).max(10).optional(),
+  bcc: z.array(chatThreadMessageEmailDraftRecipientSchema).max(10).optional(),
+  subject: z.string().trim().min(1).max(200),
+  /** Exact body that will be sent (markdown or plain), ≤20KB. */
+  body: z.string().min(1).max(20_480),
+  from: chatThreadMessageEmailDraftFromSchema.optional(),
+  /** Existing Messages email conversation / AgentMail message id to reply in. */
+  replyToConversationId: z.string().trim().min(1).max(200).optional(),
+  attachmentIds: z.array(z.string().trim().min(1)).max(20).optional(),
+  /** Resolved attachment metadata for the card (server-filled). */
+  attachments: z
+    .array(chatThreadMessageEmailDraftAttachmentSchema)
+    .max(20)
+    .optional(),
+  /** Short agent note shown above the card — never sent. */
+  note: z.string().trim().min(1).max(500).optional(),
+});
+
+/**
+ * Agent POST body for `emailDraft` — recipients may be refs; server resolves
+ * them into {@link chatThreadMessageEmailDraftSchema} before storing.
+ */
+export const chatThreadMessageEmailDraftInputSchema = z.object({
+  to: z.array(chatThreadMessageEmailDraftRecipientRefSchema).min(1).max(10),
+  cc: z.array(chatThreadMessageEmailDraftRecipientRefSchema).max(10).optional(),
+  bcc: z.array(chatThreadMessageEmailDraftRecipientRefSchema).max(10).optional(),
+  subject: z.string().trim().min(1).max(200),
+  body: z.string().min(1).max(20_480),
+  /** Allowed sending inbox id; omit to use the workspace default inbox. */
+  from: z.string().trim().min(1).max(200).optional(),
+  replyToConversationId: z.string().trim().min(1).max(200).optional(),
+  attachmentIds: z.array(z.string().trim().min(1)).max(20).optional(),
+  note: z.string().trim().min(1).max(500).optional(),
+});
+
+export const chatThreadMessageEmailDraftActionSchema = z.enum([
+  "sent",
+  "discarded",
+]);
+
+/** Server-set once Remon sends or discards; null while open. */
+export const chatThreadMessageEmailDraftResultSchema = z.object({
+  action: chatThreadMessageEmailDraftActionSchema,
+  sentAt: z.string().datetime(),
+  conversationId: z.string().nullable().optional(),
+  messageId: z.string().nullable().optional(),
+  finalTo: z.array(chatThreadMessageEmailDraftRecipientSchema).optional(),
+  finalSubject: z.string().optional(),
+  finalBody: z.string().optional(),
+});
+
+/** Optional Remon edits applied on Send before the server transmits. */
+export const answerChatThreadMessageEmailDraftEditsSchema = z.object({
+  to: z.array(chatThreadMessageEmailDraftRecipientRefSchema).min(1).max(10).optional(),
+  cc: z.array(chatThreadMessageEmailDraftRecipientRefSchema).max(10).optional(),
+  bcc: z.array(chatThreadMessageEmailDraftRecipientRefSchema).max(10).optional(),
+  subject: z.string().trim().min(1).max(200).optional(),
+  body: z.string().min(1).max(20_480).optional(),
+});
+
+/** Owner sends or discards an assistant email draft card (once). */
+export const answerChatThreadMessageEmailDraftInputSchema = z.object({
+  emailAction: z.enum(["send", "discard"]),
+  edits: answerChatThreadMessageEmailDraftEditsSchema.optional(),
+});
+
+export function formatChatThreadEmailDraftResultBody(
+  draft: z.infer<typeof chatThreadMessageEmailDraftSchema>,
+  result: z.infer<typeof chatThreadMessageEmailDraftResultSchema>,
+): string {
+  const subject =
+    (result.finalSubject ?? draft.subject).trim() || "(no subject)";
+  if (result.action === "discarded") {
+    return `Discarded: ${subject}`;
+  }
+  const recipients = result.finalTo ?? draft.to;
+  const names = recipients
+    .map((r) => (r.name?.trim() ? r.name.trim() : r.email))
+    .filter(Boolean);
+  const toLabel = names.length > 0 ? names.join(", ") : "recipient";
+  return `Sent: ${subject} to ${toLabel}`;
+}
+
 /** Live progress card on an assistant message (agent updates via PATCH). */
 export const chatThreadMessageProgressStateSchema = z.enum([
   "running",
@@ -567,6 +699,12 @@ export const chatThreadMessageSchema = z.object({
   form: chatThreadMessageFormSchema.optional(),
   /** Present (possibly null) when `form` is set. */
   formAnswer: chatThreadMessageFormAnswerSchema.nullable().optional(),
+  /** Assistant-only email draft card (WYSIWYG send via Messages). */
+  emailDraft: chatThreadMessageEmailDraftSchema.optional(),
+  /** Present (possibly null) when `emailDraft` is set. */
+  emailDraftResult: chatThreadMessageEmailDraftResultSchema
+    .nullable()
+    .optional(),
   /** Assistant-only live progress / status card. */
   progress: chatThreadMessageProgressSchema.optional(),
   /** Files linked to this message (upload then reference by id). */
@@ -629,6 +767,12 @@ export const createChatThreadMessageInputSchema = z
      */
     form: chatThreadMessageFormSchema.optional(),
     /**
+     * Assistant replies only. Email draft card; owner Send/Discard via
+     * `/answer` (`{ emailAction: "send"|"discard", edits? }`). Recipients may
+     * be refs — server resolves before storing.
+     */
+    emailDraft: chatThreadMessageEmailDraftInputSchema.optional(),
+    /**
      * Assistant replies only. Live status / progress card below the bubble;
      * agents PATCH the same message to update it.
      */
@@ -644,10 +788,11 @@ export const createChatThreadMessageInputSchema = z
   .superRefine((value, ctx) => {
     const hasBody = value.body.trim().length > 0;
     const hasAttachments = (value.attachmentIds?.length ?? 0) > 0;
-    if (!hasBody && !hasAttachments) {
+    const hasEmailDraft = value.emailDraft != null;
+    if (!hasBody && !hasAttachments && !hasEmailDraft) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: "Message body or attachments are required",
+        message: "Message body, attachments, or emailDraft are required",
         path: ["body"],
       });
     }
@@ -715,27 +860,27 @@ export const answerChatThreadMessageFormInputSchema = z.object({
 });
 
 /**
- * Body for `POST …/messages/{id}/answer` — approval (`decision`), form
- * (`values` object), or choices (`values` array). Prefer approval when
- * `decision` is present; form when `values` is an object.
+ * Body for `POST …/messages/{id}/answer` — approval (`decision`), email draft
+ * (`emailAction`), form (`values` object), or choices (`values` array).
  */
 export const answerChatThreadMessageInputSchema = z.union([
   answerChatThreadMessageApprovalInputSchema,
+  answerChatThreadMessageEmailDraftInputSchema,
   answerChatThreadMessageFormInputSchema,
   answerChatThreadMessageChoicesInputSchema,
 ]);
 
 export const answerChatThreadMessageChoicesResultSchema = z.object({
-  /** Assistant message with choices/approval/form answer recorded. */
+  /** Assistant message with choices/approval/form/emailDraft answer recorded. */
   message: chatThreadMessageSchema,
   /**
-   * Normal user-message post for the chosen value(s) / decision / form —
-   * same webhook path as typing a reply. Agents need no new logic.
+   * Normal user-message post for the chosen value(s) / decision / form /
+   * email draft — same webhook path as typing a reply. Agents need no new logic.
    */
   reply: createChatThreadMessageResultSchema,
 });
 
-/** Alias — same shape for choices, approval, and form answers. */
+/** Alias — same shape for choices, approval, form, and email-draft answers. */
 export const answerChatThreadMessageResultSchema =
   answerChatThreadMessageChoicesResultSchema;
 
@@ -864,6 +1009,33 @@ export type ChatThreadMessageFormValue = z.infer<
 >;
 export type ChatThreadMessageFormAnswer = z.infer<
   typeof chatThreadMessageFormAnswerSchema
+>;
+export type ChatThreadMessageEmailDraftRecipientRef = z.infer<
+  typeof chatThreadMessageEmailDraftRecipientRefSchema
+>;
+export type ChatThreadMessageEmailDraftRecipient = z.infer<
+  typeof chatThreadMessageEmailDraftRecipientSchema
+>;
+export type ChatThreadMessageEmailDraftFrom = z.infer<
+  typeof chatThreadMessageEmailDraftFromSchema
+>;
+export type ChatThreadMessageEmailDraftAttachment = z.infer<
+  typeof chatThreadMessageEmailDraftAttachmentSchema
+>;
+export type ChatThreadMessageEmailDraft = z.infer<
+  typeof chatThreadMessageEmailDraftSchema
+>;
+export type ChatThreadMessageEmailDraftInput = z.infer<
+  typeof chatThreadMessageEmailDraftInputSchema
+>;
+export type ChatThreadMessageEmailDraftResult = z.infer<
+  typeof chatThreadMessageEmailDraftResultSchema
+>;
+export type AnswerChatThreadMessageEmailDraftEdits = z.infer<
+  typeof answerChatThreadMessageEmailDraftEditsSchema
+>;
+export type AnswerChatThreadMessageEmailDraftInput = z.infer<
+  typeof answerChatThreadMessageEmailDraftInputSchema
 >;
 export type ChatThreadMessageProgressState = z.infer<
   typeof chatThreadMessageProgressStateSchema

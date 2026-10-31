@@ -3187,6 +3187,18 @@ export const chatThreadMessages = pgTable(
      */
     formAnswer: jsonb("form_answer").$type<Record<string, unknown> | null>(),
     /**
+     * Assistant-only email draft card (resolved recipients + subject/body).
+     * Null on user/system rows and older assistant messages.
+     */
+    emailDraft: jsonb("email_draft").$type<Record<string, unknown> | null>(),
+    /**
+     * Once the owner sends or discards: `{ action, sentAt, … }`.
+     * Null while unanswered (or when `emailDraft` is null).
+     */
+    emailDraftResult: jsonb("email_draft_result").$type<
+      Record<string, unknown> | null
+    >(),
+    /**
      * Assistant-only live progress / status card
      * (`{ title, state, steps?, current?, total?, detail? }`).
      * Null on user/system rows and older assistant messages.

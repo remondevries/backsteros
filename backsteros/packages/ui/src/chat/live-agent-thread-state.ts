@@ -15,6 +15,8 @@ import type {
   ChatThreadMessageApprovalAnswer,
   ChatThreadMessageChoices,
   ChatThreadMessageChoicesAnswer,
+  ChatThreadMessageEmailDraft,
+  ChatThreadMessageEmailDraftResult,
   ChatThreadMessageForm,
   ChatThreadMessageFormAnswer,
   ChatThreadMessageProgress,
@@ -69,6 +71,8 @@ export type LiveAgentMessagePush = {
   approvalAnswer?: ChatThreadMessageApprovalAnswer | null;
   form?: ChatThreadMessageForm;
   formAnswer?: ChatThreadMessageFormAnswer | null;
+  emailDraft?: ChatThreadMessageEmailDraft;
+  emailDraftResult?: ChatThreadMessageEmailDraftResult | null;
   progress?: ChatThreadMessageProgress;
   attachments?: ChatThreadAttachment[];
   linkPreviews?: ChatThreadLinkPreview[];
@@ -333,6 +337,12 @@ export function liveAgentThreadReducer(
           ? {
               form: action.message.form,
               formAnswer: action.message.formAnswer ?? null,
+            }
+          : {}),
+        ...(action.message.emailDraft
+          ? {
+              emailDraft: action.message.emailDraft,
+              emailDraftResult: action.message.emailDraftResult ?? null,
             }
           : {}),
         ...(action.message.progress

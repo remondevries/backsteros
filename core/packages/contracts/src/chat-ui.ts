@@ -528,6 +528,91 @@ export const chatUiFormCardDataSchema = z.object({
 });
 export type ChatUiFormCardData = z.infer<typeof chatUiFormCardDataSchema>;
 
+/** Card payload for `cardType: "email-draft"` (agent email draft for Remon to send). */
+export const chatUiEmailDraftCardDataSchema = z.object({
+  messageId: z.string(),
+  to: z
+    .array(
+      z.object({
+        email: z.string().email(),
+        name: z.string().nullable().optional(),
+        contactId: z.string().nullable().optional(),
+      }),
+    )
+    .min(1)
+    .max(10),
+  cc: z
+    .array(
+      z.object({
+        email: z.string().email(),
+        name: z.string().nullable().optional(),
+        contactId: z.string().nullable().optional(),
+      }),
+    )
+    .max(10)
+    .optional(),
+  bcc: z
+    .array(
+      z.object({
+        email: z.string().email(),
+        name: z.string().nullable().optional(),
+        contactId: z.string().nullable().optional(),
+      }),
+    )
+    .max(10)
+    .optional(),
+  subject: z.string().min(1).max(200),
+  body: z.string().min(1).max(20_480),
+  from: z
+    .object({
+      inboxId: z.string(),
+      email: z.string().email(),
+      displayName: z.string().nullable().optional(),
+    })
+    .optional(),
+  replyToConversationId: z.string().optional(),
+  attachments: z
+    .array(
+      z.object({
+        id: z.string(),
+        filename: z.string(),
+        mime: z.string(),
+        size: z.number().int().nonnegative(),
+      }),
+    )
+    .max(20)
+    .optional(),
+  note: z.string().max(500).optional(),
+  result: z
+    .object({
+      action: z.enum(["sent", "discarded"]),
+      sentAt: z.string().datetime(),
+      conversationId: z.string().nullable().optional(),
+      messageId: z.string().nullable().optional(),
+      finalTo: z
+        .array(
+          z.object({
+            email: z.string().email(),
+            name: z.string().nullable().optional(),
+            contactId: z.string().nullable().optional(),
+          }),
+        )
+        .optional(),
+      finalSubject: z.string().optional(),
+      finalBody: z.string().optional(),
+    })
+    .nullable()
+    .optional(),
+  /**
+   * True when a later user message exists and this was never answered —
+   * greyed out, no Send/Discard.
+   */
+  dismissed: z.boolean().optional(),
+});
+export type ChatUiEmailDraftCardData = z.infer<
+  typeof chatUiEmailDraftCardDataSchema
+>;
+
 /** Card payload for `cardType: "progress"` (agent live status / progress). */
 export const chatUiProgressCardDataSchema = z.object({
   messageId: z.string(),

@@ -646,6 +646,34 @@ POST /api/v1/chat/threads/{threadId}/messages
 - Thread / SSE / webhook message objects may include `form` and `formAnswer` (`null` until answered).
 - Locked state shows submitted values read-only. Typing a later user message greys unanswered forms out like choices/approval.
 
+**Agent reply with an email draft card** (assistant only — optional `emailDraft`):
+
+```json
+{
+  "body": "Shall I send this?",
+  "emailDraft": {
+    "to": ["[@contact:C-12]", "ops@example.com"],
+    "cc": ["finance@example.com"],
+    "subject": "Invoice INV-9",
+    "body": "Hi Ada,\n\nPlease find the invoice attached.\n\nThanks,\nRemon",
+    "from": "inbox_abc",
+    "attachmentIds": ["att_1"],
+    "note": "Draft for your review — not sent yet."
+  }
+}
+```
+
+- `emailDraft.to` 1–10 recipients: email, contact UUID / `C-N`, `[@contact:C-N]`, or `{ contactId|email|mention }`. Prefer contacts.
+- `cc` / `bcc` optional (≤10 each). Server resolves to `{ email, name?, contactId? }` on post (**400** if unknown / no email).
+- `subject` ≤200; `body` ≤20KB (markdown or plain) — **exactly what is sent** (no greeting/sign-off wrap).
+- `from` optional inbox id (must be an allowed sending inbox); omit → workspace default (**400** if missing/unknown).
+- `replyToConversationId` optional — reply in an existing Messages email conversation.
+- `attachmentIds` optional — reuse chat thread attachments (validated on the thread).
+- `note` optional (≤500) — shown above the card, never sent.
+- Desktop card looks like mail (From / To / Cc chips, Subject, body, attachments) with Edit / Send / Discard.
+- Thread / SSE / webhook include `emailDraft` + `emailDraftResult` (`null` until handled).
+- Locked: Sent (with time + Messages link) or Discarded. Typing later greys unanswered drafts out.
+
 **Agent reply with a live progress card** (assistant only — optional `progress`):
 
 ```json
@@ -804,6 +832,33 @@ Rush: No
 
 That user message fires the usual `agent.chat.message` webhook — agents need no new answer logic. Structured `form` / `formAnswer` also appear on thread, SSE, and webhook context messages.
 
+Same endpoint for email draft cards (owner / Access keys only — agents get **403** and can never send):
+
+```http
+POST /api/v1/chat/threads/{threadId}/messages/{messageId}/answer
+Content-Type: application/json
+
+{
+  "emailAction": "send",
+  "edits": {
+    "to": ["ada@example.com"],
+    "subject": "Invoice INV-9 (revised)",
+    "body": "Hi Ada,\n\nUpdated body.\n\nThanks,\nRemon"
+  }
+}
+```
+
+Or discard:
+
+```json
+{ "emailAction": "discard" }
+```
+
+- On **send**, the server applies optional `edits`, sends via BacksterOS Messages (same AgentMail path as `POST /api/v1/email/start`, body sent raw), records `emailDraftResult` (`action: "sent"`, `sentAt`, `conversationId`, `messageId`, `finalTo` / `finalSubject` / `finalBody`), and posts a user message like `Sent: Invoice INV-9 to Ada`.
+- On **discard**, records `action: "discarded"` and posts `Discarded: <subject>`.
+- Already handled → **409**. Send failure leaves the card open (no result recorded) so Remon can fix and retry.
+- The summary user message fires the usual `agent.chat.message` webhook. Structured `emailDraft` / `emailDraftResult` also appear on thread, SSE, and webhook context.
+
 **Human message** (`event` must be matched exactly):
 
 ```json
@@ -815,7 +870,7 @@ That user message fires the usual `agent.chat.message` webhook — agents need n
   "threadId": "…",
   "replyUrl": "https://agent.backsteros.com/api/v1/chat/threads/{threadId}/messages",
   "message": { "id": "…", "role": "user", "text": "…", "createdAt": "…" },
-  "context": [ /* last ~10 messages, oldest → newest; may include choices/choicesAnswer, approval/approvalAnswer, form/formAnswer */ ],
+  "context": [ /* last ~10 messages, oldest → newest; may include choices/choicesAnswer, approval/approvalAnswer, form/formAnswer, emailDraft/emailDraftResult */ ],
   "deliveryId": "…",
   "timestamp": "…"
 }

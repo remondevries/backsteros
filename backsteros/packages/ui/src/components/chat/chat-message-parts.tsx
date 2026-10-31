@@ -44,6 +44,10 @@ import {
   findFormCardPart,
 } from "./chat-form-card.js";
 import {
+  ChatEmailDraftCard,
+  findEmailDraftCardPart,
+} from "./chat-email-draft-card.js";
+import {
   ChatProgressCard,
   findProgressCardPart,
 } from "./chat-progress-card.js";
@@ -315,6 +319,10 @@ export function ChatUiMessageBody({
     () => findFormCardPart(message.parts),
     [message.parts],
   );
+  const emailDraftPart = useMemo(
+    () => findEmailDraftCardPart(message.parts),
+    [message.parts],
+  );
   const progressPart = useMemo(
     () => findProgressCardPart(message.parts),
     [message.parts],
@@ -449,6 +457,7 @@ export function ChatUiMessageBody({
         {choicesPart ? <ChatChoicesCard part={choicesPart} /> : null}
         {approvalPart ? <ChatApprovalCard part={approvalPart} /> : null}
         {formPart ? <ChatFormCard part={formPart} /> : null}
+        {emailDraftPart ? <ChatEmailDraftCard part={emailDraftPart} /> : null}
       </div>
     </div>
   );

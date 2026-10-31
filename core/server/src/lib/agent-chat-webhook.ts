@@ -113,6 +113,44 @@ export type AgentChatWebhookFormAnswer = {
   answeredAt: string;
 };
 
+export type AgentChatWebhookEmailDraftRecipient = {
+  email: string;
+  name?: string | null;
+  contactId?: string | null;
+};
+
+export type AgentChatWebhookEmailDraft = {
+  to: AgentChatWebhookEmailDraftRecipient[];
+  cc?: AgentChatWebhookEmailDraftRecipient[];
+  bcc?: AgentChatWebhookEmailDraftRecipient[];
+  subject: string;
+  body: string;
+  from?: {
+    inboxId: string;
+    email: string;
+    displayName?: string | null;
+  };
+  replyToConversationId?: string;
+  attachmentIds?: string[];
+  attachments?: Array<{
+    id: string;
+    filename: string;
+    mime: string;
+    size: number;
+  }>;
+  note?: string;
+};
+
+export type AgentChatWebhookEmailDraftResult = {
+  action: "sent" | "discarded";
+  sentAt: string;
+  conversationId?: string | null;
+  messageId?: string | null;
+  finalTo?: AgentChatWebhookEmailDraftRecipient[];
+  finalSubject?: string;
+  finalBody?: string;
+};
+
 export type AgentChatWebhookAttachment = {
   id: string;
   filename: string;
@@ -162,6 +200,9 @@ export type AgentChatWebhookMessage = {
   /** Assistant-only small form (when present on context messages). */
   form?: AgentChatWebhookForm;
   formAnswer?: AgentChatWebhookFormAnswer | null;
+  /** Assistant-only email draft (when present on context messages). */
+  emailDraft?: AgentChatWebhookEmailDraft;
+  emailDraftResult?: AgentChatWebhookEmailDraftResult | null;
   /** Assistant-only live progress (when present on context messages). */
   progress?: AgentChatWebhookProgress;
   /** Files attached to this message. */

@@ -611,6 +611,52 @@ export function buildChatUiDemoMessages(): ChatUiMessage[] {
       ],
     },
     {
+      id: "agent-email-draft",
+      role: "assistant",
+      author: { name: "Cursor agent" },
+      status: "done",
+      createdAt: "2026-10-30T08:06:59.000Z",
+      parts: [
+        {
+          type: "text",
+          text: "Email draft preview — Edit / Send / Discard.",
+        },
+        {
+          type: "card",
+          cardType: "email-draft",
+          id: "card-email-draft-1",
+          data: {
+            messageId: "agent-email-draft",
+            note: "Not sent until you press Send.",
+            from: {
+              inboxId: "inbox_demo",
+              email: "remon@backsteros.test",
+              displayName: "Remon",
+            },
+            to: [
+              {
+                email: "ada@example.com",
+                name: "Ada",
+                contactId: "contact-ada",
+              },
+            ],
+            cc: [{ email: "ops@example.com", name: null, contactId: null }],
+            subject: "Invoice INV-9",
+            body: "Hi Ada,\n\nPlease find the invoice details below.\n\nThanks,\nRemon",
+            attachments: [
+              {
+                id: "att-demo",
+                filename: "invoice.pdf",
+                mime: "application/pdf",
+                size: 12_345,
+              },
+            ],
+            result: null,
+          },
+        },
+      ],
+    },
+    {
       id: "agent-6",
       role: "assistant",
       author: { name: "Cursor agent" },
