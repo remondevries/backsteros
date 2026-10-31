@@ -1510,15 +1510,14 @@
   padding: 12px;
   border-radius: 10px;
   border: 1px solid color-mix(in srgb, #3a3a3a 55%, black);
-  /* Top-right → transparent bottom-left — strong wash concentrated up top. */
+  /* Tiny light fade in the top-right only; rest of the card stays dark. */
   background: linear-gradient(
     to bottom left,
-    #2e2e2e 0%,
-    #272727 32%,
-    color-mix(in srgb, #3a3a3a 65%, transparent) 55%,
-    transparent 82%
+    color-mix(in srgb, #ffffff 14%, #1a1a1a) 0%,
+    #1a1a1a 16%,
+    #161616 28%,
+    #161616 100%
   );
-  background-color: transparent;
   box-sizing: border-box;
 }
 
