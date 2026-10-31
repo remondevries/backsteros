@@ -74,6 +74,23 @@ export const chatThreadMessageStatusSchema = z.enum([
   "error",
 ]);
 
+/**
+ * Resolved `[@kind:…]` embed for agents / thread APIs. `body` stays raw tokens;
+ * this array is additive so older clients ignore it safely.
+ */
+export const chatResolvedMentionSchema = z.object({
+  kind: z.string(),
+  /** Exact token as it appears in `body`, e.g. `[@task:OS-144]`. */
+  raw: z.string(),
+  resolved: z.boolean(),
+  id: z.string().nullable().optional(),
+  displayId: z.string().nullable().optional(),
+  title: z.string().nullable().optional(),
+  status: z.string().nullable().optional(),
+  /** Agents-API path to fetch full details, e.g. `/api/v1/tasks/OS-144`. */
+  path: z.string().nullable().optional(),
+});
+
 export const chatThreadMessageSchema = z.object({
   id: z.string(),
   threadId: z.string(),
@@ -84,6 +101,8 @@ export const chatThreadMessageSchema = z.object({
   status: chatThreadMessageStatusSchema,
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
+  /** Present when `body` contains mention tokens (resolved server-side). */
+  mentions: z.array(chatResolvedMentionSchema).optional(),
 });
 
 export const chatThreadSchema = z.object({
@@ -223,6 +242,7 @@ export type AgentWebhookTestResult = z.infer<
   typeof agentWebhookTestResultSchema
 >;
 export type ChatThread = z.infer<typeof chatThreadSchema>;
+export type ChatResolvedMention = z.infer<typeof chatResolvedMentionSchema>;
 export type ChatThreadMessage = z.infer<typeof chatThreadMessageSchema>;
 export type ChatThreadWithMessages = z.infer<
   typeof chatThreadWithMessagesSchema

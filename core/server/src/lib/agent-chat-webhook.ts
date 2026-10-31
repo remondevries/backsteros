@@ -39,11 +39,24 @@ export function generateAgentChatWebhookSecret(): string {
   return `whsec_${randomBytes(24).toString("base64url")}`;
 }
 
+export type AgentChatWebhookMention = {
+  kind: string;
+  raw: string;
+  resolved: boolean;
+  id?: string | null;
+  displayId?: string | null;
+  title?: string | null;
+  status?: string | null;
+  path?: string | null;
+};
+
 export type AgentChatWebhookMessage = {
   id: string;
   role: "user" | "assistant" | "system";
   text: string;
   createdAt: string;
+  /** Resolved `[@kind:…]` embeds from `text` (additive; body stays raw). */
+  mentions?: AgentChatWebhookMention[];
 };
 
 type AgentWebhookPayloadBase = {

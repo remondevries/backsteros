@@ -1,6 +1,7 @@
 import { and, asc, desc, eq, inArray, isNull } from "drizzle-orm";
 import type {
   AgentWebhookTestResult,
+  ChatResolvedMention,
   ChatThread,
   ChatThreadAgentStatus,
   ChatThreadAgentStatusState,
@@ -32,6 +33,7 @@ import {
   decryptAgentChatWebhookSecret,
 } from "../lib/agent-chat-webhook.js";
 import { getAgentRowForWebhook } from "./agents.js";
+import { resolveChatMentionsInBody } from "./resolve-chat-mentions.js";
 import {
   previewAgentChatMessageBody,
   publishAgentShellChatMessage,
@@ -122,17 +124,20 @@ function toThread(row: {
   };
 }
 
-function toMessage(row: {
-  id: string;
-  threadId: string;
-  role: string;
-  authorContactId: string | null;
-  authorName: string | null;
-  body: string;
-  status: string;
-  createdAt: Date;
-  updatedAt: Date;
-}): ChatThreadMessage {
+function toMessage(
+  row: {
+    id: string;
+    threadId: string;
+    role: string;
+    authorContactId: string | null;
+    authorName: string | null;
+    body: string;
+    status: string;
+    createdAt: Date;
+    updatedAt: Date;
+  },
+  mentions?: ChatResolvedMention[],
+): ChatThreadMessage {
   const role =
     row.role === "assistant" || row.role === "system" ? row.role : "user";
   const status =
@@ -151,7 +156,26 @@ function toMessage(row: {
     status,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
+    ...(mentions && mentions.length > 0 ? { mentions } : {}),
   };
+}
+
+async function toMessageWithMentions(
+  workspaceId: string,
+  row: {
+    id: string;
+    threadId: string;
+    role: string;
+    authorContactId: string | null;
+    authorName: string | null;
+    body: string;
+    status: string;
+    createdAt: Date;
+    updatedAt: Date;
+  },
+): Promise<ChatThreadMessage> {
+  const mentions = await resolveChatMentionsInBody(workspaceId, row.body);
+  return toMessage(row, mentions);
 }
 
 function badRequest(message: string): Error {
@@ -232,7 +256,9 @@ async function loadMessages(
       ),
     )
     .orderBy(asc(chatThreadMessages.createdAt));
-  return rows.map(toMessage);
+  return Promise.all(
+    rows.map((row) => toMessageWithMentions(workspaceId, row)),
+  );
 }
 
 export async function getChatThreadWithMessages(
@@ -359,20 +385,21 @@ async function recentContext(
     )
     .orderBy(desc(chatThreadMessages.createdAt))
     .limit(limit);
-  return rows
-    .reverse()
-    .map((row) => {
-      const role =
-        row.role === "assistant" || row.role === "system"
-          ? row.role
-          : "user";
-      return {
-        id: row.id,
-        role,
-        text: row.body,
-        createdAt: row.createdAt.toISOString(),
-      };
+  const ordered = rows.reverse();
+  const out: AgentChatWebhookMessage[] = [];
+  for (const row of ordered) {
+    const role =
+      row.role === "assistant" || row.role === "system" ? row.role : "user";
+    const mentions = await resolveChatMentionsInBody(workspaceId, row.body);
+    out.push({
+      id: row.id,
+      role,
+      text: row.body,
+      createdAt: row.createdAt.toISOString(),
+      ...(mentions.length > 0 ? { mentions } : {}),
     });
+  }
+  return out;
 }
 
 /**
@@ -629,6 +656,8 @@ export async function postChatThreadMessage(
   let thinking = false;
   let webhookError: string | null = null;
 
+  const mentions = await resolveChatMentionsInBody(workspaceId, text);
+
   if (!agentForWebhook?.enabled) {
     webhookError = `${agent.name} is disabled.`;
   } else if (!webhookUrl) {
@@ -652,6 +681,7 @@ export async function postChatThreadMessage(
         role: "user",
         text,
         createdAt: messageRow!.createdAt.toISOString(),
+        ...(mentions.length > 0 ? { mentions } : {}),
       },
       context,
       deliveryId,
@@ -689,7 +719,7 @@ export async function postChatThreadMessage(
     .returning();
 
   return {
-    message: toMessage(messageRow!),
+    message: toMessage(messageRow!, mentions),
     thread: toThread(updatedThread!),
     thinking,
     webhookError,
