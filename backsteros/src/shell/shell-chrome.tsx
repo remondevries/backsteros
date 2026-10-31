@@ -23,7 +23,7 @@ import { RouterLink } from "./app-shell-links";
 import { renderAppShellTabIcon } from "./app-shell-tab-icon";
 import { ShellAgentDmBanner } from "./shell-agent-dm-banner";
 import { ShellAgentDmLiveHost } from "./shell-agent-dm-live-host";
-import { ShellChatPanel } from "./shell-chat-panel";
+import { ShellChatPanelSlot } from "./shell-chat-panel-slot";
 import type { useShellTabs } from "./use-shell-tabs";
 import type { resolveInboxSidebarIndicatorTone } from "@backsteros/ui/inbox";
 
@@ -139,7 +139,9 @@ function ShellChromeInner({
         sidebar={sidebar}
         sidebarCollapsed={sidebarCollapsed}
         sidebarAnimating={sidebarAnimating}
-        chatPanel={<ShellChatPanel />}
+        chatPanel={
+          <ShellChatPanelSlot collapsed={chatPanelCollapsed} />
+        }
         chatPanelCollapsed={chatPanelCollapsed}
         chatPanelAnimating={chatPanelAnimating}
         chatPanelWidth={chatPanelWidth}
