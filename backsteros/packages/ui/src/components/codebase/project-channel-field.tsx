@@ -58,8 +58,8 @@ export type ProjectChannelFieldProps = {
 
 /**
  * Locations → Channel status badge.
- * Active = Grok Bot (or scheme) icon + pulsing green dot + "Active" (opens room).
- * Inactive = muted status only. Agents set Channel via API — no edit popover.
+ * Connected = green pulsing Grok icon + "Connected" (opens room).
+ * Disconnected = grey Grok icon + "Disconnected". Agents set Channel via API.
  */
 export function ProjectChannelField({
   project,
@@ -108,9 +108,15 @@ export function ProjectChannelField({
         <span
           className="project-channel-badge project-channel-badge--inactive"
           title="No chat room linked (agents set Channel via API)"
-          aria-label="Channel inactive"
+          aria-label="Channel disconnected"
         >
-          <span className="project-channel-badge__label">Inactive</span>
+          <span
+            className="project-channel-badge__icon project-channel-badge__icon--muted"
+            aria-hidden="true"
+          >
+            <XaiMarkIcon size={14} className="project-channel-badge__mark" />
+          </span>
+          <span className="project-channel-badge__label">Disconnected</span>
         </span>
       </div>
     );
@@ -123,7 +129,7 @@ export function ProjectChannelField({
           type="button"
           className="project-channel-badge__open-btn"
           title="Open chat room"
-          aria-label="Open Active channel"
+          aria-label="Open Connected channel"
           disabled={saving}
           onClick={() => {
             void openProjectChannelUri(channel!.uri);
@@ -139,7 +145,7 @@ export function ProjectChannelField({
               <ProjectOcticon icon="comment-discussion" size={14} />
             )}
           </span>
-          <span className="project-channel-badge__label">Active</span>
+          <span className="project-channel-badge__label">Connected</span>
         </button>
         <button
           type="button"

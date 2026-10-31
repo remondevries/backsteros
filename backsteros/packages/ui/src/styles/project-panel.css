@@ -384,6 +384,9 @@
 }
 
 .project-channel-badge--inactive {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   padding: 5px 10px;
   color: color-mix(in srgb, var(--foreground) 55%, transparent);
   pointer-events: none;
@@ -426,6 +429,11 @@
   color: #22c55e;
   /* Always pulse — Remon: ignore prefers-reduced-motion. */
   animation: project-channel-icon-pulse 1.6s ease-in-out infinite;
+}
+
+.project-channel-badge__icon--muted {
+  color: color-mix(in srgb, var(--foreground) 40%, transparent);
+  opacity: 0.7;
 }
 
 .project-channel-badge__mark {
