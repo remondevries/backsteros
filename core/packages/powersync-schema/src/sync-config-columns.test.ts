@@ -91,4 +91,13 @@ describe("PowerSync sync-config ↔ powersync-schema columns", () => {
       assert.ok(tasks.has(col), `tasks SELECT must include ${col}`);
     }
   });
+
+  it("includes development/production/channel on the projects stream", () => {
+    const yaml = readFileSync(syncConfigPath, "utf8");
+    const projects = parseSyncSelectColumns(yaml).get("projects");
+    assert.ok(projects);
+    for (const col of ["development", "production", "channel"]) {
+      assert.ok(projects.has(col), `projects SELECT must include ${col}`);
+    }
+  });
 });

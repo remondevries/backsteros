@@ -728,6 +728,66 @@ test("fillMissingCodebaseFieldsFromApi keeps local repo and cwd when present", (
   assert.equal(filled[0]?.localWorkingDirectory, "/tmp/local");
 });
 
+test("fillMissingCodebaseFieldsFromApi copies channel when local PowerSync omitted it", () => {
+  const apiChannel = {
+    uri: "grokbot://app/v1/agent?id=550e8400-e29b-41d4-a716-446655440000",
+    name: "BacksterOS",
+  };
+  const filled = fillMissingCodebaseFieldsFromApi(
+    [
+      {
+        id: "1",
+        githubRepository: "acme/app",
+        localWorkingDirectory: "/tmp/app",
+        channel: null,
+        development: null,
+        production: null,
+      },
+    ],
+    [
+      {
+        id: "1",
+        githubRepository: "acme/app",
+        localWorkingDirectory: "/tmp/app",
+        channel: apiChannel,
+        development: { kind: "local", path: "/tmp/app" },
+        production: { path: "/var/www" },
+      },
+    ],
+  );
+  assert.deepEqual(filled[0]?.channel, apiChannel);
+  assert.deepEqual(filled[0]?.development, {
+    kind: "local",
+    path: "/tmp/app",
+  });
+  assert.deepEqual(filled[0]?.production, { path: "/var/www" });
+});
+
+test("fillMissingCodebaseFieldsFromApi keeps local channel when present", () => {
+  const localChannel = {
+    uri: "grokbot://app/v1/agent?id=aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
+    name: "Local",
+  };
+  const filled = fillMissingCodebaseFieldsFromApi(
+    [
+      {
+        id: "1",
+        channel: localChannel,
+      },
+    ],
+    [
+      {
+        id: "1",
+        channel: {
+          uri: "grokbot://app/v1/agent?id=550e8400-e29b-41d4-a716-446655440000",
+          name: "API",
+        },
+      },
+    ],
+  );
+  assert.deepEqual(filled[0]?.channel, localChannel);
+});
+
 test("fillMissingMeetingPropertiesFromApi copies project when local omitted", () => {
   const filled = fillMissingMeetingPropertiesFromApi(
     [

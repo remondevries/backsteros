@@ -555,10 +555,35 @@ export function fillMissingProjectBillingFields<
   });
 }
 
+function channelMissing(value: unknown): boolean {
+  if (value == null) return true;
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed || trimmed === "null" || trimmed === "{}") return true;
+    try {
+      const parsed = JSON.parse(trimmed) as { uri?: unknown };
+      return (
+        parsed == null ||
+        typeof parsed !== "object" ||
+        typeof parsed.uri !== "string" ||
+        !parsed.uri.trim()
+      );
+    } catch {
+      // Plain URI string still counts as present.
+      return false;
+    }
+  }
+  if (typeof value === "object" && !Array.isArray(value)) {
+    const uri = (value as { uri?: unknown }).uri;
+    return typeof uri !== "string" || !uri.trim();
+  }
+  return true;
+}
+
 /**
  * When local wins by updatedAt but still omits codebase binding fields
  * (stale PowerSync schema / sync), copy them from the API row so repo,
- * working directory, and health-check settings survive restart.
+ * working directory, Channel, and health-check settings survive restart.
  */
 export function fillMissingCodebaseFieldsFromApi<
   T extends {
@@ -567,6 +592,9 @@ export function fillMissingCodebaseFieldsFromApi<
     localWorkingDirectory?: string | null;
     healthCheckMode?: "simple" | "advanced" | null;
     healthCheckDomain?: string | null;
+    channel?: unknown;
+    development?: unknown;
+    production?: unknown;
   },
 >(mergedRows: T[], apiRows: T[] | null | undefined): T[] {
   if (!apiRows?.length) return mergedRows;
@@ -598,6 +626,23 @@ export function fillMissingCodebaseFieldsFromApi<
       !textMissing(api.healthCheckDomain)
     ) {
       next = { ...next, healthCheckDomain: api.healthCheckDomain };
+    }
+    if (channelMissing(row.channel) && !channelMissing(api.channel)) {
+      next = { ...next, channel: api.channel as T["channel"] };
+    }
+    if (
+      (row.development == null || row.development === "") &&
+      api.development != null &&
+      api.development !== ""
+    ) {
+      next = { ...next, development: api.development as T["development"] };
+    }
+    if (
+      (row.production == null || row.production === "") &&
+      api.production != null &&
+      api.production !== ""
+    ) {
+      next = { ...next, production: api.production as T["production"] };
     }
     return next;
   });
