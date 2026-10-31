@@ -198,6 +198,13 @@ export type ChatThreadProps = {
    * Omit to use the default “No messages yet.” label.
    */
   emptyState?: ReactNode;
+  /**
+   * When set, scroll the matching `data-message-id` into view and briefly
+   * highlight it (chat deep links / notifications).
+   */
+  highlightMessageId?: string | null;
+  /** Fired once the highlight has been applied (parent can clear the id). */
+  onHighlightMessageHandled?: ((messageId: string) => void) | null;
   className?: string;
 };
 
@@ -824,6 +831,8 @@ export function ChatThread({
   onAnswerEmailDraft = null,
   emailDraftCompose = null,
   emptyState,
+  highlightMessageId = null,
+  onHighlightMessageHandled = null,
   className,
 }: ChatThreadProps) {
   const [isRunning, setIsRunning] = useState(false);
@@ -1087,6 +1096,35 @@ export function ChatThread({
   const stickAnchor = chatThreadStickAnchor(resolvedActivePeerId, messages);
   const stickToBottomRef = useRef(true);
   const prevStickPeerRef = useRef(resolvedActivePeerId);
+  const highlightHandledRef = useRef<string | null>(null);
+
+  // Deep-link / notification: scroll to a message and briefly highlight it.
+  useEffect(() => {
+    const targetId = highlightMessageId?.trim() || "";
+    if (!targetId) {
+      highlightHandledRef.current = null;
+      return;
+    }
+    if (highlightHandledRef.current === targetId) return;
+    const root = threadRootRef.current;
+    if (!root) return;
+    const node = root.querySelector(
+      `[data-message-id="${CSS.escape(targetId)}"]`,
+    ) as HTMLElement | null;
+    if (!node) return;
+    highlightHandledRef.current = targetId;
+    stickToBottomRef.current = false;
+    node.scrollIntoView({ block: "center", behavior: "smooth" });
+    node.classList.add("is-deep-link-target");
+    const clearTimer = window.setTimeout(() => {
+      node.classList.remove("is-deep-link-target");
+    }, 2400);
+    onHighlightMessageHandled?.(targetId);
+    return () => {
+      window.clearTimeout(clearTimer);
+      node.classList.remove("is-deep-link-target");
+    };
+  }, [highlightMessageId, messages, onHighlightMessageHandled]);
 
   // Peer switches do not remount assistant-ui's Viewport, and large markdown
   // can grow after the first scrollToBottom — reinforce stick-to-bottom.

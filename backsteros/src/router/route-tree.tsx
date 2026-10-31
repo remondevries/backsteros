@@ -28,6 +28,7 @@ import {
   ContactScopedTaskDetailPage,
   ContactsPage,
   CatalogPage,
+  ChatDeepLinkPage,
   EmailPage,
   FinancePage,
   HabitTrackerPage,
@@ -97,6 +98,22 @@ const indexRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: "/",
   component: StartupRedirect,
+});
+
+const chatDeepLinkRoute = createRoute({
+  getParentRoute: () => shellRoute,
+  path: "chat/$threadId",
+  validateSearch: (search: Record<string, unknown>) => ({
+    message:
+      typeof search.message === "string" && search.message.trim()
+        ? search.message.trim()
+        : undefined,
+  }),
+  component: () => (
+    <LazyRoute>
+      <ChatDeepLinkPage />
+    </LazyRoute>
+  ),
 });
 
 const inboxRoute = createRoute({
@@ -890,6 +907,7 @@ export const routeTree = rootRoute.addChildren([
   overlayComposeRoute,
   shellRoute.addChildren([
     indexRoute,
+    chatDeepLinkRoute,
     inboxRoute,
     inboxDetailRoute,
     emailRedirectRoute,

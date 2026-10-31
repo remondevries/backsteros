@@ -14,6 +14,7 @@ import {
   nullableProjectChannelSchema,
   nullableProjectDevelopmentSchema,
   nullableProjectProductionSchema,
+  projectChannelStatusSchema,
 } from "./project-locations.js";
 export {
   PROJECT_DEVELOPMENT_KINDS,
@@ -28,6 +29,9 @@ export {
   projectChannelSchema,
   nullableProjectChannelSchema,
   nullableProjectChannelUriSchema,
+  PROJECT_CHANNEL_STATUSES,
+  projectChannelStatusSchema,
+  projectChannelPendingLinkSchema,
   normalizeProjectChannelUri,
   normalizeProjectChannel,
   assertProjectChannelUri,
@@ -47,6 +51,7 @@ export {
   type ProjectProduction,
   type ProjectChannelScheme,
   type ProjectChannel,
+  type ProjectChannelStatus,
 } from "./project-locations.js";
 /** Project short ID — 2–3 alphanumeric characters (any case; stored uppercase). */
 export const projectKeySchema = z
@@ -109,6 +114,18 @@ export const projectSchema = z.object({
    * (e.g. uri `grokbot://app/v1/agent?id=<uuid>`). Null when unset.
    */
   channel: nullableProjectChannelSchema,
+  /**
+   * Self-service Channel connect lifecycle.
+   * `inactive` | `connecting` | `needs_details` | `active`.
+   */
+  channelStatus: projectChannelStatusSchema,
+  /**
+   * Chat deep link while `needs_details`
+   * (`backsteros://chat/<threadId>?message=<id>` or `/chat/…`).
+   */
+  channelPendingLink: z.string().max(2048).nullable(),
+  /** When Connect was requested (connecting / needs_details). */
+  channelRequestedAt: z.string().datetime().nullable(),
   /**
    * @deprecated Folded into {@link localWorkingDirectory}. Still accepted on
    * write (mapped then cleared); always null on read after ensure/update.
@@ -185,6 +202,12 @@ export const createProjectSchema = z.object({
   production: nullableProjectProductionSchema.optional(),
   /** Project chat-room Channel `{ uri, name? }`. */
   channel: nullableProjectChannelSchema.optional(),
+  /** Self-service Channel connect lifecycle (agents may set needs_details/active/inactive). */
+  channelStatus: projectChannelStatusSchema.optional(),
+  /** Chat deep link while `needs_details`. */
+  channelPendingLink: z.string().max(2048).nullable().optional(),
+  /** When Connect was requested. */
+  channelRequestedAt: z.string().datetime().nullable().optional(),
   /** @deprecated Folded into localWorkingDirectory on write. */
   localLocation: z.string().max(4096).nullable().optional(),
   /** Legacy; core no longer writes these on location set. */

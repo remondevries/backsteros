@@ -2,6 +2,7 @@ import path from "node:path";
 import { and, asc, desc, eq, gte, inArray, isNull, sql, type SQL } from "drizzle-orm";
 import type {
   CreateProjectInput,
+  ProjectChannelStatus,
   ProjectDevelopment,
   ProjectProduction,
   UpdateProjectInput,
@@ -65,6 +66,126 @@ function resolveProjectChannel(
     throw new Error("CHANNEL_INVALID");
   }
   return result.value;
+}
+
+type ChannelConnectExisting = {
+  channel: ProjectChannel | null;
+  channelStatus: string;
+  channelPendingLink: string | null;
+  channelRequestedAt: Date | null;
+};
+
+/**
+ * Coerce Channel connect fields on PATCH.
+ * Setting `channel` to a uri implies `active`; clearing channel implies `inactive`.
+ * `needs_details` requires `channelPendingLink`. Agents must not set `connecting`
+ * via PATCH — use POST …/channel/connect (owner-only).
+ */
+function resolveChannelConnectPatch(input: {
+  existing: ChannelConnectExisting;
+  input: {
+    channel?: ProjectChannel | null;
+    channelStatus?: ProjectChannelStatus;
+    channelPendingLink?: string | null;
+    channelRequestedAt?: string | null;
+  };
+}): {
+  channelStatus?: ProjectChannelStatus;
+  channelPendingLink?: string | null;
+  channelRequestedAt?: Date | null;
+} {
+  const channelTouched = input.input.channel !== undefined;
+  const statusTouched = input.input.channelStatus !== undefined;
+  const linkTouched = input.input.channelPendingLink !== undefined;
+  const requestedTouched = input.input.channelRequestedAt !== undefined;
+
+  if (!channelTouched && !statusTouched && !linkTouched && !requestedTouched) {
+    return {};
+  }
+
+  const nextChannel = channelTouched
+    ? input.input.channel ?? null
+    : input.existing.channel;
+  let nextStatus: ProjectChannelStatus =
+    (statusTouched
+      ? input.input.channelStatus
+      : (input.existing.channelStatus as ProjectChannelStatus)) ?? "inactive";
+  if (
+    nextStatus !== "inactive" &&
+    nextStatus !== "connecting" &&
+    nextStatus !== "needs_details" &&
+    nextStatus !== "active"
+  ) {
+    nextStatus = "inactive";
+  }
+
+  // Channel uri present → active; channel cleared → inactive (unless status
+  // explicitly set to connecting/needs_details without a uri).
+  if (channelTouched) {
+    if (nextChannel) {
+      nextStatus = "active";
+    } else if (!statusTouched || nextStatus === "active") {
+      nextStatus = "inactive";
+    }
+  }
+
+  if (statusTouched && input.input.channelStatus === "connecting") {
+    // PATCH must not enter connecting — owner uses Connect endpoint.
+    throw new Error("CHANNEL_CONNECT_VIA_ENDPOINT");
+  }
+
+  let nextLink =
+    linkTouched
+      ? input.input.channelPendingLink?.trim() || null
+      : input.existing.channelPendingLink;
+  let nextRequestedAt = requestedTouched
+    ? input.input.channelRequestedAt
+      ? new Date(input.input.channelRequestedAt)
+      : null
+    : input.existing.channelRequestedAt;
+
+  if (nextStatus === "needs_details") {
+    if (!nextLink) {
+      throw new Error("CHANNEL_PENDING_LINK_REQUIRED");
+    }
+  }
+  if (nextStatus === "inactive") {
+    nextLink = null;
+    nextRequestedAt = null;
+  }
+  if (nextStatus === "active") {
+    nextLink = null;
+  }
+
+  return {
+    channelStatus: nextStatus,
+    channelPendingLink: nextLink,
+    channelRequestedAt: nextRequestedAt,
+  };
+}
+
+/** Owner Connect: set connecting + stamp requestedAt (webhook fired by route). */
+export async function beginProjectChannelConnect(
+  workspaceId: string,
+  id: string,
+  executor: DbExecutor = db,
+) {
+  const existing = await getProjectById(workspaceId, id, executor);
+  if (!existing) return null;
+  const requestedAt = new Date();
+  const [row] = await executor
+    .update(projects)
+    .set({
+      channelStatus: "connecting",
+      channelPendingLink: null,
+      channelRequestedAt: requestedAt,
+      // Keep existing channel until agent replaces / clears; Connect from
+      // inactive typically has null channel already.
+      updatedAt: requestedAt,
+    })
+    .where(and(eq(projects.workspaceId, workspaceId), eq(projects.id, id)))
+    .returning();
+  return row ?? null;
 }
 
 function assertCodebaseLocationFields(
@@ -424,6 +545,13 @@ export async function createProject(
       development: createLocations.development,
       production: createLocations.production,
       channel: resolveProjectChannel(input.channel) ?? null,
+      channelStatus:
+        input.channelStatus ??
+        (resolveProjectChannel(input.channel) ? "active" : "inactive"),
+      channelPendingLink: input.channelPendingLink?.trim() || null,
+      channelRequestedAt: input.channelRequestedAt
+        ? new Date(input.channelRequestedAt)
+        : null,
       localLocation: null,
       developmentSetupStatus: input.developmentSetupStatus ?? null,
       developmentSetupError: input.developmentSetupError ?? null,
@@ -557,6 +685,20 @@ export async function updateProject(
   const leavingCodebase =
     input.type !== undefined && input.type !== "codebase";
   const nextChannel = resolveProjectChannel(input.channel);
+  const channelConnectPatch = resolveChannelConnectPatch({
+    existing: {
+      channel: existing.channel ?? null,
+      channelStatus: existing.channelStatus ?? "inactive",
+      channelPendingLink: existing.channelPendingLink ?? null,
+      channelRequestedAt: existing.channelRequestedAt ?? null,
+    },
+    input: {
+      channel: nextChannel,
+      channelStatus: input.channelStatus,
+      channelPendingLink: input.channelPendingLink,
+      channelRequestedAt: input.channelRequestedAt,
+    },
+  });
 
   // Fold deprecated localLocation into localWorkingDirectory; always clear column.
   const consolidatedUpdate = consolidateLocalPaths({
@@ -656,6 +798,15 @@ export async function updateProject(
             ? { localLocation: null }
             : {}),
         ...(nextChannel !== undefined ? { channel: nextChannel } : {}),
+        ...(channelConnectPatch.channelStatus !== undefined
+          ? { channelStatus: channelConnectPatch.channelStatus }
+          : {}),
+        ...(channelConnectPatch.channelPendingLink !== undefined
+          ? { channelPendingLink: channelConnectPatch.channelPendingLink }
+          : {}),
+        ...(channelConnectPatch.channelRequestedAt !== undefined
+          ? { channelRequestedAt: channelConnectPatch.channelRequestedAt }
+          : {}),
         ...(input.developmentSetupStatus !== undefined
           ? { developmentSetupStatus: input.developmentSetupStatus }
           : {}),

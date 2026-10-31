@@ -662,6 +662,27 @@ export function mapProjectUpsert(
       }
       return raw as CreateProjectInput["channel"];
     })(),
+    channelStatus: (() => {
+      const raw = asNullableString(
+        payloadValue(payload, "channel_status", "channelStatus"),
+      );
+      if (raw === undefined) return undefined;
+      if (
+        raw === "inactive" ||
+        raw === "connecting" ||
+        raw === "needs_details" ||
+        raw === "active"
+      ) {
+        return raw;
+      }
+      return "inactive";
+    })(),
+    channelPendingLink: asNullableString(
+      payloadValue(payload, "channel_pending_link", "channelPendingLink"),
+    ),
+    channelRequestedAt: asNullableString(
+      payloadValue(payload, "channel_requested_at", "channelRequestedAt"),
+    ),
     localLocation: asNullableString(
       payloadValue(payload, "local_location", "localLocation"),
     ),

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useShellLocation } from "../lib/shell-route-keep-alive";
 import { SHELL_CHAT_OPEN_PEER_EVENT } from "../lib/shell-chat-open-peer";
+import { SHELL_CHAT_OPEN_THREAD_EVENT } from "../lib/shell-chat-deep-link";
 
 import {
   CONTEXT_PANEL_COLLAPSE_DURATION_MS,
@@ -334,8 +335,10 @@ export function useShellChromeState() {
       scheduleFocusShellChatComposer();
     };
     window.addEventListener(SHELL_CHAT_OPEN_PEER_EVENT, onOpenPeer);
+    window.addEventListener(SHELL_CHAT_OPEN_THREAD_EVENT, onOpenPeer);
     return () => {
       window.removeEventListener(SHELL_CHAT_OPEN_PEER_EVENT, onOpenPeer);
+      window.removeEventListener(SHELL_CHAT_OPEN_THREAD_EVENT, onOpenPeer);
     };
   }, [setChatPanelCollapsedPreferring]);
 

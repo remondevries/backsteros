@@ -2626,6 +2626,14 @@ function ProjectDetailScreen({
           channel:
             (project as { channel?: { uri: string; name?: string | null } | null })
               .channel ?? null,
+          channelStatus:
+            (project as { channelStatus?: string | null }).channelStatus ?? null,
+          channelPendingLink:
+            (project as { channelPendingLink?: string | null })
+              .channelPendingLink ?? null,
+          channelRequestedAt:
+            (project as { channelRequestedAt?: string | null })
+              .channelRequestedAt ?? null,
         }}
         onProjectUpdated={(updated) => {
           patchSelected({
@@ -2634,7 +2642,30 @@ function ProjectDetailScreen({
                 | { uri: string; name?: string | null }
                 | null
                 | undefined) ?? null,
-          });
+            channelStatus:
+              (updated.channelStatus as
+                | "inactive"
+                | "connecting"
+                | "needs_details"
+                | "active"
+                | null
+                | undefined) ?? null,
+            channelPendingLink: updated.channelPendingLink ?? null,
+            channelRequestedAt: updated.channelRequestedAt ?? null,
+          } as Parameters<typeof patchSelected>[0]);
+        }}
+        onOpenChatDeepLink={(href) => {
+          void import("../lib/shell-chat-deep-link").then(
+            ({ openShellChatDeepLink, parseShellChatDeepLink, shellChatDeepLinkHref }) => {
+              if (openShellChatDeepLink(href)) return;
+              const parsed = parseShellChatDeepLink(href);
+              if (parsed) {
+                openShellChatDeepLink(
+                  shellChatDeepLinkHref(parsed.threadId, parsed.messageId),
+                );
+              }
+            },
+          );
         }}
         requestJson={(path, init) =>
           desktopApiClient.requestJson(path, init)

@@ -1766,6 +1766,8 @@ export type CodebaseProjectOverviewPaneProps = {
    * Defaults to true.
    */
   copyIdShortcutEnabled?: boolean;
+  /** Open Channel needs_details chat deep links in the shell panel. */
+  onOpenChatDeepLink?: ((href: string) => void) | null;
 };
 
 export function CodebaseProjectOverviewPane({
@@ -1798,6 +1800,7 @@ export function CodebaseProjectOverviewPane({
   githubRefreshToken = 0,
   belowDescription = null,
   copyIdShortcutEnabled = true,
+  onOpenChatDeepLink = null,
 }: CodebaseProjectOverviewPaneProps) {
   const tasksPanelToggle =
     showHeader !== false && onToggleTasksPanel != null ? (
@@ -2101,25 +2104,28 @@ export function CodebaseProjectOverviewPane({
                         githubRefreshToken={githubRefreshToken}
                       />
                     </EntityOverviewField>
-                    <EntityOverviewField label="Development">
-                      <ProjectDevelopmentField
-                        project={project}
-                        onProjectUpdated={onProjectUpdated}
-                        requestJson={requestJson}
-                      />
-                    </EntityOverviewField>
-                    <EntityOverviewField label="Production">
-                      <ProjectProductionField
-                        project={project}
-                        onProjectUpdated={onProjectUpdated}
-                        requestJson={requestJson}
-                      />
-                    </EntityOverviewField>
+                    <div className="entity-overview-field-pair">
+                      <EntityOverviewField label="Development" layout="stacked">
+                        <ProjectDevelopmentField
+                          project={project}
+                          onProjectUpdated={onProjectUpdated}
+                          requestJson={requestJson}
+                        />
+                      </EntityOverviewField>
+                      <EntityOverviewField label="Production" layout="stacked">
+                        <ProjectProductionField
+                          project={project}
+                          onProjectUpdated={onProjectUpdated}
+                          requestJson={requestJson}
+                        />
+                      </EntityOverviewField>
+                    </div>
                     <EntityOverviewField label="Channel">
                       <ProjectChannelField
                         project={project}
                         onProjectUpdated={onProjectUpdated}
                         requestJson={requestJson}
+                        onOpenChatDeepLink={onOpenChatDeepLink}
                       />
                     </EntityOverviewField>
                   </>

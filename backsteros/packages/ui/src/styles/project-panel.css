@@ -389,7 +389,56 @@
   gap: 6px;
   padding: 5px 10px;
   color: color-mix(in srgb, var(--foreground) 55%, transparent);
-  pointer-events: none;
+}
+
+.project-channel-badge--connect {
+  margin: 0;
+  border: 0.5px solid color-mix(in srgb, var(--foreground) 12%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--foreground) 4%, transparent);
+  font: inherit;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.project-channel-badge--connect:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--foreground) 8%, transparent);
+}
+
+.project-channel-badge--connect:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.project-channel-badge--connecting {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  color: color-mix(in srgb, var(--foreground) 70%, transparent);
+}
+
+.project-channel-badge--needs-details {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 5px 10px;
+  border: 0.5px solid color-mix(in srgb, #d97706 45%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, #d97706 14%, transparent);
+  color: #fbbf24;
+  font: inherit;
+  cursor: pointer;
+}
+
+.project-channel-badge--needs-details:hover:not(:disabled) {
+  background: color-mix(in srgb, #d97706 22%, transparent);
+}
+
+.project-channel-badge--needs-details:disabled {
+  opacity: 0.6;
+  cursor: default;
 }
 
 .project-channel-badge--active:hover {
@@ -434,6 +483,21 @@
 .project-channel-badge__icon--muted {
   color: color-mix(in srgb, var(--foreground) 40%, transparent);
   opacity: 0.7;
+}
+
+.project-channel-badge__icon--amber {
+  color: #fbbf24;
+}
+
+.project-channel-badge__icon--spin {
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
+  animation: project-channel-icon-spin 0.9s linear infinite;
+}
+
+@keyframes project-channel-icon-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .project-channel-badge__mark {

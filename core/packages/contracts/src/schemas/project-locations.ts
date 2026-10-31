@@ -146,6 +146,32 @@ export const nullableProjectChannelSchema = projectChannelSchema.nullable();
 /** @deprecated Prefer {@link nullableProjectChannelSchema}. */
 export const nullableProjectChannelUriSchema = nullableProjectChannelSchema;
 
+/**
+ * Self-service Channel connect lifecycle (Locations badge).
+ * - `inactive` — no room; owner can Connect
+ * - `connecting` — owner clicked Connect; webhook fired; waiting on agent
+ * - `needs_details` — agent posted a chat deep link for the owner to finish
+ * - `active` — Channel uri set; room openable
+ */
+export const PROJECT_CHANNEL_STATUSES = [
+  "inactive",
+  "connecting",
+  "needs_details",
+  "active",
+] as const;
+export const projectChannelStatusSchema = z.enum(PROJECT_CHANNEL_STATUSES);
+export type ProjectChannelStatus = z.infer<typeof projectChannelStatusSchema>;
+
+/**
+ * Chat deep link stored while `needs_details`.
+ * Accepts `backsteros://chat/<threadId>?message=<msgId>` or `/chat/<threadId>?message=<msgId>`.
+ */
+export const projectChannelPendingLinkSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(2048);
+
 export function normalizeProjectChannel(
   value: ProjectChannel | string | null | undefined,
 ): ProjectChannel | null {

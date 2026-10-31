@@ -12,6 +12,7 @@ export {
   updateProject,
   deleteProject,
   getProjectKeyMap,
+  beginProjectChannelConnect,
 } from "./tasks-projects/projects.js";
 export type {
   ProjectWriteOptions,

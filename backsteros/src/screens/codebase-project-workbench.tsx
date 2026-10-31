@@ -151,6 +151,15 @@ function toApiProject(project: CodebaseWorkbenchProject): ApiProject {
     production:
       (project as { production?: ApiProject["production"] }).production ?? null,
     channel: (project as { channel?: ApiProject["channel"] }).channel ?? null,
+    channelStatus:
+      (project as { channelStatus?: ApiProject["channelStatus"] })
+        .channelStatus ?? "inactive",
+    channelPendingLink:
+      (project as { channelPendingLink?: string | null }).channelPendingLink ??
+      null,
+    channelRequestedAt:
+      (project as { channelRequestedAt?: string | null }).channelRequestedAt ??
+      null,
     localLocation: project.localLocation ?? null,
     developmentSetupStatus: project.developmentSetupStatus ?? null,
     developmentSetupError: project.developmentSetupError ?? null,
@@ -1030,6 +1039,13 @@ export function CodebaseProjectWorkbench({
             requestJson={requestJson}
             fs={resolvedFs}
             copyIdShortcutEnabled={keepAliveActive}
+            onOpenChatDeepLink={(href) => {
+              void import("../lib/shell-chat-deep-link").then(
+                ({ openShellChatDeepLink }) => {
+                  openShellChatDeepLink(href);
+                },
+              );
+            }}
             belowDescription={
               <CodebaseProjectActivityPanel
                 projectId={project.id}

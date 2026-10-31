@@ -10,6 +10,7 @@ import {
   forbidden,
   getAuth,
   ignoredLegacyListKeys,
+  isAgentPersonaAuth,
   isRestLeaderFirstWrite,
   listQueryErrorBody,
   newId,
@@ -28,6 +29,10 @@ import {
   zValidator,
 } from "../route-deps.js";
 import type { Hono } from "../route-deps.js";
+import {
+  CHANNEL_CONNECT_WEBHOOK_EVENT,
+  postChannelConnectWebhook,
+} from "../../lib/channel-connect-webhook.js";
 
 /** Projects CRUD, vault and relations. */
 export function registerProjectCoreRoutes(app: Hono) {
@@ -363,10 +368,95 @@ export function registerProjectCoreRoutes(app: Hono) {
             400,
           );
         }
+        if (
+          error instanceof Error &&
+          error.message === "CHANNEL_CONNECT_VIA_ENDPOINT"
+        ) {
+          return c.json(
+            {
+              error:
+                "Use POST /api/v1/projects/:id/channel/connect to start Channel Connect (owner only)",
+              code: "channel_connect_via_endpoint",
+            },
+            400,
+          );
+        }
+        if (
+          error instanceof Error &&
+          error.message === "CHANNEL_PENDING_LINK_REQUIRED"
+        ) {
+          return c.json(
+            {
+              error:
+                "channelPendingLink is required when channelStatus is needs_details",
+              code: "channel_pending_link_required",
+            },
+            400,
+          );
+        }
         throw error;
       }
     },
   );
+
+  /**
+   * Owner-only Channel Connect: set status=connecting and POST the outbound
+   * webhook for Niels's Grok Bot routine. Agents cannot call this.
+   */
+  app.post("/api/v1/projects/:id/channel/connect", async (c) => {
+    const auth = getAuth(c);
+    if (!requireScope("projects:write")(auth)) {
+      return c.json(auth ? forbidden() : unauthorized(), auth ? 403 : 401);
+    }
+    if (isAgentPersonaAuth(auth)) {
+      return c.json(
+        {
+          error: "Only the owner can start Channel Connect",
+          code: "channel_connect_owner_only",
+        },
+        403,
+      );
+    }
+
+    const projectIdRaw = c.req.param("id");
+    const projectId = await routeProjectId(auth.workspaceId, projectIdRaw);
+    if (!projectId) return c.json(notFound("Project"), 404);
+
+    const row = await taskProjectService.beginProjectChannelConnect(
+      auth.workspaceId,
+      projectId,
+    );
+    if (!row) return c.json(notFound("Project"), 404);
+
+    const requestedAt =
+      row.channelRequestedAt?.toISOString() ?? new Date().toISOString();
+    const webhook = await postChannelConnectWebhook({
+      workspaceId: auth.workspaceId,
+      payload: {
+        event: CHANNEL_CONNECT_WEBHOOK_EVENT,
+        projectId: row.id,
+        projectKey: row.key,
+        projectName: row.name,
+        type: row.type,
+        requestedAt,
+      },
+    });
+
+    await recordProjectRestSyncEvent(auth.workspaceId, row, "upsert");
+    publishProjectLive(auth, row.id, "upsert");
+
+    const body = toProject(row);
+    if (!webhook.ok) {
+      return c.json(
+        {
+          ...body,
+          channelConnectWarning: webhook.error,
+        },
+        200,
+      );
+    }
+    return c.json(body);
+  });
 
   app.delete("/api/v1/projects/:id", async (c) => {
     const auth = getAuth(c);

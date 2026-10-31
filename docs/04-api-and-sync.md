@@ -113,11 +113,88 @@ available on any project type:
 | `development` | `{ kind: "local" \| "server", path, host? }` or `null` — Local is folded into `kind: "local"` |
 | `production` | `{ server?, url?, deployMethod?, branch?, path? }` or `null` (at least one field when set) |
 | `channel` | `{ uri, name? }` or `null` — uri e.g. `grokbot://app/v1/agent?id=<uuid>` (Grok Bot); `slack:<channel id>` reserved; other schemes allowed; `name` is optional display label |
+| `channelStatus` | `inactive` \| `connecting` \| `needs_details` \| `active` |
+| `channelPendingLink` | Chat deep link while `needs_details` (`backsteros://chat/<threadId>?message=<msgId>` or `/chat/<threadId>?message=<msgId>`), else `null` |
+| `channelRequestedAt` | ISO datetime when Connect was requested, else `null` |
 
 Compat mirrors (still written): `localWorkingDirectory` (Development path when
 `kind=local`), `developmentLocation` / `productionLocation` (path mirrors for
 OS-106 execution resolution). Prefer structured `development` / `production` on
 write. See [03-data-model.md](03-data-model.md).
+
+#### Channel Connect (self-service)
+
+Locations → Channel badge drives a connect flow. Owner clicks **Connect**;
+agents finish the room.
+
+**States**
+
+| Status | Badge | Who moves here |
+| --- | --- | --- |
+| `inactive` | muted **Connect** | default; owner disconnect; Connect timeout (~10 min) |
+| `connecting` | spinner **Connecting…** | owner only via `POST /api/v1/projects/:id/channel/connect` |
+| `needs_details` | amber **Needs details** (opens `channelPendingLink`) | agent `PATCH` with `channelStatus` + `channelPendingLink` |
+| `active` | green pulse **Active** (opens `channel.uri`) | agent `PATCH` with `channel` uri (status becomes `active`) |
+
+Agents may `PATCH` `channelStatus` to `needs_details`, `active`, or `inactive`
+(and set `channel` / `channelPendingLink` accordingly). Agents **cannot** set
+`connecting` and **cannot** call the Connect endpoint (`403`).
+
+**Owner Connect endpoint**
+
+```http
+POST /api/v1/projects/:id/channel/connect
+```
+
+Requires `projects:write` and a non-agent (owner / Access) key. Sets
+`channelStatus=connecting`, stamps `channelRequestedAt`, clears
+`channelPendingLink`, then POSTs the outbound webhook.
+
+**Webhook payload** (`event: project.channel.connect`)
+
+```json
+{
+  "event": "project.channel.connect",
+  "projectId": "<uuid>",
+  "projectKey": "OS",
+  "projectName": "BacksterOS",
+  "type": "codebase",
+  "requestedAt": "2026-10-31T12:00:00.000Z"
+}
+```
+
+Headers: `Content-Type: application/json`,
+`x-backsteros-webhook-secret: <secret>`.
+
+**Settings / env (never hard-code, never log the secret)**
+
+| Source | Keys |
+| --- | --- |
+| Env (overrides settings) | `CHANNEL_CONNECT_WEBHOOK_URL`, `CHANNEL_CONNECT_WEBHOOK_SECRET` |
+| Workspace secrets | `workspace_integration_secrets.channel_connect_webhook_url`, `channel_connect_webhook_secret` |
+
+If the webhook is missing, Connect still sets `connecting` and returns the
+project with `channelConnectWarning` (desktop shows the warning).
+
+**Chat deep links**
+
+- Custom scheme: `backsteros://chat/<threadId>?message=<msgId>`
+- In-app route: `/chat/<threadId>?message=<msgId>`
+
+Both open the desktop chat panel on that thread (works when the panel is
+closed or another thread is open) and scroll + highlight the message. Reusable
+from notifications and Channel `needs_details`.
+
+**Agent routine sketch (Niels / Grok Bot)**
+
+1. Receive `project.channel.connect` webhook.
+2. Ask the owner for room details in shell chat; store a deep link on the
+   project: `PATCH /api/v1/projects/:id` with
+   `{ "channelStatus": "needs_details", "channelPendingLink": "backsteros://chat/<threadId>?message=<msgId>" }`.
+3. When the room exists: `PATCH` with
+   `{ "channel": { "uri": "grokbot://app/v1/agent?id=<uuid>", "name": "…" }, "channelStatus": "active" }`
+   (setting `channel` alone also flips status to `active`).
+4. To abort: `PATCH` `{ "channelStatus": "inactive", "channel": null }`.
 
 #### `GET /search` (agents)
 

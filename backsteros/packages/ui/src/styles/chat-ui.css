@@ -415,6 +415,35 @@
   cursor: pointer;
 }
 
+.chat-ui-message.is-deep-link-target {
+  border-radius: 10px;
+  box-shadow: inset 0 0 0 1px
+    color-mix(in srgb, var(--keyboard-nav-highlight-color, #ee7a47) 70%, transparent);
+  background: color-mix(
+    in srgb,
+    var(--keyboard-nav-highlight-color, #ee7a47) 12%,
+    transparent
+  );
+  animation: chat-ui-deep-link-flash 1.6s ease-out 1;
+}
+
+@keyframes chat-ui-deep-link-flash {
+  0% {
+    background: color-mix(
+      in srgb,
+      var(--keyboard-nav-highlight-color, #ee7a47) 28%,
+      transparent
+    );
+  }
+  100% {
+    background: color-mix(
+      in srgb,
+      var(--keyboard-nav-highlight-color, #ee7a47) 12%,
+      transparent
+    );
+  }
+}
+
 .chat-ui-message__select {
   flex-shrink: 0;
   padding-top: 6px;

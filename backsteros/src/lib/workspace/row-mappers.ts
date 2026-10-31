@@ -406,6 +406,32 @@ export function mapProject(project: ApiProject): ProjectOverviewRowProject & {
       }
       return null;
     })(),
+    channelStatus: (() => {
+      const raw = (project as { channelStatus?: unknown; channel_status?: unknown })
+        .channelStatus ??
+        (project as { channel_status?: unknown }).channel_status;
+      if (
+        raw === "inactive" ||
+        raw === "connecting" ||
+        raw === "needs_details" ||
+        raw === "active"
+      ) {
+        return raw;
+      }
+      return "inactive";
+    })(),
+    channelPendingLink: (() => {
+      const raw =
+        (project as { channelPendingLink?: unknown }).channelPendingLink ??
+        (project as { channel_pending_link?: unknown }).channel_pending_link;
+      return typeof raw === "string" && raw.trim() ? raw.trim() : null;
+    })(),
+    channelRequestedAt: (() => {
+      const raw =
+        (project as { channelRequestedAt?: unknown }).channelRequestedAt ??
+        (project as { channel_requested_at?: unknown }).channel_requested_at;
+      return typeof raw === "string" && raw.trim() ? raw.trim() : null;
+    })(),
     localLocation: project.localLocation ?? null,
     developmentSetupStatus: project.developmentSetupStatus ?? null,
     developmentSetupError: project.developmentSetupError ?? null,

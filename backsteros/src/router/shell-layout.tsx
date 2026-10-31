@@ -594,3 +594,5 @@ export {
   TaskDetailPage,
   TaskListPage,
 };
+
+export { ChatDeepLinkPage } from "../screens/chat-deep-link-page";

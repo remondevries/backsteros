@@ -630,6 +630,38 @@ export function fillMissingCodebaseFieldsFromApi<
     if (channelMissing(row.channel) && !channelMissing(api.channel)) {
       next = { ...next, channel: api.channel as T["channel"] };
     }
+    const rowStatus = (row as { channelStatus?: string | null }).channelStatus;
+    const apiStatus = (api as { channelStatus?: string | null }).channelStatus;
+    if (
+      (rowStatus == null || rowStatus === "" || rowStatus === "inactive") &&
+      apiStatus &&
+      apiStatus !== "inactive"
+    ) {
+      next = {
+        ...next,
+        channelStatus: apiStatus,
+      } as T;
+    }
+    const rowLink = (row as { channelPendingLink?: string | null })
+      .channelPendingLink;
+    const apiLink = (api as { channelPendingLink?: string | null })
+      .channelPendingLink;
+    if (textMissing(rowLink) && !textMissing(apiLink)) {
+      next = {
+        ...next,
+        channelPendingLink: apiLink,
+      } as T;
+    }
+    const rowRequested = (row as { channelRequestedAt?: string | null })
+      .channelRequestedAt;
+    const apiRequested = (api as { channelRequestedAt?: string | null })
+      .channelRequestedAt;
+    if (textMissing(rowRequested) && !textMissing(apiRequested)) {
+      next = {
+        ...next,
+        channelRequestedAt: apiRequested,
+      } as T;
+    }
     if (
       (row.development == null || row.development === "") &&
       api.development != null &&

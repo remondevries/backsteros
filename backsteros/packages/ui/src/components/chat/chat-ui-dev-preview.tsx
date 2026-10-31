@@ -57,6 +57,10 @@ export const AGENT_SHELL_CHAT_STATUS_WINDOW_EVENT =
 export const AGENT_SHELL_CHAT_MESSAGE_WINDOW_EVENT =
   "backsteros:agent-shell-chat-message";
 
+/** Open a specific chat thread (+ optional message highlight). */
+export const SHELL_CHAT_OPEN_THREAD_WINDOW_EVENT =
+  "backsteros:shell-chat-open-thread";
+
 export type LiveAgentChatHandlers = {
   /** contactId → agent id for peers that have an agents record. */
   agentIdByContactId: ReadonlyMap<string, string>;
@@ -293,6 +297,15 @@ export function ChatUiDevPreview({
   const [recentProjectIds, setRecentProjectIds] = useState<string[]>(() =>
     readRecentChatProjectIds(),
   );
+  const [highlightMessageId, setHighlightMessageId] = useState<string | null>(
+    null,
+  );
+  const [deepLinkNonce, setDeepLinkNonce] = useState(0);
+  const pendingDeepLinkRef = useRef<{
+    threadId: string;
+    messageId: string | null;
+    agentId?: string;
+  } | null>(null);
   const [threads, setThreads] = useState<Record<string, ChatUiMessage[]>>(
     () => {
       if (!defaultPeer) return {};
@@ -318,6 +331,51 @@ export function ChatUiDevPreview({
       window.removeEventListener("backsteros:shell-chat-open-peer", onOpenPeer);
     };
   }, [resolvedPeers]);
+
+  // Deep link: open a specific thread and highlight a message.
+  useEffect(() => {
+    const onOpenThread = (event: Event) => {
+      const detail = (
+        event as CustomEvent<{ threadId?: string; messageId?: string | null }>
+      ).detail;
+      const threadId = detail?.threadId?.trim();
+      if (!threadId || !liveAgentChat) return;
+      const messageId = detail?.messageId?.trim() || null;
+      void (async () => {
+        try {
+          const thread = await liveAgentChat.getThread(threadId);
+          let contactId: string | null = null;
+          for (const [peerId, agentId] of liveAgentChat.agentIdByContactId) {
+            if (agentId === thread.agentId) {
+              contactId = peerId;
+              break;
+            }
+          }
+          if (!contactId || !resolvedPeers.some((peer) => peer.id === contactId)) {
+            return;
+          }
+          pendingDeepLinkRef.current = {
+            threadId,
+            messageId,
+            agentId: thread.agentId,
+          };
+          setProjectId(null);
+          setActivePeerId(contactId);
+          setDeepLinkNonce((n) => n + 1);
+          if (messageId) setHighlightMessageId(messageId);
+        } catch {
+          /* ignore missing threads */
+        }
+      })();
+    };
+    window.addEventListener(SHELL_CHAT_OPEN_THREAD_WINDOW_EVENT, onOpenThread);
+    return () => {
+      window.removeEventListener(
+        SHELL_CHAT_OPEN_THREAD_WINDOW_EVENT,
+        onOpenThread,
+      );
+    };
+  }, [liveAgentChat, resolvedPeers]);
 
   // When desktop finishes loading agent contacts, merge peers without wiping
   // threads the user already typed into.
@@ -466,15 +524,41 @@ export function ChatUiDevPreview({
     const chat = liveAgentChatRef.current;
     if (!liveAgentId || !chat) return;
     const agentName = threadAgentNameRef.current;
+    const pending = pendingDeepLinkRef.current;
+    const preferThreadId =
+      pending &&
+      (!pending.agentId || pending.agentId === liveAgentId) &&
+      pending.threadId
+        ? pending.threadId
+        : null;
+    if (preferThreadId) {
+      pendingDeepLinkRef.current = null;
+    }
     void (async () => {
       try {
-        const thread = await chat.openThread(liveAgentId);
+        const thread = preferThreadId
+          ? await chat.getThread(preferThreadId)
+          : await chat.openThread(liveAgentId);
+        if (preferThreadId && thread.agentId !== liveAgentId) {
+          // Wrong agent for this peer — fall back to default DM.
+          const fallback = await chat.openThread(liveAgentId);
+          dispatchLive({
+            type: "opened",
+            agentId: liveAgentId,
+            thread: fallback,
+            nowMs: Date.now(),
+          });
+          return;
+        }
         dispatchLive({
           type: "opened",
           agentId: liveAgentId,
           thread,
           nowMs: Date.now(),
         });
+        if (pending?.messageId) {
+          setHighlightMessageId(pending.messageId);
+        }
       } catch {
         dispatchLive({
           type: "openFailed",
@@ -483,7 +567,7 @@ export function ChatUiDevPreview({
         });
       }
     })();
-  }, [liveAgentId]);
+  }, [deepLinkNonce, liveAgentId]);
 
   // Expire provisional / working timers without dropping real messages.
   useEffect(() => {
@@ -1210,6 +1294,8 @@ export function ChatUiDevPreview({
           }
           emailDraftCompose={emailDraftCompose}
           emptyState={null}
+          highlightMessageId={highlightMessageId}
+          onHighlightMessageHandled={() => setHighlightMessageId(null)}
           placeholder="Message…"
         />
         </ChatAttachmentActionsProvider>

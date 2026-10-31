@@ -133,6 +133,13 @@ export const workspaceIntegrationSecrets = pgTable(
     autoReviewWebhookEnabled: boolean("auto_review_webhook_enabled")
       .notNull()
       .default(false),
+    /**
+     * Outbound Channel Connect webhook (Niels Grok Bot routine).
+     * Prefer settings columns; CHANNEL_CONNECT_WEBHOOK_URL / _SECRET env override.
+     * Never log the secret.
+     */
+    channelConnectWebhookUrl: text("channel_connect_webhook_url"),
+    channelConnectWebhookSecret: text("channel_connect_webhook_secret"),
     mapboxAccessToken: text("mapbox_access_token"),
     /** Brandfetch Brand API key — persist org logos for CardDAV / API. */
     brandfetchApiKey: text("brandfetch_api_key"),
@@ -882,6 +889,16 @@ export const projects = pgTable(
       uri: string;
       name?: string | null;
     } | null>(),
+    /**
+     * Self-service Channel connect: inactive | connecting | needs_details | active.
+     */
+    channelStatus: text("channel_status").notNull().default("inactive"),
+    /** Chat deep link while needs_details (`backsteros://chat/…` or `/chat/…`). */
+    channelPendingLink: text("channel_pending_link"),
+    /** When Connect was requested (connecting / needs_details). */
+    channelRequestedAt: timestamp("channel_requested_at", {
+      withTimezone: true,
+    }),
     /** @deprecated Folded into local_working_directory; kept for sync compat. */
     localLocation: text("local_location"),
     /** Legacy: `pending` | `ready` | `failed` — core no longer auto-clones. */

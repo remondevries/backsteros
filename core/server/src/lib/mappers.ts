@@ -95,6 +95,14 @@ export function toProject(row: DbProject): Project {
     development: row.development ?? null,
     production: row.production ?? null,
     channel: row.channel ?? null,
+    channelStatus:
+      row.channelStatus === "connecting" ||
+      row.channelStatus === "needs_details" ||
+      row.channelStatus === "active"
+        ? row.channelStatus
+        : "inactive",
+    channelPendingLink: row.channelPendingLink ?? null,
+    channelRequestedAt: toIso(row.channelRequestedAt),
     localLocation: row.localLocation ?? null,
     developmentSetupStatus:
       row.developmentSetupStatus === "pending" ||
