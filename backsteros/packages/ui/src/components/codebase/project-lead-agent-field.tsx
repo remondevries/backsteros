@@ -30,7 +30,7 @@ export type ProjectLeadAgentFieldProps = {
 };
 
 /**
- * Locations → Lead agent. Avatar chip + picker of agent contacts.
+ * Agents → Lead agent. Avatar chip + picker of agent contacts.
  * Default none.
  */
 export function ProjectLeadAgentField({

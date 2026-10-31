@@ -123,6 +123,11 @@ export type ProjectPanelDetailViewProps = {
    * Rendered inside the Locations subgroup.
    */
   propertiesExtra?: ReactNode;
+  /**
+   * Lead agent + Channel controls. Rendered in an Agents subgroup
+   * after Financials (or after Locations when billing is hidden).
+   */
+  agentsExtra?: ReactNode;
   /** Rendered inside the Activities subgroup. */
   belowDescription?: ReactNode;
   /**
@@ -171,6 +176,7 @@ export function ProjectPanelDetailView({
   initialSection = "overview",
   renderSection,
   propertiesExtra,
+  agentsExtra,
   belowDescription,
   repositoriesSection,
   copyIdShortcutEnabled = true,
@@ -567,6 +573,7 @@ export function ProjectPanelDetailView({
 
   const showBilling = projectAreaShowsBilling(project.area);
   const showLocations = Boolean(propertiesExtra);
+  const showAgents = Boolean(agentsExtra);
 
   return (
     <div
@@ -678,6 +685,12 @@ export function ProjectPanelDetailView({
                     onSave={(next) => onBudgetsChange?.(next)}
                   />
                 </EntityOverviewField>
+              </EntityOverviewSubgroup>
+            ) : null}
+
+            {showAgents ? (
+              <EntityOverviewSubgroup title="Agents" collapsible={false}>
+                {agentsExtra}
               </EntityOverviewSubgroup>
             ) : null}
 

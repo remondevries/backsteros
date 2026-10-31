@@ -2709,63 +2709,64 @@ function ProjectDetailScreen({
     </PropertyFieldGroup>
   );
 
-  // Channel is available on every project type; GitHub / Dev / Prod stay codebase-only.
-  const locationsExtra = (
+  // GitHub / Dev / Prod stay codebase-only; Channel + Lead agent are every type.
+  const locationsExtra = isCodebaseProject ? (
     <EntityPropertiesSection title="Locations">
-      {isCodebaseProject ? (
-        <>
-          <PropertyFieldGroup label="GitHub">
-            <PropertyInlineChip
-              label={project.githubRepository?.trim() || "No repository"}
-            />
-          </PropertyFieldGroup>
-          <PropertyFieldGroup label="Development">
-            <PropertyInlineChip
-              label={(() => {
-                const development = (
-                  project as {
-                    development?: {
-                      kind?: string;
-                      path?: string;
-                    } | null;
-                  }
-                ).development;
-                const path =
-                  development?.path?.trim() ||
-                  project.localWorkingDirectory?.trim() ||
-                  project.developmentLocation?.trim() ||
-                  "";
-                if (!path) return "No folder";
-                const leaf =
-                  path.split(/[/\\]/).filter(Boolean).at(-1) ?? path;
-                return development?.kind === "server"
-                  ? `Server: ${leaf}`
-                  : leaf;
-              })()}
-            />
-          </PropertyFieldGroup>
-          <PropertyFieldGroup label="Production">
-            <PropertyInlineChip
-              label={(() => {
-                const production = (
-                  project as {
-                    production?: { path?: string | null } | null;
-                  }
-                ).production;
-                const path =
-                  production?.path?.trim() ||
-                  project.productionLocation?.trim() ||
-                  "";
-                if (!path) return "No folder";
-                return path.split(/[/\\]/).filter(Boolean).at(-1) ?? path;
-              })()}
-            />
-          </PropertyFieldGroup>
-        </>
-      ) : null}
+      <PropertyFieldGroup label="GitHub">
+        <PropertyInlineChip
+          label={project.githubRepository?.trim() || "No repository"}
+        />
+      </PropertyFieldGroup>
+      <PropertyFieldGroup label="Development">
+        <PropertyInlineChip
+          label={(() => {
+            const development = (
+              project as {
+                development?: {
+                  kind?: string;
+                  path?: string;
+                } | null;
+              }
+            ).development;
+            const path =
+              development?.path?.trim() ||
+              project.localWorkingDirectory?.trim() ||
+              project.developmentLocation?.trim() ||
+              "";
+            if (!path) return "No folder";
+            const leaf =
+              path.split(/[/\\]/).filter(Boolean).at(-1) ?? path;
+            return development?.kind === "server"
+              ? `Server: ${leaf}`
+              : leaf;
+          })()}
+        />
+      </PropertyFieldGroup>
+      <PropertyFieldGroup label="Production">
+        <PropertyInlineChip
+          label={(() => {
+            const production = (
+              project as {
+                production?: { path?: string | null } | null;
+              }
+            ).production;
+            const path =
+              production?.path?.trim() ||
+              project.productionLocation?.trim() ||
+              "";
+            if (!path) return "No folder";
+            return path.split(/[/\\]/).filter(Boolean).at(-1) ?? path;
+          })()}
+        />
+      </PropertyFieldGroup>
+    </EntityPropertiesSection>
+  ) : null;
+
+  const agentsExtra = (
+    <div className="project-properties-field-row">
       {leadAgentField}
       {channelField}
-    </EntityPropertiesSection>
+    </div>
   );
 
   const domainBelowProperties = isDomainProject ? (
@@ -2883,6 +2884,7 @@ function ProjectDetailScreen({
         latestUpdate={latestUpdate}
         onOpenUpdates={() => handleSectionChange("updates")}
         propertiesExtra={locationsExtra}
+        agentsExtra={agentsExtra}
         belowProperties={domainBelowProperties}
         descriptionEmptyHint={
           isCodebaseProject

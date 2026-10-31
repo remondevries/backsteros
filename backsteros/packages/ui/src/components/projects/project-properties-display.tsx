@@ -103,6 +103,10 @@ export type ProjectPropertiesDisplayProps = {
    * the shared Properties / Areas / Financials stack.
    */
   propertiesExtra?: ReactNode;
+  /**
+   * Lead agent + Channel. Rendered as an Agents section after Financials.
+   */
+  agentsExtra?: ReactNode;
   /** Recent activity / registrar extras below Progress. */
   belowProperties?: ReactNode;
   /** When false, hide the Progress card (host shows progress elsewhere). */
@@ -132,6 +136,7 @@ export function ProjectPropertiesDisplay({
   organizationNavigateHref = null,
   onCreateOrganizationFromQuery,
   propertiesExtra = null,
+  agentsExtra = null,
   belowProperties = null,
   showProgress = true,
 }: ProjectPropertiesDisplayProps) {
@@ -528,6 +533,12 @@ export function ProjectPropertiesDisplay({
                 onSave={(next) => onBudgetsChange?.(next)}
               />
             </PropertyFieldGroup>
+          </EntityPropertiesSection>
+        ) : null}
+
+        {agentsExtra ? (
+          <EntityPropertiesSection title="Agents">
+            {agentsExtra}
           </EntityPropertiesSection>
         ) : null}
 

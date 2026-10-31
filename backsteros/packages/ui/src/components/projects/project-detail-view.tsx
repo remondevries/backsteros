@@ -144,6 +144,8 @@ export type ProjectDetailViewProps = {
   overviewDescription?: ReactNode;
   /** Type-specific property rows in the right rail (Locations, Registration…). */
   propertiesExtra?: ReactNode;
+  /** Lead agent + Channel — Agents section under Financials. */
+  agentsExtra?: ReactNode;
   /** Sections below Progress (Activity, domain registrar, …). */
   belowProperties?: ReactNode;
   /** Empty-state copy for the default description editor. */
@@ -188,6 +190,7 @@ export function ProjectDetailView({
   onOpenUpdates,
   overviewDescription,
   propertiesExtra = null,
+  agentsExtra = null,
   belowProperties = null,
   descriptionEmptyHint = "Add a project description…",
 }: ProjectDetailViewProps) {
@@ -499,6 +502,7 @@ export function ProjectDetailView({
                 organizationNavigateHref={organizationNavigateHref}
                 onCreateOrganizationFromQuery={onCreateOrganizationFromQuery}
                 propertiesExtra={propertiesExtra}
+                agentsExtra={agentsExtra}
                 belowProperties={belowProperties}
               />
             }

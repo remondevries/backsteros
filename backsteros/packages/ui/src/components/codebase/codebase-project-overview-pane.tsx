@@ -2127,7 +2127,11 @@ export function CodebaseProjectOverviewPane({
                         />
                       </EntityOverviewField>
                     </div>
-                    <EntityOverviewField label="Lead agent">
+                  </>
+                }
+                agentsExtra={
+                  <div className="entity-overview-field-pair">
+                    <EntityOverviewField label="Lead agent" layout="stacked">
                       <ProjectLeadAgentField
                         project={project}
                         onProjectUpdated={onProjectUpdated}
@@ -2136,7 +2140,7 @@ export function CodebaseProjectOverviewPane({
                         avatarSrcById={avatarSrcById}
                       />
                     </EntityOverviewField>
-                    <EntityOverviewField label="Channel">
+                    <EntityOverviewField label="Channel" layout="stacked">
                       <ProjectChannelField
                         project={project}
                         onProjectUpdated={onProjectUpdated}
@@ -2144,7 +2148,7 @@ export function CodebaseProjectOverviewPane({
                         onOpenChatDeepLink={onOpenChatDeepLink}
                       />
                     </EntityOverviewField>
-                  </>
+                  </div>
                 }
                 onHealthCheckChange={(next) => {
                   void patchProject(next);
