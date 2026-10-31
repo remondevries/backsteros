@@ -1466,6 +1466,64 @@
   color: color-mix(in oklab, var(--foreground, #fff) 45%, transparent);
 }
 
+.chat-ui-composer__slash-option.is-muted {
+  cursor: default;
+  opacity: 0.72;
+}
+
+.chat-ui-composer__slash-option.is-muted .chat-ui-composer__slash-option-name {
+  font-weight: 500;
+  color: color-mix(in oklab, var(--foreground, #fff) 70%, transparent);
+}
+
+.chat-ui-composer__slash-option-status {
+  flex: none;
+  font-size: 0.75rem;
+  color: color-mix(in oklab, var(--foreground, #fff) 48%, transparent);
+}
+
+.chat-ui-composer__slash-option-action {
+  flex: none;
+  margin: 0;
+  padding: 3px 9px;
+  border: 1px solid color-mix(in oklab, var(--foreground, #fff) 16%, transparent);
+  border-radius: 8px;
+  background: color-mix(in oklab, var(--foreground, #fff) 6%, transparent);
+  color: inherit;
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.chat-ui-composer__slash-option-action:hover:not(:disabled) {
+  background: color-mix(in oklab, var(--foreground, #fff) 12%, transparent);
+}
+
+.chat-ui-composer__slash-option-action:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.chat-ui-composer__slash-option-action--create {
+  border-color: color-mix(in oklab, #f97316 45%, transparent);
+  background: color-mix(in oklab, #f97316 18%, transparent);
+}
+
+.chat-ui-composer__slash-option-connect-form {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  max-width: min(100%, 280px);
+}
+
+.chat-ui-composer__slash-option-connect-form .property-dropdown,
+.chat-ui-composer__slash-option-connect-form .property-dropdown-fallback {
+  min-width: 0;
+  max-width: 160px;
+}
+
 .chat-ui-composer__input {
   flex: 1;
   min-height: 36px;

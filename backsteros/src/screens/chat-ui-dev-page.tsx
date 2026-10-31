@@ -20,7 +20,7 @@ export function ChatUiDevPage() {
 function ChatUiDevPageInner() {
   const navigate = useNavigate();
   const peers = useShellChatPeers();
-  const projects = useShellChatProjects();
+  const { projects } = useShellChatProjects();
   const onNavigate = useCallback(
     (href: string) => {
       navigateToHref(navigate, href);

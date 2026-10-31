@@ -1,3 +1,5 @@
+import type { ProjectChannelStatus } from "@backsteros/contracts";
+
 /** Project option for the chat `/` menu and active project room badge. */
 export type ChatProjectOption = {
   id: string;
@@ -5,7 +7,24 @@ export type ChatProjectOption = {
   name: string;
   icon?: string | null;
   type?: string | null;
+  /** Channel connect status (slash picker gates navigation on active + uri). */
+  channelStatus?: ProjectChannelStatus | null;
+  /** Active chat room URI when connected. */
+  channelUri?: string | null;
+  /** Needs-details deep link (`backsteros://chat/…?message=…`). */
+  channelPendingLink?: string | null;
 };
+
+/**
+ * True when the `/` picker may enter this project’s chat room (active + uri).
+ * Everything else stays in the list as a muted Connect / status row.
+ */
+export function isChatProjectRoomReady(
+  project: ChatProjectOption,
+): boolean {
+  const uri = project.channelUri?.trim() ?? "";
+  return project.channelStatus === "active" && uri.length > 0;
+}
 
 export const CHAT_RECENT_PROJECTS_STORAGE_KEY =
   "backsteros:chat-recent-projects";

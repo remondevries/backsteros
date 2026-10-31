@@ -13,6 +13,7 @@ import { XaiMarkIcon } from "../icons/xai-mark-icon.js";
 import { ProjectOcticon } from "../projects/project-octicon.js";
 import { apiErrorMessage } from "./api-error-message.js";
 import type { CodebaseRequestJson } from "./codebase-request-json.js";
+import { startProjectChannelConnect } from "./project-channel-connect.js";
 
 /** Connecting times out to Inactive after 10 minutes with a retry. */
 export const CHANNEL_CONNECT_TIMEOUT_MS = 10 * 60 * 1000;
@@ -161,11 +162,7 @@ export function ProjectChannelField({
         channelRequestedAt: requestedAt,
         updatedAt: requestedAt,
       });
-      const updated = await requestJson<
-        ProjectChannelFieldProject & { channelConnectWarning?: string }
-      >(`/api/v1/projects/${encodeURIComponent(project.id)}/channel/connect`, {
-        method: "POST",
-      });
+      const updated = await startProjectChannelConnect(requestJson, project.id);
       onProjectUpdated({
         ...project,
         ...updated,

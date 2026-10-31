@@ -2139,7 +2139,13 @@ export function CodebaseProjectOverviewPane({
                     <EntityOverviewField label="Lead agent" layout="stacked">
                       <ProjectLeadAgentField
                         project={project}
-                        onProjectUpdated={onProjectUpdated}
+                        onProjectUpdated={(updated) => {
+                          onProjectUpdated({
+                            ...project,
+                            leadAgentContactId:
+                              updated.leadAgentContactId ?? null,
+                          });
+                        }}
                         requestJson={requestJson}
                         agentContacts={agentContacts ?? []}
                         avatarSrcById={avatarSrcById}
@@ -2148,7 +2154,26 @@ export function CodebaseProjectOverviewPane({
                     <EntityOverviewField label="Channel" layout="stacked">
                       <ProjectChannelField
                         project={project}
-                        onProjectUpdated={onProjectUpdated}
+                        onProjectUpdated={(updated) => {
+                          const channel =
+                            updated.channel == null
+                              ? null
+                              : typeof updated.channel === "string"
+                                ? null
+                                : updated.channel;
+                          onProjectUpdated({
+                            ...project,
+                            channel,
+                            channelStatus:
+                              (updated.channelStatus as
+                                | typeof project.channelStatus
+                                | undefined) ?? project.channelStatus,
+                            channelPendingLink:
+                              updated.channelPendingLink ?? null,
+                            channelRequestedAt:
+                              updated.channelRequestedAt ?? null,
+                          });
+                        }}
                         requestJson={requestJson}
                         onOpenChatDeepLink={onOpenChatDeepLink}
                       />

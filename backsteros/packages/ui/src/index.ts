@@ -5462,6 +5462,14 @@ export {
 } from "./components/codebase/project-channel-field.js";
 
 export {
+  assignLeadAndStartProjectChannelConnect,
+  startProjectChannelConnect,
+  type ProjectChannelConnectResult,
+} from "./components/codebase/project-channel-connect.js";
+
+export { buildLeadAgentDropdownOptions } from "./components/codebase/lead-agent-dropdown-options.js";
+
+export {
   ProjectLeadAgentField,
   type ProjectLeadAgentFieldProps,
   type ProjectLeadAgentFieldProject,
@@ -5579,6 +5587,7 @@ export {
 export {
   CHAT_RECENT_PROJECTS_STORAGE_KEY,
   CHAT_RECENT_PROJECTS_STRIP_LIMIT,
+  isChatProjectRoomReady,
   matchProjectsBySlashQuery,
   orderChatProjects,
   projectCommandSlug,
@@ -5588,6 +5597,8 @@ export {
   resolveRecentChatProjectsForStrip,
   type ChatProjectOption,
 } from "./chat/chat-project-option.js";
+
+export type { ChatSlashProjectConnectHandlers } from "./components/chat/chat-slash-project-connect.js";
 
 export {
   buildChatSlashMenu,

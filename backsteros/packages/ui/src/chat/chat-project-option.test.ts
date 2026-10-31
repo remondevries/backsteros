@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 
 import {
   filterRecentChatProjectIds,
+  isChatProjectRoomReady,
   matchProjectsBySlashQuery,
   orderChatProjects,
   projectCommandSlug,
@@ -21,6 +22,49 @@ describe("projectCommandSlug", () => {
     assert.equal(
       projectCommandSlug({ id: "1", key: "BSH", name: "BacksterOS" }),
       "bsh",
+    );
+  });
+});
+
+describe("isChatProjectRoomReady", () => {
+  it("requires active status and a channel uri", () => {
+    assert.equal(
+      isChatProjectRoomReady({
+        id: "1",
+        key: "BSH",
+        name: "BacksterOS",
+        channelStatus: "active",
+        channelUri: "https://x.com/i/grok?conversation=1",
+      }),
+      true,
+    );
+    assert.equal(
+      isChatProjectRoomReady({
+        id: "1",
+        key: "BSH",
+        name: "BacksterOS",
+        channelStatus: "active",
+        channelUri: null,
+      }),
+      false,
+    );
+    assert.equal(
+      isChatProjectRoomReady({
+        id: "1",
+        key: "BSH",
+        name: "BacksterOS",
+        channelStatus: "connecting",
+        channelUri: "https://x.com/i/grok?conversation=1",
+      }),
+      false,
+    );
+    assert.equal(
+      isChatProjectRoomReady({
+        id: "1",
+        key: "BSH",
+        name: "BacksterOS",
+      }),
+      false,
     );
   });
 });

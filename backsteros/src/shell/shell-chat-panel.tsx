@@ -2,11 +2,13 @@ import { useCallback, useMemo, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import type { ChatUiCardPart } from "@backsteros/contracts";
 import {
+  assignLeadAndStartProjectChannelConnect,
   ChatMentionResolveProvider,
   ChatUiDevPreview,
   getScopedProjectTaskHref,
   getTaskDisplayId,
   isTaskStatus,
+  type ChatSlashProjectConnectHandlers,
   type ChatThreadPeer,
   type LiveAgentChatHandlers,
 } from "@backsteros/ui";
@@ -23,6 +25,7 @@ import {
   useDesktopWorkspacePeople,
   useDesktopWorkspaceTasks,
 } from "../lib/workspace-data";
+import { openShellChatDeepLink } from "../lib/shell-chat-deep-link";
 import { navigateToHref } from "../router/navigate-href";
 import { useShellAgentChat } from "./use-shell-agent-chat";
 import { useShellChatProjects } from "./use-shell-chat-projects";
@@ -65,7 +68,7 @@ export function ShellChatPanel() {
   const { client } = useDesktopApi();
   const { contacts } = useDesktopWorkspacePeople();
   const { allTasks } = useDesktopWorkspaceTasks();
-  const projects = useShellChatProjects();
+  const { projects, applyChannelOverlay } = useShellChatProjects();
   const agentChat = useShellAgentChat();
   const agentMail = useAgentMail();
   const [pdfOverlay, setPdfOverlay] = useState<{
@@ -92,6 +95,28 @@ export function ShellChatPanel() {
     return ordered;
   }, [agentChat.webhookReadyAgents, contacts]);
 
+  // Same roster as project page Lead agent (any enabled local persona).
+  const leadAgentContacts = useMemo(() => {
+    const byId = new Map(contacts.map((contact) => [contact.id, contact]));
+    const ordered: typeof contacts = [];
+    const seen = new Set<string>();
+    for (const agent of agentChat.agents) {
+      const contactId = agent.contactId?.trim();
+      if (!contactId || seen.has(contactId)) continue;
+      seen.add(contactId);
+      const contact = byId.get(contactId);
+      if (contact) ordered.push(contact);
+    }
+    return ordered;
+  }, [agentChat.agents, contacts]);
+
+  const leadAgentAvatarContacts = useMemo(() => {
+    const byId = new Map<string, (typeof contacts)[number]>();
+    for (const contact of webhookContacts) byId.set(contact.id, contact);
+    for (const contact of leadAgentContacts) byId.set(contact.id, contact);
+    return [...byId.values()];
+  }, [leadAgentContacts, webhookContacts]);
+
   // Mailbox-linked contacts for email-draft From / sign-off avatars (same as
   // Messages compose). Include them in the avatar map so switching From updates
   // the footer photo.
@@ -111,12 +136,68 @@ export function ShellChatPanel() {
 
   const avatarContacts = useMemo(() => {
     const byId = new Map<string, (typeof contacts)[number]>();
-    for (const contact of webhookContacts) byId.set(contact.id, contact);
+    for (const contact of leadAgentAvatarContacts) byId.set(contact.id, contact);
     for (const contact of mailboxContacts) byId.set(contact.id, contact);
     return [...byId.values()];
-  }, [mailboxContacts, webhookContacts]);
+  }, [leadAgentAvatarContacts, mailboxContacts]);
 
   const avatarSrcById = useDesktopAvatarSrcMap("contact", avatarContacts);
+
+  const projectChannelConnect =
+    useMemo((): ChatSlashProjectConnectHandlers => {
+      return {
+        agentContacts: leadAgentContacts.map((contact) => ({
+          id: contact.id,
+          name: contact.name,
+          firstName: contact.firstName ?? null,
+          lastName: contact.lastName ?? null,
+          title: contact.title ?? null,
+          email: contact.email ?? null,
+          avatarSrc: avatarSrcById[contact.id] ?? contact.avatarSrc ?? null,
+        })),
+        avatarSrcById,
+        onOpenPendingLink: (href) => {
+          openShellChatDeepLink(href, { requirePendingForm: true });
+        },
+        onCreateChannel: async (projectId, leadAgentContactId) => {
+          // Optimistic Connecting… only — do not PATCH connecting (server forbids it).
+          applyChannelOverlay(projectId, {
+            channelStatus: "connecting",
+            channelPendingLink: null,
+          });
+          try {
+            const updated = await assignLeadAndStartProjectChannelConnect(
+              (path, init) => client.requestJson(path, init),
+              { projectId, leadAgentContactId },
+            );
+            const uri =
+              updated.channel &&
+              typeof updated.channel === "object" &&
+              typeof (updated.channel as { uri?: unknown }).uri === "string"
+                ? (updated.channel as { uri: string }).uri
+                : null;
+            applyChannelOverlay(projectId, {
+              channelStatus:
+                (updated.channelStatus as
+                  | "inactive"
+                  | "connecting"
+                  | "needs_details"
+                  | "active"
+                  | null
+                  | undefined) ?? "connecting",
+              channelUri: uri,
+              channelPendingLink: updated.channelPendingLink ?? null,
+            });
+          } catch (err) {
+            applyChannelOverlay(projectId, {
+              channelStatus: "inactive",
+              channelPendingLink: null,
+            });
+            throw err;
+          }
+        },
+      };
+    }, [applyChannelOverlay, avatarSrcById, client, leadAgentContacts]);
 
   const emailDraftCompose = useMemo(
     () => ({
@@ -243,6 +324,7 @@ export function ShellChatPanel() {
         webhookSetupHref="/settings/api?type=agent"
         webhookSetupMessage={agentChat.agentsLoadError}
         emailDraftCompose={emailDraftCompose}
+        projectChannelConnect={projectChannelConnect}
       />
       {pdfOverlay ? (
         <ChatPdfOverlay

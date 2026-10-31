@@ -12,7 +12,11 @@ import {
   type KeyboardEvent,
   type ReactNode,
 } from "react";
-import type { ChatUiFilePart, ChatUiMessage } from "@backsteros/contracts";
+import {
+  isProjectChannelPendingLink,
+  type ChatUiFilePart,
+  type ChatUiMessage,
+} from "@backsteros/contracts";
 import {
   AssistantRuntimeProvider,
   ComposerPrimitive,
@@ -36,7 +40,10 @@ import {
   type PendingChatImage,
 } from "../../chat/chat-composer-images.js";
 import { computePlainTextMentionTrigger } from "../../chat/chat-composer-mentions.js";
-import type { ChatProjectOption } from "../../chat/chat-project-option.js";
+import {
+  isChatProjectRoomReady,
+  type ChatProjectOption,
+} from "../../chat/chat-project-option.js";
 import {
   isShellChatPanelCollapsed,
   resolveAdjacentChatPeerId,
@@ -50,6 +57,10 @@ import {
   type ChatSlashActionId,
   type ChatSlashMenuItem,
 } from "../../chat/chat-slash-menu.js";
+import {
+  ChatSlashProjectConnectControls,
+  type ChatSlashProjectConnectHandlers,
+} from "./chat-slash-project-connect.js";
 import { chatUiMessageToThreadMessageLike } from "../../chat/chat-ui-to-thread-message.js";
 import { EMPTY_MENTION_CATALOG } from "../../mentions/empty-catalog.js";
 import { useMentionCatalogOptional } from "../../mentions/mention-catalog-context.js";
@@ -156,8 +167,13 @@ export type ChatThreadProps = {
   projects?: readonly ChatProjectOption[];
   /** MRU project ids — recent first in the Projects group. */
   recentProjectIds?: readonly string[];
-  /** Enter a project room from the `/` menu. */
+  /** Enter a project room from the `/` menu (ready rooms only). */
   onSelectProject?: (projectId: string) => void;
+  /**
+   * Channel Connect for non-ready `/` project rows (agent roster + Create).
+   * When omitted, muted rows still show status but Connect is inert.
+   */
+  projectChannelConnect?: ChatSlashProjectConnectHandlers | null;
   /** Composer placeholder. */
   placeholder?: string;
   /** Disable composer (e.g. while detail loading). */
@@ -276,6 +292,7 @@ function ChatThreadComposer({
   projects,
   recentProjectIds,
   onSelectProject,
+  projectChannelConnect = null,
   enabledSlashActions = [],
   onSlashAction,
   pendingImages,
@@ -289,6 +306,7 @@ function ChatThreadComposer({
   projects: readonly ChatProjectOption[];
   recentProjectIds: readonly string[];
   onSelectProject?: (projectId: string) => void;
+  projectChannelConnect?: ChatSlashProjectConnectHandlers | null;
   enabledSlashActions?: readonly ChatSlashActionId[];
   onSlashAction?: (action: ChatSlashActionId) => void;
   pendingImages: readonly PendingChatImage[];
@@ -302,6 +320,10 @@ function ChatThreadComposer({
   const [dragOver, setDragOver] = useState(false);
   const [cursor, setCursor] = useState(0);
   const [mentionDismissedQuery, setMentionDismissedQuery] = useState<
+    string | null
+  >(null);
+  /** Project id whose Connect form is expanded inline. */
+  const [connectExpandProjectId, setConnectExpandProjectId] = useState<
     string | null
   >(null);
   const inputWrapRef = useRef<HTMLDivElement>(null);
@@ -356,26 +378,55 @@ function ChatThreadComposer({
 
   useEffect(() => {
     setHighlight(0);
+    setConnectExpandProjectId(null);
   }, [slashQuery, slashItems.length, mentionTrigger?.query, mentionFlatItems.length]);
 
   useEffect(() => {
     if (!mentionTrigger) setMentionDismissedQuery(null);
   }, [mentionTrigger]);
 
+  useEffect(() => {
+    if (!slashMenuOpen) setConnectExpandProjectId(null);
+  }, [slashMenuOpen]);
+
   const applySlashItem = useCallback(
     (item: ChatSlashMenuItem) => {
+      if (item.kind === "project") {
+        if (!isChatProjectRoomReady(item.project)) {
+          const status = item.project.channelStatus;
+          if (status === "connecting") return;
+          if (status === "needs_details") {
+            const href = item.project.channelPendingLink?.trim() ?? "";
+            if (
+              isProjectChannelPendingLink(href) &&
+              projectChannelConnect?.onOpenPendingLink
+            ) {
+              projectChannelConnect.onOpenPendingLink(href);
+            }
+            return;
+          }
+          // inactive → expand Connect form (keep `/` query so the menu stays open)
+          setConnectExpandProjectId(item.project.id);
+          return;
+        }
+        setText("");
+        onSelectProject?.(item.project.id);
+        return;
+      }
       setText("");
       if (item.kind === "action") {
         onSlashAction?.(item.id);
         return;
       }
-      if (item.kind === "project") {
-        onSelectProject?.(item.project.id);
-        return;
-      }
       onSelectPeer?.(item.peer.id);
     },
-    [onSelectPeer, onSelectProject, onSlashAction, setText],
+    [
+      onSelectPeer,
+      onSelectProject,
+      onSlashAction,
+      projectChannelConnect,
+      setText,
+    ],
   );
 
   const applyMentionItem = useCallback(
@@ -496,6 +547,11 @@ function ChatThreadComposer({
     }
     if (event.key === "Escape") {
       event.preventDefault();
+      // Inline Connect form first; then dismiss the `/` menu.
+      if (connectExpandProjectId) {
+        setConnectExpandProjectId(null);
+        return;
+      }
       setText("");
       return;
     }
@@ -584,32 +640,86 @@ function ChatThreadComposer({
                 </div>
                 {section.items.map((item, itemIndex) => {
                   const index = sectionOffset + itemIndex;
+                  const projectReady =
+                    item.kind === "project"
+                      ? isChatProjectRoomReady(item.project)
+                      : true;
+                  const projectMuted = item.kind === "project" && !projectReady;
+                  const className = [
+                    "chat-ui-composer__slash-option",
+                    index === highlight ? "is-active" : "",
+                    projectMuted ? "is-muted" : "",
+                  ]
+                    .filter(Boolean)
+                    .join(" ");
+                  const body = (
+                    <>
+                      <ChatSlashOptionIcon item={item} />
+                      <span className="chat-ui-composer__slash-option-copy">
+                        <span className="chat-ui-composer__slash-option-name">
+                          {item.label}
+                        </span>
+                        {projectMuted && item.kind === "project" ? (
+                          projectChannelConnect ? (
+                            <ChatSlashProjectConnectControls
+                              project={item.project}
+                              expanded={
+                                connectExpandProjectId === item.project.id
+                              }
+                              onExpandedChange={(next) => {
+                                setConnectExpandProjectId(
+                                  next ? item.project.id : null,
+                                );
+                              }}
+                              handlers={projectChannelConnect}
+                            />
+                          ) : (
+                            <span className="chat-ui-composer__slash-option-status">
+                              {item.project.channelStatus === "connecting"
+                                ? "Connecting…"
+                                : item.project.channelStatus === "needs_details"
+                                  ? "Needs details"
+                                  : "Connect"}
+                            </span>
+                          )
+                        ) : (
+                          <span className="chat-ui-composer__slash-option-cmd">
+                            /{item.command}
+                          </span>
+                        )}
+                      </span>
+                    </>
+                  );
+                  // Muted project rows host nested buttons — use a div option.
+                  if (projectMuted) {
+                    return (
+                      <div
+                        key={`${item.kind}-${item.id}`}
+                        role="option"
+                        aria-selected={index === highlight}
+                        className={className}
+                        onMouseDown={(event) => {
+                          event.preventDefault();
+                          setHighlight(index);
+                        }}
+                      >
+                        {body}
+                      </div>
+                    );
+                  }
                   return (
                     <button
                       key={`${item.kind}-${item.id}`}
                       type="button"
                       role="option"
                       aria-selected={index === highlight}
-                      className={[
-                        "chat-ui-composer__slash-option",
-                        index === highlight ? "is-active" : "",
-                      ]
-                        .filter(Boolean)
-                        .join(" ")}
+                      className={className}
                       onMouseDown={(event) => {
                         event.preventDefault();
                         applySlashItem(item);
                       }}
                     >
-                      <ChatSlashOptionIcon item={item} />
-                      <span className="chat-ui-composer__slash-option-copy">
-                        <span className="chat-ui-composer__slash-option-name">
-                          {item.label}
-                        </span>
-                        <span className="chat-ui-composer__slash-option-cmd">
-                          /{item.command}
-                        </span>
-                      </span>
+                      {body}
                     </button>
                   );
                 })}
@@ -822,6 +932,7 @@ export function ChatThread({
   projects = [],
   recentProjectIds = [],
   onSelectProject,
+  projectChannelConnect = null,
   placeholder = "Message…",
   composerDisabled = false,
   onDeleteMessages = null,
@@ -1065,7 +1176,9 @@ export function ChatThread({
           return;
         }
         if (resolved?.type === "project") {
-          onSelectProject?.(resolved.project.id);
+          if (isChatProjectRoomReady(resolved.project)) {
+            onSelectProject?.(resolved.project.id);
+          }
           return;
         }
       }
@@ -1312,6 +1425,7 @@ export function ChatThread({
                     projects={projects}
                     recentProjectIds={recentProjectIds}
                     onSelectProject={onSelectProject}
+                    projectChannelConnect={projectChannelConnect}
                     enabledSlashActions={enabledSlashActions}
                     onSlashAction={onSlashAction}
                     pendingImages={pendingImages}

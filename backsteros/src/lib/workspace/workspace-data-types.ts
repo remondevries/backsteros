@@ -58,6 +58,16 @@ export type DesktopWorkspaceData = {
       penpotProjectId?: string | null;
       provider?: string | null;
       category?: string | null;
+      channel?: { uri: string; name?: string | null } | null;
+      leadAgentContactId?: string | null;
+      channelStatus?:
+        | "inactive"
+        | "connecting"
+        | "needs_details"
+        | "active"
+        | null;
+      channelPendingLink?: string | null;
+      channelRequestedAt?: string | null;
     }
   >;
   letters: LetterListItem[];

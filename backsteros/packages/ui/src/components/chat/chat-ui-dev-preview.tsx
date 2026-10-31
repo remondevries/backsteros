@@ -30,12 +30,14 @@ import type {
 
 import { buildChatUiDemoMessages } from "../../chat/chat-ui-demo-fixture.js";
 import {
+  isChatProjectRoomReady,
   pruneRecentChatProjectIds,
   readRecentChatProjectIds,
   rememberRecentChatProjectId,
   resolveRecentChatProjectsForStrip,
   type ChatProjectOption,
 } from "../../chat/chat-project-option.js";
+import type { ChatSlashProjectConnectHandlers } from "./chat-slash-project-connect.js";
 import { chatThinkingRemainingMs } from "../../chat/chat-thinking-state.js";
 import {
   createCoalescedRunner,
@@ -260,6 +262,10 @@ export type ChatUiDevPreviewProps = {
    * greeting/sign-off shell (same source as Messages compose).
    */
   emailDraftCompose?: ChatEmailDraftComposeContextValue | null;
+  /**
+   * Channel Connect for non-ready `/` project rows (same agents as Lead agent).
+   */
+  projectChannelConnect?: ChatSlashProjectConnectHandlers | null;
 };
 
 /**
@@ -276,6 +282,7 @@ export function ChatUiDevPreview({
   webhookSetupHref = "/settings/api?type=agent",
   webhookSetupMessage = null,
   emailDraftCompose = null,
+  projectChannelConnect = null,
 }: ChatUiDevPreviewProps) {
   const resolvedPeers = useMemo(() => {
     if (peers && peers.length > 0) return [...peers];
@@ -732,7 +739,7 @@ export function ChatUiDevPreview({
       const project = resolvedProjects.find(
         (entry) => entry.id === nextProjectId,
       );
-      if (!project) return;
+      if (!project || !isChatProjectRoomReady(project)) return;
       setRecentProjectIds(rememberRecentChatProjectId(project.id));
       setProjectId(project.id);
       setActivePeerId(projectPeer.id);
@@ -1299,6 +1306,7 @@ export function ChatUiDevPreview({
           projects={resolvedProjects}
           recentProjectIds={recentProjectIds}
           onSelectProject={onSelectProject}
+          projectChannelConnect={projectChannelConnect}
           onDeleteMessages={onDeleteMessages}
           onAnswerChoices={
             liveAgentId && liveAgentChat?.answerChoices
