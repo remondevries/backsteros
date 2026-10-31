@@ -199,6 +199,15 @@ export async function resolveOrganizationRef(
   return byKey?.id ?? null;
 }
 
+/** Parse `C-27` / `c-27` → 27. Null when not a contact display id. */
+export function parseContactDisplayNumber(ref: string): number | null {
+  const match = ref.trim().match(/^c-(\d+)$/i);
+  if (!match) return null;
+  const number = Number(match[1]);
+  if (!Number.isInteger(number) || number < 1) return null;
+  return number;
+}
+
 export async function resolveContactRef(
   workspaceId: string,
   ref: string,
@@ -219,6 +228,22 @@ export async function resolveContactRef(
     )
     .limit(1);
   if (byId) return byId.id;
+
+  const displayNumber = parseContactDisplayNumber(trimmed);
+  if (displayNumber != null) {
+    const [byNumber] = await executor
+      .select({ id: contacts.id })
+      .from(contacts)
+      .where(
+        and(
+          eq(contacts.workspaceId, workspaceId),
+          eq(contacts.number, displayNumber),
+          isNull(contacts.deletedAt),
+        ),
+      )
+      .limit(1);
+    if (byNumber) return byNumber.id;
+  }
 
   const [byKey] = await executor
     .select({ id: contacts.id })

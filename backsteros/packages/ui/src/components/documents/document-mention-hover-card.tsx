@@ -198,7 +198,7 @@ export function TaskMentionHoverDetails({
   );
 }
 
-function LetterMentionHoverDetails({ letter }: { letter: MentionCatalogLetter }) {
+export function LetterMentionHoverDetails({ letter }: { letter: MentionCatalogLetter }) {
   const dueLabel = formatTaskDueMetaLabel(letter.dueDate);
   const statusLabel = getTaskStatusLabel(letter.status);
 
@@ -427,7 +427,7 @@ function OrganizationMentionHoverDetails({
   );
 }
 
-function MeetingMentionHoverDetails({
+export function MeetingMentionHoverDetails({
   meeting,
 }: {
   meeting: MentionCatalogMeeting;
@@ -461,7 +461,7 @@ function MeetingMentionHoverDetails({
   );
 }
 
-function JournalMentionHoverDetails({
+export function JournalMentionHoverDetails({
   journal,
 }: {
   journal: MentionCatalogJournal;
@@ -490,7 +490,7 @@ function JournalMentionHoverDetails({
   );
 }
 
-function HabitMentionHoverDetails({ habit }: { habit: MentionCatalogHabit }) {
+export function HabitMentionHoverDetails({ habit }: { habit: MentionCatalogHabit }) {
   return (
     <MentionHoverPanel>
       <MentionHoverMetaRow>
@@ -548,7 +548,7 @@ function MessageMentionHoverDetails({
   );
 }
 
-function PostMentionHoverDetails({ post }: { post: MentionCatalogPost }) {
+export function PostMentionHoverDetails({ post }: { post: MentionCatalogPost }) {
   return (
     <MentionHoverPanel>
       <MentionHoverMetaRow>

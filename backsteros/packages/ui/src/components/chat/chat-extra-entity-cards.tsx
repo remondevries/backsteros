@@ -14,6 +14,12 @@ import type {
 import { ArrowSwitchIcon } from "@primer/octicons-react";
 
 import { MentionMessageChannelIcon } from "../communication/communication-kind-icons.js";
+import {
+  HabitMentionHoverDetails,
+  JournalMentionHoverDetails,
+  MeetingMentionHoverDetails,
+  PostMentionHoverDetails,
+} from "../documents/document-mention-hover-card.js";
 import { CalendarIcon } from "../icons/calendar-icon.js";
 import { FlameIcon } from "../icons/flame-icon.js";
 import { JournalIcon } from "../icons/journal-icon.js";
@@ -28,6 +34,15 @@ import {
   ChatCardProp,
   ChatExpandableCard,
 } from "./chat-expandable-card.js";
+
+function parseMs(value: number | string | null | undefined): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string") {
+    const ms = Date.parse(value);
+    return Number.isFinite(ms) ? ms : null;
+  }
+  return null;
+}
 
 type ChatCardRendererProps = {
   part: ChatUiCardPart;
@@ -224,14 +239,31 @@ export function ChatMeetingCard({ part }: ChatCardRendererProps) {
   if (!data) return <ChatCardInvalid label="meeting" />;
   const href =
     data.href ?? `/calendar/meetings/${encodeURIComponent(data.meetingId)}`;
-  const summary = data.summary?.trim() || null;
+  const title = data.title?.trim() || data.displayId || "Meeting";
+  const startAt = parseMs(data.startAt);
+  const endAt = parseMs(data.endAt);
+  const meeting = {
+    id: data.meetingId,
+    displayId: data.displayId?.trim() || data.meetingId,
+    title,
+    startAt,
+    endAt,
+    status: data.status ?? null,
+    summary: data.summary ?? null,
+    location: data.location ?? null,
+    projectId: null,
+    projectKey: null,
+    projectName: data.projectName ?? null,
+    projectIcon: data.projectIcon ?? null,
+    organizationName: data.organizationName ?? null,
+  };
   return (
     <ChatExpandableCard
       cardClassName="chat-ui-card--meeting"
       summary={
         <MeetingMentionBlockChip
           meeting={{
-            title: data.title?.trim() || data.displayId || "Meeting",
+            title,
             displayId: data.displayId,
             startAt: data.startAt,
             endAt: data.endAt,
@@ -243,24 +275,8 @@ export function ChatMeetingCard({ part }: ChatCardRendererProps) {
       }
     >
       <div className="chat-ui-card--entity__details">
-        {summary ? (
-          <p className="chat-ui-card--entity__description">{summary}</p>
-        ) : (
-          <p className="chat-ui-card--entity__description is-empty">No summary</p>
-        )}
+        <MeetingMentionHoverDetails meeting={meeting} />
         <div className="chat-ui-card--entity__footer">
-          <dl className="chat-ui-card--entity__props">
-            <ChatCardProp
-              label="Location"
-              value={data.location?.trim() || "—"}
-              muted={!data.location?.trim()}
-            />
-            <ChatCardProp
-              label="Status"
-              value={data.status?.trim() || "—"}
-              muted={!data.status?.trim()}
-            />
-          </dl>
           <ChatCardGoLink href={href}>Go to meeting</ChatCardGoLink>
         </div>
       </div>
@@ -272,7 +288,7 @@ export function ChatJournalCard({ part }: ChatCardRendererProps) {
   const data = asJournalCardData(part.data);
   if (!data) return <ChatCardInvalid label="journal" />;
   const href = data.href ?? `/journal/${encodeURIComponent(data.date)}`;
-  const snippet = data.snippet?.trim() || null;
+  const title = data.title?.trim() || data.date;
   return (
     <ChatExpandableCard
       cardClassName="chat-ui-card--journal"
@@ -282,16 +298,20 @@ export function ChatJournalCard({ part }: ChatCardRendererProps) {
           icon={<JournalIcon size={14} />}
           id="Journal"
           title={data.date}
-          titleAttr={data.title?.trim() || data.date}
+          titleAttr={title}
         />
       }
     >
       <div className="chat-ui-card--entity__details">
-        {snippet ? (
-          <p className="chat-ui-card--entity__description">{snippet}</p>
-        ) : (
-          <p className="chat-ui-card--entity__description is-empty">No snippet</p>
-        )}
+        <JournalMentionHoverDetails
+          journal={{
+            id: data.journalId?.trim() || data.date,
+            date: data.date,
+            title,
+            snippet: data.snippet ?? null,
+            updatedAt: parseMs(data.updatedAt),
+          }}
+        />
         <div className="chat-ui-card--entity__footer">
           <ChatCardGoLink href={href}>Go to journal</ChatCardGoLink>
         </div>
@@ -335,25 +355,18 @@ export function ChatHabitCard({ part }: ChatCardRendererProps) {
       }
     >
       <div className="chat-ui-card--entity__details">
+        <HabitMentionHoverDetails
+          habit={{
+            id: data.habitId,
+            title,
+            icon: data.icon ?? null,
+            cadence: data.cadence ?? null,
+            date: data.date ?? null,
+            completed: data.completed ?? null,
+            taskDisplayId: null,
+          }}
+        />
         <div className="chat-ui-card--entity__footer">
-          <dl className="chat-ui-card--entity__props">
-            <ChatCardProp
-              label="Cadence"
-              value={data.cadence?.trim() || "—"}
-              muted={!data.cadence?.trim()}
-            />
-            <ChatCardProp
-              label="Status"
-              value={
-                data.completed == null
-                  ? "—"
-                  : data.completed
-                    ? "Completed"
-                    : "Open"
-              }
-              muted={data.completed == null}
-            />
-          </dl>
           <ChatCardGoLink href={href}>Go to habit</ChatCardGoLink>
         </div>
       </div>
@@ -430,7 +443,6 @@ export function ChatPostCard({ part }: ChatCardRendererProps) {
   if (!data) return <ChatCardInvalid label="post" />;
   const href = data.href ?? `/social/post/${encodeURIComponent(data.postId)}`;
   const title = data.title?.trim() || data.body?.trim()?.slice(0, 80) || "Post";
-  const body = data.body?.trim() || null;
   return (
     <ChatExpandableCard
       cardClassName="chat-ui-card--post"
@@ -451,24 +463,19 @@ export function ChatPostCard({ part }: ChatCardRendererProps) {
       }
     >
       <div className="chat-ui-card--entity__details">
-        {body ? (
-          <p className="chat-ui-card--entity__description">{body}</p>
-        ) : (
-          <p className="chat-ui-card--entity__description is-empty">No body</p>
-        )}
+        <PostMentionHoverDetails
+          post={{
+            id: data.postId,
+            platform: data.platform ?? null,
+            title,
+            body: data.body ?? null,
+            authorHandle: data.authorHandle ?? null,
+            status: data.status ?? null,
+            postedAt: parseMs(data.postedAt),
+            scheduledAt: parseMs(data.scheduledAt),
+          }}
+        />
         <div className="chat-ui-card--entity__footer">
-          <dl className="chat-ui-card--entity__props">
-            <ChatCardProp
-              label="Platform"
-              value={data.platform?.trim() || "—"}
-              muted={!data.platform?.trim()}
-            />
-            <ChatCardProp
-              label="Status"
-              value={data.status?.trim() || "—"}
-              muted={!data.status?.trim()}
-            />
-          </dl>
           <ChatCardGoLink href={href}>Go to post</ChatCardGoLink>
         </div>
       </div>

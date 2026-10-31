@@ -21,14 +21,20 @@ import { OrganizationPeekCard } from "../organizations/organization-peek-card.js
 import { DocumentIcon } from "../documents/document-icon.js";
 import { EmailMentionBlockChip } from "../email/email-mention-block-chip.js";
 import { EntityAvatarIcon } from "../entity/entity-avatar-icon.js";
+import { LetterMentionHoverDetails } from "../documents/document-mention-hover-card.js";
 import { LetterIcon } from "../letters/letter-icon.js";
 import { OrganizationIcon } from "../organizations/organization-icon.js";
 import { ProjectOcticon } from "../projects/project-octicon.js";
 import { ProjectStatusIcon } from "../projects/project-status-icon.js";
 import {
+  formatTaskDueMetaLabel,
+  getTaskDueDateUrgency,
+} from "../../tasks/task-due-date.js";
+import {
   TaskMentionBlockChip,
   type TaskMentionBlockChipTask,
 } from "../tasks/task-mention-block-chip.js";
+import { TaskDueDateIcon } from "../tasks/task-due-date-icon.js";
 import { ChatEntityBlockChip } from "./chat-entity-block-chip.js";
 import {
   ChatCardGoLink,
@@ -635,43 +641,60 @@ function ChatLetterCard({ part }: ChatCardRendererProps) {
   const displayId = data.displayId?.trim() || data.letterId;
   const title = data.title?.trim() || displayId;
   const href = data.href ?? `/letters/${encodeURIComponent(data.letterId)}`;
-  const description = data.description?.trim() || null;
+  const status =
+    data.status && isTaskStatus(data.status) ? data.status : "triage";
+  const dueMs = parseDueMs(data.dueDate);
+  const dueDateLabel =
+    dueMs != null ? formatTaskDueMetaLabel(dueMs) : null;
   return (
     <ChatExpandableCard
       cardClassName="chat-ui-card--letter"
       summary={
-        <ChatEntityBlockChip
-          kindClassName="mention-chip-lite--letter"
-          icon={<LetterIcon size={14} />}
-          id={displayId}
-          title={title}
-          titleAttr={displayId}
-          trailing={
-            data.projectName ? (
-              <span className="mention-chip-lite__project">
-                {data.projectName}
-              </span>
-            ) : null
-          }
-        />
+        <span
+          className="mention-chip-lite mention-chip-lite--letter mention-chip-lite--block"
+          title={displayId}
+        >
+          <span className="mention-chip-lite__icon" aria-hidden="true">
+            <LetterIcon size={14} />
+          </span>
+          <span className="mention-chip-lite__id">{displayId}</span>
+          <span className="mention-chip-lite__label mention-chip-lite__label--grow">
+            {title}
+          </span>
+          {dueDateLabel ? (
+            <span className="mention-chip-lite__due">
+              <TaskDueDateIcon
+                active
+                urgency={getTaskDueDateUrgency(dueMs, new Date(), {
+                  status,
+                })}
+                size={12}
+              />
+              <span>{dueDateLabel}</span>
+            </span>
+          ) : null}
+          {data.projectName ? (
+            <span className="mention-chip-lite__project">
+              <span>{data.projectName}</span>
+            </span>
+          ) : null}
+        </span>
       }
     >
       <div className="chat-ui-card--entity__details">
-        {description ? (
-          <p className="chat-ui-card--entity__description">{description}</p>
-        ) : (
-          <p className="chat-ui-card--entity__description is-empty">
-            No description
-          </p>
-        )}
+        <LetterMentionHoverDetails
+          letter={{
+            id: data.letterId,
+            displayId,
+            title,
+            status,
+            dueDate: dueMs,
+            projectId: null,
+            projectKey: null,
+            projectName: data.projectName ?? null,
+          }}
+        />
         <div className="chat-ui-card--entity__footer">
-          <dl className="chat-ui-card--entity__props">
-            <ChatCardProp
-              label="Project"
-              value={data.projectName?.trim() || "—"}
-              muted={!data.projectName?.trim()}
-            />
-          </dl>
           <ChatCardGoLink href={href}>Go to letter</ChatCardGoLink>
         </div>
       </div>

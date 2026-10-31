@@ -1,10 +1,21 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { parseContactDisplayNumber } from "./entity-refs.js";
 import {
   parseTaskDisplayKey,
   TASK_DISPLAY_KEY_RE,
 } from "./task-filters.js";
+
+test("parseContactDisplayNumber accepts C-<number>", () => {
+  assert.equal(parseContactDisplayNumber("C-27"), 27);
+  assert.equal(parseContactDisplayNumber("c-1"), 1);
+  assert.equal(parseContactDisplayNumber("  C-251  "), 251);
+  assert.equal(parseContactDisplayNumber("C-0"), null);
+  assert.equal(parseContactDisplayNumber("C-"), null);
+  assert.equal(parseContactDisplayNumber("remon"), null);
+  assert.equal(parseContactDisplayNumber("O-12"), null);
+});
 
 test("parseTaskDisplayKey accepts KEY-number (case-insensitive)", () => {
   assert.deepEqual(parseTaskDisplayKey("OS-45"), {
