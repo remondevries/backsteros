@@ -43,20 +43,32 @@ export function ProjectLeadAgentField({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const options = useMemo(
-    () =>
-      buildAssigneeDropdownOptions([...agentContacts], { avatarSrcById }).map(
-        (option) =>
-          option.value === DROPDOWN_NONE_VALUE
-            ? {
-                ...option,
-                label: "No lead agent",
-                searchTerms: "none no lead agent unassigned",
-              }
-            : option,
-      ),
-    [agentContacts, avatarSrcById],
-  );
+  const options = useMemo(() => {
+    const titleById = new Map(
+      agentContacts.map((contact) => [
+        contact.id,
+        contact.title?.trim() || null,
+      ]),
+    );
+    return buildAssigneeDropdownOptions([...agentContacts], {
+      avatarSrcById,
+    }).map((option) => {
+      if (option.value === DROPDOWN_NONE_VALUE) {
+        return {
+          ...option,
+          label: "No lead agent",
+          searchTerms: "none no lead agent unassigned",
+        };
+      }
+      const title = titleById.get(option.value) ?? null;
+      if (!title) return option;
+      return {
+        ...option,
+        secondaryLabel: title,
+        searchTerms: `${option.searchTerms ?? ""} ${title}`.trim(),
+      };
+    });
+  }, [agentContacts, avatarSrcById]);
 
   const selectedId = project.leadAgentContactId?.trim() || null;
 
