@@ -360,11 +360,36 @@ export async function resolveChatMentionsInBody(
   workspaceId: string,
   body: string,
 ): Promise<ChatResolvedMention[]> {
-  const tokens = extractChatMentionTokens(body);
-  if (tokens.length === 0) return [];
-  const out: ChatResolvedMention[] = [];
-  for (const token of tokens) {
-    out.push(await resolveOne(workspaceId, token));
+  const [list] = await resolveChatMentionsInBodies(workspaceId, [body]);
+  return list ?? [];
+}
+
+/**
+ * Batch-resolve mentions for many bodies (OS-162). Unique tokens are resolved
+ * once and reused across messages — avoids per-message N+1 hydrate.
+ */
+export async function resolveChatMentionsInBodies(
+  workspaceId: string,
+  bodies: readonly string[],
+): Promise<ChatResolvedMention[][]> {
+  const tokenLists = bodies.map((body) =>
+    body.trim().length > 0 ? extractChatMentionTokens(body) : [],
+  );
+  const cache = new Map<string, ChatResolvedMention>();
+  const unique: ParsedChatMentionToken[] = [];
+  for (const tokens of tokenLists) {
+    for (const token of tokens) {
+      if (cache.has(token.raw)) continue;
+      cache.set(token.raw, unresolved(token)); // placeholder until resolved
+      unique.push(token);
+    }
   }
-  return out;
+  await Promise.all(
+    unique.map(async (token) => {
+      cache.set(token.raw, await resolveOne(workspaceId, token));
+    }),
+  );
+  return tokenLists.map((tokens) =>
+    tokens.map((token) => cache.get(token.raw) ?? unresolved(token)),
+  );
 }

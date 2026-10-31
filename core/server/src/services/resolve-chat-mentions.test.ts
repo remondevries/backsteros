@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import { extractChatMentionTokens } from "../lib/chat-mention-tokens.js";
+import { resolveChatMentionsInBodies } from "./resolve-chat-mentions.js";
 
 describe("resolveChatMentionsInBody (token extract contract)", () => {
   it("feeds webhook/API mentions from body without mutating body", () => {
@@ -17,5 +18,17 @@ describe("resolveChatMentionsInBody (token extract contract)", () => {
 
   it("returns empty for bodies without mentions", () => {
     assert.deepEqual(extractChatMentionTokens("hello sander"), []);
+  });
+});
+
+describe("resolveChatMentionsInBodies (batch)", () => {
+  it("returns one list per body and dedupes empty bodies", async () => {
+    const lists = await resolveChatMentionsInBodies("ws_test", [
+      "",
+      "no mentions here",
+    ]);
+    assert.equal(lists.length, 2);
+    assert.deepEqual(lists[0], []);
+    assert.deepEqual(lists[1], []);
   });
 });

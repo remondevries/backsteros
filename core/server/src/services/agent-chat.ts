@@ -84,7 +84,10 @@ import {
   sendResolvedEmailDraft,
   type ChatEmailDraftDeps,
 } from "./agent-chat-email-draft.js";
-import { resolveChatMentionsInBody } from "./resolve-chat-mentions.js";
+import {
+  resolveChatMentionsInBodies,
+  resolveChatMentionsInBody,
+} from "./resolve-chat-mentions.js";
 import {
   previewAgentChatMessageBody,
   publishAgentShellChatMessage,
@@ -92,6 +95,10 @@ import {
 } from "../lib/agent-shell-chat-events.js";
 
 const CONTEXT_MESSAGE_LIMIT = 10;
+/** Hard cap for DM thread list (OS-162 / audit #13). */
+export const CHAT_THREAD_LIST_LIMIT = 100;
+/** Hard cap for messages loaded per thread (most recent). */
+export const CHAT_MESSAGE_LIST_LIMIT = 500;
 
 /** Clear stuck `pending_reply_at` after this long without an agent status/reply. */
 export const CHAT_THREAD_WORKING_STALE_MS = 120_000;
@@ -586,24 +593,27 @@ async function hydrateMessages(
     workspaceId,
     rows.map((row) => row.id),
   );
-  return Promise.all(
-    rows.map(async (row) => {
-      const approval = parseApprovalColumn(row.approval);
-      const form = parseFormColumn(row.form);
-      const emailDraft = parseEmailDraftColumn(row.emailDraft);
-      const mentionText = [
-        row.body,
-        approvalMentionSource(approval),
-        formMentionSource(form),
-        emailDraftMentionSource(emailDraft),
-      ]
-        .filter((part) => part.trim().length > 0)
-        .join("\n");
-      const mentions = mentionText
-        ? await resolveChatMentionsInBody(workspaceId, mentionText)
-        : [];
-      return toMessage(row, mentions, attachmentMap.get(row.id));
-    }),
+  // Batch mention hydrate across the page (OS-162) — one resolve pass for all
+  // token strings, then map results back per message.
+  const mentionTexts = rows.map((row) => {
+    const approval = parseApprovalColumn(row.approval);
+    const form = parseFormColumn(row.form);
+    const emailDraft = parseEmailDraftColumn(row.emailDraft);
+    return [
+      row.body,
+      approvalMentionSource(approval),
+      formMentionSource(form),
+      emailDraftMentionSource(emailDraft),
+    ]
+      .filter((part) => part.trim().length > 0)
+      .join("\n");
+  });
+  const mentionLists = await resolveChatMentionsInBodies(
+    workspaceId,
+    mentionTexts,
+  );
+  return rows.map((row, index) =>
+    toMessage(row, mentionLists[index] ?? [], attachmentMap.get(row.id)),
   );
 }
 
@@ -711,27 +721,35 @@ export async function listChatThreads(
     .from(chatThreads)
     .innerJoin(agents, eq(agents.id, chatThreads.agentId))
     .where(and(...conditions))
-    .orderBy(desc(chatThreads.updatedAt));
+    .orderBy(desc(chatThreads.updatedAt))
+    .limit(CHAT_THREAD_LIST_LIMIT);
 
   if (rows.length === 0) return [];
 
   const threadIds = rows.map((row) => row.thread.id);
-  const assistantRows = await db
-    .select()
-    .from(chatThreadMessages)
-    .where(
-      and(
-        eq(chatThreadMessages.workspaceId, workspaceId),
-        inArray(chatThreadMessages.threadId, threadIds),
-        eq(chatThreadMessages.role, "assistant"),
-        isNull(chatThreadMessages.deletedAt),
-      ),
-    )
-    .orderBy(desc(chatThreadMessages.createdAt));
+  // One latest assistant message per thread — not the full assistant history.
+  const lastAssistantRows = await Promise.all(
+    threadIds.map((threadId) =>
+      db
+        .select()
+        .from(chatThreadMessages)
+        .where(
+          and(
+            eq(chatThreadMessages.workspaceId, workspaceId),
+            eq(chatThreadMessages.threadId, threadId),
+            eq(chatThreadMessages.role, "assistant"),
+            isNull(chatThreadMessages.deletedAt),
+          ),
+        )
+        .orderBy(desc(chatThreadMessages.createdAt))
+        .limit(1)
+        .then((page) => page[0] ?? null),
+    ),
+  );
 
   const lastAssistantByThread = new Map<string, ChatThreadMessage>();
-  for (const message of assistantRows) {
-    if (lastAssistantByThread.has(message.threadId)) continue;
+  for (const message of lastAssistantRows) {
+    if (!message) continue;
     lastAssistantByThread.set(message.threadId, toMessage(message));
   }
 
@@ -748,7 +766,8 @@ async function loadMessages(
   workspaceId: string,
   threadId: string,
 ): Promise<ChatThreadMessage[]> {
-  const rows = await db
+  // Most recent page, then chronological for the UI (OS-162).
+  const newestFirst = await db
     .select()
     .from(chatThreadMessages)
     .where(
@@ -758,7 +777,9 @@ async function loadMessages(
         isNull(chatThreadMessages.deletedAt),
       ),
     )
-    .orderBy(asc(chatThreadMessages.createdAt));
+    .orderBy(desc(chatThreadMessages.createdAt))
+    .limit(CHAT_MESSAGE_LIST_LIMIT);
+  const rows = newestFirst.slice().reverse();
   return hydrateMessages(workspaceId, rows);
 }
 
