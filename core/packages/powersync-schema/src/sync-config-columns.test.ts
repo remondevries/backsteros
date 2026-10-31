@@ -67,7 +67,7 @@ describe("PowerSync sync-config ↔ powersync-schema columns", () => {
       "sync rules must include soft-deleted rows so clients receive tombstones",
     );
     assert.equal(
-      yaml.includes("portal_password_hash"),
+      [...syncByTable.values()].some((cols) => cols.has("portal_password_hash")),
       false,
       "portal_password_hash must never appear in sync SELECT",
     );
