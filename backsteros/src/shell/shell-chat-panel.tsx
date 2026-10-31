@@ -1,10 +1,10 @@
-import { useCallback, useMemo, useState } from "react";
+import { lazy, Suspense, useCallback, useMemo, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import type { ChatUiCardPart } from "@backsteros/contracts";
 import {
   assignLeadAndStartProjectChannelConnect,
   ChatMentionResolveProvider,
-  ChatUiDevPreview,
+  LiveAgentChatPanel,
   getScopedProjectTaskHref,
   getTaskDisplayId,
   isTaskStatus,
@@ -13,10 +13,6 @@ import {
   type LiveAgentChatHandlers,
 } from "@backsteros/ui";
 
-import {
-  ChatPdfOverlay,
-  ChatPdfPageThumb,
-} from "../components/chat-pdf-overlay";
 import { useAgentMail } from "../lib/agentmail-context";
 import { markAgentDmSeen } from "../lib/agent-dm-seen";
 import { useDesktopApi } from "../lib/api-context";
@@ -29,6 +25,31 @@ import { openShellChatDeepLink } from "../lib/shell-chat-deep-link";
 import { navigateToHref } from "../router/navigate-href";
 import { useShellAgentChat } from "./use-shell-agent-chat";
 import { useShellChatProjects } from "./use-shell-chat-projects";
+
+const ChatPdfOverlayLazy = lazy(async () => {
+  const mod = await import("../components/chat-pdf-overlay");
+  return { default: mod.ChatPdfOverlay };
+});
+
+const ChatPdfPageThumbLazy = lazy(async () => {
+  const mod = await import("../components/chat-pdf-overlay");
+  return { default: mod.ChatPdfPageThumb };
+});
+
+function ChatPdfPageThumbSlot({
+  fileUrl,
+  filename,
+}: {
+  fileUrl: string;
+  filename: string;
+}) {
+  return (
+    <Suspense fallback={<span className="chat-ui-file-card__glyph">PDF</span>}>
+      <ChatPdfPageThumbLazy fileUrl={fileUrl} filename={filename} />
+    </Suspense>
+  );
+}
+
 
 const LETTER_PDF_PATH_RE = /^\/api\/v1\/letters\/([^/]+)\/pdf\/?$/i;
 
@@ -265,7 +286,7 @@ export function ShellChatPanel() {
         setPdfOverlay({ url, filename });
       },
       renderPdfThumb: (url, filename) => (
-        <ChatPdfPageThumb fileUrl={url} filename={filename} />
+        <ChatPdfPageThumbSlot fileUrl={url} filename={filename} />
       ),
       getThread: async (threadId) => {
         const thread = await agentChat.getThread(threadId);
@@ -321,7 +342,7 @@ export function ShellChatPanel() {
 
   return (
     <ChatMentionResolveProvider value={mentionResolve}>
-      <ChatUiDevPreview
+      <LiveAgentChatPanel
         peers={peers}
         projects={projects}
         onNavigate={onNavigate}
@@ -336,11 +357,13 @@ export function ShellChatPanel() {
         projectChannelConnect={projectChannelConnect}
       />
       {pdfOverlay ? (
-        <ChatPdfOverlay
-          fileUrl={pdfOverlay.url}
-          filename={pdfOverlay.filename}
-          onClose={() => setPdfOverlay(null)}
-        />
+        <Suspense fallback={null}>
+          <ChatPdfOverlayLazy
+            fileUrl={pdfOverlay.url}
+            filename={pdfOverlay.filename}
+            onClose={() => setPdfOverlay(null)}
+          />
+        </Suspense>
       ) : null}
     </ChatMentionResolveProvider>
   );

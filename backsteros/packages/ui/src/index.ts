@@ -5624,7 +5624,7 @@ export {
   type ChatSlashResolveResult,
 } from "./chat/chat-slash-menu.js";
 
-export { chatDemoThreadKey } from "./components/chat/chat-ui-dev-preview.js";
+export { chatDemoThreadKey } from "./components/chat/live-agent-chat-panel.js";
 
 export {
   matchPeersBySlashQuery,
@@ -5647,9 +5647,15 @@ export {
 } from "./components/chat/chat-thread-header.js";
 
 export {
+  LiveAgentChatPanel,
+  type LiveAgentChatPanelProps,
+  type LiveAgentChatHandlers,
+} from "./components/chat/live-agent-chat-panel.js";
+
+/** @deprecated DEV `/dev/chat-ui` only — use {@link LiveAgentChatPanel} in production. */
+export {
   ChatUiDevPreview,
   type ChatUiDevPreviewProps,
-  type LiveAgentChatHandlers,
 } from "./components/chat/chat-ui-dev-preview.js";
 
 export {
