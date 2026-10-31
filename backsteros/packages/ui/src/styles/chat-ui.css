@@ -1499,7 +1499,7 @@
   overflow: hidden;
 }
 
-/* Agent choice card — below bubble / mention cards (entity-card chrome). */
+/* Agent choice card — below bubble; soft gradient like social calendar posts. */
 .chat-ui-choices {
   display: flex;
   flex-direction: column;
@@ -1509,8 +1509,15 @@
   max-width: 100%;
   padding: 12px;
   border-radius: 10px;
-  border: 1px solid color-mix(in oklab, var(--foreground, #fff) 14%, transparent);
-  background: #161616;
+  border: 1px solid color-mix(in srgb, #3a3a3a 55%, black);
+  /* Soft #272727 top-right → transparent bottom-left over a dark base. */
+  background-color: #161616;
+  background-image: linear-gradient(
+    to bottom left,
+    #272727,
+    color-mix(in srgb, #3a3a3a 40%, transparent) 48%,
+    transparent
+  );
   box-sizing: border-box;
 }
 
