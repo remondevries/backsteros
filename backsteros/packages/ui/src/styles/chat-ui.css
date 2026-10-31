@@ -743,12 +743,30 @@
   white-space: normal;
 }
 
+.chat-ui-text--markdown .md-code-block {
+  margin: 0.65em 0;
+}
+
+.chat-ui-text--markdown .md-code-block > pre,
 .chat-ui-text--markdown pre {
   overflow-x: auto;
   padding: 8px;
   border-radius: 8px;
   background: color-mix(in oklab, #000 35%, transparent);
   font-size: 0.82rem;
+}
+
+.chat-ui-text--markdown .md-code-block > pre {
+  /* Room for the hover copy control on short one-liners. */
+  padding-right: 40px;
+}
+
+.chat-ui-text--markdown .md-code-block__copy {
+  top: 6px;
+  right: 6px;
+  width: 26px;
+  height: 26px;
+  background: color-mix(in oklab, #000 55%, transparent);
 }
 
 .chat-ui-text--markdown code {

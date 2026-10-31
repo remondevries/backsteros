@@ -387,6 +387,57 @@
   background: transparent;
 }
 
+/* Fenced code — hover clipboard (DocumentMarkdownPreview / chat). */
+.md-code-block {
+  position: relative;
+  margin: 0.85em 0;
+}
+
+.md-code-block > pre {
+  margin: 0;
+}
+
+.md-code-block__copy {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  margin: 0;
+  padding: 0;
+  border: 1px solid color-mix(in oklab, var(--foreground, #fff) 14%, transparent);
+  border-radius: 8px;
+  background: color-mix(in oklab, #0b1220 72%, transparent);
+  color: color-mix(in oklab, var(--foreground, #fff) 72%, transparent);
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease, color 120ms ease, background 120ms ease;
+}
+
+.md-code-block:hover .md-code-block__copy,
+.md-code-block:focus-within .md-code-block__copy {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.md-code-block__copy:hover,
+.md-code-block__copy:focus-visible {
+  color: color-mix(in oklab, var(--foreground, #fff) 92%, transparent);
+  background: color-mix(in oklab, #0b1220 88%, transparent);
+  outline: none;
+}
+
+.md-code-block.is-copied .md-code-block__copy {
+  color: #86efac;
+  opacity: 1;
+  pointer-events: auto;
+}
+
 .content-markdown-preview-link {
   color: color-mix(in srgb, var(--foreground) 88%, #60a5fa);
   text-decoration: underline;

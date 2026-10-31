@@ -99,6 +99,7 @@ import {
 import { ProjectStatusIcon } from "../projects/project-status-icon.js";
 import { TaskDueDateIcon } from "../tasks/task-due-date-icon.js";
 import { TaskPriorityIcon } from "../tasks/task-priority-icon.js";
+import { MarkdownCodeBlock } from "./markdown-code-block.js";
 import { MarkdownImageLightbox } from "./markdown-image-lightbox.js";
 
 /** Resolve authenticated / relative markdown image srcs to displayable URLs. */
@@ -260,7 +261,9 @@ const markdownPreviewComponents: Components = {
       const source = extractMermaidSourceFromCodeChildren(children) ?? "";
       return <MermaidDiagram source={source} />;
     }
-    return <pre className={preClassName}>{children}</pre>;
+    return (
+      <MarkdownCodeBlock className={preClassName}>{children}</MarkdownCodeBlock>
+    );
   },
   li(props) {
     const { children, className, ...rest } = props;
