@@ -49,7 +49,6 @@ import { PropertyDropdownNavigateRow } from "../dropdowns/property-dropdown-navi
 import { ProjectKeyEditor } from "./project-key-editor.js";
 import { ProjectProgressRing } from "./project-progress-ring.js";
 import { ProjectStatusIcon } from "./project-status-icon.js";
-import { ProjectHealthCheckProperty } from "../codebase/project-health-check-property.js";
 import { ProjectBudgetsEditor } from "./project-budgets-editor.js";
 import { ProjectHourlyRateEditor } from "./project-hourly-rate-editor.js";
 import { TaskDueDateDropdown } from "../tasks/task-due-date-dropdown.js";
@@ -79,10 +78,6 @@ export type ProjectPropertiesDisplayProps = {
   onPriorityChange?: (priority: number) => void;
   onProviderChange?: (provider: ProjectProvider | null) => void;
   onCategoryChange?: (category: ProjectEmailCategory | null) => void;
-  onHealthCheckChange?: (next: {
-    healthCheckMode: "simple" | "advanced";
-    healthCheckDomain: string | null;
-  }) => void;
   onHourlyRateChange?: (hourlyRateCents: number | null) => void;
   onBudgetsChange?: (
     budgets: Array<{
@@ -99,7 +94,7 @@ export type ProjectPropertiesDisplayProps = {
   organizationNavigateHref?: string | null;
   onCreateOrganizationFromQuery?: (query: string) => void;
   /**
-   * Type-specific property rows (e.g. codebase Locations) rendered after
+   * Type-specific property rows (e.g. Codebase section) rendered after
    * the shared Properties / Areas / Financials stack.
    */
   propertiesExtra?: ReactNode;
@@ -124,7 +119,6 @@ export function ProjectPropertiesDisplay({
   onPriorityChange,
   onProviderChange,
   onCategoryChange,
-  onHealthCheckChange,
   onHourlyRateChange,
   onBudgetsChange,
   onAreaChange,
@@ -385,15 +379,6 @@ export function ProjectPropertiesDisplay({
                     : "No category"
                 }
                 mutedFallback={!projectCategory}
-              />
-            </PropertyFieldGroup>
-          ) : null}
-          {projectType === "codebase" ? (
-            <PropertyFieldGroup label="Health">
-              <ProjectHealthCheckProperty
-                mode={project.healthCheckMode}
-                domain={project.healthCheckDomain}
-                onChange={onHealthCheckChange}
               />
             </PropertyFieldGroup>
           ) : null}

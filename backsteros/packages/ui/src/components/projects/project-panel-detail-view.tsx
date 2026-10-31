@@ -119,13 +119,13 @@ export type ProjectPanelDetailViewProps = {
   /** Host-provided pane for non-overview sections (tasks, letters, …). */
   renderSection?: (sectionId: ProjectSectionId) => ReactNode;
   /**
-   * Location / path controls (working directory, GitHub, Dev, Prod).
-   * Rendered inside the Locations subgroup.
+   * Codebase path controls (working directory, GitHub, Dev, Prod).
+   * Rendered inside the Codebase subgroup (with Health).
    */
   propertiesExtra?: ReactNode;
   /**
    * Lead agent + Channel controls. Rendered in an Agents subgroup
-   * after Financials (or after Locations when billing is hidden).
+   * after Financials (or after Codebase when billing is hidden).
    */
   agentsExtra?: ReactNode;
   /** Rendered inside the Activities subgroup. */
@@ -572,7 +572,7 @@ export function ProjectPanelDetailView({
   );
 
   const showBilling = projectAreaShowsBilling(project.area);
-  const showLocations = Boolean(propertiesExtra);
+  const showCodebase = Boolean(propertiesExtra) || Boolean(healthControl);
   const showAgents = Boolean(agentsExtra);
 
   return (
@@ -640,9 +640,6 @@ export function ProjectPanelDetailView({
             </div>
 
             <EntityOverviewSubgroup title="General">
-              {healthControl ? (
-                <EntityOverviewField label="Health">{healthControl}</EntityOverviewField>
-              ) : null}
               <EntityOverviewField label="Status">{statusControl}</EntityOverviewField>
               <EntityOverviewField label="Priority">{priorityControl}</EntityOverviewField>
               {organizationControl ? (
@@ -660,8 +657,13 @@ export function ProjectPanelDetailView({
               <EntityOverviewField label="Area">{areaPropertyControls}</EntityOverviewField>
             </EntityOverviewSubgroup>
 
-            {showLocations ? (
-              <EntityOverviewSubgroup title="Locations">
+            {showCodebase ? (
+              <EntityOverviewSubgroup title="Codebase">
+                {healthControl ? (
+                  <EntityOverviewField label="Health">
+                    {healthControl}
+                  </EntityOverviewField>
+                ) : null}
                 {propertiesExtra}
               </EntityOverviewSubgroup>
             ) : null}

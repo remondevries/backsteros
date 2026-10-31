@@ -34,6 +34,7 @@ import {
   PropertyFieldGroup,
   PropertyInlineChip,
   ProjectChannelField,
+  ProjectHealthCheckProperty,
   ProjectLeadAgentField,
   PillNav,
   RegisterEntityDeleteAction,
@@ -2709,9 +2710,16 @@ function ProjectDetailScreen({
     </PropertyFieldGroup>
   );
 
-  // GitHub / Dev / Prod stay codebase-only; Channel + Lead agent are every type.
+  // Health / GitHub / Dev / Prod stay codebase-only; Channel + Lead agent are every type.
   const locationsExtra = isCodebaseProject ? (
-    <EntityPropertiesSection title="Locations">
+    <EntityPropertiesSection title="Codebase">
+      <PropertyFieldGroup label="Health">
+        <ProjectHealthCheckProperty
+          mode={project.healthCheckMode ?? null}
+          domain={project.healthCheckDomain ?? null}
+          onChange={projectPropertyHandlers.onHealthCheckChange}
+        />
+      </PropertyFieldGroup>
       <PropertyFieldGroup label="GitHub">
         <PropertyInlineChip
           label={project.githubRepository?.trim() || "No repository"}

@@ -142,7 +142,7 @@ export type ProjectDetailViewProps = {
    * When set, the default markdown description editor is not rendered.
    */
   overviewDescription?: ReactNode;
-  /** Type-specific property rows in the right rail (Locations, Registration…). */
+  /** Type-specific property rows in the right rail (Codebase, Registration…). */
   propertiesExtra?: ReactNode;
   /** Lead agent + Channel — Agents section under Financials. */
   agentsExtra?: ReactNode;
@@ -168,7 +168,6 @@ export function ProjectDetailView({
   onPriorityChange,
   onProviderChange,
   onCategoryChange,
-  onHealthCheckChange,
   onHourlyRateChange,
   onBudgetsChange,
   onAreaChange,
@@ -490,7 +489,6 @@ export function ProjectDetailView({
                 onPriorityChange={onPriorityChange}
                 onProviderChange={onProviderChange}
                 onCategoryChange={onCategoryChange}
-                onHealthCheckChange={onHealthCheckChange}
                 onHourlyRateChange={onHourlyRateChange}
                 onBudgetsChange={onBudgetsChange}
                 onAreaChange={onAreaChange}
