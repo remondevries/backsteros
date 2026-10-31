@@ -2618,77 +2618,88 @@ function ProjectDetailScreen({
     </EntityPropertiesSection>
   );
 
-  const codebaseLocationsExtra = isCodebaseProject ? (
-    <EntityPropertiesSection title="Locations">
-      <PropertyFieldGroup label="GitHub">
-        <PropertyInlineChip
-          label={project.githubRepository?.trim() || "No repository"}
-        />
-      </PropertyFieldGroup>
-      <PropertyFieldGroup label="Development">
-        <PropertyInlineChip
-          label={(() => {
-            const development = (
-              project as {
-                development?: {
-                  kind?: string;
-                  path?: string;
-                } | null;
-              }
-            ).development;
-            const path =
-              development?.path?.trim() ||
-              project.localWorkingDirectory?.trim() ||
-              project.developmentLocation?.trim() ||
-              "";
-            if (!path) return "No folder";
-            const leaf =
-              path.split(/[/\\]/).filter(Boolean).at(-1) ?? path;
-            return development?.kind === "server" ? `Server: ${leaf}` : leaf;
-          })()}
-        />
-      </PropertyFieldGroup>
-      <PropertyFieldGroup label="Production">
-        <PropertyInlineChip
-          label={(() => {
-            const production = (
-              project as {
-                production?: { path?: string | null } | null;
-              }
-            ).production;
-            const path =
-              production?.path?.trim() ||
-              project.productionLocation?.trim() ||
-              "";
-            if (!path) return "No folder";
-            return path.split(/[/\\]/).filter(Boolean).at(-1) ?? path;
-          })()}
-        />
-      </PropertyFieldGroup>
-      <PropertyFieldGroup label="Channel">
-        <ProjectChannelField
-          project={{
-            id: project.id,
+  const channelField = (
+    <PropertyFieldGroup label="Channel">
+      <ProjectChannelField
+        project={{
+          id: project.id,
+          channel:
+            (project as { channel?: { uri: string; name?: string | null } | null })
+              .channel ?? null,
+        }}
+        onProjectUpdated={(updated) => {
+          patchSelected({
             channel:
-              (project as { channel?: { uri: string; name?: string | null } | null })
-                .channel ?? null,
-          }}
-          onProjectUpdated={(updated) => {
-            patchSelected({
-              channel:
-                (updated.channel as
-                  | { uri: string; name?: string | null }
-                  | null
-                  | undefined) ?? null,
-            });
-          }}
-          requestJson={(path, init) =>
-            desktopApiClient.requestJson(path, init)
-          }
-        />
-      </PropertyFieldGroup>
+              (updated.channel as
+                | { uri: string; name?: string | null }
+                | null
+                | undefined) ?? null,
+          });
+        }}
+        requestJson={(path, init) =>
+          desktopApiClient.requestJson(path, init)
+        }
+      />
+    </PropertyFieldGroup>
+  );
+
+  // Channel is available on every project type; GitHub / Dev / Prod stay codebase-only.
+  const locationsExtra = (
+    <EntityPropertiesSection title="Locations">
+      {isCodebaseProject ? (
+        <>
+          <PropertyFieldGroup label="GitHub">
+            <PropertyInlineChip
+              label={project.githubRepository?.trim() || "No repository"}
+            />
+          </PropertyFieldGroup>
+          <PropertyFieldGroup label="Development">
+            <PropertyInlineChip
+              label={(() => {
+                const development = (
+                  project as {
+                    development?: {
+                      kind?: string;
+                      path?: string;
+                    } | null;
+                  }
+                ).development;
+                const path =
+                  development?.path?.trim() ||
+                  project.localWorkingDirectory?.trim() ||
+                  project.developmentLocation?.trim() ||
+                  "";
+                if (!path) return "No folder";
+                const leaf =
+                  path.split(/[/\\]/).filter(Boolean).at(-1) ?? path;
+                return development?.kind === "server"
+                  ? `Server: ${leaf}`
+                  : leaf;
+              })()}
+            />
+          </PropertyFieldGroup>
+          <PropertyFieldGroup label="Production">
+            <PropertyInlineChip
+              label={(() => {
+                const production = (
+                  project as {
+                    production?: { path?: string | null } | null;
+                  }
+                ).production;
+                const path =
+                  production?.path?.trim() ||
+                  project.productionLocation?.trim() ||
+                  "";
+                if (!path) return "No folder";
+                return path.split(/[/\\]/).filter(Boolean).at(-1) ?? path;
+              })()}
+            />
+          </PropertyFieldGroup>
+        </>
+      ) : null}
+      {channelField}
     </EntityPropertiesSection>
-  ) : null;
+  );
 
   const domainBelowProperties = isDomainProject ? (
     <>
@@ -2804,7 +2815,7 @@ function ProjectDetailScreen({
         }
         latestUpdate={latestUpdate}
         onOpenUpdates={() => handleSectionChange("updates")}
-        propertiesExtra={codebaseLocationsExtra}
+        propertiesExtra={locationsExtra}
         belowProperties={domainBelowProperties}
         descriptionEmptyHint={
           isCodebaseProject
