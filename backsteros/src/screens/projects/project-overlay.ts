@@ -15,6 +15,10 @@ export type WorkspaceProject = ProjectOverviewRowProject & {
   category?: string | null;
   healthCheckMode?: "simple" | "advanced" | null;
   healthCheckDomain?: string | null;
+  channel?: {
+    uri: string;
+    name?: string | null;
+  } | null;
 };
 
 /** Optimistic per-project patches applied before sync confirms them. */

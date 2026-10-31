@@ -5455,6 +5455,12 @@ export {
   type ProjectHealthCheckValue,
 } from "./components/codebase/project-health-check-property.js";
 
+export {
+  ProjectChannelField,
+  type ProjectChannelFieldProps,
+  type ProjectChannelFieldProject,
+} from "./components/codebase/project-channel-field.js";
+
 export { apiErrorMessage as codebaseApiErrorMessage } from "./components/codebase/api-error-message.js";
 export {
   fileExtension,

@@ -434,17 +434,25 @@
 }
 
 .project-channel-badge__dot {
-  display: block;
+  display: inline-flex;
   flex: 0 0 auto;
   box-sizing: border-box;
   width: 8px;
   height: 8px;
   min-width: 8px;
   min-height: 8px;
-  border-radius: 999px;
-  background-color: #22c55e;
+  align-items: center;
+  justify-content: center;
+  line-height: 0;
   /* Always pulse — Remon: ignore prefers-reduced-motion. */
   animation: project-channel-dot-pulse 1.6s ease-in-out infinite;
+}
+
+.project-channel-badge__dot svg {
+  display: block;
+  width: 8px;
+  height: 8px;
+  overflow: visible;
 }
 
 @keyframes project-channel-dot-pulse {

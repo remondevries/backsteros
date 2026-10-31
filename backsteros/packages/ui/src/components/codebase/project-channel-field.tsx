@@ -1,6 +1,6 @@
 "use client";
 
-import type { Project as ApiProject, ProjectChannel } from "@backsteros/contracts";
+import type { ProjectChannel } from "@backsteros/contracts";
 import {
   isGrokBotChannelUri,
   normalizeProjectChannel,
@@ -12,8 +12,15 @@ import { ProjectOcticon } from "../projects/project-octicon.js";
 import { apiErrorMessage } from "./api-error-message.js";
 import type { CodebaseRequestJson } from "./codebase-request-json.js";
 
-function parseProjectChannel(project: ApiProject): ProjectChannel | null {
-  const raw = (project as { channel?: unknown }).channel;
+export type ProjectChannelFieldProject = {
+  id: string;
+  channel?: ProjectChannel | string | null;
+};
+
+function parseProjectChannel(
+  project: ProjectChannelFieldProject,
+): ProjectChannel | null {
+  const raw = project.channel;
   if (raw == null) return null;
   if (typeof raw === "string") {
     try {
@@ -43,8 +50,8 @@ async function openProjectChannelUri(uri: string): Promise<void> {
 }
 
 export type ProjectChannelFieldProps = {
-  project: ApiProject;
-  onProjectUpdated: (project: ApiProject) => void;
+  project: ProjectChannelFieldProject;
+  onProjectUpdated: (project: ProjectChannelFieldProject) => void;
   requestJson: CodebaseRequestJson;
 };
 
@@ -74,7 +81,7 @@ export function ProjectChannelField({
         channel: null,
         updatedAt: new Date().toISOString(),
       });
-      const updated = await requestJson<ApiProject>(
+      await requestJson(
         `/api/v1/projects/${encodeURIComponent(project.id)}`,
         {
           method: "PATCH",
@@ -83,7 +90,7 @@ export function ProjectChannelField({
         },
       );
       onProjectUpdated({
-        ...updated,
+        ...project,
         channel: null,
       });
     } catch (err) {
@@ -129,7 +136,11 @@ export function ProjectChannelField({
             )}
           </span>
           <span className="project-channel-badge__status">
-            <span className="project-channel-badge__dot" aria-hidden="true" />
+            <span className="project-channel-badge__dot" aria-hidden="true">
+              <svg width="8" height="8" viewBox="0 0 8 8" focusable="false">
+                <circle cx="4" cy="4" r="4" fill="#22c55e" />
+              </svg>
+            </span>
             <span className="project-channel-badge__label">Active</span>
           </span>
         </button>

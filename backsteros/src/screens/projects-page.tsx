@@ -33,6 +33,7 @@ import {
   EntityPropertiesSection,
   PropertyFieldGroup,
   PropertyInlineChip,
+  ProjectChannelField,
   PillNav,
   RegisterEntityDeleteAction,
   RegisterEntityDuplicateAction,
@@ -2665,25 +2666,25 @@ function ProjectDetailScreen({
         />
       </PropertyFieldGroup>
       <PropertyFieldGroup label="Channel">
-        <PropertyInlineChip
-          label={(() => {
-            const raw = (project as { channel?: unknown }).channel;
-            let uri = "";
-            if (raw && typeof raw === "object" && !Array.isArray(raw)) {
-              uri =
-                typeof (raw as { uri?: unknown }).uri === "string"
-                  ? ((raw as { uri: string }).uri.trim() || "")
-                  : "";
-            } else if (typeof raw === "string" && raw.trim()) {
-              try {
-                const parsed = JSON.parse(raw) as { uri?: string };
-                uri = parsed.uri?.trim() || "";
-              } catch {
-                uri = raw.trim();
-              }
-            }
-            return uri ? "Active" : "Inactive";
-          })()}
+        <ProjectChannelField
+          project={{
+            id: project.id,
+            channel:
+              (project as { channel?: { uri: string; name?: string | null } | null })
+                .channel ?? null,
+          }}
+          onProjectUpdated={(updated) => {
+            patchSelected({
+              channel:
+                (updated.channel as
+                  | { uri: string; name?: string | null }
+                  | null
+                  | undefined) ?? null,
+            });
+          }}
+          requestJson={(path, init) =>
+            desktopApiClient.requestJson(path, init)
+          }
         />
       </PropertyFieldGroup>
     </EntityPropertiesSection>
