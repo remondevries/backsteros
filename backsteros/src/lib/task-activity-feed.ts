@@ -4,7 +4,10 @@ import type { TaskActivity, TaskActivityType, TaskComment } from "@backsteros/co
 import { useDesktopPowerSync, usePowerSyncQuery } from "./powersync-context";
 import type { PowerSyncRowComparator } from "./powersync-row-comparators";
 
-const TASK_ACTIVITIES_SQL = `
+/** Match UI page size (+ expand headroom); avoid materializing 900+ rows (OS-163 #5). */
+export const TASK_ACTIVITY_FEED_LIMIT = 100;
+
+export const TASK_ACTIVITIES_SQL = `
 SELECT
   id,
   task_id,
@@ -22,25 +25,9 @@ SELECT
   deleted_at
 FROM task_activities
 WHERE task_id = ?
-`;
-
-const TASK_COMMENTS_SQL = `
-SELECT
-  tc.id,
-  tc.task_id,
-  tc.parent_comment_id,
-  tc.author_user_id,
-  tc.author_contact_id,
-  tc.author_email,
-  tc.body,
-  tc.resolved_at,
-  tc.created_at,
-  tc.updated_at,
-  tc.deleted_at,
-  ct.name AS contact_name
-FROM task_comments tc
-LEFT JOIN contacts ct ON ct.id = tc.author_contact_id AND ct.deleted_at IS NULL
-WHERE tc.task_id = ? AND tc.deleted_at IS NULL
+  AND deleted_at IS NULL
+ORDER BY created_at DESC
+LIMIT ${TASK_ACTIVITY_FEED_LIMIT}
 `;
 
 const ACTIVITY_TYPES = new Set<TaskActivityType>([
@@ -81,21 +68,6 @@ type ActivityRow = {
   deleted_at?: string | null;
 };
 
-type CommentRow = {
-  id: string;
-  task_id: string;
-  parent_comment_id: string | null;
-  author_user_id: string | null;
-  author_contact_id: string | null;
-  author_email: string | null;
-  body: string;
-  resolved_at: string | null;
-  created_at: string;
-  updated_at: string;
-  deleted_at: string | null;
-  contact_name?: string | null;
-};
-
 const ACTIVITY_ROW_COMPARATOR: PowerSyncRowComparator<ActivityRow> = {
   keyBy: (row) => String(row.id ?? ""),
   compareBy: (row) =>
@@ -105,15 +77,6 @@ const ACTIVITY_ROW_COMPARATOR: PowerSyncRowComparator<ActivityRow> = {
       typeof row.data === "string" ? row.data : JSON.stringify(row.data ?? {})
     }`,
 };
-
-const COMMENT_ROW_COMPARATOR: PowerSyncRowComparator<CommentRow> = {
-  keyBy: (row) => String(row.id ?? ""),
-  compareBy: (row) =>
-    `${row.updated_at ?? ""}\0${row.resolved_at ?? ""}\0${row.body ?? ""}\0${
-      row.deleted_at ?? ""
-    }`,
-};
-
 function parseActivityData(
   value: string | Record<string, unknown> | null | undefined,
 ): Record<string, unknown> {
@@ -195,37 +158,6 @@ export function sqliteActivityRowToTaskComment(
     createdAt: row.created_at,
     updatedAt: row.updated_at ?? row.created_at,
     deletedAt: row.deleted_at ?? null,
-  };
-}
-
-export function sqliteRowToTaskComment(row: CommentRow): TaskComment {
-  const authorContactId = row.author_contact_id;
-  const isGenericAgent = !row.author_user_id && !authorContactId;
-  let authorName = "Agent";
-  if (!isGenericAgent) {
-    if (row.contact_name?.trim()) {
-      authorName = row.contact_name.trim();
-    } else if (row.author_email?.trim()) {
-      const local = row.author_email.trim().split("@")[0]?.trim();
-      authorName = local || row.author_email.trim();
-    } else {
-      authorName = "User";
-    }
-  }
-
-  return {
-    id: row.id,
-    taskId: row.task_id,
-    parentCommentId: row.parent_comment_id,
-    authorUserId: row.author_user_id,
-    authorContactId,
-    authorEmail: row.author_email,
-    authorName,
-    body: row.body,
-    resolvedAt: row.resolved_at,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-    deletedAt: row.deleted_at,
   };
 }
 
@@ -323,7 +255,8 @@ export function writeTaskActivityFeedCache(
 
 /**
  * Local-first task activity + comments from PowerSync SQLite.
- * Falls back to null rows when PowerSync is not ready (caller uses REST).
+ * Comment bodies come from `task_activities` only (OS-163 #5) — no dual
+ * `task_comments` watch. Falls back to null when PowerSync is not ready.
  */
 export function useTaskActivityLocalFeed(taskId: string | null | undefined) {
   const { ready } = useDesktopPowerSync();
@@ -333,11 +266,6 @@ export function useTaskActivityLocalFeed(taskId: string | null | undefined) {
     enabled ? TASK_ACTIVITIES_SQL : null,
     taskId ? [taskId] : [],
     { rowComparator: ACTIVITY_ROW_COMPARATOR },
-  );
-  const commentQuery = usePowerSyncQuery<CommentRow>(
-    enabled ? TASK_COMMENTS_SQL : null,
-    taskId ? [taskId] : [],
-    { rowComparator: COMMENT_ROW_COMPARATOR },
   );
 
   useEffect(() => {
@@ -358,31 +286,12 @@ export function useTaskActivityLocalFeed(taskId: string | null | undefined) {
       .filter((row) => SYSTEM_ACTIVITY_TYPES.has(row.type));
   }, [activityQuery.data]);
 
-  const commentsFromActivities = useMemo(() => {
+  const sqliteComments = useMemo(() => {
     if (!activityQuery.data) return null;
     return activityQuery.data
       .map(sqliteActivityRowToTaskComment)
       .filter((row): row is TaskComment => row != null);
   }, [activityQuery.data]);
-
-  const sqliteComments = useMemo(() => {
-    const fromCommentsTable = commentQuery.data
-      ? commentQuery.data.map(sqliteRowToTaskComment)
-      : null;
-    // Prefer unified activity rows when present; fall back to legacy table
-    // while PowerSync catches up on the new columns / backfill.
-    if (commentsFromActivities && commentsFromActivities.length > 0) {
-      const byId = new Map(commentsFromActivities.map((c) => [c.id, c]));
-      for (const comment of fromCommentsTable ?? []) {
-        const existing = byId.get(comment.id);
-        if (!existing || existing.updatedAt < comment.updatedAt) {
-          byId.set(comment.id, comment);
-        }
-      }
-      return [...byId.values()];
-    }
-    return fromCommentsTable;
-  }, [commentQuery.data, commentsFromActivities]);
 
   useEffect(() => {
     if (!taskId || !sqliteComments) return;
@@ -416,7 +325,7 @@ export function useTaskActivityLocalFeed(taskId: string | null | undefined) {
   }, [activities, comments, enabled, snapshotReady, taskId]);
 
   return {
-    active: enabled && !activityQuery.error && !commentQuery.error,
+    active: enabled && !activityQuery.error,
     activities: snapshotReady
       ? activities
       : (cached?.activities ?? null),
@@ -426,9 +335,8 @@ export function useTaskActivityLocalFeed(taskId: string | null | undefined) {
     loading:
       enabled &&
       !activityQuery.error &&
-      !commentQuery.error &&
       !snapshotReady &&
       cached == null,
-    error: activityQuery.error ?? commentQuery.error,
+    error: activityQuery.error,
   };
 }
