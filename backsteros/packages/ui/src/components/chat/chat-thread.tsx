@@ -75,6 +75,10 @@ import {
   ChatChoicesAnswerProvider,
   type ChatChoicesAnswerFn,
 } from "./chat-choices-card.js";
+import {
+  ChatFormAnswerProvider,
+  type ChatFormAnswerFn,
+} from "./chat-form-card.js";
 import { ChatComposerMentionMenu } from "./chat-composer-mention-menu.js";
 import {
   applyMentionItemToComposerInput,
@@ -167,6 +171,11 @@ export type ChatThreadProps = {
    * normal user message via the same answer API.
    */
   onAnswerApproval?: ChatApprovalAnswerFn | null;
+  /**
+   * Answer assistant form cards (owner). Posts a summary user message via the
+   * same answer API.
+   */
+  onAnswerForm?: ChatFormAnswerFn | null;
   /**
    * Optional empty state when there are no messages.
    * Pass `null` to show no empty-state copy (composer only).
@@ -795,6 +804,7 @@ export function ChatThread({
   onDeleteMessages = null,
   onAnswerChoices = null,
   onAnswerApproval = null,
+  onAnswerForm = null,
   emptyState,
   className,
 }: ChatThreadProps) {
@@ -1121,6 +1131,7 @@ export function ChatThread({
       <ChatCardRegistryProvider registry={registry}>
         <ChatChoicesAnswerProvider onAnswer={onAnswerChoices}>
         <ChatApprovalAnswerProvider onAnswer={onAnswerApproval}>
+        <ChatFormAnswerProvider onAnswer={onAnswerForm}>
         <AssistantRuntimeProvider runtime={runtime}>
           <div
             ref={threadRootRef}
@@ -1257,6 +1268,7 @@ export function ChatThread({
             </ThreadPrimitive.Root>
           </div>
         </AssistantRuntimeProvider>
+        </ChatFormAnswerProvider>
         </ChatApprovalAnswerProvider>
         </ChatChoicesAnswerProvider>
       </ChatCardRegistryProvider>

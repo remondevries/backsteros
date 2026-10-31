@@ -287,3 +287,103 @@ describe("chatThreadMessageToUi approval", () => {
     assert.notEqual((card.data as { dismissed?: boolean }).dismissed, true);
   });
 });
+
+function assistantWithForm(id: string, answered: boolean): ChatThreadMessage {
+  return {
+    id,
+    threadId: "th",
+    role: "assistant",
+    authorContactId: null,
+    authorName: "Sander",
+    body: "A few details please.",
+    status: "done",
+    createdAt: "2026-10-31T08:00:00.000Z",
+    updatedAt: "2026-10-31T08:00:00.000Z",
+    form: {
+      title: "Invoice details",
+      description: "Amount and due date.",
+      submitLabel: "Send",
+      fields: [
+        {
+          name: "amount",
+          label: "Amount",
+          type: "number",
+          required: true,
+          min: 0,
+        },
+        {
+          name: "currency",
+          label: "Currency",
+          type: "select",
+          required: true,
+          options: [
+            { label: "EUR", value: "EUR" },
+            { label: "USD", value: "USD" },
+          ],
+        },
+      ],
+    },
+    formAnswer: answered
+      ? {
+          values: { amount: 1200, currency: "EUR" },
+          answeredAt: "2026-10-31T08:01:00.000Z",
+        }
+      : null,
+  };
+}
+
+describe("chatThreadMessageToUi form", () => {
+  it("appends a form card", () => {
+    const ui = chatThreadMessageToUi(assistantWithForm("m1", false));
+    const card = ui.parts.find(
+      (part) => part.type === "card" && part.cardType === "form",
+    );
+    assert.ok(card && card.type === "card");
+    assert.equal((card.data as { title?: string }).title, "Invoice details");
+    assert.equal((card.data as { answer: unknown }).answer, null);
+  });
+
+  it("marks unanswered form dismissed after a later user message", () => {
+    const ui = chatThreadMessagesToUi([
+      assistantWithForm("m1", false),
+      {
+        id: "m2",
+        threadId: "th",
+        role: "user",
+        authorContactId: null,
+        authorName: "Remon",
+        body: "typed instead",
+        status: "done",
+        createdAt: "2026-10-31T08:02:00.000Z",
+        updatedAt: "2026-10-31T08:02:00.000Z",
+      },
+    ]);
+    const card = ui[0]?.parts.find(
+      (part) => part.type === "card" && part.cardType === "form",
+    );
+    assert.ok(card && card.type === "card");
+    assert.equal((card.data as { dismissed?: boolean }).dismissed, true);
+  });
+
+  it("does not dismiss answered form", () => {
+    const ui = chatThreadMessagesToUi([
+      assistantWithForm("m1", true),
+      {
+        id: "m2",
+        threadId: "th",
+        role: "user",
+        authorContactId: null,
+        authorName: "Remon",
+        body: "Submitted: Invoice details",
+        status: "done",
+        createdAt: "2026-10-31T08:02:00.000Z",
+        updatedAt: "2026-10-31T08:02:00.000Z",
+      },
+    ]);
+    const card = ui[0]?.parts.find(
+      (part) => part.type === "card" && part.cardType === "form",
+    );
+    assert.ok(card && card.type === "card");
+    assert.notEqual((card.data as { dismissed?: boolean }).dismissed, true);
+  });
+});

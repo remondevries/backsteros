@@ -17,6 +17,8 @@ import type {
   ChatThreadMessageApprovalAnswer,
   ChatThreadMessageChoices,
   ChatThreadMessageChoicesAnswer,
+  ChatThreadMessageForm,
+  ChatThreadMessageFormAnswer,
   ChatThreadMessageProgress,
   ChatThreadWithMessages,
   ChatUiFilePart,
@@ -90,6 +92,11 @@ export type LiveAgentChatHandlers = {
     messageId: string,
     decision: "approved" | "rejected",
     note?: string,
+  ) => Promise<AnswerChatThreadMessageChoicesResult>;
+  answerForm?: (
+    threadId: string,
+    messageId: string,
+    values: Record<string, string | number | boolean>,
   ) => Promise<AnswerChatThreadMessageChoicesResult>;
 };
 
@@ -482,6 +489,8 @@ export function ChatUiDevPreview({
             choicesAnswer?: ChatThreadMessageChoicesAnswer | null;
             approval?: ChatThreadMessageApproval;
             approvalAnswer?: ChatThreadMessageApprovalAnswer | null;
+            form?: ChatThreadMessageForm;
+            formAnswer?: ChatThreadMessageFormAnswer | null;
             progress?: ChatThreadMessageProgress;
             attachments?: ChatThreadAttachment[];
             linkPreviews?: ChatThreadLinkPreview[];
@@ -513,6 +522,12 @@ export function ChatUiDevPreview({
               ? {
                   approval: detail.message.approval,
                   approvalAnswer: detail.message.approvalAnswer ?? null,
+                }
+              : {}),
+            ...(detail.message?.form
+              ? {
+                  form: detail.message.form,
+                  formAnswer: detail.message.formAnswer ?? null,
                 }
               : {}),
             ...(detail.message?.progress
@@ -908,6 +923,95 @@ export function ChatUiDevPreview({
     [liveAgentChat, liveAgentId, liveThreadId],
   );
 
+  const onAnswerForm = useCallback(
+    async (
+      messageId: string,
+      values: Record<string, string | number | boolean>,
+    ) => {
+      if (!liveAgentId || !liveAgentChat?.answerForm || !liveThreadId) {
+        return;
+      }
+      const pendingId = `pending-form-${Date.now()}`;
+      const now = new Date().toISOString();
+      const source = liveRef.current.messages.find(
+        (message) => message.id === messageId,
+      );
+      const formPart = source?.parts.find(
+        (part) => part.type === "card" && part.cardType === "form",
+      );
+      const titleHint =
+        formPart &&
+        formPart.type === "card" &&
+        typeof formPart.data?.title === "string"
+          ? formPart.data.title
+          : "Form";
+      dispatchLive({
+        type: "sendStarted",
+        message: {
+          id: pendingId,
+          role: "user",
+          author: { name: "You" },
+          status: "pending",
+          createdAt: now,
+          parts: [{ type: "text", text: `Submitted: ${titleHint}` }],
+        },
+      });
+      try {
+        const result = await liveAgentChat.answerForm(
+          liveThreadId,
+          messageId,
+          values,
+        );
+        dispatchLive({
+          type: "pushMessage",
+          threadId: liveThreadId,
+          message: {
+            id: result.message.id,
+            body: result.message.body,
+            createdAt: result.message.createdAt,
+            ...(result.message.choices
+              ? {
+                  choices: result.message.choices,
+                  choicesAnswer: result.message.choicesAnswer ?? null,
+                }
+              : {}),
+            ...(result.message.approval
+              ? {
+                  approval: result.message.approval,
+                  approvalAnswer: result.message.approvalAnswer ?? null,
+                }
+              : {}),
+            ...(result.message.form
+              ? {
+                  form: result.message.form,
+                  formAnswer: result.message.formAnswer ?? null,
+                }
+              : {}),
+          },
+        });
+        dispatchLive({
+          type: "sendSucceeded",
+          pendingId,
+          message: result.reply.message,
+          thinking: result.reply.thinking,
+          webhookError: result.reply.webhookError,
+          nowMs: Date.now(),
+        });
+      } catch (error) {
+        dispatchLive({
+          type: "sendFailed",
+          pendingId,
+          error:
+            error instanceof Error
+              ? error.message
+              : "Could not submit form.",
+        });
+        throw error;
+      }
+    },
+    [liveAgentChat, liveAgentId, liveThreadId],
+  );
+
   const liveView = useMemo(() => liveAgentThreadView(live), [live]);
   // While a live agent thread loads, show nothing rather than demo messages.
   const messages: readonly ChatUiMessage[] = liveAgentId
@@ -975,6 +1079,9 @@ export function ChatUiDevPreview({
             liveAgentId && liveAgentChat?.answerApproval
               ? onAnswerApproval
               : null
+          }
+          onAnswerForm={
+            liveAgentId && liveAgentChat?.answerForm ? onAnswerForm : null
           }
           emptyState={null}
           placeholder="Message…"

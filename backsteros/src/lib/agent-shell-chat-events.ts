@@ -10,6 +10,8 @@ import {
   chatThreadMessageApprovalSchema,
   chatThreadMessageChoicesAnswerSchema,
   chatThreadMessageChoicesSchema,
+  chatThreadMessageFormAnswerSchema,
+  chatThreadMessageFormSchema,
   chatThreadMessageProgressSchema,
   sanitizeChatThreadStatusLabel,
   type ChatThreadAttachment,
@@ -18,6 +20,8 @@ import {
   type ChatThreadMessageApprovalAnswer,
   type ChatThreadMessageChoices,
   type ChatThreadMessageChoicesAnswer,
+  type ChatThreadMessageForm,
+  type ChatThreadMessageFormAnswer,
   type ChatThreadMessageProgress,
 } from "@backsteros/contracts";
 
@@ -51,6 +55,8 @@ export type AgentShellChatMessagePayload = {
     choicesAnswer?: ChatThreadMessageChoicesAnswer | null;
     approval?: ChatThreadMessageApproval;
     approvalAnswer?: ChatThreadMessageApprovalAnswer | null;
+    form?: ChatThreadMessageForm;
+    formAnswer?: ChatThreadMessageFormAnswer | null;
     progress?: ChatThreadMessageProgress;
     attachments?: ChatThreadAttachment[];
     linkPreviews?: ChatThreadLinkPreview[];
@@ -127,6 +133,8 @@ export function parseAgentShellChatMessagePayload(
         choicesAnswer?: unknown;
         approval?: unknown;
         approvalAnswer?: unknown;
+        form?: unknown;
+        formAnswer?: unknown;
         progress?: unknown;
         attachments?: unknown;
         linkPreviews?: unknown;
@@ -182,6 +190,20 @@ export function parseAgentShellChatMessagePayload(
           ? null
           : null
       : undefined;
+    const formParsed = chatThreadMessageFormSchema.safeParse(
+      parsed.message?.form,
+    );
+    const form = formParsed.success ? formParsed.data : undefined;
+    const formAnswerParsed = chatThreadMessageFormAnswerSchema.safeParse(
+      parsed.message?.formAnswer,
+    );
+    const formAnswer = form
+      ? formAnswerParsed.success
+        ? formAnswerParsed.data
+        : parsed.message?.formAnswer == null
+          ? null
+          : null
+      : undefined;
     const progressParsed = chatThreadMessageProgressSchema.safeParse(
       parsed.message?.progress,
     );
@@ -213,6 +235,7 @@ export function parseAgentShellChatMessagePayload(
         ...(approval
           ? { approval, approvalAnswer: approvalAnswer ?? null }
           : {}),
+        ...(form ? { form, formAnswer: formAnswer ?? null } : {}),
         ...(progress ? { progress } : {}),
         ...(attachments.length > 0 ? { attachments } : {}),
         ...(linkPreviews.length > 0 ? { linkPreviews } : {}),

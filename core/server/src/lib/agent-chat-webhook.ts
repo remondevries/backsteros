@@ -89,6 +89,30 @@ export type AgentChatWebhookApprovalAnswer = {
   answeredAt: string;
 };
 
+export type AgentChatWebhookFormField = {
+  name: string;
+  label: string;
+  type: "text" | "textarea" | "number" | "date" | "select" | "checkbox";
+  required: boolean;
+  placeholder?: string;
+  defaultValue?: string | number | boolean;
+  options?: Array<{ label: string; value: string }>;
+  min?: number | string;
+  max?: number | string;
+};
+
+export type AgentChatWebhookForm = {
+  title: string;
+  description?: string;
+  submitLabel?: string;
+  fields: AgentChatWebhookFormField[];
+};
+
+export type AgentChatWebhookFormAnswer = {
+  values: Record<string, string | number | boolean>;
+  answeredAt: string;
+};
+
 export type AgentChatWebhookAttachment = {
   id: string;
   filename: string;
@@ -135,6 +159,9 @@ export type AgentChatWebhookMessage = {
   /** Assistant-only approve/reject card (when present on context messages). */
   approval?: AgentChatWebhookApproval;
   approvalAnswer?: AgentChatWebhookApprovalAnswer | null;
+  /** Assistant-only small form (when present on context messages). */
+  form?: AgentChatWebhookForm;
+  formAnswer?: AgentChatWebhookFormAnswer | null;
   /** Assistant-only live progress (when present on context messages). */
   progress?: AgentChatWebhookProgress;
   /** Files attached to this message. */

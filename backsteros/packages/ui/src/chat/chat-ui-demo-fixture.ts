@@ -549,6 +549,68 @@ export function buildChatUiDemoMessages(): ChatUiMessage[] {
       ],
     },
     {
+      id: "agent-form",
+      role: "assistant",
+      author: { name: "Cursor agent" },
+      status: "done",
+      createdAt: "2026-10-30T08:06:58.000Z",
+      parts: [
+        {
+          type: "text",
+          text: "Quick form preview — fill this in when you’re ready.",
+        },
+        {
+          type: "card",
+          cardType: "form",
+          id: "card-form-1",
+          data: {
+            messageId: "agent-form",
+            title: "Invoice details",
+            description: "Amount, due date, and currency for the draft.",
+            submitLabel: "Send",
+            fields: [
+              {
+                name: "amount",
+                label: "Amount",
+                type: "number",
+                required: true,
+                min: 0,
+                placeholder: "1200",
+              },
+              {
+                name: "due_date",
+                label: "Due date",
+                type: "date",
+                required: true,
+              },
+              {
+                name: "currency",
+                label: "Currency",
+                type: "select",
+                required: true,
+                options: [
+                  { label: "EUR", value: "EUR" },
+                  { label: "USD", value: "USD" },
+                ],
+              },
+              {
+                name: "notes",
+                label: "Notes",
+                type: "textarea",
+                placeholder: "Optional notes",
+              },
+              {
+                name: "rush",
+                label: "Rush",
+                type: "checkbox",
+              },
+            ],
+            answer: null,
+          },
+        },
+      ],
+    },
+    {
       id: "agent-6",
       role: "assistant",
       author: { name: "Cursor agent" },

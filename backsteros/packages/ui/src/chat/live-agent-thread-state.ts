@@ -15,6 +15,8 @@ import type {
   ChatThreadMessageApprovalAnswer,
   ChatThreadMessageChoices,
   ChatThreadMessageChoicesAnswer,
+  ChatThreadMessageForm,
+  ChatThreadMessageFormAnswer,
   ChatThreadMessageProgress,
   ChatThreadWithMessages,
   ChatUiMessage,
@@ -65,6 +67,8 @@ export type LiveAgentMessagePush = {
   choicesAnswer?: ChatThreadMessageChoicesAnswer | null;
   approval?: ChatThreadMessageApproval;
   approvalAnswer?: ChatThreadMessageApprovalAnswer | null;
+  form?: ChatThreadMessageForm;
+  formAnswer?: ChatThreadMessageFormAnswer | null;
   progress?: ChatThreadMessageProgress;
   attachments?: ChatThreadAttachment[];
   linkPreviews?: ChatThreadLinkPreview[];
@@ -325,6 +329,12 @@ export function liveAgentThreadReducer(
               approvalAnswer: action.message.approvalAnswer ?? null,
             }
           : {}),
+        ...(action.message.form
+          ? {
+              form: action.message.form,
+              formAnswer: action.message.formAnswer ?? null,
+            }
+          : {}),
         ...(action.message.progress
           ? { progress: action.message.progress }
           : {}),
@@ -336,7 +346,7 @@ export function liveAgentThreadReducer(
           ? { linkPreviews: action.message.linkPreviews }
           : {}),
       });
-      // Same id may arrive again with choicesAnswer / approvalAnswer / progress.
+      // Same id may arrive again with answers / progress filled in.
       const without = state.messages.filter(
         (message) => message.id !== pushed.id,
       );

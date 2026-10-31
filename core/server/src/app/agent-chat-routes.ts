@@ -249,6 +249,7 @@ export function registerAgentChatRoutes(app: Hono) {
         {
           choices: parsed.data.choices,
           approval: parsed.data.approval,
+          form: parsed.data.form,
           progress: parsed.data.progress,
           attachmentIds: parsed.data.attachmentIds,
           skipLinkPreviews: parsed.data.skipLinkPreviews,
@@ -340,7 +341,7 @@ export function registerAgentChatRoutes(app: Hono) {
   );
 
   /**
-   * Answer assistant choices or approval once — owner / Access keys only.
+   * Answer assistant choices, approval, or form once — owner / Access keys only.
    * Records the answer and posts a normal user message (webhook path unchanged).
    */
   app.post(
@@ -374,6 +375,16 @@ export function registerAgentChatRoutes(app: Hono) {
             c.req.param("messageId"),
             parsed.data.decision,
             parsed.data.note,
+            postAuth,
+          );
+          return c.json(result, 201);
+        }
+        if (!Array.isArray(parsed.data.values)) {
+          const result = await agentChat.answerChatThreadMessageForm(
+            auth.workspaceId,
+            c.req.param("threadId"),
+            c.req.param("messageId"),
+            parsed.data.values,
             postAuth,
           );
           return c.json(result, 201);

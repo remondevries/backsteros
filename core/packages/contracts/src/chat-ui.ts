@@ -472,6 +472,62 @@ export const chatUiApprovalCardDataSchema = z.object({
 });
 export type ChatUiApprovalCardData = z.infer<typeof chatUiApprovalCardDataSchema>;
 
+/** Card payload for `cardType: "form"` (agent small form). */
+export const chatUiFormCardDataSchema = z.object({
+  messageId: z.string(),
+  title: z.string().min(1).max(120),
+  description: z.string().min(1).max(500).optional(),
+  submitLabel: z.string().min(1).max(40).optional(),
+  fields: z
+    .array(
+      z.object({
+        name: z.string().min(1).max(40),
+        label: z.string().min(1).max(40),
+        type: z.enum([
+          "text",
+          "textarea",
+          "number",
+          "date",
+          "select",
+          "checkbox",
+        ]),
+        required: z.boolean().default(false),
+        placeholder: z.string().min(1).max(80).optional(),
+        defaultValue: z.union([z.string(), z.number(), z.boolean()]).optional(),
+        options: z
+          .array(
+            z.object({
+              label: z.string().min(1).max(60),
+              value: z.string().min(1).max(200),
+            }),
+          )
+          .min(2)
+          .max(12)
+          .optional(),
+        min: z.union([z.number(), z.string()]).optional(),
+        max: z.union([z.number(), z.string()]).optional(),
+      }),
+    )
+    .min(1)
+    .max(8),
+  answer: z
+    .object({
+      values: z.record(
+        z.string(),
+        z.union([z.string(), z.number(), z.boolean()]),
+      ),
+      answeredAt: z.string().datetime(),
+    })
+    .nullable()
+    .optional(),
+  /**
+   * True when a later user message exists and this was never answered —
+   * greyed out, no submit.
+   */
+  dismissed: z.boolean().optional(),
+});
+export type ChatUiFormCardData = z.infer<typeof chatUiFormCardDataSchema>;
+
 /** Card payload for `cardType: "progress"` (agent live status / progress). */
 export const chatUiProgressCardDataSchema = z.object({
   messageId: z.string(),

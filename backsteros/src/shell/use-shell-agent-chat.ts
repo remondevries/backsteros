@@ -73,6 +73,11 @@ export type ShellAgentChatApi = {
     decision: "approved" | "rejected",
     note?: string,
   ) => Promise<AnswerChatThreadMessageResult>;
+  answerForm: (
+    threadId: string,
+    messageId: string,
+    values: Record<string, string | number | boolean>,
+  ) => Promise<AnswerChatThreadMessageResult>;
 };
 
 /**
@@ -281,6 +286,23 @@ export function useShellAgentChat(): ShellAgentChatApi {
     [],
   );
 
+  const answerForm = useCallback(
+    async (
+      threadId: string,
+      messageId: string,
+      values: Record<string, string | number | boolean>,
+    ) => {
+      return cloudCoreRequestJson<AnswerChatThreadMessageResult>(
+        `/api/v1/chat/threads/${encodeURIComponent(threadId)}/messages/${encodeURIComponent(messageId)}/answer`,
+        {
+          method: "POST",
+          body: JSON.stringify({ values }),
+        },
+      );
+    },
+    [],
+  );
+
   return useMemo(
     (): ShellAgentChatApi => ({
       agents,
@@ -296,6 +318,7 @@ export function useShellAgentChat(): ShellAgentChatApi {
       deleteMessages,
       answerChoices,
       answerApproval,
+      answerForm,
     }),
     [
       agents,
@@ -303,6 +326,7 @@ export function useShellAgentChat(): ShellAgentChatApi {
       agentsLoadError,
       answerApproval,
       answerChoices,
+      answerForm,
       deleteMessages,
       getThread,
       listMessages,

@@ -17,7 +17,6 @@ import { applyRemoteChanges, applyReplicationRow } from "../services/core-replic
 import {
   countOpenReplicationDeadLetters,
   deadLetterBackoffMs,
-  listOpenReplicationDeadLetters,
   recordReplicationDeadLetter,
   retryReplicationDeadLetters,
 } from "../services/core-replication/dead-letters.js";
@@ -135,8 +134,18 @@ test("failed unique apply becomes a dead letter; cursor can still advance; retry
 
   const openCount = await countOpenReplicationDeadLetters();
   assert.ok(openCount >= 1);
-  const open = await listOpenReplicationDeadLetters(50);
-  const letter = open.find((row) => row.rowId === incomingProjectId);
+  // Look up by rowId — listOpenReplicationDeadLetters is capped and can miss
+  // this row when older open letters already fill the page.
+  const [letter] = await db
+    .select()
+    .from(replicationDeadLetters)
+    .where(
+      and(
+        eq(replicationDeadLetters.rowId, incomingProjectId),
+        isNull(replicationDeadLetters.resolvedAt),
+      ),
+    )
+    .limit(1);
   assert.ok(letter, "dead letter should appear for the failed row");
   assert.equal(letter.tableName, "projects");
   assert.equal(letter.direction, "pull");

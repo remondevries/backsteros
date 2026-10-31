@@ -3176,6 +3176,17 @@ export const chatThreadMessages = pgTable(
      */
     approvalAnswer: jsonb("approval_answer").$type<Record<string, unknown> | null>(),
     /**
+     * Assistant-only small form card
+     * (`{ title, description?, submitLabel?, fields[] }`).
+     * Null on user/system rows and older assistant messages.
+     */
+    form: jsonb("form").$type<Record<string, unknown> | null>(),
+    /**
+     * Once the owner submits: `{ values: Record<string, string|number|boolean>, answeredAt }`.
+     * Null while unanswered (or when `form` is null).
+     */
+    formAnswer: jsonb("form_answer").$type<Record<string, unknown> | null>(),
+    /**
      * Assistant-only live progress / status card
      * (`{ title, state, steps?, current?, total?, detail? }`).
      * Null on user/system rows and older assistant messages.

@@ -734,6 +734,149 @@ test("OS-151/150 agents + chat loop: secret write-only, webhook fire, agent repl
     "Rejected: Invoice INV-9 — Wrong amount",
   );
 
+  // Agent posts a small form; owner submits once (creates user msg + webhook).
+  webhookHit = null;
+  const formReply = await json(
+    app,
+    `/api/v1/chat/threads/${threadId}/messages`,
+    agentSecret,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        body: "A few details please.",
+        form: {
+          title: "Invoice details",
+          description: "Fill these in.",
+          submitLabel: "Send",
+          fields: [
+            {
+              name: "amount",
+              label: "Amount",
+              type: "number",
+              required: true,
+              min: 0,
+            },
+            {
+              name: "currency",
+              label: "Currency",
+              type: "select",
+              required: true,
+              options: [
+                { label: "EUR", value: "EUR" },
+                { label: "USD", value: "USD" },
+              ],
+            },
+            { name: "rush", label: "Rush", type: "checkbox" },
+          ],
+        },
+      }),
+    },
+  );
+  assert.equal(formReply.status, 201);
+  const formMessage = formReply.body?.message as {
+    id: string;
+    form?: { title: string };
+    formAnswer: unknown;
+  };
+  assert.equal(formMessage?.form?.title, "Invoice details");
+  assert.equal(formMessage.formAnswer, null);
+
+  const userFormDenied = await json(
+    app,
+    `/api/v1/chat/threads/${threadId}/messages`,
+    ownerSecret,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        body: "nope",
+        form: {
+          title: "Nope",
+          fields: [{ name: "x", label: "X", type: "text" }],
+        },
+      }),
+    },
+  );
+  assert.equal(userFormDenied.status, 400);
+
+  const agentFormDenied = await app.request(
+    `/api/v1/chat/threads/${threadId}/messages/${formMessage.id}/answer`,
+    {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${agentSecret}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ values: { amount: 10, currency: "EUR" } }),
+    },
+  );
+  assert.equal(agentFormDenied.status, 403);
+
+  const formInvalid = await json(
+    app,
+    `/api/v1/chat/threads/${threadId}/messages/${formMessage.id}/answer`,
+    ownerSecret,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        values: { amount: -1, currency: "EUR" },
+      }),
+    },
+  );
+  assert.equal(formInvalid.status, 400);
+
+  webhookHit = null;
+  const formSubmitted = await json(
+    app,
+    `/api/v1/chat/threads/${threadId}/messages/${formMessage.id}/answer`,
+    ownerSecret,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        values: { amount: 1200, currency: "EUR", rush: true },
+      }),
+    },
+  );
+  assert.equal(formSubmitted.status, 201);
+  assert.deepEqual(
+    (formSubmitted.body?.message as { formAnswer?: { values: unknown } })
+      ?.formAnswer?.values,
+    { amount: 1200, currency: "EUR", rush: true },
+  );
+  assert.equal(
+    (formSubmitted.body?.reply as { message?: { body?: string } })?.message
+      ?.body,
+    [
+      "Submitted: Invoice details",
+      "Amount: 1200",
+      "Currency: EUR",
+      "Rush: Yes",
+    ].join("\n"),
+  );
+  assert.ok(webhookHit);
+  const formPayload = JSON.parse(webhookHit.body) as {
+    message: { text: string };
+    context: Array<{ formAnswer?: { values: unknown } | null }>;
+  };
+  assert.match(formPayload.message.text, /^Submitted: Invoice details/);
+  assert.ok(
+    formPayload.context.some(
+      (row) =>
+        row.formAnswer &&
+        (row.formAnswer.values as { amount?: number }).amount === 1200,
+    ),
+  );
+
+  const formAgain = await json(
+    app,
+    `/api/v1/chat/threads/${threadId}/messages/${formMessage.id}/answer`,
+    ownerSecret,
+    {
+      method: "POST",
+      body: JSON.stringify({ values: { amount: 1, currency: "USD" } }),
+    },
+  );
+  assert.equal(formAgain.status, 409);
+
   // Agent keys cannot delete.
   const agentDeleteDenied = await app.request(
     `/api/v1/chat/threads/${threadId}/messages/${assistant.id}`,

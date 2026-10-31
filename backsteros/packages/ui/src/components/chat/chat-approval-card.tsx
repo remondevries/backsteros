@@ -14,8 +14,12 @@ import type {
   ChatUiCardPart,
 } from "@backsteros/contracts";
 import { chatUiApprovalCardDataSchema } from "@backsteros/contracts";
+import { BorderBeam } from "border-beam";
 
 import { DocumentMarkdownPreview } from "../documents/document-markdown-preview.js";
+import { SocialComposerPlainEditor } from "../social/social-composer-plain-editor.js";
+
+const APPROVAL_NOTE_MAX = 500;
 
 export type ChatApprovalAnswerFn = (
   messageId: string,
@@ -67,10 +71,10 @@ function ApprovalKindIcon({
   switch (kind) {
     case "deploy":
       return (
-        <svg {...common}>
+        <svg {...common} viewBox="0 0 24 24">
           <path
             fill="currentColor"
-            d="M8 1.5 3 6h3v5h4V6h3L8 1.5ZM3 13h10v1.5H3V13Z"
+            d="M2.25 5.7c0-.943.661-1.95 1.75-1.95h16c1.089 0 1.75 1.007 1.75 1.95v3.6c0 .943-.661 1.95-1.75 1.95H4c-1.089 0-1.75-1.007-1.75-1.95zM6 6.75a.75.75 0 0 0 0 1.5h2a.75.75 0 0 0 0-1.5zM2.25 14.7c0-.943.661-1.95 1.75-1.95h16c1.089 0 1.75 1.007 1.75 1.95v3.6c0 .943-.661 1.95-1.75 1.95H4c-1.089 0-1.75-1.007-1.75-1.95zM6 15.75a.75.75 0 0 0 0 1.5h2a.75.75 0 0 0 0-1.5z"
           />
         </svg>
       );
@@ -103,10 +107,10 @@ function ApprovalKindIcon({
       );
     case "delete":
       return (
-        <svg {...common}>
+        <svg {...common} viewBox="0 0 24 24">
           <path
             fill="currentColor"
-            d="M6 2h4l.5 1H14v1.5H2V3h3.5L6 2Zm1 4v5.5h1.5V6H7Zm2.5 0v5.5H11V6H9.5ZM4.5 4.5l.8 8.2A1 1 0 0 0 6.3 13.5h3.4a1 1 0 0 0 1-.8l.8-8.2h-7Z"
+            d="M2.25 12c0-5.385 4.365-9.75 9.75-9.75s9.75 4.365 9.75 9.75-4.365 9.75-9.75 9.75S2.25 17.385 2.25 12m6.22-3.53a.75.75 0 0 0 0 1.06L10.94 12l-2.47 2.47a.75.75 0 1 0 1.06 1.06L12 13.06l2.47 2.47a.75.75 0 0 0 1.06-1.06L13.06 12l2.47-2.47a.75.75 0 0 0-1.06-1.06L12 10.94 9.53 8.47a.75.75 0 0 0-1.06 0"
           />
         </svg>
       );
@@ -166,6 +170,19 @@ export function ChatApprovalCard({ part }: { part: ChatUiCardPart }) {
   const approveLabel = data.approveLabel?.trim() || "Approve";
   const rejectLabel = data.rejectLabel?.trim() || "Reject";
   const answer = data.answer;
+  const approveButton = (
+    <button
+      type="button"
+      className={[
+        "chat-ui-approval-card__btn",
+        data.destructive ? "is-danger" : "is-primary",
+      ].join(" ")}
+      disabled={submitting || !onAnswer}
+      onClick={() => void submit("approved")}
+    >
+      {approveLabel}
+    </button>
+  );
 
   return (
     <div
@@ -229,17 +246,19 @@ export function ChatApprovalCard({ part }: { part: ChatUiCardPart }) {
       ) : null}
 
       {answer ? (
-        <div
-          className={[
-            "chat-ui-approval-card__result",
-            answer.decision === "approved" ? "is-approved" : "is-rejected",
-          ].join(" ")}
-        >
-          <span className="chat-ui-approval-card__result-label">
-            {answer.decision === "approved" ? "Approved" : "Rejected"}
-          </span>
-          <span className="chat-ui-approval-card__result-time">
-            {formatAnsweredAt(answer.answeredAt)}
+        <div className="chat-ui-approval-card__result-row">
+          <span
+            className={[
+              "chat-ui-approval-card__result",
+              answer.decision === "approved" ? "is-approved" : "is-rejected",
+            ].join(" ")}
+          >
+            <span className="chat-ui-approval-card__result-label">
+              {answer.decision === "approved" ? "Approved" : "Rejected"}
+            </span>
+            <span className="chat-ui-approval-card__result-time">
+              {formatAnsweredAt(answer.answeredAt)}
+            </span>
           </span>
           {answer.note ? (
             <span className="chat-ui-approval-card__result-note">
@@ -249,17 +268,21 @@ export function ChatApprovalCard({ part }: { part: ChatUiCardPart }) {
         </div>
       ) : !locked ? (
         <div className="chat-ui-approval-card__actions">
-          <button
-            type="button"
-            className={[
-              "chat-ui-approval-card__btn",
-              data.destructive ? "is-danger" : "is-primary",
-            ].join(" ")}
-            disabled={submitting || !onAnswer}
-            onClick={() => void submit("approved")}
-          >
-            {approveLabel}
-          </button>
+          {data.kind === "deploy" && !data.destructive ? (
+            <BorderBeam
+              size="sm"
+              colorVariant="ocean"
+              strength={0.85}
+              glowSize={1}
+              theme="auto"
+              borderRadius={10}
+              active
+            >
+              {approveButton}
+            </BorderBeam>
+          ) : (
+            approveButton
+          )}
           <button
             type="button"
             className="chat-ui-approval-card__btn is-default"
@@ -281,19 +304,20 @@ export function ChatApprovalCard({ part }: { part: ChatUiCardPart }) {
 
       {noteOpen && !locked ? (
         <div className="chat-ui-approval-card__note">
-          <textarea
-            className="chat-ui-approval-card__note-input"
-            rows={2}
-            maxLength={500}
-            placeholder="Reason for rejection…"
-            value={note}
-            onChange={(event) => setNote(event.target.value)}
-            disabled={submitting}
-          />
+          <div className="chat-ui-approval-card__note-input">
+            <SocialComposerPlainEditor
+              value={note}
+              onChange={(value) => setNote(value.slice(0, APPROVAL_NOTE_MAX))}
+              placeholder="Reason for rejection…"
+              disabled={submitting}
+              aria-label="Rejection note"
+            />
+          </div>
           <button
             type="button"
-            className="chat-ui-approval-card__btn is-danger"
+            className="chat-ui-approval-card__note-submit"
             disabled={submitting || !onAnswer || note.trim().length === 0}
+            aria-label={rejectLabel}
             onClick={() => void submit("rejected", note)}
           >
             {rejectLabel}

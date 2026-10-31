@@ -585,6 +585,67 @@ POST /api/v1/chat/threads/{threadId}/messages
 - Thread / SSE / webhook message objects may include `approval` and `approvalAnswer` (`null` until answered).
 - Locked (answered) state shows decision + time (green approved / red rejected). Typing a later user message greys the unanswered card out like choices.
 
+**Agent reply with a small form** (assistant only — optional `form`):
+
+```json
+{
+  "body": "A few details please.",
+  "form": {
+    "title": "Invoice details",
+    "description": "Fill these in so I can draft the invoice.",
+    "submitLabel": "Send",
+    "fields": [
+      {
+        "name": "amount",
+        "label": "Amount",
+        "type": "number",
+        "required": true,
+        "min": 0
+      },
+      {
+        "name": "due_date",
+        "label": "Due date",
+        "type": "date",
+        "required": true
+      },
+      {
+        "name": "currency",
+        "label": "Currency",
+        "type": "select",
+        "required": true,
+        "options": [
+          { "label": "EUR", "value": "EUR" },
+          { "label": "USD", "value": "USD" }
+        ]
+      },
+      {
+        "name": "notes",
+        "label": "Notes",
+        "type": "textarea",
+        "placeholder": "Optional notes"
+      },
+      {
+        "name": "rush",
+        "label": "Rush",
+        "type": "checkbox"
+      }
+    ]
+  }
+}
+```
+
+- `form.title` required, ≤120 chars.
+- `form.description` optional, ≤500 chars (markdown-lite; mentions allowed).
+- `form.submitLabel` optional (default Submit), ≤40 chars.
+- `form.fields` 1–8; each `name` unique `[a-z0-9_]`, `label` ≤40.
+- Field `type`: `text` | `textarea` | `number` | `date` | `select` | `checkbox`.
+- `required` defaults to `false`; `placeholder` ≤80; `defaultValue` optional.
+- `select` requires 2–12 `{ label, value }` options.
+- `number` / `date` may set `min` / `max`.
+- Desktop validates client-side; server re-validates (unknown fields, missing required, type/bounds/select) with HTTP **400**.
+- Thread / SSE / webhook message objects may include `form` and `formAnswer` (`null` until answered).
+- Locked state shows submitted values read-only. Typing a later user message greys unanswered forms out like choices/approval.
+
 **Agent reply with a live progress card** (assistant only — optional `progress`):
 
 ```json
@@ -713,6 +774,36 @@ Records `approvalAnswer` (`decision`, optional `note`, `answeredAt`; HTTP **409*
 
 That user message fires the usual `agent.chat.message` webhook — agents need no new answer logic.
 
+Same endpoint for form cards:
+
+```http
+POST /api/v1/chat/threads/{threadId}/messages/{messageId}/answer
+Content-Type: application/json
+
+{
+  "values": {
+    "amount": 1200,
+    "due_date": "2026-11-15",
+    "currency": "EUR",
+    "notes": "Net 14",
+    "rush": false
+  }
+}
+```
+
+Records `formAnswer` (`values`, `answeredAt`; HTTP **409** if already answered) **and** creates a normal user message:
+
+```text
+Submitted: Invoice details
+Amount: 1200
+Due date: 2026-11-15
+Currency: EUR
+Notes: Net 14
+Rush: No
+```
+
+That user message fires the usual `agent.chat.message` webhook — agents need no new answer logic. Structured `form` / `formAnswer` also appear on thread, SSE, and webhook context messages.
+
 **Human message** (`event` must be matched exactly):
 
 ```json
@@ -724,7 +815,7 @@ That user message fires the usual `agent.chat.message` webhook — agents need n
   "threadId": "…",
   "replyUrl": "https://agent.backsteros.com/api/v1/chat/threads/{threadId}/messages",
   "message": { "id": "…", "role": "user", "text": "…", "createdAt": "…" },
-  "context": [ /* last ~10 messages, oldest → newest; may include choices/choicesAnswer and approval/approvalAnswer */ ],
+  "context": [ /* last ~10 messages, oldest → newest; may include choices/choicesAnswer, approval/approvalAnswer, form/formAnswer */ ],
   "deliveryId": "…",
   "timestamp": "…"
 }

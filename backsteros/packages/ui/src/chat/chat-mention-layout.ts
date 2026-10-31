@@ -831,7 +831,12 @@ function approvalCardMentionTexts(part: {
   cardType?: string;
   data?: Record<string, unknown>;
 }): string[] {
-  if (part.type !== "card" || part.cardType !== "approval") return [];
+  if (part.type !== "card") return [];
+  if (part.cardType === "form") {
+    const description = part.data?.description;
+    return typeof description === "string" ? [description] : [];
+  }
+  if (part.cardType !== "approval") return [];
   const data = part.data ?? {};
   const texts: string[] = [];
   if (typeof data.summary === "string") texts.push(data.summary);
@@ -1099,11 +1104,18 @@ export function collectChatMentionCardsBelow(
     if (
       card.cardType === "choices" ||
       card.cardType === "approval" ||
+      card.cardType === "form" ||
       card.cardType === "progress" ||
       card.cardType === "attachments" ||
       card.cardType === "link-previews"
     ) {
-      for (const text of approvalCardMentionTexts(card)) {
+      const texts =
+        card.cardType === "form"
+          ? typeof card.data?.description === "string"
+            ? [card.data.description]
+            : []
+          : approvalCardMentionTexts(card);
+      for (const text of texts) {
         for (const token of belowCardMentionTokensInText(text)) {
           const key = mentionDedupeKey(token);
           if (!key) continue;

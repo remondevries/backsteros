@@ -170,6 +170,292 @@ export const chatThreadMessageApprovalAnswerSchema = z.object({
   answeredAt: z.string().datetime(),
 });
 
+/** Small form field types on an assistant message. */
+export const chatThreadMessageFormFieldTypeSchema = z.enum([
+  "text",
+  "textarea",
+  "number",
+  "date",
+  "select",
+  "checkbox",
+]);
+
+export const chatThreadMessageFormSelectOptionSchema = z.object({
+  label: z.string().trim().min(1).max(60),
+  value: z.string().trim().min(1).max(200),
+});
+
+export const chatThreadMessageFormFieldNameSchema = z
+  .string()
+  .trim()
+  .regex(/^[a-z0-9_]+$/, "Field name must be [a-z0-9_]")
+  .min(1)
+  .max(40);
+
+export const chatThreadMessageFormFieldSchema = z
+  .object({
+    name: chatThreadMessageFormFieldNameSchema,
+    label: z.string().trim().min(1).max(40),
+    type: chatThreadMessageFormFieldTypeSchema,
+    required: z.boolean().default(false),
+    placeholder: z.string().trim().min(1).max(80).optional(),
+    defaultValue: z
+      .union([z.string(), z.number(), z.boolean()])
+      .optional(),
+    options: z
+      .array(chatThreadMessageFormSelectOptionSchema)
+      .min(2)
+      .max(12)
+      .optional(),
+    min: z.union([z.number(), z.string().trim().min(1).max(40)]).optional(),
+    max: z.union([z.number(), z.string().trim().min(1).max(40)]).optional(),
+  })
+  .superRefine((field, ctx) => {
+    if (field.type === "select") {
+      if (!field.options || field.options.length < 2) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "select fields require 2–12 options",
+          path: ["options"],
+        });
+      }
+    } else if (field.options) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "options are only allowed on select fields",
+        path: ["options"],
+      });
+    }
+    if (
+      (field.type === "number" || field.type === "date") &&
+      field.min != null &&
+      field.max != null
+    ) {
+      if (
+        field.type === "number" &&
+        typeof field.min === "number" &&
+        typeof field.max === "number" &&
+        field.min > field.max
+      ) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "min cannot exceed max",
+          path: ["min"],
+        });
+      }
+      if (
+        field.type === "date" &&
+        typeof field.min === "string" &&
+        typeof field.max === "string" &&
+        field.min > field.max
+      ) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "min cannot exceed max",
+          path: ["min"],
+        });
+      }
+    }
+  });
+
+/**
+ * Interactive small form on an assistant message. Desktop renders inputs
+ * below the bubble; owner answers via the shared `/answer` endpoint.
+ */
+export const chatThreadMessageFormSchema = z
+  .object({
+    title: z.string().trim().min(1).max(120),
+    description: z.string().trim().min(1).max(500).optional(),
+    submitLabel: z.string().trim().min(1).max(40).optional(),
+    fields: z.array(chatThreadMessageFormFieldSchema).min(1).max(8),
+  })
+  .superRefine((form, ctx) => {
+    const seen = new Set<string>();
+    for (let i = 0; i < form.fields.length; i += 1) {
+      const name = form.fields[i]!.name;
+      if (seen.has(name)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Duplicate field name: ${name}`,
+          path: ["fields", i, "name"],
+        });
+      }
+      seen.add(name);
+    }
+  });
+
+export const chatThreadMessageFormValueSchema = z.union([
+  z.string().max(4000),
+  z.number(),
+  z.boolean(),
+]);
+
+/** Server-set once the owner submits; null while unanswered. */
+export const chatThreadMessageFormAnswerSchema = z.object({
+  values: z.record(z.string(), chatThreadMessageFormValueSchema),
+  answeredAt: z.string().datetime(),
+});
+
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * Validate submitted form values against a stored form definition.
+ * Returns cleaned values or a human-readable error message.
+ */
+export function validateChatThreadFormAnswer(
+  form: z.infer<typeof chatThreadMessageFormSchema>,
+  rawValues: Record<string, unknown>,
+):
+  | { ok: true; values: Record<string, string | number | boolean> }
+  | { ok: false; error: string } {
+  const allowed = new Set(form.fields.map((field) => field.name));
+  for (const key of Object.keys(rawValues)) {
+    if (!allowed.has(key)) {
+      return { ok: false, error: `Unknown form field: ${key}` };
+    }
+  }
+
+  const values: Record<string, string | number | boolean> = {};
+  for (const field of form.fields) {
+    const raw = rawValues[field.name];
+    const missing =
+      raw === undefined ||
+      raw === null ||
+      (typeof raw === "string" && raw.trim() === "");
+
+    if (field.type === "checkbox") {
+      const checked = raw === true || raw === "true" || raw === 1 || raw === "1";
+      if (field.required && !checked) {
+        return { ok: false, error: `${field.label} is required` };
+      }
+      values[field.name] = checked;
+      continue;
+    }
+
+    if (missing) {
+      if (field.required) {
+        return { ok: false, error: `${field.label} is required` };
+      }
+      continue;
+    }
+
+    if (field.type === "number") {
+      const num =
+        typeof raw === "number"
+          ? raw
+          : typeof raw === "string"
+            ? Number(raw.trim())
+            : NaN;
+      if (!Number.isFinite(num)) {
+        return { ok: false, error: `${field.label} must be a number` };
+      }
+      if (typeof field.min === "number" && num < field.min) {
+        return {
+          ok: false,
+          error: `${field.label} must be ≥ ${field.min}`,
+        };
+      }
+      if (typeof field.max === "number" && num > field.max) {
+        return {
+          ok: false,
+          error: `${field.label} must be ≤ ${field.max}`,
+        };
+      }
+      values[field.name] = num;
+      continue;
+    }
+
+    if (field.type === "date") {
+      const date =
+        typeof raw === "string"
+          ? raw.trim()
+          : typeof raw === "number"
+            ? String(raw)
+            : "";
+      if (!ISO_DATE_RE.test(date)) {
+        return {
+          ok: false,
+          error: `${field.label} must be a date (YYYY-MM-DD)`,
+        };
+      }
+      if (typeof field.min === "string" && date < field.min) {
+        return {
+          ok: false,
+          error: `${field.label} must be on or after ${field.min}`,
+        };
+      }
+      if (typeof field.max === "string" && date > field.max) {
+        return {
+          ok: false,
+          error: `${field.label} must be on or before ${field.max}`,
+        };
+      }
+      values[field.name] = date;
+      continue;
+    }
+
+    if (field.type === "select") {
+      const value = typeof raw === "string" ? raw.trim() : String(raw);
+      const allowedValues = new Set(
+        (field.options ?? []).map((option) => option.value),
+      );
+      if (!allowedValues.has(value)) {
+        return {
+          ok: false,
+          error: `${field.label} has an invalid option`,
+        };
+      }
+      values[field.name] = value;
+      continue;
+    }
+
+    // text / textarea
+    const text =
+      typeof raw === "string"
+        ? raw.trim()
+        : typeof raw === "number" || typeof raw === "boolean"
+          ? String(raw)
+          : "";
+    if (!text && field.required) {
+      return { ok: false, error: `${field.label} is required` };
+    }
+    if (text.length > 4000) {
+      return {
+        ok: false,
+        error: `${field.label} is too long (max 4000)`,
+      };
+    }
+    if (text) values[field.name] = text;
+  }
+
+  return { ok: true, values };
+}
+
+/** Build the user-message body posted after a form submit. */
+export function formatChatThreadFormAnswerBody(
+  form: z.infer<typeof chatThreadMessageFormSchema>,
+  values: Record<string, string | number | boolean>,
+): string {
+  const lines = [`Submitted: ${form.title.trim() || "Form"}`];
+  for (const field of form.fields) {
+    if (!(field.name in values)) continue;
+    const raw = values[field.name]!;
+    let display: string;
+    if (field.type === "checkbox") {
+      display = raw === true ? "Yes" : "No";
+    } else if (field.type === "select") {
+      const option = (field.options ?? []).find(
+        (entry) => entry.value === String(raw),
+      );
+      display = option?.label ?? String(raw);
+    } else {
+      display = String(raw);
+    }
+    lines.push(`${field.label}: ${display}`);
+  }
+  return lines.join("\n");
+}
+
 /** Live progress card on an assistant message (agent updates via PATCH). */
 export const chatThreadMessageProgressStateSchema = z.enum([
   "running",
@@ -277,6 +563,10 @@ export const chatThreadMessageSchema = z.object({
   approval: chatThreadMessageApprovalSchema.optional(),
   /** Present (possibly null) when `approval` is set. */
   approvalAnswer: chatThreadMessageApprovalAnswerSchema.nullable().optional(),
+  /** Assistant-only small form card. */
+  form: chatThreadMessageFormSchema.optional(),
+  /** Present (possibly null) when `form` is set. */
+  formAnswer: chatThreadMessageFormAnswerSchema.nullable().optional(),
   /** Assistant-only live progress / status card. */
   progress: chatThreadMessageProgressSchema.optional(),
   /** Files linked to this message (upload then reference by id). */
@@ -333,6 +623,11 @@ export const createChatThreadMessageInputSchema = z
      * answers via the same `/answer` endpoint as choices.
      */
     approval: chatThreadMessageApprovalSchema.optional(),
+    /**
+     * Assistant replies only. Small form below the bubble; owner submits via
+     * the same `/answer` endpoint (`{ values: { name: value } }`).
+     */
+    form: chatThreadMessageFormSchema.optional(),
     /**
      * Assistant replies only. Live status / progress card below the bubble;
      * agents PATCH the same message to update it.
@@ -410,26 +705,37 @@ export const answerChatThreadMessageApprovalInputSchema = z.object({
   note: z.string().trim().min(1).max(500).optional(),
 });
 
+/** Owner submits an assistant form card (once). */
+export const answerChatThreadMessageFormInputSchema = z.object({
+  values: z
+    .record(z.string(), chatThreadMessageFormValueSchema)
+    .refine((value) => Object.keys(value).length > 0, {
+      message: "At least one form value is required",
+    }),
+});
+
 /**
- * Body for `POST …/messages/{id}/answer` — choices (`values`) or approval
- * (`decision`). Prefer approval when `decision` is present.
+ * Body for `POST …/messages/{id}/answer` — approval (`decision`), form
+ * (`values` object), or choices (`values` array). Prefer approval when
+ * `decision` is present; form when `values` is an object.
  */
 export const answerChatThreadMessageInputSchema = z.union([
   answerChatThreadMessageApprovalInputSchema,
+  answerChatThreadMessageFormInputSchema,
   answerChatThreadMessageChoicesInputSchema,
 ]);
 
 export const answerChatThreadMessageChoicesResultSchema = z.object({
-  /** Assistant message with `choicesAnswer` / `approvalAnswer` recorded. */
+  /** Assistant message with choices/approval/form answer recorded. */
   message: chatThreadMessageSchema,
   /**
-   * Normal user-message post for the chosen value(s) / decision — same webhook
-   * path as typing a reply. Agents need no new logic.
+   * Normal user-message post for the chosen value(s) / decision / form —
+   * same webhook path as typing a reply. Agents need no new logic.
    */
   reply: createChatThreadMessageResultSchema,
 });
 
-/** Alias — same shape for choices and approval answers. */
+/** Alias — same shape for choices, approval, and form answers. */
 export const answerChatThreadMessageResultSchema =
   answerChatThreadMessageChoicesResultSchema;
 
@@ -543,6 +849,22 @@ export type ChatThreadMessageApprovalDecision = z.infer<
 export type ChatThreadMessageApprovalAnswer = z.infer<
   typeof chatThreadMessageApprovalAnswerSchema
 >;
+export type ChatThreadMessageFormFieldType = z.infer<
+  typeof chatThreadMessageFormFieldTypeSchema
+>;
+export type ChatThreadMessageFormSelectOption = z.infer<
+  typeof chatThreadMessageFormSelectOptionSchema
+>;
+export type ChatThreadMessageFormField = z.infer<
+  typeof chatThreadMessageFormFieldSchema
+>;
+export type ChatThreadMessageForm = z.infer<typeof chatThreadMessageFormSchema>;
+export type ChatThreadMessageFormValue = z.infer<
+  typeof chatThreadMessageFormValueSchema
+>;
+export type ChatThreadMessageFormAnswer = z.infer<
+  typeof chatThreadMessageFormAnswerSchema
+>;
 export type ChatThreadMessageProgressState = z.infer<
   typeof chatThreadMessageProgressStateSchema
 >;
@@ -589,6 +911,9 @@ export type AnswerChatThreadMessageChoicesInput = z.infer<
 >;
 export type AnswerChatThreadMessageApprovalInput = z.infer<
   typeof answerChatThreadMessageApprovalInputSchema
+>;
+export type AnswerChatThreadMessageFormInput = z.infer<
+  typeof answerChatThreadMessageFormInputSchema
 >;
 export type AnswerChatThreadMessageInput = z.infer<
   typeof answerChatThreadMessageInputSchema

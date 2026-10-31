@@ -4,6 +4,7 @@ import type {
   ChatUiAttachmentsCardData,
   ChatUiCardPart,
   ChatUiChoicesCardData,
+  ChatUiFormCardData,
   ChatUiLinkPreviewsCardData,
   ChatUiMessage,
   ChatUiMessagePart,
@@ -15,6 +16,8 @@ export type ChatThreadMessageToUiOptions = {
   dismissedChoices?: boolean;
   /** Unanswered approval superseded by a later typed user message. */
   dismissedApproval?: boolean;
+  /** Unanswered form superseded by a later typed user message. */
+  dismissedForm?: boolean;
 };
 
 function choicesCardPart(
@@ -68,6 +71,44 @@ function approvalCardPart(
     type: "card",
     cardType: "approval",
     id: `approval:${message.id}`,
+    data,
+  };
+}
+
+function formCardPart(
+  message: ChatThreadMessage,
+  dismissed: boolean,
+): ChatUiCardPart | null {
+  if (!message.form) return null;
+  const data: ChatUiFormCardData = {
+    messageId: message.id,
+    title: message.form.title,
+    ...(message.form.description
+      ? { description: message.form.description }
+      : {}),
+    ...(message.form.submitLabel
+      ? { submitLabel: message.form.submitLabel }
+      : {}),
+    fields: message.form.fields.map((field) => ({
+      name: field.name,
+      label: field.label,
+      type: field.type,
+      required: field.required,
+      ...(field.placeholder ? { placeholder: field.placeholder } : {}),
+      ...(field.defaultValue !== undefined
+        ? { defaultValue: field.defaultValue }
+        : {}),
+      ...(field.options ? { options: field.options } : {}),
+      ...(field.min !== undefined ? { min: field.min } : {}),
+      ...(field.max !== undefined ? { max: field.max } : {}),
+    })),
+    answer: message.formAnswer ?? null,
+    ...(dismissed ? { dismissed: true } : {}),
+  };
+  return {
+    type: "card",
+    cardType: "form",
+    id: `form:${message.id}`,
     data,
   };
 }
@@ -161,6 +202,8 @@ export function chatThreadMessageToUi(
     options?.dismissedApproval === true,
   );
   if (approval) parts.push(approval);
+  const form = formCardPart(message, options?.dismissedForm === true);
+  if (form) parts.push(form);
 
   return {
     id: message.id,
@@ -195,6 +238,8 @@ export function chatThreadMessagesToUi(
         Boolean(message.choices) && !message.choicesAnswer && laterUser,
       dismissedApproval:
         Boolean(message.approval) && !message.approvalAnswer && laterUser,
+      dismissedForm:
+        Boolean(message.form) && !message.formAnswer && laterUser,
     });
   });
 }
@@ -203,7 +248,7 @@ function withCardDismissedState(
   message: ChatUiMessage,
   index: number,
   messages: readonly ChatUiMessage[],
-  cardType: "choices" | "approval",
+  cardType: "choices" | "approval" | "form",
 ): ChatUiMessage {
   const partIndex = message.parts.findIndex(
     (part) => part.type === "card" && part.cardType === cardType,
@@ -245,6 +290,7 @@ export function withChoicesDismissedStates(
   return messages.map((message, index) => {
     let next = withCardDismissedState(message, index, messages, "choices");
     next = withCardDismissedState(next, index, messages, "approval");
+    next = withCardDismissedState(next, index, messages, "form");
     return next;
   });
 }

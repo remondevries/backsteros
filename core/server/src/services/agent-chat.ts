@@ -5,8 +5,12 @@ import {
   chatThreadMessageApprovalSchema,
   chatThreadMessageChoicesAnswerSchema,
   chatThreadMessageChoicesSchema,
+  chatThreadMessageFormAnswerSchema,
+  chatThreadMessageFormSchema,
   chatThreadMessageProgressSchema,
+  formatChatThreadFormAnswerBody,
   isChatThreadProgressTerminal,
+  validateChatThreadFormAnswer,
   type AgentWebhookTestResult,
   type AnswerChatThreadMessageChoicesResult,
   type AnswerChatThreadMessageResult,
@@ -23,6 +27,8 @@ import {
   type ChatThreadMessageApprovalDecision,
   type ChatThreadMessageChoices,
   type ChatThreadMessageChoicesAnswer,
+  type ChatThreadMessageForm,
+  type ChatThreadMessageFormAnswer,
   type ChatThreadMessageProgress,
   type ChatThreadWithMessages,
   type CreateChatThreadMessageResult,
@@ -205,6 +211,28 @@ export function formatApprovalAnswerBody(
   return `Rejected: ${safeTitle}`;
 }
 
+function parseFormColumn(
+  value: unknown,
+): ChatThreadMessageForm | undefined {
+  if (value == null) return undefined;
+  const parsed = chatThreadMessageFormSchema.safeParse(value);
+  return parsed.success ? parsed.data : undefined;
+}
+
+function parseFormAnswerColumn(
+  value: unknown,
+): ChatThreadMessageFormAnswer | null | undefined {
+  if (value === undefined) return undefined;
+  if (value == null) return null;
+  const parsed = chatThreadMessageFormAnswerSchema.safeParse(value);
+  return parsed.success ? parsed.data : null;
+}
+
+function formMentionSource(form: ChatThreadMessageForm | undefined): string {
+  if (!form) return "";
+  return form.description ?? "";
+}
+
 function parseLinkPreviewsColumn(
   value: unknown,
 ): ChatThreadLinkPreview[] | undefined {
@@ -238,6 +266,8 @@ type MessageRow = {
   choicesAnswer?: unknown;
   approval?: unknown;
   approvalAnswer?: unknown;
+  form?: unknown;
+  formAnswer?: unknown;
   progress?: unknown;
   linkPreviews?: unknown;
   createdAt: Date;
@@ -265,6 +295,12 @@ function toWebhookMessage(
       ? {
           approval: message.approval,
           approvalAnswer: message.approvalAnswer ?? null,
+        }
+      : {}),
+    ...(message.form
+      ? {
+          form: message.form,
+          formAnswer: message.formAnswer ?? null,
         }
       : {}),
     ...(message.progress ? { progress: message.progress } : {}),
@@ -298,6 +334,10 @@ function toMessage(
   const approvalAnswer = approval
     ? (parseApprovalAnswerColumn(row.approvalAnswer) ?? null)
     : undefined;
+  const form = parseFormColumn(row.form);
+  const formAnswer = form
+    ? (parseFormAnswerColumn(row.formAnswer) ?? null)
+    : undefined;
   const progress = parseProgressColumn(row.progress);
   const linkPreviews = parseLinkPreviewsColumn(row.linkPreviews);
   return {
@@ -313,6 +353,7 @@ function toMessage(
     ...(mentions && mentions.length > 0 ? { mentions } : {}),
     ...(choices ? { choices, choicesAnswer: choicesAnswer ?? null } : {}),
     ...(approval ? { approval, approvalAnswer: approvalAnswer ?? null } : {}),
+    ...(form ? { form, formAnswer: formAnswer ?? null } : {}),
     ...(progress ? { progress } : {}),
     ...(attachments && attachments.length > 0 ? { attachments } : {}),
     ...(linkPreviews ? { linkPreviews } : {}),
@@ -330,7 +371,12 @@ async function hydrateMessages(
   return Promise.all(
     rows.map(async (row) => {
       const approval = parseApprovalColumn(row.approval);
-      const mentionText = [row.body, approvalMentionSource(approval)]
+      const form = parseFormColumn(row.form);
+      const mentionText = [
+        row.body,
+        approvalMentionSource(approval),
+        formMentionSource(form),
+      ]
         .filter((part) => part.trim().length > 0)
         .join("\n");
       const mentions = mentionText
@@ -398,6 +444,12 @@ function publishShellMessageEvent(input: {
         ? {
             approval: input.message.approval,
             approvalAnswer: input.message.approvalAnswer ?? null,
+          }
+        : {}),
+      ...(input.message.form
+        ? {
+            form: input.message.form,
+            formAnswer: input.message.formAnswer ?? null,
           }
         : {}),
       ...(input.message.progress
@@ -746,6 +798,7 @@ export async function deliverAgentChatWebhook(
 export type PostChatThreadMessageOptions = {
   choices?: ChatThreadMessageChoices;
   approval?: ChatThreadMessageApproval;
+  form?: ChatThreadMessageForm;
   progress?: ChatThreadMessageProgress;
   attachmentIds?: string[];
   skipLinkPreviews?: boolean;
@@ -754,7 +807,7 @@ export type PostChatThreadMessageOptions = {
 /**
  * Post a message as Remon (user) or as the agent (assistant).
  * User messages look up the agent webhook dynamically and fire it.
- * `choices` / `approval` / `progress` are allowed only on agent (assistant) replies.
+ * `choices` / `approval` / `form` / `progress` are allowed only on agent replies.
  */
 export async function postChatThreadMessage(
   workspaceId: string,
@@ -806,6 +859,9 @@ export async function postChatThreadMessage(
   if (options.approval && !isAgentReply) {
     throw badRequest("approval is only allowed on assistant messages");
   }
+  if (options.form && !isAgentReply) {
+    throw badRequest("form is only allowed on assistant messages");
+  }
   if (options.progress && !isAgentReply) {
     throw badRequest("progress is only allowed on assistant messages");
   }
@@ -832,6 +888,8 @@ export async function postChatThreadMessage(
         choicesAnswer: null,
         approval: options.approval ?? null,
         approvalAnswer: null,
+        form: options.form ?? null,
+        formAnswer: null,
         progress: options.progress ?? null,
         linkPreviews: linkPreviews.length > 0 ? linkPreviews : null,
         createdAt: now,
@@ -855,6 +913,7 @@ export async function postChatThreadMessage(
     const mentionText = [
       text,
       approvalMentionSource(options.approval),
+      formMentionSource(options.form),
     ]
       .filter((part) => part.trim().length > 0)
       .join("\n");
@@ -1314,6 +1373,104 @@ export async function answerChatThreadMessageApproval(
     decision,
     trimmedNote,
   );
+  const reply = await postChatThreadMessage(
+    workspaceId,
+    threadId,
+    body,
+    { ...auth, apiKeyId: null },
+    deps,
+  );
+
+  return { message: answeredMessage, reply };
+}
+
+/**
+ * Owner submits an assistant form card once, then posts a normal user
+ * message summarising the values so the usual agent webhook fires.
+ */
+export async function answerChatThreadMessageForm(
+  workspaceId: string,
+  threadId: string,
+  messageId: string,
+  rawValues: Record<string, unknown>,
+  auth: PostMessageAuth,
+  deps: DeliverDeps = {},
+): Promise<AnswerChatThreadMessageResult> {
+  const [row] = await db
+    .select()
+    .from(chatThreadMessages)
+    .where(
+      and(
+        eq(chatThreadMessages.workspaceId, workspaceId),
+        eq(chatThreadMessages.threadId, threadId),
+        eq(chatThreadMessages.id, messageId),
+        isNull(chatThreadMessages.deletedAt),
+      ),
+    )
+    .limit(1);
+  if (!row) throw notFound("Message");
+  if (row.role !== "assistant") {
+    throw badRequest("Only assistant messages can have a form");
+  }
+
+  const form = parseFormColumn(row.form);
+  if (!form) throw badRequest("Message has no form");
+
+  const existingAnswer = parseFormAnswerColumn(row.formAnswer);
+  if (existingAnswer) {
+    throw conflict("Form already answered");
+  }
+
+  const validated = validateChatThreadFormAnswer(form, rawValues);
+  if (!validated.ok) throw badRequest(validated.error);
+
+  const now = deps.now?.() ?? new Date();
+  const answer: ChatThreadMessageFormAnswer = {
+    values: validated.values,
+    answeredAt: now.toISOString(),
+  };
+
+  const [updatedRow] = await db
+    .update(chatThreadMessages)
+    .set({
+      formAnswer: answer,
+      updatedAt: now,
+    })
+    .where(
+      and(
+        eq(chatThreadMessages.workspaceId, workspaceId),
+        eq(chatThreadMessages.threadId, threadId),
+        eq(chatThreadMessages.id, messageId),
+        isNull(chatThreadMessages.formAnswer),
+      ),
+    )
+    .returning();
+
+  if (!updatedRow) {
+    throw conflict("Form already answered");
+  }
+
+  const answeredMessage = toMessage(updatedRow);
+  const [threadRow] = await db
+    .select({ agentId: chatThreads.agentId })
+    .from(chatThreads)
+    .where(
+      and(
+        eq(chatThreads.workspaceId, workspaceId),
+        eq(chatThreads.id, threadId),
+      ),
+    )
+    .limit(1);
+  if (threadRow) {
+    publishShellMessageEvent({
+      workspaceId,
+      threadId,
+      agentId: threadRow.agentId,
+      message: answeredMessage,
+    });
+  }
+
+  const body = formatChatThreadFormAnswerBody(form, validated.values);
   const reply = await postChatThreadMessage(
     workspaceId,
     threadId,

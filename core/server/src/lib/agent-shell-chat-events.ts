@@ -41,6 +41,30 @@ export type AgentShellChatMessageApprovalAnswer = {
   answeredAt: string;
 };
 
+export type AgentShellChatMessageFormField = {
+  name: string;
+  label: string;
+  type: "text" | "textarea" | "number" | "date" | "select" | "checkbox";
+  required: boolean;
+  placeholder?: string;
+  defaultValue?: string | number | boolean;
+  options?: Array<{ label: string; value: string }>;
+  min?: number | string;
+  max?: number | string;
+};
+
+export type AgentShellChatMessageForm = {
+  title: string;
+  description?: string;
+  submitLabel?: string;
+  fields: AgentShellChatMessageFormField[];
+};
+
+export type AgentShellChatMessageFormAnswer = {
+  values: Record<string, string | number | boolean>;
+  answeredAt: string;
+};
+
 export type AgentShellChatMessageAttachment = {
   id: string;
   filename: string;
@@ -93,6 +117,9 @@ export type AgentShellChatMessageEvent = {
     /** Approve/reject card (when the reply includes one). */
     approval?: AgentShellChatMessageApproval;
     approvalAnswer?: AgentShellChatMessageApprovalAnswer | null;
+    /** Small form card (when the reply includes one). */
+    form?: AgentShellChatMessageForm;
+    formAnswer?: AgentShellChatMessageFormAnswer | null;
     /** Live progress / status card (agents PATCH to update). */
     progress?: AgentShellChatMessageProgress;
     attachments?: AgentShellChatMessageAttachment[];
