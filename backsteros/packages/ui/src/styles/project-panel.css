@@ -485,17 +485,18 @@
 }
 
 .project-channel-badge__disconnect {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
   margin: 0;
-  padding: 0 9px;
+  padding: 0 7px;
   border: 0;
   border-left: 0.5px solid color-mix(in srgb, var(--foreground) 10%, transparent);
   background: transparent;
   color: color-mix(in srgb, var(--foreground) 55%, transparent);
   cursor: pointer;
-  font: inherit;
-  font-size: 12px;
-  font-weight: 500;
-  line-height: 1;
+  line-height: 0;
 }
 
 .project-channel-badge__disconnect:hover:not(:disabled),

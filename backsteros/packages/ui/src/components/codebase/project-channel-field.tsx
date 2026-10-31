@@ -5,6 +5,7 @@ import {
   isGrokBotChannelUri,
   normalizeProjectChannel,
 } from "@backsteros/contracts";
+import { XIcon } from "@primer/octicons-react";
 import { useState } from "react";
 
 import { XaiMarkIcon } from "../icons/xai-mark-icon.js";
@@ -154,7 +155,7 @@ export function ProjectChannelField({
             void disconnect();
           }}
         >
-          Disconnect
+          <XIcon size={12} />
         </button>
       </div>
       {error ? (
