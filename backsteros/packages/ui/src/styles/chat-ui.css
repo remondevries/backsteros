@@ -1551,16 +1551,17 @@
   color: var(--surface, #0b1220);
 }
 
-/* Solid danger fill with dark text — same contrast pattern as primary. */
+/* Danger: red outline + red text, no fill. */
 .chat-ui-choices__option.is-danger {
-  border-color: transparent;
-  background: var(--danger, #ef4444);
-  color: var(--surface, #0b1220);
+  border-color: var(--danger, #ef4444);
+  background: transparent;
+  color: var(--danger, #ef4444);
 }
 
 .chat-ui-choices__option.is-danger:hover:not(:disabled) {
-  background: color-mix(in oklab, var(--danger, #ef4444) 88%, #0b1220);
-  color: var(--surface, #0b1220);
+  border-color: var(--danger, #ef4444);
+  background: color-mix(in oklab, var(--danger, #ef4444) 10%, transparent);
+  color: var(--danger, #ef4444);
 }
 
 .chat-ui-choices__option.is-selected {
@@ -1573,7 +1574,7 @@
 }
 
 .chat-ui-choices__option.is-danger.is-selected {
-  outline-color: color-mix(in oklab, var(--surface, #0b1220) 40%, transparent);
+  outline-color: color-mix(in oklab, var(--danger, #ef4444) 55%, transparent);
 }
 
 .chat-ui-choices__option:disabled {
