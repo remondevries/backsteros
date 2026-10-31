@@ -246,6 +246,11 @@ export type ChatUiDevPreviewProps = {
    * show the webhook setup empty state instead.
    */
   allowEmptyPeers?: boolean;
+  /**
+   * When true, show a loading card instead of the empty webhook message
+   * (first roster fetch still pending).
+   */
+  peersLoading?: boolean;
   /** Settings href for the webhook setup empty state (default Agent tab). */
   webhookSetupHref?: string;
   /** Optional body copy when the webhook setup empty state is shown. */
@@ -267,6 +272,7 @@ export function ChatUiDevPreview({
   onNavigate = null,
   liveAgentChat = null,
   allowEmptyPeers = false,
+  peersLoading = false,
   webhookSetupHref = "/settings/api?type=agent",
   webhookSetupMessage = null,
   emailDraftCompose = null,
@@ -460,7 +466,12 @@ export function ChatUiDevPreview({
   const headerActivePeerId = projectId ?? threadAgent.id;
 
   const needsWebhookSetup =
-    allowEmptyPeers && !projectId && agentPeers.length === 0;
+    allowEmptyPeers &&
+    !peersLoading &&
+    !projectId &&
+    agentPeers.length === 0;
+  const showPeersLoading =
+    allowEmptyPeers && peersLoading && !projectId && agentPeers.length === 0;
 
   const threadKey = chatDemoThreadKey(threadAgent.id, projectId);
   const liveAgentId =
@@ -1224,6 +1235,21 @@ export function ChatUiDevPreview({
       : []
     : (threads[threadKey] ?? []);
 
+  if (showPeersLoading) {
+    return (
+      <div className="chat-ui-dev-page" data-content-detail>
+        <div className="chat-ui-dev-page__thread chat-ui-webhook-setup">
+          <div className="chat-ui-webhook-setup__card" role="status">
+            <h2 className="chat-ui-webhook-setup__title">Loading agents…</h2>
+            <p className="chat-ui-webhook-setup__body">
+              Fetching the agent roster from local-core.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (needsWebhookSetup) {
     return (
       <div className="chat-ui-dev-page" data-content-detail>
@@ -1234,7 +1260,7 @@ export function ChatUiDevPreview({
             </h2>
             <p className="chat-ui-webhook-setup__body">
               {webhookSetupMessage?.trim() ||
-                "No agents have a webhook URL yet, so there is nothing to chat with. Add a webhook under Settings → API (Agent key → expand), then come back here. Chat reads agents from cloud (agent.backsteros.com), not only the local core."}
+                "No agents have a verified webhook yet, so there is nothing to chat with. Add a webhook under Settings → API (Agent key → expand), test it, then come back here."}
             </p>
             {onNavigate ? (
               <button

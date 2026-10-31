@@ -13,10 +13,14 @@ import { invalidateAgentDmThreads } from "../lib/agent-dm-seen";
 import {
   cloudCoreRequestBlob,
   cloudCoreRequestJson,
-  isCloudCoreApiError,
 } from "../lib/cloud-core-api";
-import { sortAgentsForDisplay } from "../lib/shell-agent-order";
-import { SHELL_AGENT_ROSTER_CHANGED_EVENT } from "../lib/shell-agent-roster";
+import { useDesktopApi } from "../lib/api-context";
+import {
+  configureShellAgentRosterLocalFetcher,
+  ensureShellAgentRosterLoaded,
+  getShellAgentRosterSnapshot,
+  subscribeShellAgentRoster,
+} from "../lib/shell-agent-roster-store";
 import { isAgentWebhookVerified } from "../lib/shell-agent-webhook-verified";
 
 /** True when a non-empty webhook URL is stored (settings may still need a test). */
@@ -40,6 +44,8 @@ export type ShellAgentChatApi = {
   /** Enabled agents with a verified webhook — the only ones shown in chat. */
   webhookReadyAgents: readonly Agent[];
   agentsByContactId: ReadonlyMap<string, Agent>;
+  /** True until the first local or cloud roster response. */
+  agentsLoading: boolean;
   /** Set when the cloud agents door could not be loaded (e.g. missing owner key). */
   agentsLoadError: string | null;
   openThread: (agentId: string) => Promise<ChatThreadWithMessages>;
@@ -94,61 +100,28 @@ export type ShellAgentChatApi = {
 };
 
 /**
- * Shell chat column → cloud-core via the agents door (`agent.backsteros.com`).
- * Uses the same owner-key cloud client as timer sync; the rest of the product
- * shell stays on local-core. Chat tables are not replicated.
+ * Shell chat + lead-agent roster. Local-core agents paint first (after twin);
+ * cloud refresh merges webhook fields. Chat threads still use the agents door.
  */
 export function useShellAgentChat(): ShellAgentChatApi {
-  const [agents, setAgents] = useState<Agent[]>([]);
-  const [agentsLoadError, setAgentsLoadError] = useState<string | null>(null);
+  const { client } = useDesktopApi();
+  const [roster, setRoster] = useState(getShellAgentRosterSnapshot);
 
   useEffect(() => {
-    let cancelled = false;
-    const load = async () => {
-      try {
-        const body = await cloudCoreRequestJson<{ agents: Agent[] }>(
-          "/api/v1/agents",
-        );
-        if (!cancelled) {
-          setAgents(
-            sortAgentsForDisplay(
-              body.agents.filter((agent) => agent.enabled),
-            ),
-          );
-          setAgentsLoadError(null);
-        }
-      } catch (error) {
-        if (!cancelled) {
-          if (isCloudCoreApiError(error) && error.status === 401) {
-            console.warn("[shell-chat] owner API key required for cloud chat");
-            setAgentsLoadError(
-              "Cloud chat needs an owner API key (Tauri reads ~/.config/backsteros/cli.env; Vite serve loads it automatically). Restart the dev server after updating the key.",
-            );
-          } else {
-            setAgentsLoadError(
-              "Could not load agents from cloud (agent.backsteros.com). Check the network and try again.",
-            );
-          }
-          setAgents([]);
-        }
-      }
-    };
-    void load();
-    const onRosterChanged = () => {
-      void load();
-    };
-    window.addEventListener(SHELL_AGENT_ROSTER_CHANGED_EVENT, onRosterChanged);
-    return () => {
-      cancelled = true;
-      window.removeEventListener(
-        SHELL_AGENT_ROSTER_CHANGED_EVENT,
-        onRosterChanged,
-      );
-    };
-  }, []);
+    configureShellAgentRosterLocalFetcher(() =>
+      client.requestJson<{ agents: Agent[] }>("/api/v1/agents"),
+    );
+    const unsubscribe = subscribeShellAgentRoster(setRoster);
+    ensureShellAgentRosterLoaded();
+    return unsubscribe;
+  }, [client]);
+
+  const agents = roster.agents;
+  const agentsLoading = roster.loading;
+  const agentsLoadError = roster.error;
 
   const webhookReadyAgents = useMemo(
-    () => sortAgentsForDisplay(agents.filter(agentReadyForChatRoster)),
+    () => agents.filter(agentReadyForChatRoster),
     [agents],
   );
 
@@ -349,6 +322,7 @@ export function useShellAgentChat(): ShellAgentChatApi {
       agents,
       webhookReadyAgents,
       agentsByContactId,
+      agentsLoading,
       agentsLoadError,
       openThread,
       sendMessage,
@@ -366,6 +340,7 @@ export function useShellAgentChat(): ShellAgentChatApi {
       agents,
       agentsByContactId,
       agentsLoadError,
+      agentsLoading,
       answerApproval,
       answerChoices,
       answerEmailDraft,

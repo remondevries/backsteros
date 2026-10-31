@@ -237,6 +237,9 @@ export function ShellChatPanel() {
         onNavigate={onNavigate}
         liveAgentChat={liveAgentChat}
         allowEmptyPeers
+        peersLoading={
+          agentChat.agentsLoading && agentChat.webhookReadyAgents.length === 0
+        }
         webhookSetupHref="/settings/api?type=agent"
         webhookSetupMessage={agentChat.agentsLoadError}
         emailDraftCompose={emailDraftCompose}

@@ -307,12 +307,13 @@ function ProjectDetailScreen({
   const organizationAvatarSrc = useDesktopAvatarSrcMap(
     "organization",
     organizations);
-  const { webhookReadyAgents } = useShellAgentChat();
+  // Lead picker: any enabled local persona with a contact — not chat webhook gate.
+  const { agents: shellAgents } = useShellAgentChat();
   const agentContactsForLead = useMemo(() => {
     const byId = new Map(contacts.map((contact) => [contact.id, contact]));
     const ordered: typeof contacts = [];
     const seen = new Set<string>();
-    for (const agent of webhookReadyAgents) {
+    for (const agent of shellAgents) {
       const contactId = agent.contactId?.trim();
       if (!contactId || seen.has(contactId)) continue;
       seen.add(contactId);
@@ -320,7 +321,7 @@ function ProjectDetailScreen({
       if (contact) ordered.push(contact);
     }
     return ordered;
-  }, [contacts, webhookReadyAgents]);
+  }, [contacts, shellAgents]);
   const projects = useProjectsWithOverlay(workspace.projects, projectOverlay);
   const documents = useMemo(() => {
     const omitted = new Set(omittedDocumentIds);

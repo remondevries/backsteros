@@ -130,8 +130,8 @@ function toAgentWebhookSettings(agent: Agent): AgentWebhookSettings {
 
 /**
  * Settings → API: API keys stay on local-core (agents door blocks `/api-keys`).
- * Chat agents/webhooks go through the cloud agents door so the shell roster
- * matches. Key ids are replicated, so linking `apiKeyId` on a cloud agent works.
+ * Agent roster paints from local-core first (after twin), then cloud merges
+ * webhook fields. Key ids are replicated, so linking `apiKeyId` works.
  */
 function parseApiKeysSearch(searchStr: string): {
   typeTab: ApiKeyTypeTab;
@@ -225,22 +225,27 @@ function SettingsApiTab({
   const loadKeys = useCallback(async () => {
     setLoading(true);
     setErrorMessage(null);
-    // Local-core keys must not wait on the agents door — a hung
+    // Local-core keys + agents must not wait on the agents door — a hung
     // agent.backsteros.com / __cloud_core__ fetch used to leave this tab on
     // “Loading keys…” forever.
     try {
-      const [keysBody, auditBody, requestBody] = await Promise.all([
-        client.requestJson<{ apiKeys: ApiKey[] }>("/api/v1/api-keys"),
-        client.requestJson<{ auditLogs: ApiKeyAuditLog[] }>(
-          "/api/v1/api-keys/audit-logs?limit=100",
-        ),
-        client.requestJson<{ requestLogs: ApiKeyRequestLog[] }>(
-          "/api/v1/api-keys/request-logs?limit=200",
-        ),
-      ]);
+      const [keysBody, auditBody, requestBody, localAgentsBody] =
+        await Promise.all([
+          client.requestJson<{ apiKeys: ApiKey[] }>("/api/v1/api-keys"),
+          client.requestJson<{ auditLogs: ApiKeyAuditLog[] }>(
+            "/api/v1/api-keys/audit-logs?limit=100",
+          ),
+          client.requestJson<{ requestLogs: ApiKeyRequestLog[] }>(
+            "/api/v1/api-keys/request-logs?limit=200",
+          ),
+          client.requestJson<{ agents: Agent[] }>("/api/v1/agents"),
+        ]);
       setApiKeys(keysBody.apiKeys.map(toSettingsApiKey));
       setAuditLogs(auditBody.auditLogs.map(toSettingsAuditLog));
       setRequestLogs(requestBody.requestLogs.map(toSettingsRequestLog));
+      const localOrdered = sortAgentsForDisplay(localAgentsBody.agents);
+      setAgents(localOrdered);
+      writeAgentSortOrderIds(localOrdered.map((agent) => agent.id));
     } catch (error) {
       setErrorMessage(
         error instanceof Error ? error.message : "Could not load API keys",
@@ -258,7 +263,7 @@ function SettingsApiTab({
           timeoutId = window.setTimeout(() => {
             reject(
               new Error(
-                "Cloud agents timed out (agent.backsteros.com). Keys still loaded from local-core.",
+                "Cloud agents timed out (agent.backsteros.com). Roster still loaded from local-core.",
               ),
             );
           }, 8_000);
@@ -267,10 +272,11 @@ function SettingsApiTab({
       const ordered = sortAgentsForDisplay(agentsBody.agents);
       setAgents(ordered);
       writeAgentSortOrderIds(ordered.map((agent) => agent.id));
+      notifyShellAgentRosterChanged();
     } catch (error) {
-      setAgents([]);
+      // Keep local roster painted; only warn about cloud webhook fields.
       setErrorMessage(
-        cloudSettingsErrorMessage(error, "Could not load cloud agents"),
+        cloudSettingsErrorMessage(error, "Could not refresh cloud agents"),
       );
     } finally {
       if (timeoutId !== undefined) window.clearTimeout(timeoutId);
