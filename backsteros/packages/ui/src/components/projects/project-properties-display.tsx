@@ -1,7 +1,7 @@
 "use client";
 
 import { MailIcon, ProjectIcon } from "@primer/octicons-react";
-import { useMemo } from "react";
+import { useMemo, type ReactNode } from "react";
 
 import {
   PROJECT_AREAS,
@@ -36,6 +36,7 @@ import {
   TASK_PRIORITY_ORDER,
 } from "../../tasks/task-priority.js";
 import {
+  formatProjectTaskProgressLabel,
   formatProjectTaskProgressPercent,
   type ProjectTaskProgress,
 } from "../../projects/project-progress-ring.js";
@@ -97,10 +98,19 @@ export type ProjectPropertiesDisplayProps = {
   organizationOptions?: SearchableDropdownOption<string>[];
   organizationNavigateHref?: string | null;
   onCreateOrganizationFromQuery?: (query: string) => void;
+  /**
+   * Type-specific property rows (e.g. codebase Locations) rendered after
+   * the shared Properties / Areas / Financials stack.
+   */
+  propertiesExtra?: ReactNode;
+  /** Recent activity / registrar extras below Progress. */
+  belowProperties?: ReactNode;
+  /** When false, hide the Progress card (host shows progress elsewhere). */
+  showProgress?: boolean;
 };
 
 /**
- * Right-rail project properties — same chrome as document/letter properties.
+ * Right-rail project properties — same chrome as the task properties panel.
  */
 export function ProjectPropertiesDisplay({
   project,
@@ -121,6 +131,9 @@ export function ProjectPropertiesDisplay({
   organizationOptions = [],
   organizationNavigateHref = null,
   onCreateOrganizationFromQuery,
+  propertiesExtra = null,
+  belowProperties = null,
+  showProgress = true,
 }: ProjectPropertiesDisplayProps) {
   const status = migrateLegacyProjectStatus(project.status);
   const projectType = migrateLegacyProjectType(project.type);
@@ -262,18 +275,12 @@ export function ProjectPropertiesDisplay({
 
   const showBilling = projectAreaShowsBilling(project.area);
 
+  const remaining = Math.max(0, progress.total - progress.completed);
+
   return (
     <div className="task-detail-properties-scroll">
       <div className="entity-properties-stack">
-        <EntityPropertiesSection
-          title="Properties"
-          headerEnd={
-            <span className="project-detail__progress" aria-label="Progress">
-              <span>{formatProjectTaskProgressPercent(progress)}</span>
-              <ProjectProgressRing progress={progress} size={16} />
-            </span>
-          }
-        >
+        <EntityPropertiesSection title="Properties">
           {onSaveKey ? (
             <ProjectKeyEditor
               value={project.key}
@@ -523,6 +530,40 @@ export function ProjectPropertiesDisplay({
             </PropertyFieldGroup>
           </EntityPropertiesSection>
         ) : null}
+
+        {propertiesExtra}
+
+        {showProgress ? (
+          <EntityPropertiesSection title="Progress">
+            <div className="project-properties-progress">
+              <div className="project-properties-progress__summary">
+                <span className="project-detail__progress" aria-hidden="true">
+                  <span>{formatProjectTaskProgressPercent(progress)}</span>
+                  <ProjectProgressRing progress={progress} size={20} />
+                </span>
+                <span className="project-properties-progress__label">
+                  {formatProjectTaskProgressLabel(progress)}
+                </span>
+              </div>
+              <dl className="project-properties-progress__stats">
+                <div>
+                  <dt>Scope</dt>
+                  <dd>{progress.total}</dd>
+                </div>
+                <div>
+                  <dt>Open</dt>
+                  <dd>{remaining}</dd>
+                </div>
+                <div>
+                  <dt>Completed</dt>
+                  <dd>{progress.completed}</dd>
+                </div>
+              </dl>
+            </div>
+          </EntityPropertiesSection>
+        ) : null}
+
+        {belowProperties}
       </div>
     </div>
   );

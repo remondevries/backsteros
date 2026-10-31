@@ -3013,6 +3013,16 @@ export {
 } from "./components/projects/project-properties-display.js";
 
 export {
+  ProjectPropertiesInlineChips,
+  type ProjectPropertiesInlineChipsProps,
+} from "./components/projects/project-properties-inline-chips.js";
+
+export {
+  ProjectLatestUpdateCard,
+  type ProjectLatestUpdateCardProps,
+} from "./components/projects/project-latest-update-card.js";
+
+export {
   ProjectHourlyRateEditor,
   type ProjectHourlyRateEditorProps,
 } from "./components/projects/project-hourly-rate-editor.js";

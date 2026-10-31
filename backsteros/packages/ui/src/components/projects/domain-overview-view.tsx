@@ -46,6 +46,11 @@ import { DomainWhoisContactEditor } from "./domain-whois-contact-editor.js";
 export type DomainOverviewViewProps = {
   project: ProjectDetailViewProject;
   mode?: "details" | "cloudflare";
+  /**
+   * `card` — catalog / legacy profile chrome (avatar + identity).
+   * `panelSections` — registrar subgroups only for the universal project rail.
+   */
+  variant?: "card" | "panelSections";
   sectionNavSlot?: ReactNode;
   /** Body for the Cloudflare tab (or other future section modes). */
   sectionBody?: ReactNode;
@@ -157,6 +162,7 @@ function formatRegistrarStatus(status: string | null | undefined): string {
 export function DomainOverviewView({
   project,
   mode = "details",
+  variant = "card",
   sectionNavSlot,
   sectionBody,
   organizationOptions = [],
@@ -634,127 +640,140 @@ export function DomainOverviewView({
         </>
       )}
 
-      <EntityOverviewSubgroup title="Project">
-        <DetailsField label="Status">
-          <PropertyDropdown
-            value={status}
-            options={statusOptions}
-            onChange={(next) => {
-              setStatus(next);
-              onStatusChange?.(next);
-            }}
-            searchPlaceholder="Change status…"
-            searchShortcutLabel="S"
-            ariaLabel="Status"
-            taskPropertyDropdownId="status"
-            fallbackIcon={<ProjectStatusIcon status={status} size={14} />}
-            fallbackLabel={getProjectStatusLabel(status)}
-            triggerVariant="inlineChip"
-            panelAlign="start"
-          />
-        </DetailsField>
-        <DetailsField label="Priority">
-          <PropertyDropdown
-            value={String(priority)}
-            options={priorityOptions}
-            onChange={(next) => {
-              const resolved = Number(next);
-              setPriority(resolved);
-              void onPriorityChange?.(resolved);
-            }}
-            searchPlaceholder="Change priority…"
-            searchShortcutLabel="P"
-            ariaLabel="Priority"
-            taskPropertyDropdownId="priority"
-            fallbackIcon={
-              <TaskPriorityIcon priority={priority} size={14} />
-            }
-            fallbackLabel={getTaskPriorityLabel(priority)}
-            triggerVariant="inlineChip"
-            panelAlign="start"
-          />
-        </DetailsField>
-        <DetailsField label="Key">
-          {onSaveKey ? (
-            <ProjectKeyEditor value={project.key} onSave={onSaveKey} />
-          ) : (
-            <span className="domain-overview__value">{project.key}</span>
-          )}
-        </DetailsField>
-        <DetailsField label="Area">
-          <div className="domain-overview__area-row">
+      {variant === "card" ? (
+        <EntityOverviewSubgroup title="Project">
+          <DetailsField label="Status">
             <PropertyDropdown
-              value={project.area ?? "__none__"}
-              options={areaOptions}
+              value={status}
+              options={statusOptions}
               onChange={(next) => {
-                onAreaChange?.(
-                  next === "__none__" ? null : (next as ProjectArea),
-                );
-                onAreaIdChange?.(null);
+                setStatus(next);
+                onStatusChange?.(next);
               }}
-              searchPlaceholder="Change area…"
-              searchShortcutLabel="A"
-              ariaLabel="Area"
-              taskPropertyDropdownId="area"
-              fallbackLabel={
-                project.area ? PROJECT_AREA_LABELS[project.area] : "No area"
-              }
-              mutedFallback={!project.area}
+              searchPlaceholder="Change status…"
+              searchShortcutLabel="S"
+              ariaLabel="Status"
+              taskPropertyDropdownId="status"
+              fallbackIcon={<ProjectStatusIcon status={status} size={14} />}
+              fallbackLabel={getProjectStatusLabel(status)}
               triggerVariant="inlineChip"
               panelAlign="start"
             />
-            {subAreasForParent.length > 0 ? (
-              <>
-                <span className="domain-overview__area-sep" aria-hidden="true">
-                  /
-                </span>
-                <PropertyDropdown
-                  value={project.areaId ?? "__none__"}
-                  options={subAreaOptions}
-                  onChange={(next) =>
-                    onAreaIdChange?.(next === "__none__" ? null : next)
-                  }
-                  searchPlaceholder="Change sub-area…"
-                  ariaLabel="Sub-area"
-                  taskPropertyDropdownId="areaId"
-                  fallbackLabel={selectedSubArea?.name ?? "No sub-area"}
-                  mutedFallback={!selectedSubArea}
-                  triggerVariant="inlineChip"
-                  panelAlign="start"
-                />
-              </>
-            ) : null}
-          </div>
-        </DetailsField>
-        <DetailsField label="Organization">
-          <PropertyDropdown
-            value={organizationId || "__none__"}
-            options={organizationDropdownOptions}
-            onChange={(next) => {
-              const resolved = next === "__none__" ? "" : next;
-              setOrganizationId(resolved);
-              void onOrganizationChange?.(resolved || null);
-            }}
-            searchPlaceholder="Search organizations…"
-            ariaLabel="Organization"
-            fallbackIcon={<OrganizationIcon size={14} />}
-            fallbackLabel="No organization"
-            mutedFallback
-            panelAlign="start"
-            panelWidth={280}
-            triggerVariant="inlineChip"
-            createFromQueryLabel={
-              onCreateOrganizationFromQuery
-                ? (query) =>
-                    getCreateEntityFromQueryLabel("organization", query)
-                : undefined
-            }
-            onCreateFromQuery={onCreateOrganizationFromQuery}
-          />
-        </DetailsField>
-      </EntityOverviewSubgroup>
+          </DetailsField>
+          <DetailsField label="Priority">
+            <PropertyDropdown
+              value={String(priority)}
+              options={priorityOptions}
+              onChange={(next) => {
+                const resolved = Number(next);
+                setPriority(resolved);
+                void onPriorityChange?.(resolved);
+              }}
+              searchPlaceholder="Change priority…"
+              searchShortcutLabel="P"
+              ariaLabel="Priority"
+              taskPropertyDropdownId="priority"
+              fallbackIcon={
+                <TaskPriorityIcon priority={priority} size={14} />
+              }
+              fallbackLabel={getTaskPriorityLabel(priority)}
+              triggerVariant="inlineChip"
+              panelAlign="start"
+            />
+          </DetailsField>
+          <DetailsField label="Key">
+            {onSaveKey ? (
+              <ProjectKeyEditor value={project.key} onSave={onSaveKey} />
+            ) : (
+              <span className="domain-overview__value">{project.key}</span>
+            )}
+          </DetailsField>
+          <DetailsField label="Area">
+            <div className="domain-overview__area-row">
+              <PropertyDropdown
+                value={project.area ?? "__none__"}
+                options={areaOptions}
+                onChange={(next) => {
+                  onAreaChange?.(
+                    next === "__none__" ? null : (next as ProjectArea),
+                  );
+                  onAreaIdChange?.(null);
+                }}
+                searchPlaceholder="Change area…"
+                searchShortcutLabel="A"
+                ariaLabel="Area"
+                taskPropertyDropdownId="area"
+                fallbackLabel={
+                  project.area ? PROJECT_AREA_LABELS[project.area] : "No area"
+                }
+                mutedFallback={!project.area}
+                triggerVariant="inlineChip"
+                panelAlign="start"
+              />
+              {subAreasForParent.length > 0 ? (
+                <>
+                  <span className="domain-overview__area-sep" aria-hidden="true">
+                    /
+                  </span>
+                  <PropertyDropdown
+                    value={project.areaId ?? "__none__"}
+                    options={subAreaOptions}
+                    onChange={(next) =>
+                      onAreaIdChange?.(next === "__none__" ? null : next)
+                    }
+                    searchPlaceholder="Change sub-area…"
+                    ariaLabel="Sub-area"
+                    taskPropertyDropdownId="areaId"
+                    fallbackLabel={selectedSubArea?.name ?? "No sub-area"}
+                    mutedFallback={!selectedSubArea}
+                    triggerVariant="inlineChip"
+                    panelAlign="start"
+                  />
+                </>
+              ) : null}
+            </div>
+          </DetailsField>
+          <DetailsField label="Organization">
+            <PropertyDropdown
+              value={organizationId || "__none__"}
+              options={organizationDropdownOptions}
+              onChange={(next) => {
+                const resolved = next === "__none__" ? "" : next;
+                setOrganizationId(resolved);
+                void onOrganizationChange?.(resolved || null);
+              }}
+              searchPlaceholder="Search organizations…"
+              ariaLabel="Organization"
+              fallbackIcon={<OrganizationIcon size={14} />}
+              fallbackLabel="No organization"
+              mutedFallback
+              panelAlign="start"
+              panelWidth={280}
+              triggerVariant="inlineChip"
+              createFromQueryLabel={
+                onCreateOrganizationFromQuery
+                  ? (query) =>
+                      getCreateEntityFromQueryLabel("organization", query)
+                  : undefined
+              }
+              onCreateFromQuery={onCreateOrganizationFromQuery}
+            />
+          </DetailsField>
+        </EntityOverviewSubgroup>
+      ) : null}
     </section>
   );
+
+  if (variant === "panelSections") {
+    return (
+      <div className="domain-overview domain-overview--panel-sections">
+        {mode === "details" ? detailsBody : null}
+        {mode === "cloudflare" && sectionBody ? (
+          <div className="contact-overview__section-body">{sectionBody}</div>
+        ) : null}
+      </div>
+    );
+  }
 
   return (
     <article className="entity-overview contact-overview domain-overview">

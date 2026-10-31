@@ -1,5 +1,6 @@
 "use client";
 
+import type { ProjectUpdate } from "@backsteros/contracts";
 import { useCallback, useState, type ReactNode } from "react";
 
 import type { ProjectArea } from "../../projects/project-areas.js";
@@ -21,8 +22,10 @@ import {
 } from "../content/content-markdown-view-layout.js";
 import { DetailWithPropertiesLayout } from "../content/detail-with-properties-layout.js";
 import { PROJECT_PROPERTIES_PANEL_WIDTH_KEY } from "../../content/properties-panel.js";
+import { ProjectLatestUpdateCard } from "./project-latest-update-card.js";
 import { ProjectOverviewIcon } from "./project-overview-icon.js";
 import { ProjectPropertiesDisplay } from "./project-properties-display.js";
+import { ProjectPropertiesInlineChips } from "./project-properties-inline-chips.js";
 import { DocumentMarkdownEditor } from "../documents/document-markdown-editor.js";
 import { DocumentMarkdownPreview } from "../documents/document-markdown-preview.js";
 import { FloatingPillToggleDock } from "../shared/floating-pill-toggle-dock.js";
@@ -130,8 +133,28 @@ export type ProjectDetailViewProps = {
   copyIdShortcutEnabled?: boolean;
   /** When true, section pills live in the product chrome (next to ⋯). */
   hideSectionNav?: boolean;
+  /** Most recent project update for the Linear-style overview card. */
+  latestUpdate?: ProjectUpdate | null;
+  /** Jump to Updates when the latest-update card action is clicked. */
+  onOpenUpdates?: () => void;
+  /**
+   * Override the overview description body (e.g. codebase README editor).
+   * When set, the default markdown description editor is not rendered.
+   */
+  overviewDescription?: ReactNode;
+  /** Type-specific property rows in the right rail (Locations, Registration…). */
+  propertiesExtra?: ReactNode;
+  /** Sections below Progress (Activity, domain registrar, …). */
+  belowProperties?: ReactNode;
+  /** Empty-state copy for the default description editor. */
+  descriptionEmptyHint?: string;
 };
 
+/**
+ * Universal Linear-inspired project page — one layout for every project type.
+ * Main: icon → name → summary → property chips → latest update → description.
+ * Right rail: properties (task-panel chrome) → progress → type extras / activity.
+ */
 export function ProjectDetailView({
   project,
   nestedAreas = [],
@@ -161,6 +184,12 @@ export function ProjectDetailView({
   renderSection,
   copyIdShortcutEnabled = true,
   hideSectionNav = false,
+  latestUpdate = null,
+  onOpenUpdates,
+  overviewDescription,
+  propertiesExtra = null,
+  belowProperties = null,
+  descriptionEmptyHint = "Add a project description…",
 }: ProjectDetailViewProps) {
   const [uncontrolledSection, setUncontrolledSection] =
     useState<ProjectSectionId>(initialSection);
@@ -223,7 +252,7 @@ export function ProjectDetailView({
   } = useMarkdownDetailEditor({
     initialValue: project.description ?? "",
     // Description shortcuts must not steal ⌘E from documents/tasks/letters.
-    shortcutsEnabled: section === "overview",
+    shortcutsEnabled: section === "overview" && !overviewDescription,
     save: (next) => {
       if (!onSaveDescription) {
         return { ok: true };
@@ -319,95 +348,134 @@ export function ProjectDetailView({
                         void onSaveSummary?.(summary.trim());
                       }}
                     />
+                    <ProjectPropertiesInlineChips
+                      project={project}
+                      nestedAreas={nestedAreas}
+                      onStatusChange={onStatusChange}
+                      onPriorityChange={onPriorityChange}
+                      onProviderChange={onProviderChange}
+                      onCategoryChange={onCategoryChange}
+                      onAreaChange={onAreaChange}
+                      onAreaIdChange={onAreaIdChange}
+                      onOrganizationChange={onOrganizationChange}
+                      onStartDateChange={onStartDateChange}
+                      onDueDateChange={onDueDateChange}
+                      organizationOptions={organizationOptions}
+                      onCreateOrganizationFromQuery={
+                        onCreateOrganizationFromQuery
+                      }
+                    />
                   </header>
-                </div>
 
-                <section
-                  className={`project-detail__description${
-                    descriptionExpanded
-                      ? " project-detail__description--expanded"
-                      : ""
-                  }`}
-                >
-                  <div className="project-detail__description-heading">
-                    <button
-                      type="button"
-                      className="project-detail__description-toggle"
-                      aria-expanded={descriptionExpanded}
-                      onClick={() => setDescriptionExpanded((open) => !open)}
-                    >
-                      <span>Description</span>
-                      <span
-                        aria-hidden="true"
-                        className={`project-detail__description-chevron${
-                          descriptionExpanded
-                            ? ""
-                            : " project-detail__description-chevron--collapsed"
-                        }`}
-                      >
-                        ▾
-                      </span>
-                    </button>
-                  </div>
-
-                  {descriptionExpanded ? (
-                    <div
-                      className="project-detail__description-body"
-                      data-content-view-mode={mode}
-                    >
-                      <ContentMarkdownViewLayout
-                        mode={mode}
-                        editorActivated={editorActivated}
-                        onToggleMode={toggleViewMode}
-                        editor={
-                          <DocumentMarkdownEditor
-                            value={value}
-                            onChange={handleChange}
-                            onBlur={handleBlurSave}
-                            focusRequest={editorFocusRequest}
-                            ariaLabel="Project description"
-                          />
-                        }
-                        preview={
-                          <ContentMarkdownPreviewColumn includeTopInset={false}>
-                            {value.trim() ? (
-                              <DocumentMarkdownPreview
-                                body={value}
-                                onChange={handleChange}
-                              />
-                            ) : (
-                              <p className="project-detail__description-empty">
-                                Add a project description…
-                              </p>
-                            )}
-                          </ContentMarkdownPreviewColumn>
-                        }
-                        toggle={
-                          <FloatingPillToggleDock>
-                            <SegmentedPillToggle
-                              value={mode}
-                              options={[
-                                { value: "edit", label: "Edit" },
-                                { value: "preview", label: "Preview" },
-                              ]}
-                              onChange={setViewMode}
-                              ariaLabel="Project description view mode"
-                            />
-                          </FloatingPillToggleDock>
-                        }
+                  {latestUpdate ? (
+                    <div className="project-detail__latest-update">
+                      <ProjectLatestUpdateCard
+                        update={latestUpdate}
+                        onOpenUpdates={onOpenUpdates}
                       />
                     </div>
                   ) : null}
+                </div>
 
-                  {error ? (
-                    <p
-                      className="project-detail__description-error"
-                      role="alert"
-                    >
-                      {error}
-                    </p>
-                  ) : null}
-                </section>
+                {overviewDescription ? (
+                  <div className="project-detail__description project-detail__description--expanded">
+                    <div className="project-detail__description-heading">
+                      <span className="project-detail__description-label">
+                        Description
+                      </span>
+                    </div>
+                    <div className="project-detail__description-body">
+                      {overviewDescription}
+                    </div>
+                  </div>
+                ) : (
+                  <section
+                    className={`project-detail__description${
+                      descriptionExpanded
+                        ? " project-detail__description--expanded"
+                        : ""
+                    }`}
+                  >
+                    <div className="project-detail__description-heading">
+                      <button
+                        type="button"
+                        className="project-detail__description-toggle"
+                        aria-expanded={descriptionExpanded}
+                        onClick={() => setDescriptionExpanded((open) => !open)}
+                      >
+                        <span>Description</span>
+                        <span
+                          aria-hidden="true"
+                          className={`project-detail__description-chevron${
+                            descriptionExpanded
+                              ? ""
+                              : " project-detail__description-chevron--collapsed"
+                          }`}
+                        >
+                          ▾
+                        </span>
+                      </button>
+                    </div>
+
+                    {descriptionExpanded ? (
+                      <div
+                        className="project-detail__description-body"
+                        data-content-view-mode={mode}
+                      >
+                        <ContentMarkdownViewLayout
+                          mode={mode}
+                          editorActivated={editorActivated}
+                          onToggleMode={toggleViewMode}
+                          editor={
+                            <DocumentMarkdownEditor
+                              value={value}
+                              onChange={handleChange}
+                              onBlur={handleBlurSave}
+                              focusRequest={editorFocusRequest}
+                              ariaLabel="Project description"
+                            />
+                          }
+                          preview={
+                            <ContentMarkdownPreviewColumn includeTopInset={false}>
+                              {value.trim() ? (
+                                <DocumentMarkdownPreview
+                                  body={value}
+                                  onChange={handleChange}
+                                />
+                              ) : (
+                                <p className="project-detail__description-empty">
+                                  {descriptionEmptyHint}
+                                </p>
+                              )}
+                            </ContentMarkdownPreviewColumn>
+                          }
+                          toggle={
+                            <FloatingPillToggleDock>
+                              <SegmentedPillToggle
+                                value={mode}
+                                options={[
+                                  { value: "edit", label: "Edit" },
+                                  { value: "preview", label: "Preview" },
+                                ]}
+                                onChange={setViewMode}
+                                ariaLabel="Project description view mode"
+                              />
+                            </FloatingPillToggleDock>
+                          }
+                        />
+                      </div>
+                    ) : null}
+
+                    {error ? (
+                      <p
+                        className="project-detail__description-error"
+                        role="alert"
+                      >
+                        {error}
+                      </p>
+                    ) : null}
+                  </section>
+                )}
               </div>
             }
             properties={
@@ -430,6 +498,8 @@ export function ProjectDetailView({
                 organizationOptions={organizationOptions}
                 organizationNavigateHref={organizationNavigateHref}
                 onCreateOrganizationFromQuery={onCreateOrganizationFromQuery}
+                propertiesExtra={propertiesExtra}
+                belowProperties={belowProperties}
               />
             }
           />
@@ -438,4 +508,3 @@ export function ProjectDetailView({
     </div>
   );
 }
-

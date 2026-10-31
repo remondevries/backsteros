@@ -28,7 +28,11 @@ import {
   computeProjectTaskProgress,
   ProjectDocumentsView,
   ProjectLettersView,
-  DomainDetailView,
+  DomainCloudflarePanel,
+  DomainOverviewView,
+  EntityPropertiesSection,
+  PropertyFieldGroup,
+  PropertyInlineChip,
   PillNav,
   RegisterEntityDeleteAction,
   RegisterEntityDuplicateAction,
@@ -63,7 +67,6 @@ import {
   getActiveProjectSection,
   getDocumentEditorBody,
   getTaskDisplayId,
-  isCodebaseWorkbenchPath,
   isDefinedProjectArea,
   isProjectSectionId,
   letterMatchesSlug,
@@ -126,8 +129,11 @@ import {
 } from "../lib/shell-route-keep-alive";
 import { useDesktopWorkspaceData } from "../lib/workspace-data";
 import { useDomainProjectApi } from "../lib/use-domain-project-api";
+import { useCodebaseProjectReadme } from "../lib/codebase-project-readme";
+import { useProjectLatestUpdate } from "../lib/use-project-latest-update";
+import { projectFs } from "../lib/project-fs";
+import { CodebaseProjectActivityPanel } from "../components/codebase-project-activity-panel";
 import { CodebaseProjectWorkbench } from "./codebase-project-workbench";
-import { DomainProjectWorkbench } from "./domain-project-workbench";
 import { DesktopCodebaseDocsListPanel } from "./codebase-docs-list-panel";
 import { DesktopProjectLettersListPanel } from "./project-letters-list-panel";
 import { CodebaseRepoDocsDetail } from "./codebase-repo-docs-detail";
@@ -778,8 +784,6 @@ function ProjectDetailScreen({
       );
     }
 
-    if (selectedEffectiveType === "domeinname") return null;
-
     return (
       <PillNav
         ariaLabel="Project sections"
@@ -1322,6 +1326,14 @@ function ProjectDetailScreen({
     [projectList],
   );
 
+  const { client: desktopApiClient } = useDesktopApi();
+  const latestUpdate = useProjectLatestUpdate(selectedId);
+  const codebaseReadme = useCodebaseProjectReadme({
+    enabled: selectedEffectiveType === "codebase",
+    workingDirectory: selected?.localWorkingDirectory ?? null,
+    fs: projectFs,
+  });
+
   if (!selected) {
     return (
       <div className="inbox-detail-layout">
@@ -1349,18 +1361,17 @@ function ProjectDetailScreen({
           project.type === "domeinname"
         ? "domeinname"
         : (project.type ?? navType ?? cachedType ?? "general");
-  // Tasks (list or board) and Docs stay in the codebase workbench so the left
-  // Tasks/Files/Docs/Commits/PRs/Updates sidebar remains; only letters use the
-  // default project section chrome.
+  // Files / Commits / PRs keep the codebase workbench (tree + GitHub lists).
+  // Overview and standard sections use the universal ProjectDetailView layout.
+  const codebaseWorkbenchTabForMount =
+    parseCodebaseWorkbenchPath(location.pathname, projectKey)?.tab ?? null;
   const isCodebaseWorkbench =
     effectiveType === "codebase" &&
-    (activeSection === "overview" ||
-      activeSection === "tasks" ||
-      activeSection === "timetracking" ||
-      activeSection === "documents" ||
-      activeSection === "updates" ||
-      isCodebaseWorkbenchPath(location.pathname, projectKey));
-  const isDomainWorkbench = effectiveType === "domeinname";
+    (codebaseWorkbenchTabForMount === "files" ||
+      codebaseWorkbenchTabForMount === "commits" ||
+      codebaseWorkbenchTabForMount === "pulls");
+  const isDomainProject = effectiveType === "domeinname";
+  const isCodebaseProject = effectiveType === "codebase";
 
   const patchSelected = (
     patch: Partial<WorkspaceProject>) => {
@@ -1380,15 +1391,9 @@ function ProjectDetailScreen({
 
   function navigateProjectTasksView(nextView: ListBoardView) {
     persistListBoardView(nextView, TASKS_LIST_BOARD_STORAGE_KEY);
-    // Codebase projects use `/tasks` (Overview owns the bare project path).
-    // Domain workbench keeps tasks on the base path. Default projects use
-    // the `/tasks` section route.
-    const base =
-      effectiveType === "codebase"
-        ? getScopedProjectSectionHref(projectKey, "tasks", routeScope)
-        : effectiveType === "domeinname"
-          ? getScopedProjectBasePath(projectKey, routeScope)
-          : getScopedProjectSectionHref(projectKey, "tasks", routeScope);
+    // Codebase / default / domain all use the `/tasks` section route.
+    // Overview owns the bare project path.
+    const base = getScopedProjectSectionHref(projectKey, "tasks", routeScope);
     navigate(
       nextView === "board"
         ? `${base}?${LIST_BOARD_VIEW_SEARCH_PARAM}=board`
@@ -2599,108 +2604,132 @@ function ProjectDetailScreen({
     );
   }
 
-  if (isDomainWorkbench) {
-    const domainProject = {
-      ...project,
-      organizationId: project.organizationId ?? null,
-      type: "domeinname" as const,
-      provider: project.provider ?? null,
-      summary: workspace.projectSummaries[project.id] ?? "",
-      description: workspace.projectDescriptions[project.id] ?? "",
-      taskProgress,
-    };
-
-    const domainDetailProps = {
-      project: domainProject,
-      organizationOptions: domainOrganizationOptions,
-      nestedAreas: mapWorkspaceNestedAreas(workspace.areas),
-      knownTags: knownDomainTags,
-      loadDetail: loadDomainRegistrarDetail,
-      loadCloudflareDnsRecords,
-      purgeCloudflareCache,
-      copyIdShortcutEnabled: keepAliveActive,
-      onSaveName: projectPropertyHandlers.onSaveName,
-      onSaveKey: projectPropertyHandlers.onSaveKey,
-      onStatusChange: projectPropertyHandlers.onStatusChange,
-      onPriorityChange: projectPropertyHandlers.onPriorityChange,
-      onAreaChange: projectPropertyHandlers.onAreaChange,
-      onAreaIdChange: projectPropertyHandlers.onAreaIdChange,
-      onOrganizationChange: projectPropertyHandlers.onOrganizationChange,
-      onCreateOrganizationFromQuery:
-        projectPropertyHandlers.onCreateOrganizationFromQuery,
-      onIconChange: projectPropertyHandlers.onIconChange,
-      onTagsChange: async (tags: string[]) => {
-        try {
-          const result = await updateDomainTags(project.name, tags);
-          await workspace.patchProject(project.id, {
-            icon: buildTransipDomainProjectIcon(result.tags),
-          });
-          return { ok: true as const, tags: result.tags };
-        } catch (error) {
-          return {
-            ok: false as const,
-            error:
-              error instanceof Error ? error.message : "Could not update tags",
-          };
+  const domainZoneId = project.cloudflareZoneId?.trim() || null;
+  const activityPanel = (
+    <EntityPropertiesSection title="Activity" defaultCollapsed>
+      <CodebaseProjectActivityPanel
+        projectId={project.id}
+        projectKey={project.key}
+        requestJson={(path, init) =>
+          desktopApiClient.requestJson(path, init)
         }
-      },
-      onContactsChange: async (contacts: DomainRegistrarContact[]) => {
-        try {
-          const result = await updateDomainContacts(project.name, contacts);
-          return { ok: true as const, contacts: result.contacts };
-        } catch (error) {
-          return {
-            ok: false as const,
-            error:
-              error instanceof Error
-                ? error.message
-                : "Could not update WHOIS contacts",
-          };
-        }
-      },
-    };
+      />
+    </EntityPropertiesSection>
+  );
 
-    return (
-      <>
-        <RegisterPageTitle
-          active={keepAliveActive}
-          href={location.pathname}
-          title={project.name}
+  const codebaseLocationsExtra = isCodebaseProject ? (
+    <EntityPropertiesSection title="Locations">
+      <PropertyFieldGroup label="GitHub">
+        <PropertyInlineChip
+          label={project.githubRepository?.trim() || "No repository"}
         />
-        <RegisterEntityDuplicateAction
-          confirm="project"
-          entityLabel={`project "${project.name}"`}
-          onDuplicate={handleDuplicateProject}
-        />
-        <RegisterEntityMenuItems items={projectTypeMenuItems} />
-        <RegisterEntityDeleteAction
-          entityLabel={`project "${project.name}"`}
-          onDelete={handleDeleteProject}
-        />
-        <DomainProjectWorkbench
-          tasksPanel={renderSection("tasks")}
-          timetrackingPanel={renderSection("timetracking")}
-          activeTab={
-            activeSection === "timetracking" ? "timetracking" : "tasks"
+      </PropertyFieldGroup>
+      <PropertyFieldGroup label="Local">
+        <PropertyInlineChip
+          label={
+            project.localWorkingDirectory?.trim()
+              ? project.localWorkingDirectory
+                  .trim()
+                  .split(/[/\\]/)
+                  .filter(Boolean)
+                  .at(-1) ?? project.localWorkingDirectory.trim()
+              : "No folder"
           }
-          onTabChange={(tab) => {
-            navigate(
-              tab === "timetracking"
-                ? getScopedProjectSectionHref(
-                    projectKey,
-                    "timetracking",
-                    routeScope,
-                  )
-                : getScopedProjectBasePath(projectKey, routeScope),
-              { replace: true },
-            );
-          }}
-        >
-          <DomainDetailView {...domainDetailProps} />
-        </DomainProjectWorkbench>
-      </>
-    );
-  }
+        />
+      </PropertyFieldGroup>
+      <PropertyFieldGroup label="Development">
+        <PropertyInlineChip
+          label={
+            project.developmentLocation?.trim()
+              ? project.developmentLocation
+                  .trim()
+                  .split(/[/\\]/)
+                  .filter(Boolean)
+                  .at(-1) ?? project.developmentLocation.trim()
+              : "No folder"
+          }
+        />
+      </PropertyFieldGroup>
+      <PropertyFieldGroup label="Production">
+        <PropertyInlineChip
+          label={
+            project.productionLocation?.trim()
+              ? project.productionLocation
+                  .trim()
+                  .split(/[/\\]/)
+                  .filter(Boolean)
+                  .at(-1) ?? project.productionLocation.trim()
+              : "No folder"
+          }
+        />
+      </PropertyFieldGroup>
+    </EntityPropertiesSection>
+  ) : null;
+
+  const domainBelowProperties = isDomainProject ? (
+    <>
+      <DomainOverviewView
+        variant="panelSections"
+        project={{
+          ...project,
+          organizationId: project.organizationId ?? null,
+          type: "domeinname",
+          provider: project.provider ?? null,
+          summary: workspace.projectSummaries[project.id] ?? "",
+          description: workspace.projectDescriptions[project.id] ?? "",
+          taskProgress,
+        }}
+        organizationOptions={domainOrganizationOptions}
+        nestedAreas={mapWorkspaceNestedAreas(workspace.areas)}
+        knownTags={knownDomainTags}
+        loadDetail={loadDomainRegistrarDetail}
+        copyIdShortcutEnabled={keepAliveActive}
+        onTagsChange={async (tags: string[]) => {
+          try {
+            const result = await updateDomainTags(project.name, tags);
+            await workspace.patchProject(project.id, {
+              icon: buildTransipDomainProjectIcon(result.tags),
+            });
+            return { ok: true as const, tags: result.tags };
+          } catch (error) {
+            return {
+              ok: false as const,
+              error:
+                error instanceof Error
+                  ? error.message
+                  : "Could not update tags",
+            };
+          }
+        }}
+        onContactsChange={async (contacts: DomainRegistrarContact[]) => {
+          try {
+            const result = await updateDomainContacts(project.name, contacts);
+            return { ok: true as const, contacts: result.contacts };
+          } catch (error) {
+            return {
+              ok: false as const,
+              error:
+                error instanceof Error
+                  ? error.message
+                  : "Could not update WHOIS contacts",
+            };
+          }
+        }}
+      />
+      {domainZoneId ? (
+        <EntityPropertiesSection title="Cloudflare" defaultCollapsed>
+          <DomainCloudflarePanel
+            zoneId={domainZoneId}
+            loadDnsRecords={loadCloudflareDnsRecords}
+            purgeCache={purgeCloudflareCache}
+          />
+        </EntityPropertiesSection>
+      ) : null}
+      {activityPanel}
+    </>
+  ) : (
+    activityPanel
+  );
 
   return (
     <>
@@ -2728,12 +2757,10 @@ function ProjectDetailScreen({
           type: project.type ?? "general",
           healthCheckMode: project.healthCheckMode ?? null,
           healthCheckDomain: project.healthCheckDomain ?? null,
-          summary:
-            workspace.projectSummaries[project.id] ??
-            "",
-          description:
-            workspace.projectDescriptions[project.id] ??
-            "",
+          summary: workspace.projectSummaries[project.id] ?? "",
+          description: isCodebaseProject
+            ? codebaseReadme.body
+            : (workspace.projectDescriptions[project.id] ?? ""),
           taskProgress,
         }}
         copyIdShortcutEnabled={keepAliveActive}
@@ -2751,7 +2778,26 @@ function ProjectDetailScreen({
               }`
             : null
         }
+        latestUpdate={latestUpdate}
+        onOpenUpdates={() => handleSectionChange("updates")}
+        propertiesExtra={codebaseLocationsExtra}
+        belowProperties={domainBelowProperties}
+        descriptionEmptyHint={
+          isCodebaseProject
+            ? codebaseReadme.error ??
+              (codebaseReadme.loading
+                ? "Loading README.md…"
+                : "Add a README.md…")
+            : "Add a project description…"
+        }
         {...projectPropertyHandlers}
+        onSaveDescription={
+          isCodebaseProject
+            ? async (next) => {
+                await codebaseReadme.save(next);
+              }
+            : projectPropertyHandlers.onSaveDescription
+        }
       />
     </>
   );
