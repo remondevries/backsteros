@@ -1510,8 +1510,8 @@
   padding: 12px;
   border-radius: 10px;
   border: 1px solid color-mix(in srgb, #3a3a3a 55%, black);
-  /* Soft #272727 top-right → transparent bottom-left over a dark base. */
-  background-color: #161616;
+  /* Soft #272727 top-right → transparent bottom-left (no solid base). */
+  background-color: transparent;
   background-image: linear-gradient(
     to bottom left,
     #272727,
