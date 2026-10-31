@@ -170,6 +170,18 @@ export {
   LemoDesignMarkIcon,
   type LemoDesignMarkIconProps,
 } from "./components/icons/lemo-design-mark-icon.js";
+export {
+  CursorMarkIcon,
+  type CursorMarkIconProps,
+} from "./components/icons/cursor-mark-icon.js";
+export {
+  XaiMarkIcon,
+  type XaiMarkIconProps,
+} from "./components/icons/xai-mark-icon.js";
+export {
+  ClaudeMarkIcon,
+  type ClaudeMarkIconProps,
+} from "./components/icons/claude-mark-icon.js";
 
 export {
   ProductSidebar,

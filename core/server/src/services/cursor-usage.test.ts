@@ -65,9 +65,27 @@ describe("applyGrokBotUsage", () => {
     const next = applyGrokBotUsage(base, {
       usagePercent: 5.2,
       hasNonZeroIncludedLimit: true,
-      nextResetTimestampUtc: 1_787_631_453_882,
+      nextResetTimestampUtc: "2026-08-25T04:17:33.882Z",
     });
     assert.equal(next.grokBotPercentUsed, 5.2);
+    assert.equal(next.grokBotResetMs, 1_787_631_453_882);
+  });
+
+  it("accepts numeric nextResetTimestampUtc as well as ISO strings", () => {
+    const base = parsePlanUsage({
+      planUsage: {
+        limit: 40000,
+        autoPercentUsed: 0,
+        apiPercentUsed: 0,
+        totalPercentUsed: 0,
+      },
+    });
+    assert.ok(base);
+    const next = applyGrokBotUsage(base, {
+      usagePercent: 1,
+      hasNonZeroIncludedLimit: true,
+      nextResetTimestampUtc: 1_787_631_453_882,
+    });
     assert.equal(next.grokBotResetMs, 1_787_631_453_882);
   });
 });

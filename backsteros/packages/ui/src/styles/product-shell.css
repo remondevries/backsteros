@@ -912,37 +912,10 @@ button.agent-dm-card__dismiss:hover {
   font-size: 11px;
 }
 
-.sidebar-cursor-credits-row {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 8px;
-  min-width: 0;
-}
-
-.sidebar-cursor-credits-label-group {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 4px;
-  min-width: 0;
-}
-
-.sidebar-cursor-credits-label {
-  font-weight: 550;
-  letter-spacing: 0.01em;
-  color: color-mix(in oklab, var(--foreground) 58%, transparent);
-}
-
 .sidebar-cursor-credits-reset {
   font-weight: 400;
   font-variant-numeric: tabular-nums;
   color: color-mix(in oklab, var(--foreground) 48%, transparent);
-}
-
-.sidebar-cursor-credits-value {
-  font-variant-numeric: tabular-nums;
-  color: color-mix(in oklab, var(--foreground) 78%, transparent);
-  white-space: nowrap;
 }
 
 .sidebar-cursor-credits-meta {
@@ -956,17 +929,52 @@ button.agent-dm-card__dismiss:hover {
   gap: 3px;
 }
 
+.sidebar-cursor-credits-bar-row--muted .sidebar-cursor-credits-bar-head {
+  color: color-mix(in oklab, var(--foreground) 34%, transparent);
+}
+
+.sidebar-cursor-credits-bar-row--muted .sidebar-cursor-credits-bar-icon {
+  color: color-mix(in oklab, var(--foreground) 32%, transparent);
+}
+
+.sidebar-cursor-credits-bar-row--muted .sidebar-cursor-credits-track {
+  background: color-mix(in oklab, var(--foreground) 5%, transparent);
+}
+
+.sidebar-cursor-credits-bar-row--muted .sidebar-cursor-credits-fill {
+  background: color-mix(in oklab, var(--foreground) 18%, transparent);
+}
+
 .sidebar-cursor-credits-bar-head {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   gap: 8px;
   color: color-mix(in oklab, var(--foreground) 62%, transparent);
 }
 
+.sidebar-cursor-credits-bar-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.sidebar-cursor-credits-bar-icon {
+  flex-shrink: 0;
+  display: block;
+  color: color-mix(in oklab, var(--foreground) 58%, transparent);
+}
+
 .sidebar-cursor-credits-bar-pct {
   flex-shrink: 0;
   font-variant-numeric: tabular-nums;
+}
+
+.sidebar-cursor-credits-bar-value-suffix {
+  color: color-mix(in oklab, var(--foreground) 48%, transparent);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .sidebar-cursor-credits-track {

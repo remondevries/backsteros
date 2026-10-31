@@ -51,8 +51,12 @@ function asMs(value: unknown): number | null {
     return Math.round(value);
   }
   if (typeof value === "string" && value.trim()) {
-    const parsed = Number(value);
-    if (Number.isFinite(parsed)) return Math.round(parsed);
+    const trimmed = value.trim();
+    const asNumber = Number(trimmed);
+    if (Number.isFinite(asNumber)) return Math.round(asNumber);
+    // Cursor SandUsageStatus returns ISO-8601 (e.g. nextResetTimestampUtc).
+    const parsed = Date.parse(trimmed);
+    if (Number.isFinite(parsed)) return parsed;
   }
   return null;
 }

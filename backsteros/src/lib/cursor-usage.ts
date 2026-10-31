@@ -72,7 +72,7 @@ export function cursorUsageTitle(usage: CursorUsage | null): string {
     `Premium ${formatPlanPercent(usage.apiPercentUsed)}`,
   ];
   if (usage.grokBotPercentUsed != null) {
-    parts.push(`Grok ${formatPlanPercent(usage.grokBotPercentUsed)}`);
+    parts.push(`Agents ${formatPlanPercent(usage.grokBotPercentUsed)}`);
   }
   if (
     usage.remainingCents != null &&
@@ -98,7 +98,7 @@ export function cursorUsageTitle(usage: CursorUsage | null): string {
     const end = new Date(usage.grokBotResetMs);
     if (!Number.isNaN(end.getTime())) {
       parts.push(
-        `Grok resets ${end.toLocaleDateString(undefined, { month: "short", day: "numeric" })}`,
+        `Agents reset ${end.toLocaleDateString(undefined, { month: "short", day: "numeric" })}`,
       );
     }
   }

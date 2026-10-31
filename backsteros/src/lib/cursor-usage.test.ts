@@ -64,14 +64,14 @@ describe("cursor-usage formatting", () => {
     assert.match(title, /You've used 10%/);
   });
 
-  it("includes Grok weekly usage in the tooltip", () => {
+  it("includes Agents weekly usage in the tooltip", () => {
     const title = cursorUsageTitle(
       usage({
         grokBotPercentUsed: 5.22,
         grokBotResetMs: Date.parse("2026-08-25T04:17:33.882Z"),
       }),
     );
-    assert.match(title, /Grok 5%/);
-    assert.match(title, /Grok resets/);
+    assert.match(title, /Agents 5%/);
+    assert.match(title, /Agents reset/);
   });
 });

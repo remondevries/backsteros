@@ -71,6 +71,9 @@ export function ProjectLeadAgentField({
   }, [agentContacts, avatarSrcById]);
 
   const selectedId = project.leadAgentContactId?.trim() || null;
+  // Name only on the closed chip; job title stays on list options via secondaryLabel.
+  const selectedDisplayLabel =
+    options.find((option) => option.value === selectedId)?.label ?? null;
 
   async function setLeadAgent(nextContactId: string | null) {
     setSaving(true);
@@ -116,6 +119,7 @@ export function ProjectLeadAgentField({
         ariaLabel="Lead agent"
         fallbackLabel="No lead agent"
         fallbackIcon={null}
+        selectedDisplayLabel={selectedDisplayLabel}
         triggerVariant="inlineChip"
         disabled={saving}
         mutedFallback
