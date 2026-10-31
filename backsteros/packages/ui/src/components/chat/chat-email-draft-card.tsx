@@ -2,6 +2,8 @@
 
 import {
   createContext,
+  lazy,
+  Suspense,
   useCallback,
   useContext,
   useEffect,
@@ -17,8 +19,12 @@ import { chatUiEmailDraftCardDataSchema } from "@backsteros/contracts";
 
 import { buildEmailMailboxDropdownOptions } from "../dropdowns/dropdown-options.js";
 import { PropertyDropdown } from "../dropdowns/property-dropdown.js";
-import { DocumentMarkdownEditor } from "../documents/document-markdown-editor.js";
 import { DocumentMarkdownPreview } from "../documents/document-markdown-preview.js";
+
+const DocumentMarkdownEditorLazy = lazy(async () => {
+  const mod = await import("../documents/document-markdown-editor.js");
+  return { default: mod.DocumentMarkdownEditor };
+});
 import {
   EmailDraftActions,
   type EmailDraftBodyMode,
@@ -558,15 +564,23 @@ export function ChatEmailDraftCard({ part }: { part: ChatUiCardPart }) {
           ) : null}
           <div className="email-draft-body-compose__core">
             {editing ? (
-              <DocumentMarkdownEditor
-                value={body}
-                onChange={setBody}
-                disabled={submitting}
-                ariaLabel="Email body"
-                vimEnabled
-                scrollWithContent
-                focusRequest={editorFocusRequest}
-              />
+              <Suspense
+                fallback={
+                  <p className="chat-ui-email-draft-card__editor-loading">
+                    Loading editor…
+                  </p>
+                }
+              >
+                <DocumentMarkdownEditorLazy
+                  value={body}
+                  onChange={setBody}
+                  disabled={submitting}
+                  ariaLabel="Email body"
+                  vimEnabled
+                  scrollWithContent
+                  focusRequest={editorFocusRequest}
+                />
+              </Suspense>
             ) : (
               <DocumentMarkdownPreview body={shownBody} forceInlineMentions />
             )}

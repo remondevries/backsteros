@@ -79,6 +79,15 @@ export default defineConfig(async ({ command }) => {
     bundleReport
       ? visualizer({
           filename: "dist/bundle-report.html",
+          template: "treemap",
+          gzipSize: true,
+          open: false,
+        })
+      : undefined,
+    bundleReport
+      ? visualizer({
+          filename: "dist/bundle-report-stats.json",
+          template: "raw-data",
           gzipSize: true,
           open: false,
         })
