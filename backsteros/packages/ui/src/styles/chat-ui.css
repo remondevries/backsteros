@@ -1510,13 +1510,13 @@
   padding: 12px;
   border-radius: 10px;
   border: 1px solid color-mix(in srgb, #3a3a3a 55%, black);
-  /* Top-right → transparent bottom-left — denser up top so the wash reads clearly. */
+  /* Top-right → transparent bottom-left — strong wash concentrated up top. */
   background: linear-gradient(
     to bottom left,
-    #272727 0%,
-    #272727 22%,
-    color-mix(in srgb, #3a3a3a 55%, transparent) 45%,
-    transparent 72%
+    #2e2e2e 0%,
+    #272727 32%,
+    color-mix(in srgb, #3a3a3a 65%, transparent) 55%,
+    transparent 82%
   );
   background-color: transparent;
   box-sizing: border-box;
