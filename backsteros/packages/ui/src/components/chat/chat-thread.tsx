@@ -33,6 +33,11 @@ import {
   revokePendingChatImages,
   type PendingChatImage,
 } from "../../chat/chat-composer-images.js";
+import {
+  computePlainTextMentionTrigger,
+  insertMentionTokenAtTrigger,
+  segmentComposerMentionText,
+} from "../../chat/chat-composer-mentions.js";
 import type { ChatProjectOption } from "../../chat/chat-project-option.js";
 import {
   isShellChatPanelCollapsed,
@@ -47,6 +52,14 @@ import {
   type ChatSlashMenuItem,
 } from "../../chat/chat-slash-menu.js";
 import { chatUiMessageToThreadMessageLike } from "../../chat/chat-ui-to-thread-message.js";
+import { EMPTY_MENTION_CATALOG } from "../../mentions/empty-catalog.js";
+import { useMentionCatalogOptional } from "../../mentions/mention-catalog-context.js";
+import {
+  buildMentionSections,
+  flattenMentionSections,
+} from "../../mentions/search-catalog.js";
+import { buildMentionToken } from "../../mentions/tokens.js";
+import type { MentionItem } from "../../mentions/mention-menu-types.js";
 import {
   ChatCardNavigateProvider,
   type ChatCardNavigate,
@@ -56,11 +69,13 @@ import {
   mergeChatCardRegistry,
   type ChatCardRegistry,
 } from "./chat-card-registry.js";
+import { ChatComposerMentionMenu } from "./chat-composer-mention-menu.js";
 import { ChatUiMessageBody } from "./chat-message-parts.js";
 import {
   ChatThreadHeader,
   type ChatThreadPeer,
 } from "./chat-thread-header.js";
+import { MentionLeadingIcon } from "../mentions/mention-leading-icon.js";
 import { ProjectOcticon } from "../projects/project-octicon.js";
 import { AssigneeListMark } from "../tasks/assignee-list-mark.js";
 import { isBlockingModalOpen } from "../../shortcuts/shortcut-guards.js";
@@ -70,6 +85,7 @@ import {
   toggleChatMessageSelection,
 } from "../../chat/chat-select-mode.js";
 import { useEntityHeaderActionsContextOptional } from "../entity-actions/entity-header-actions-context.js";
+import { mentionTokenLabel } from "../../mentions/mention-tokens.js";
 
 /** Window when the thread is long enough that DOM cost matters. */
 export const CHAT_THREAD_VIRTUALIZE_THRESHOLD = 48;
@@ -214,6 +230,15 @@ function ChatThreadComposer({
   const { value, setText } = unstable_useComposerInput({ disabled });
   const [highlight, setHighlight] = useState(0);
   const [dragOver, setDragOver] = useState(false);
+  const [cursor, setCursor] = useState(0);
+  const [mentionDismissedQuery, setMentionDismissedQuery] = useState<
+    string | null
+  >(null);
+  const inputWrapRef = useRef<HTMLDivElement>(null);
+  const mentionCatalogApi = useMentionCatalogOptional();
+  const mentionCatalog =
+    mentionCatalogApi?.catalog ?? EMPTY_MENTION_CATALOG;
+
   const slashQuery = useMemo(() => parsePeerSlashCommand(value), [value]);
   const slashSections = useMemo(() => {
     if (slashQuery == null) return [];
@@ -228,13 +253,45 @@ function ChatThreadComposer({
     () => flattenChatSlashMenu(slashSections),
     [slashSections],
   );
-  const menuOpen = slashItems.length > 0;
+  const slashMenuOpen = slashItems.length > 0;
+
+  const mentionTrigger = useMemo(() => {
+    if (slashMenuOpen) return null;
+    return computePlainTextMentionTrigger(value, cursor);
+  }, [cursor, slashMenuOpen, value]);
+  const mentionMenuOpen =
+    mentionTrigger != null &&
+    mentionDismissedQuery !== (mentionTrigger.query ?? "");
+  const mentionFlatItems = useMemo(() => {
+    if (!mentionMenuOpen || !mentionTrigger) return [];
+    return flattenMentionSections(
+      buildMentionSections(mentionCatalog, mentionTrigger.query),
+    );
+  }, [mentionCatalog, mentionMenuOpen, mentionTrigger]);
+
+  const menuOpen = slashMenuOpen || mentionMenuOpen;
   const hasPendingImages = pendingImages.length > 0;
   const canSend = !disabled && (value.trim().length > 0 || hasPendingImages);
+  const mirrorSegments = useMemo(
+    () => segmentComposerMentionText(value),
+    [value],
+  );
 
   useEffect(() => {
     setHighlight(0);
-  }, [slashQuery, slashItems.length]);
+  }, [slashQuery, slashItems.length, mentionTrigger?.query, mentionFlatItems.length]);
+
+  useEffect(() => {
+    if (!mentionTrigger) setMentionDismissedQuery(null);
+  }, [mentionTrigger]);
+
+  const syncCursorFromTarget = useCallback(
+    (target: EventTarget | null) => {
+      if (!(target instanceof HTMLTextAreaElement)) return;
+      setCursor(target.selectionStart ?? target.value.length);
+    },
+    [],
+  );
 
   const applySlashItem = useCallback(
     (item: ChatSlashMenuItem) => {
@@ -246,6 +303,24 @@ function ChatThreadComposer({
       onSelectPeer?.(item.peer.id);
     },
     [onSelectPeer, onSelectProject, setText],
+  );
+
+  const applyMentionItem = useCallback(
+    (item: MentionItem) => {
+      if (!mentionTrigger) return;
+      const token = buildMentionToken(item);
+      const result = insertMentionTokenAtTrigger(value, mentionTrigger, token);
+      setText(result.text);
+      setCursor(result.cursor);
+      setMentionDismissedQuery(null);
+      requestAnimationFrame(() => {
+        const textarea = inputWrapRef.current?.querySelector("textarea");
+        if (!textarea) return;
+        textarea.focus();
+        textarea.setSelectionRange(result.cursor, result.cursor);
+      });
+    },
+    [mentionTrigger, setText, value],
   );
 
   const addImagesFromDataTransfer = useCallback(
@@ -289,6 +364,7 @@ function ChatThreadComposer({
   };
 
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    syncCursorFromTarget(event.currentTarget);
     if (
       !menuOpen &&
       event.key === "Enter" &&
@@ -300,7 +376,34 @@ function ChatThreadComposer({
       onSendAttachmentsOnly();
       return;
     }
-    if (!menuOpen) return;
+    if (mentionMenuOpen) {
+      const count = Math.max(mentionFlatItems.length, 1);
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        setHighlight((index) => (index + 1) % count);
+        return;
+      }
+      if (event.key === "ArrowUp") {
+        event.preventDefault();
+        setHighlight((index) => (index - 1 + count) % count);
+        return;
+      }
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setMentionDismissedQuery(mentionTrigger?.query ?? "");
+        return;
+      }
+      if (event.key === "Tab" || (event.key === "Enter" && !event.shiftKey)) {
+        const item = mentionFlatItems[highlight] ?? mentionFlatItems[0];
+        if (item) {
+          event.preventDefault();
+          applyMentionItem(item);
+        }
+        return;
+      }
+      return;
+    }
+    if (!slashMenuOpen) return;
     if (event.key === "ArrowDown") {
       event.preventDefault();
       setHighlight((index) => (index + 1) % slashItems.length);
@@ -364,7 +467,7 @@ function ChatThreadComposer({
       onDragLeave={() => setDragOver(false)}
       onDrop={onDrop}
     >
-      {menuOpen ? (
+      {slashMenuOpen ? (
         <div className="chat-ui-composer__slash-menu" role="listbox">
           {slashSections.map((section) => {
             let sectionOffset = 0;
@@ -418,6 +521,15 @@ function ChatThreadComposer({
           })}
         </div>
       ) : null}
+      {mentionMenuOpen && mentionTrigger ? (
+        <ChatComposerMentionMenu
+          query={mentionTrigger.query}
+          highlight={highlight}
+          onHighlightChange={setHighlight}
+          onSelect={applyMentionItem}
+          catalog={mentionCatalog}
+        />
+      ) : null}
       {hasPendingImages ? (
         <div className="chat-ui-composer__attachments" aria-label="Attached images">
           {pendingImages.map((image) => (
@@ -440,19 +552,58 @@ function ChatThreadComposer({
         </div>
       ) : null}
       <div className="chat-ui-composer__row">
-        <ComposerPrimitive.Input
-          className="chat-ui-composer__input"
-          placeholder={
-            hasPendingImages
-              ? `${placeholder}  ·  paste more images or send`
-              : placeholder
-          }
-          rows={1}
-          disabled={disabled}
-          submitOnEnter={!menuOpen && value.trim().length > 0}
-          onKeyDown={onKeyDown}
-          onPaste={onPaste}
-        />
+        <div className="chat-ui-composer__input-wrap" ref={inputWrapRef}>
+          <div className="chat-ui-composer__input-mirror" aria-hidden="true">
+            {mirrorSegments.map((segment, index) => {
+              if (segment.type === "text") {
+                return (
+                  <span key={`t-${index}`}>
+                    {segment.text.length > 0 ? segment.text : "\u200b"}
+                  </span>
+                );
+              }
+              return (
+                <span
+                  key={`m-${index}-${segment.raw}`}
+                  className="chat-ui-composer__mention-chip"
+                  title={segment.raw}
+                >
+                  <MentionLeadingIcon
+                    kind={segment.token.kind}
+                    status={null}
+                  />
+                  <span className="chat-ui-composer__mention-chip-label">
+                    {mentionTokenLabel(segment.token)}
+                  </span>
+                </span>
+              );
+            })}
+          </div>
+          <ComposerPrimitive.Input
+            className="chat-ui-composer__input is-mirrored"
+            placeholder={
+              hasPendingImages
+                ? `${placeholder}  ·  paste more images or send`
+                : placeholder
+            }
+            rows={1}
+            disabled={disabled}
+            submitOnEnter={!menuOpen && value.trim().length > 0}
+            onKeyDown={onKeyDown}
+            onKeyUp={(event) => syncCursorFromTarget(event.currentTarget)}
+            onClick={(event) => syncCursorFromTarget(event.currentTarget)}
+            onSelect={(event) => syncCursorFromTarget(event.currentTarget)}
+            onPaste={onPaste}
+            onScroll={(event) => {
+              const mirror = inputWrapRef.current?.querySelector(
+                ".chat-ui-composer__input-mirror",
+              );
+              if (mirror instanceof HTMLElement) {
+                mirror.scrollTop = event.currentTarget.scrollTop;
+              }
+            }}
+          />
+        </div>
         {hasPendingImages && !value.trim() ? (
           <button
             type="button"
