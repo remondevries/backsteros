@@ -1,14 +1,34 @@
 /**
- * Plain-text @ mention trigger + insert helpers for the shell chat composer.
- * Mirrors CodeMirror `computeMentionTriggerState` without an editor view.
+ * Plain-text @ mention trigger + document model for the shell chat composer.
+ * Serialization always uses raw `[@kind:…]` tokens; the editor shows chips.
  */
+import type { MentionCatalog, MentionItem } from "../mentions/mention-menu-types.js";
+import type { MentionMenuTriggerState } from "../mentions/mention-menu-types.js";
 import {
   MENTION_TOKEN_RE,
+  mentionTokenLabel,
   parseMentionToken,
   segmentMarkdownWithMentions,
   type ParsedMentionToken,
 } from "../mentions/mention-tokens.js";
-import type { MentionMenuTriggerState } from "../mentions/mention-menu-types.js";
+import {
+  resolveMentionCatalogContact,
+  resolveMentionCatalogDocument,
+  resolveMentionCatalogEmail,
+  resolveMentionCatalogEstimate,
+  resolveMentionCatalogHabit,
+  resolveMentionCatalogInvoice,
+  resolveMentionCatalogJournal,
+  resolveMentionCatalogLetter,
+  resolveMentionCatalogMeeting,
+  resolveMentionCatalogMessage,
+  resolveMentionCatalogOrganization,
+  resolveMentionCatalogPost,
+  resolveMentionCatalogProject,
+  resolveMentionCatalogTask,
+  resolveMentionCatalogTransaction,
+} from "../mentions/resolve-catalog-entry.js";
+import { buildMentionToken } from "../mentions/tokens.js";
 
 const MENTION_TRIGGER_RE = /(?:^|\s)@([^\s@]{0,60})$/;
 
@@ -45,13 +65,111 @@ export function insertMentionTokenAtTrigger(
   return { text: next, cursor: trigger.from + insert.length };
 }
 
+/** Insert a picked mention item as `[@kind:…] ` (always trailing space). */
+export function insertMentionItemAtTrigger(
+  text: string,
+  trigger: MentionMenuTriggerState,
+  item: MentionItem,
+): { text: string; cursor: number; token: string; label: string } {
+  const token = buildMentionToken(item);
+  const result = insertMentionTokenAtTrigger(text, trigger, token);
+  return {
+    ...result,
+    token,
+    label: mentionItemChipLabel(item),
+  };
+}
+
 export type ComposerMentionSegment =
   | { type: "text"; text: string }
-  | { type: "mention"; token: ParsedMentionToken; raw: string };
+  | { type: "mention"; token: ParsedMentionToken; raw: string; label: string };
 
-/** Segment composer text for the chip mirror (mentions + plain runs). */
-export function segmentComposerMentionText(
+/** Chip label for a picked menu item (name/title, not only the key). */
+export function mentionItemChipLabel(item: MentionItem): string {
+  switch (item.kind) {
+    case "task":
+    case "letter":
+    case "email":
+    case "document":
+    case "meeting":
+    case "journal":
+    case "habit":
+    case "message":
+    case "post":
+    case "transaction":
+    case "invoice":
+    case "estimate":
+      return item.title.trim() || mentionTokenLabel(parseMentionToken(buildMentionToken(item))!);
+    case "project":
+    case "contact":
+    case "organization":
+      return item.name.trim() || item.key;
+  }
+}
+
+/** Resolve a display label for an existing token (catalog → name/title). */
+export function resolveComposerMentionChipLabel(
+  token: ParsedMentionToken,
+  catalog?: MentionCatalog | null,
+  preferredLabel?: string | null,
+): string {
+  const preferred = preferredLabel?.trim();
+  if (preferred) return preferred;
+  if (!catalog) return mentionTokenLabel(token);
+
+  switch (token.kind) {
+    case "task":
+      return resolveMentionCatalogTask(token, catalog)?.title ?? mentionTokenLabel(token);
+    case "project":
+      return resolveMentionCatalogProject(token, catalog)?.name ?? mentionTokenLabel(token);
+    case "contact":
+      return resolveMentionCatalogContact(token, catalog)?.name ?? mentionTokenLabel(token);
+    case "organization":
+      return (
+        resolveMentionCatalogOrganization(token, catalog)?.name ??
+        mentionTokenLabel(token)
+      );
+    case "document":
+      return (
+        resolveMentionCatalogDocument(token, catalog)?.title ??
+        mentionTokenLabel(token)
+      );
+    case "letter":
+      return resolveMentionCatalogLetter(token, catalog)?.title ?? mentionTokenLabel(token);
+    case "email":
+      return resolveMentionCatalogEmail(token, catalog)?.title ?? mentionTokenLabel(token);
+    case "meeting":
+      return resolveMentionCatalogMeeting(token, catalog)?.title ?? mentionTokenLabel(token);
+    case "journal":
+      return resolveMentionCatalogJournal(token, catalog)?.title ?? mentionTokenLabel(token);
+    case "habit":
+      return resolveMentionCatalogHabit(token, catalog)?.title ?? mentionTokenLabel(token);
+    case "message":
+      return resolveMentionCatalogMessage(token, catalog)?.title ?? mentionTokenLabel(token);
+    case "post":
+      return resolveMentionCatalogPost(token, catalog)?.title ?? mentionTokenLabel(token);
+    case "transaction":
+      return (
+        resolveMentionCatalogTransaction(token, catalog)?.title ??
+        mentionTokenLabel(token)
+      );
+    case "invoice":
+      return resolveMentionCatalogInvoice(token, catalog)?.title ?? mentionTokenLabel(token);
+    case "estimate":
+      return (
+        resolveMentionCatalogEstimate(token, catalog)?.title ??
+        mentionTokenLabel(token)
+      );
+  }
+}
+
+/**
+ * Parse composer plain text into text + mention segments.
+ * Mentions keep their raw token for serialization; labels come from catalog.
+ */
+export function parseComposerMentionDoc(
   text: string,
+  catalog?: MentionCatalog | null,
 ): ComposerMentionSegment[] {
   if (!text) return [{ type: "text", text: "" }];
   const out: ComposerMentionSegment[] = [];
@@ -61,6 +179,7 @@ export function segmentComposerMentionText(
         type: "mention",
         token: segment.token,
         raw: segment.raw,
+        label: resolveComposerMentionChipLabel(segment.token, catalog),
       });
       continue;
     }
@@ -73,10 +192,38 @@ export function segmentComposerMentionText(
   return out.length > 0 ? out : [{ type: "text", text }];
 }
 
+/** Serialize editor segments back to plain text with raw `[@kind:…]` tokens. */
+export function serializeComposerMentionDoc(
+  segments: readonly ComposerMentionSegment[],
+): string {
+  let out = "";
+  for (const segment of segments) {
+    if (segment.type === "text") out += segment.text;
+    else out += segment.raw;
+  }
+  return out;
+}
+
+/** @deprecated Prefer {@link parseComposerMentionDoc}. */
+export function segmentComposerMentionText(
+  text: string,
+  catalog?: MentionCatalog | null,
+): ComposerMentionSegment[] {
+  return parseComposerMentionDoc(text, catalog);
+}
+
 /** True when `text` contains at least one parseable `[@kind:…]` token. */
 export function composerTextHasMentionTokens(text: string): boolean {
   MENTION_TOKEN_RE.lastIndex = 0;
   const match = MENTION_TOKEN_RE.exec(text);
   if (!match) return false;
   return parseMentionToken(match[0]) != null;
+}
+
+/** Round-trip: parse → serialize must preserve tokens and whitespace. */
+export function roundTripComposerMentionText(
+  text: string,
+  catalog?: MentionCatalog | null,
+): string {
+  return serializeComposerMentionDoc(parseComposerMentionDoc(text, catalog));
 }
