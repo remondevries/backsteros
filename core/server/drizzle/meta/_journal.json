@@ -1345,6 +1345,13 @@
       "when": 1796260000000,
       "tag": "0190_sync_events_retention_peer_cursor",
       "breakpoints": true
+    },
+    {
+      "idx": 192,
+      "version": "7",
+      "when": 1796270000000,
+      "tag": "0191_sync_events_created_at_workspace_idx",
+      "breakpoints": true
     }
   ]
 }

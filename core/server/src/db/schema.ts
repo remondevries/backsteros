@@ -2117,6 +2117,10 @@ export const syncEvents = pgTable(
     index("sync_events_workspace_cursor_idx").on(table.workspaceId, table.cursor),
     index("sync_events_device_id_idx").on(table.deviceId),
     index("sync_events_created_at_idx").on(table.createdAt),
+    index("sync_events_workspace_created_at_idx").on(
+      table.workspaceId,
+      table.createdAt,
+    ),
   ],
 );
 

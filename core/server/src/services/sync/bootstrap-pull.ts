@@ -109,6 +109,31 @@ export async function bootstrapSync(workspaceId: string) {
 }
 
 export async function pullSync(workspaceId: string, cursor: number) {
+  const {
+    getOldestSyncEventCursor,
+    syncEventsCursorNeedsResync,
+  } = await import("./sync-events-retention.js");
+  const oldest = await getOldestSyncEventCursor(workspaceId);
+  if (syncEventsCursorNeedsResync(cursor, oldest)) {
+    return {
+      schema_version: SYNC_SCHEMA_VERSION,
+      cursor,
+      last_sync_id: cursor,
+      has_more: false,
+      resync_needed: true,
+      events: [] as Array<{
+        cursor: number;
+        mutation_id: string;
+        device_id: string | null;
+        entity: string;
+        entity_id: string;
+        operation: string;
+        payload: unknown;
+        created_at: number;
+      }>,
+    };
+  }
+
   const events = await db
     .select()
     .from(syncEvents)

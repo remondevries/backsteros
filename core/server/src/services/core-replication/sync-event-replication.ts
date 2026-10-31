@@ -130,6 +130,8 @@ export type SyncEventsFeedResponse = {
     created_at: string;
   }>;
   has_more: boolean;
+  /** Peer cursor is behind a gap in the remaining log — full resync required. */
+  resync_needed?: boolean;
 };
 
 /** Serve ordered sync_events after a cursor (leader / peer delta feed). */
@@ -139,18 +141,39 @@ export async function buildSyncEventsFeed(input: {
   limit?: number;
 }): Promise<SyncEventsFeedResponse> {
   const limit = Math.min(Math.max(input.limit ?? PAGE_SIZE, 1), 500);
-  // Peer `after` means every event ≤ afterCursor is already applied — retention
-  // must keep anything above this watermark (OS-162).
-  const { recordSyncEventFeedConsumerCursor } = await import(
-    "../sync/sync-events-retention.js"
-  );
-  await recordSyncEventFeedConsumerCursor(input.workspaceId, input.afterCursor);
+  const {
+    getOldestSyncEventCursor,
+    recordSyncEventFeedConsumerCursor,
+    syncEventsCursorNeedsResync,
+  } = await import("../sync/sync-events-retention.js");
+
+  const lastSyncId = await getWorkspaceLastSyncId(input.workspaceId);
+  const oldest = await getOldestSyncEventCursor(input.workspaceId);
+  if (syncEventsCursorNeedsResync(input.afterCursor, oldest)) {
+    return {
+      workspace_id: input.workspaceId,
+      after: input.afterCursor,
+      last_sync_id: lastSyncId,
+      events: [],
+      has_more: false,
+      resync_needed: true,
+    };
+  }
+
   const rows = await listSyncEventsAfter({
     workspaceId: input.workspaceId,
     afterCursor: input.afterCursor,
     limit,
   });
-  const lastSyncId = await getWorkspaceLastSyncId(input.workspaceId);
+
+  // Advance watermark only after a contiguous feed read, capped at newest
+  // cursor on this core — never trust a peer `after` past our log tip.
+  await recordSyncEventFeedConsumerCursor(
+    input.workspaceId,
+    input.afterCursor,
+    lastSyncId,
+  );
+
   return {
     workspace_id: input.workspaceId,
     after: input.afterCursor,
@@ -354,6 +377,7 @@ async function pullWorkspaceSyncEvents(workspaceId: string): Promise<{
   duplicate: number;
   skipped: number;
   peerMissing?: boolean;
+  resyncNeeded?: boolean;
   stuck?: { cursor: number; entity: string; entityId: string; error: string };
 }> {
   const config = getCoreReplicationConfig();
@@ -397,6 +421,20 @@ async function pullWorkspaceSyncEvents(workspaceId: string): Promise<{
       payload = (await response.json()) as SyncEventsFeedResponse;
     } finally {
       clearTimeout(timeout);
+    }
+
+    if (payload.resync_needed) {
+      appendOpsLog(
+        "error",
+        "core sync-events pull resync_needed",
+        `workspace=${workspaceId} after=${after} — peer log has a gap; table LWW continues`,
+      );
+      return {
+        applied,
+        duplicate,
+        skipped,
+        resyncNeeded: true,
+      };
     }
 
     if (!payload.events?.length) {

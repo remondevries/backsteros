@@ -748,6 +748,8 @@ export const syncPullSchema = z.object({
   /** Alias of `cursor` — Linear-style lastSyncId on this core. */
   last_sync_id: z.number().int().optional(),
   has_more: z.boolean(),
+  /** Cursor is behind a gap in remaining sync_events — full resync required. */
+  resync_needed: z.boolean().optional(),
   events: z.array(
     z.object({
       cursor: z.number().int(),
