@@ -20,6 +20,7 @@ import { PropertyFieldGroup } from "../content/property-field-group.js";
 import {
   buildTrackedTimerKey,
   useTrackedTimerOptional,
+  useTrackedTimerTick,
   type TrackedTimerSessionMeta,
 } from "../../tracked-timer/tracked-timer-context.js";
 import {
@@ -140,6 +141,7 @@ export function TrackedTimeField({
   timerSession = null,
 }: TrackedTimeFieldProps) {
   const trackedTimer = useTrackedTimerOptional();
+  const timerTick = useTrackedTimerTick();
   const timerKey = timerSession
     ? buildTrackedTimerKey(timerSession.kind, timerSession.entityId)
     : null;
@@ -189,7 +191,6 @@ export function TrackedTimeField({
   syncTimerDurationSecondsRef.current = trackedTimer?.syncTimerDurationSeconds;
   const getElapsedSecondsRef = useRef(trackedTimer?.getElapsedSeconds);
   getElapsedSecondsRef.current = trackedTimer?.getElapsedSeconds;
-  const timerTick = trackedTimer?.timerTick ?? 0;
 
   const onPersistRef = useRef(onTrackedDurationSecondsChange);
   onPersistRef.current = onTrackedDurationSecondsChange;

@@ -307,6 +307,7 @@ export {
   TrackedTimerProvider,
   useTrackedTimer,
   useTrackedTimerOptional,
+  useTrackedTimerTick,
   type RemoteRunningTimerAdoption,
 } from "./tracked-timer/tracked-timer-context.js";
 

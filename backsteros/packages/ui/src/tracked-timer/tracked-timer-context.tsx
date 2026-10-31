@@ -157,6 +157,10 @@ type TrackedTimerContextValue = {
   /** All currently running timer keys (parallel sessions allowed). */
   runningKeys: string[];
   activeKey: string | null;
+  /**
+   * @deprecated Subscribe via {@link useTrackedTimerTick} so the 1 Hz clock
+   * does not rebuild this actions context (and re-render the shell).
+   */
   timerTick: number;
   recentTimers: TrackedTimerListItem[];
   getElapsedSeconds: (key: string) => number;
@@ -187,6 +191,9 @@ type TrackedTimerContextValue = {
 
 const TrackedTimerContext = createContext<TrackedTimerContextValue | null>(null);
 
+/** 1 Hz clock while any timer runs — subscribe only from live clock UIs. */
+const TrackedTimerTickContext = createContext(0);
+
 const TIMER_CHECKPOINT_INTERVAL_MS = 60_000;
 
 export function useTrackedTimerOptional(): TrackedTimerContextValue | null {
@@ -199,6 +206,11 @@ export function useTrackedTimer(): TrackedTimerContextValue {
     throw new Error("useTrackedTimer requires TrackedTimerProvider");
   }
   return value;
+}
+
+/** Live 1 Hz tick for elapsed displays. Does not re-render action consumers. */
+export function useTrackedTimerTick(): number {
+  return useContext(TrackedTimerTickContext);
 }
 
 export function TrackedTimerProvider({
@@ -828,12 +840,14 @@ export function TrackedTimerProvider({
   const resolvedRunningKey = useMemo(() => {
     if (runningKey) return runningKey;
     return findPrimaryRunningKey(entriesRef.current, activeKey);
-    // `entriesRevision` / `tick` re-read the mutable entries ref.
+    // `entriesRevision` re-reads the mutable entries ref.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeKey, entriesRevision, runningKey, tick]);
+  }, [activeKey, entriesRevision, runningKey]);
 
   const recentTimers = useMemo(() => {
-    const items = [...entriesRef.current.values()]
+    // Elapsed seconds are a snapshot — live clocks subscribe to
+    // TrackedTimerTickContext and call getElapsedSeconds.
+    return [...entriesRef.current.values()]
       .filter(
         (entry) =>
           entry.sessionStartAt != null ||
@@ -863,11 +877,12 @@ export function TrackedTimerProvider({
           lastActiveAt: entry.lastActiveAt,
         }),
       );
-    void tick;
-    return items;
     // `entriesRevision` re-reads the mutable entries ref.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeKey, entriesRevision, resolvedRunningKey, tick]);
+  }, [activeKey, entriesRevision, resolvedRunningKey]);
+
+  const tickRef = useRef(tick);
+  tickRef.current = tick;
 
   const value = useMemo(
     (): TrackedTimerContextValue => ({
@@ -875,7 +890,10 @@ export function TrackedTimerProvider({
       resolvedRunningKey,
       runningKeys,
       activeKey,
-      timerTick: tick,
+      // Stable getter identity: do not put `tick` in deps (that was the 1 Hz fan-out).
+      get timerTick() {
+        return tickRef.current;
+      },
       recentTimers,
       getElapsedSeconds,
       registerTimer,
@@ -902,14 +920,15 @@ export function TrackedTimerProvider({
       startTimer,
       syncRemoteRunningTimers,
       syncTimerDurationSeconds,
-      tick,
       toggleTimer,
     ],
   );
 
   return (
     <TrackedTimerContext.Provider value={value}>
-      {children}
+      <TrackedTimerTickContext.Provider value={tick}>
+        {children}
+      </TrackedTimerTickContext.Provider>
     </TrackedTimerContext.Provider>
   );
 }

@@ -20,7 +20,10 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 
-import { useTrackedTimerOptional } from "../../tracked-timer/tracked-timer-context.js";
+import {
+  useTrackedTimerOptional,
+  useTrackedTimerTick,
+} from "../../tracked-timer/tracked-timer-context.js";
 import type { TrackedTimerListItem } from "../../tracked-timer/tracked-timer-types.js";
 import { getTaskStatusIdBadgeStyle } from "../../tasks/task-status-header-gradient.js";
 
@@ -315,6 +318,7 @@ function ContentTabsTimerMenu({
 
 export function ContentTabsTimer() {
   const timer = useTrackedTimerOptional();
+  const timerTick = useTrackedTimerTick();
   const [open, setOpen] = useState(false);
   const controlRef = useRef<HTMLDivElement>(null);
 
@@ -337,7 +341,6 @@ export function ContentTabsTimer() {
     }
     return active ?? running ?? recentTimers[0] ?? null;
   }, [recentTimers, timer]);
-  const timerTick = timer?.timerTick ?? 0;
 
   // Always mount chrome when the provider is present — idle shows 00:00 so the
   // top-right control is discoverable before the first timer session.

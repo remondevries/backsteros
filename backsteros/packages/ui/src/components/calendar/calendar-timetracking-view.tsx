@@ -35,7 +35,10 @@ import {
 } from "../../list-nav/keyboard-nav-item.js";
 import { ProjectTypeGroupSection } from "../projects/project-type-group-section.js";
 import { buildTrackedTimerKey } from "../../tracked-timer/tracked-timer-types.js";
-import { useTrackedTimerOptional } from "../../tracked-timer/tracked-timer-context.js";
+import {
+  useTrackedTimerOptional,
+  useTrackedTimerTick,
+} from "../../tracked-timer/tracked-timer-context.js";
 import type { SearchableDropdownOption } from "../dropdowns/searchable-dropdown.js";
 import {
   TaskItemRow,
@@ -154,7 +157,7 @@ export function CalendarTimetrackingView({
   onTrackedDurationSecondsChange,
 }: CalendarTimetrackingViewProps) {
   const timer = useTrackedTimerOptional();
-  const timerTick = timer?.timerTick ?? 0;
+  const timerTick = useTrackedTimerTick();
   const visibleTabs = useMemo(() => {
     const allowed = new Set(chartTabs);
     return DEFAULT_TIMETRACKING_CHART_TABS.filter((tab) => allowed.has(tab));
