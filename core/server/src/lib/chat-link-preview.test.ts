@@ -4,6 +4,7 @@ import { describe, it } from "node:test";
 import {
   clearChatLinkPreviewCache,
   extractHttpUrls,
+  faviconFromHtml,
   isBlockedIpAddress,
   resolveChatLinkPreviews,
 } from "./chat-link-preview.js";
@@ -63,5 +64,45 @@ describe("resolveChatLinkPreviews", () => {
     assert.equal(previews[0]?.description, "Desc");
     assert.equal(previews[0]?.imageUrl, "https://example.com/og.png");
     assert.equal(previews[0]?.siteName, "Example");
+  });
+});
+
+describe("faviconFromHtml", () => {
+  it("uses href (not data-base-href) for GitHub-style icon markup", () => {
+    const html = `<!doctype html><html><head>
+      <link rel="alternate icon" class="js-site-favicon" type="image/png" href="https://github.githubassets.com/favicons/favicon.png">
+      <link rel="icon" class="js-site-favicon" type="image/svg+xml" href="https://github.githubassets.com/favicons/favicon.svg" data-base-href="https://github.githubassets.com/favicons/favicon">
+      <title>GitHub</title>
+    </head></html>`;
+    const base = new URL("https://github.com/backsteros/backsteros");
+    const favicon = faviconFromHtml(html, base);
+    assert.equal(
+      favicon,
+      "https://github.githubassets.com/favicons/favicon.svg",
+    );
+    assert.notEqual(
+      favicon,
+      "https://github.githubassets.com/favicons/favicon",
+    );
+  });
+
+  it("does not treat data-base-href as href when href is first", () => {
+    const html = `<link rel="icon" href="/real-icon.svg" data-base-href="/mangled">`;
+    const favicon = faviconFromHtml(html, new URL("https://example.com/"));
+    assert.equal(favicon, "https://example.com/real-icon.svg");
+  });
+
+  it("prefers png/svg icon over apple-touch-icon", () => {
+    const html = `
+      <link rel="apple-touch-icon" href="/apple.png">
+      <link rel="icon" type="image/png" href="/icon.png">
+    `;
+    const favicon = faviconFromHtml(html, new URL("https://example.com/x"));
+    assert.equal(favicon, "https://example.com/icon.png");
+  });
+
+  it("falls back to null so caller can use /favicon.ico", () => {
+    const html = `<html><head><title>No icons</title></head></html>`;
+    assert.equal(faviconFromHtml(html, new URL("https://example.com/")), null);
   });
 });

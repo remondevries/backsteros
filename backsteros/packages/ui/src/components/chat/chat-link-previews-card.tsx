@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import type {
   ChatUiCardPart,
   ChatUiLinkPreviewsCardData,
@@ -20,6 +20,50 @@ function hostnameOf(url: string): string {
   } catch {
     return url;
   }
+}
+
+function LinkPreviewFavicon({
+  src,
+  site,
+}: {
+  src: string | null | undefined;
+  site: string;
+}) {
+  const [failed, setFailed] = useState(false);
+  const showImage = Boolean(src?.trim()) && !failed;
+
+  if (showImage) {
+    return (
+      <img
+        src={src!}
+        alt=""
+        className="chat-ui-link-preview__favicon"
+        loading="lazy"
+        referrerPolicy="no-referrer"
+        onError={() => setFailed(true)}
+      />
+    );
+  }
+
+  return (
+    <span
+      className="chat-ui-link-preview__favicon-fallback"
+      aria-hidden
+      title={site}
+    >
+      <svg
+        viewBox="0 0 16 16"
+        width="14"
+        height="14"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.25"
+      >
+        <circle cx="8" cy="8" r="6.25" />
+        <path d="M1.75 8h12.5M8 1.75c1.8 1.9 2.7 3.9 2.7 6.25S9.8 12.35 8 14.25C6.2 12.35 5.3 10.35 5.3 8S6.2 3.65 8 1.75Z" />
+      </svg>
+    </span>
+  );
 }
 
 export function ChatLinkPreviewsCard({ part }: { part: ChatUiCardPart }) {
@@ -42,15 +86,7 @@ export function ChatLinkPreviewsCard({ part }: { part: ChatUiCardPart }) {
           >
             <span className="chat-ui-link-preview__body">
               <span className="chat-ui-link-preview__site">
-                {item.faviconUrl ? (
-                  <img
-                    src={item.faviconUrl}
-                    alt=""
-                    className="chat-ui-link-preview__favicon"
-                    loading="lazy"
-                    referrerPolicy="no-referrer"
-                  />
-                ) : null}
+                <LinkPreviewFavicon src={item.faviconUrl} site={site} />
                 {site}
               </span>
               <span className="chat-ui-link-preview__title">{title}</span>

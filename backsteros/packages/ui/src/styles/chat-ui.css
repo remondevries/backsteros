@@ -1738,18 +1738,23 @@
   flex-direction: column;
   gap: 8px;
   margin-top: 8px;
-  max-width: min(100%, 420px);
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 
 .chat-ui-link-preview {
   display: flex;
   gap: 0;
+  width: 100%;
+  max-width: 100%;
   overflow: hidden;
   border-radius: 12px;
   border: 1px solid color-mix(in oklab, var(--foreground, #fff) 12%, transparent);
   background: color-mix(in oklab, var(--foreground, #fff) 3%, transparent);
   color: inherit;
   text-decoration: none;
+  box-sizing: border-box;
 }
 
 .chat-ui-link-preview:hover {
@@ -1773,11 +1778,20 @@
   opacity: 0.7;
 }
 
-.chat-ui-link-preview__favicon {
+.chat-ui-link-preview__favicon,
+.chat-ui-link-preview__favicon-fallback {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
   width: 14px;
   height: 14px;
   border-radius: 3px;
   object-fit: cover;
+}
+
+.chat-ui-link-preview__favicon-fallback {
+  opacity: 0.85;
 }
 
 .chat-ui-link-preview__title {

@@ -168,18 +168,100 @@ function titleFromHtml(html: string): string | null {
   return decodeHtmlEntities(match[1].trim());
 }
 
-function faviconFromHtml(html: string, base: URL): string | null {
-  const match = html.match(
-    /<link[^>]+rel=["'](?:shortcut )?icon["'][^>]+href=["']([^"']+)["']/i,
-  ) ?? html.match(
-    /<link[^>]+href=["']([^"']+)["'][^>]+rel=["'](?:shortcut )?icon["']/i,
-  );
-  if (!match?.[1]) return null;
-  try {
-    return new URL(match[1], base).toString();
-  } catch {
-    return null;
+const ICON_REL_PRIORITY: Record<string, number> = {
+  icon: 1,
+  "alternate icon": 2,
+  "shortcut icon": 3,
+  "apple-touch-icon": 4,
+  "apple-touch-icon-precomposed": 5,
+};
+
+function parseLinkTagAttributes(tag: string): Record<string, string> {
+  const attrs: Record<string, string> = {};
+  const attrRe =
+    /([^\s=/>]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+)))?/gi;
+  let match: RegExpExecArray | null;
+  while ((match = attrRe.exec(tag)) != null) {
+    const name = (match[1] ?? "").toLowerCase();
+    if (!name || name === "link") continue;
+    const value = match[2] ?? match[3] ?? match[4] ?? "";
+    // First wins — do not let later `data-base-href` overwrite `href`.
+    if (!(name in attrs)) attrs[name] = value;
   }
+  return attrs;
+}
+
+function iconTypeScore(type: string, href: string): number {
+  const t = type.toLowerCase();
+  const path = href.toLowerCase();
+  if (t.includes("svg") || path.endsWith(".svg")) return 0;
+  if (t.includes("png") || path.endsWith(".png")) return 1;
+  if (t.includes("webp") || path.endsWith(".webp")) return 2;
+  if (t.includes("icon") || path.endsWith(".ico")) return 3;
+  if (t.includes("jpeg") || t.includes("jpg") || path.endsWith(".jpg") || path.endsWith(".jpeg")) {
+    return 4;
+  }
+  return 5;
+}
+
+/**
+ * Prefer `<link rel="icon|alternate icon|shortcut icon|apple-touch-icon">`
+ * and always resolve the bare `href` attribute against the page URL.
+ * Never read `data-base-href` (GitHub puts a 404-ing path there).
+ */
+export function faviconFromHtml(html: string, base: URL): string | null {
+  const candidates: Array<{
+    href: string;
+    relRank: number;
+    typeScore: number;
+  }> = [];
+
+  const linkRe = /<link\b[^>]*>/gi;
+  let tagMatch: RegExpExecArray | null;
+  while ((tagMatch = linkRe.exec(html)) != null) {
+    const tag = tagMatch[0] ?? "";
+    const attrs = parseLinkTagAttributes(tag);
+    const relRaw = (attrs.rel ?? "").trim().toLowerCase();
+    if (!relRaw) continue;
+    const relTokens = relRaw.split(/\s+/).filter(Boolean);
+    const relKey = relTokens.join(" ");
+    let relRank = ICON_REL_PRIORITY[relKey];
+    if (relRank == null) {
+      // e.g. rel="icon shortcut" / mixed order
+      if (relTokens.includes("icon") && relTokens.includes("alternate")) {
+        relRank = ICON_REL_PRIORITY["alternate icon"];
+      } else if (relTokens.includes("icon") && relTokens.includes("shortcut")) {
+        relRank = ICON_REL_PRIORITY["shortcut icon"];
+      } else if (relTokens.includes("apple-touch-icon-precomposed")) {
+        relRank = ICON_REL_PRIORITY["apple-touch-icon-precomposed"];
+      } else if (relTokens.includes("apple-touch-icon")) {
+        relRank = ICON_REL_PRIORITY["apple-touch-icon"];
+      } else if (relTokens.includes("icon")) {
+        relRank = ICON_REL_PRIORITY.icon;
+      }
+    }
+    if (relRank == null) continue;
+    // Bare attribute name `href` only — never `data-base-href`.
+    const href = (attrs.href ?? "").trim();
+    if (!href) continue;
+    candidates.push({
+      href,
+      relRank,
+      typeScore: iconTypeScore(attrs.type ?? "", href),
+    });
+  }
+
+  candidates.sort(
+    (a, b) => a.relRank - b.relRank || a.typeScore - b.typeScore,
+  );
+  for (const candidate of candidates) {
+    try {
+      return new URL(candidate.href, base).toString();
+    } catch {
+      // try next
+    }
+  }
+  return null;
 }
 
 function absoluteUrl(base: URL, value: string | null): string | null {
