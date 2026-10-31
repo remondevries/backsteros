@@ -48,6 +48,10 @@ import {
   writeAgentSortOrderIds,
 } from "../lib/shell-agent-order";
 import { notifyShellAgentRosterChanged } from "../lib/shell-agent-roster";
+import {
+  clearAgentWebhookVerified,
+  markAgentWebhookVerified,
+} from "../lib/shell-agent-webhook-verified";
 import { SettingsAccountTab } from "../components/settings-account-tab";
 import { SettingsLabelsTab } from "../components/settings-labels-tab";
 import { SettingsDocumentPropertiesTab } from "../components/settings-document-properties-tab";
@@ -487,11 +491,13 @@ function SettingsApiTab({
       }
     }
     if (!result.ok) {
-      // Server clears webhookVerifiedAt on failed delivery.
+      // New core clears webhookVerifiedAt; old core still needs localStorage.
+      clearAgentWebhookVerified(agentId);
       notifyShellAgentRosterChanged();
       throw new Error(result.error?.trim() || "Webhook test failed");
     }
-    // Server sets webhookVerifiedAt on successful delivery — refresh roster.
+    // New core sets webhookVerifiedAt; old core still needs localStorage.
+    markAgentWebhookVerified(agentId);
     notifyShellAgentRosterChanged();
 
     const threadId = result.threadId?.trim() || null;

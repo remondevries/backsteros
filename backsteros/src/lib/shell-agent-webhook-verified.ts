@@ -1,7 +1,7 @@
 /**
- * @deprecated OS-164 — chat roster reads `agent.webhookVerifiedAt` from the
- * server. These localStorage helpers are unused; kept only until Remon
- * confirms they can be deleted.
+ * Desktop-local webhook Test mark. Used only when the agents API omits
+ * `webhookVerifiedAt` (old core). New cores send the field (null or ISO) and
+ * the roster trusts that instead.
  */
 
 const STORAGE_PREFIX = "backsteros:agent-webhook-verified:";

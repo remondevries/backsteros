@@ -21,19 +21,31 @@ import {
   getShellAgentRosterSnapshot,
   subscribeShellAgentRoster,
 } from "../lib/shell-agent-roster-store";
+import { isAgentWebhookVerified } from "../lib/shell-agent-webhook-verified";
+
 /** True when a non-empty webhook URL is stored (settings may still need a test). */
 export function agentHasWebhookUrl(agent: Agent): boolean {
   return Boolean(agent.webhookUrl?.trim());
 }
 
-/** True when Settings → Test last succeeded (server-persisted). */
-export function agentHasWebhookVerified(agent: Agent): boolean {
+/**
+ * Webhook Test pass for the chat roster.
+ *
+ * New cores always send `webhookVerifiedAt` (ISO string or null) — trust that.
+ * Old cores omit the property entirely — fall back to the desktop localStorage
+ * mark so the chat bar is not empty before cloud migrates.
+ */
+export function agentHasWebhookVerified(
+  agent: Pick<Agent, "id"> & { webhookVerifiedAt?: string | null },
+): boolean {
+  if (!Object.prototype.hasOwnProperty.call(agent, "webhookVerifiedAt")) {
+    return isAgentWebhookVerified(agent.id);
+  }
   return Boolean(agent.webhookVerifiedAt?.trim());
 }
 
 /**
- * Shell chat roster gate: URL + secret + successful Settings webhook Test
- * (webhookVerifiedAt on the agent record — not localStorage).
+ * Shell chat roster gate: URL + secret + successful Settings webhook Test.
  */
 export function agentReadyForChatRoster(agent: Agent): boolean {
   return (

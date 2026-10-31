@@ -13,7 +13,7 @@ afterEach(() => {
   memory.clear();
 });
 
-describe("shell agent webhook verified gate (deprecated localStorage)", () => {
+describe("shell agent webhook verified gate (old-core localStorage fallback)", () => {
   it("marks and clears verification in localStorage", () => {
     const original = globalThis.window;
     // @ts-expect-error test stub
