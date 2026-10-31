@@ -45,6 +45,7 @@ import {
 } from "../../chat/live-agent-thread-state.js";
 import type { ChatCardNavigate } from "./chat-card-navigate.js";
 import { ChatAttachmentActionsProvider } from "./chat-attachments-card.js";
+import type { ChatEmailDraftComposeContextValue } from "./chat-email-draft-card.js";
 import { ChatThread } from "./chat-thread.js";
 import type { ChatThreadPeer } from "./chat-thread-header.js";
 
@@ -110,6 +111,7 @@ export type LiveAgentChatHandlers = {
       bcc?: string[];
       subject?: string;
       body?: string;
+      from?: string;
     },
   ) => Promise<AnswerChatThreadMessageChoicesResult>;
 };
@@ -244,6 +246,11 @@ export type ChatUiDevPreviewProps = {
   webhookSetupHref?: string;
   /** Optional body copy when the webhook setup empty state is shown. */
   webhookSetupMessage?: string | null;
+  /**
+   * AgentMail mailboxes + reply templates for email-draft From picker and
+   * greeting/sign-off shell (same source as Messages compose).
+   */
+  emailDraftCompose?: ChatEmailDraftComposeContextValue | null;
 };
 
 /**
@@ -258,6 +265,7 @@ export function ChatUiDevPreview({
   allowEmptyPeers = false,
   webhookSetupHref = "/settings/api?type=agent",
   webhookSetupMessage = null,
+  emailDraftCompose = null,
 }: ChatUiDevPreviewProps) {
   const resolvedPeers = useMemo(() => {
     if (peers && peers.length > 0) return [...peers];
@@ -1044,6 +1052,7 @@ export function ChatUiDevPreview({
         bcc?: string[];
         subject?: string;
         body?: string;
+        from?: string;
       },
     ) => {
       if (!liveAgentId || !liveAgentChat?.answerEmailDraft || !liveThreadId) {
@@ -1199,6 +1208,7 @@ export function ChatUiDevPreview({
               ? onAnswerEmailDraft
               : null
           }
+          emailDraftCompose={emailDraftCompose}
           emptyState={null}
           placeholder="Message…"
         />

@@ -48,14 +48,22 @@ describe("chatThreadMessageEmailDraftInputSchema", () => {
 });
 
 describe("chatThreadMessageEmailDraftSchema (stored)", () => {
-  it("requires resolved recipients with emails", () => {
+  it("requires draftId, preview, and resolved recipients", () => {
     const parsed = chatThreadMessageEmailDraftSchema.parse({
+      draftId: "draft_1",
       to: [{ email: "ada@example.com", name: "Ada", contactId: "c1" }],
       subject: "Invoice",
       body: "Please pay",
       from: { inboxId: "inb1", email: "me@example.com", displayName: "Remon" },
+      preview: {
+        greeting: "Hi Ada,",
+        signOff: "Best,\nRemon",
+        text: "Hi Ada,\n\nPlease pay\n\nBest,\nRemon",
+      },
     });
     assert.equal(parsed.to[0]?.name, "Ada");
+    assert.equal(parsed.draftId, "draft_1");
+    assert.equal(parsed.preview.greeting, "Hi Ada,");
   });
 });
 
@@ -86,10 +94,12 @@ describe("answerChatThreadMessageEmailDraftInputSchema", () => {
         to: ["new@example.com"],
         subject: "Revised",
         body: "New body",
+        from: "inbox_alt",
       },
     });
     assert.equal(sent.emailAction, "send");
     assert.equal(sent.edits?.subject, "Revised");
+    assert.equal(sent.edits?.from, "inbox_alt");
   });
 });
 
@@ -105,9 +115,16 @@ describe("answerChatThreadMessageInputSchema email branch", () => {
 
 describe("formatChatThreadEmailDraftResultBody", () => {
   const draft = chatThreadMessageEmailDraftSchema.parse({
+    draftId: "draft_fmt",
     to: [{ email: "ada@example.com", name: "Ada" }],
     subject: "Invoice INV-9",
     body: "Hi",
+    from: { inboxId: "inb1", email: "me@example.com" },
+    preview: {
+      greeting: "Hi Ada,",
+      signOff: "Best,\nRemon",
+      text: "Hi Ada,\n\nHi\n\nBest,\nRemon",
+    },
   });
 
   it("formats sent and discarded summaries", () => {

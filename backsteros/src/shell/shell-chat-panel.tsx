@@ -15,6 +15,7 @@ import {
   ChatPdfOverlay,
   ChatPdfPageThumb,
 } from "../components/chat-pdf-overlay";
+import { useAgentMail } from "../lib/agentmail-context";
 import { markAgentDmSeen } from "../lib/agent-dm-seen";
 import { useDesktopApi } from "../lib/api-context";
 import { useDesktopAvatarSrcMap } from "../lib/avatar-src";
@@ -66,6 +67,7 @@ export function ShellChatPanel() {
   const { allTasks } = useDesktopWorkspaceTasks();
   const projects = useShellChatProjects();
   const agentChat = useShellAgentChat();
+  const agentMail = useAgentMail();
   const [pdfOverlay, setPdfOverlay] = useState<{
     url: string;
     filename: string;
@@ -90,7 +92,44 @@ export function ShellChatPanel() {
     return ordered;
   }, [agentChat.webhookReadyAgents, contacts]);
 
-  const avatarSrcById = useDesktopAvatarSrcMap("contact", webhookContacts);
+  // Mailbox-linked contacts for email-draft From / sign-off avatars (same as
+  // Messages compose). Include them in the avatar map so switching From updates
+  // the footer photo.
+  const mailboxContacts = useMemo(() => {
+    const byId = new Map(contacts.map((contact) => [contact.id, contact]));
+    const ordered: typeof contacts = [];
+    const seen = new Set<string>();
+    for (const mailbox of agentMail.mailboxes) {
+      const contactId = mailbox.contactId?.trim();
+      if (!contactId || seen.has(contactId)) continue;
+      seen.add(contactId);
+      const contact = byId.get(contactId);
+      if (contact) ordered.push(contact);
+    }
+    return ordered;
+  }, [agentMail.mailboxes, contacts]);
+
+  const avatarContacts = useMemo(() => {
+    const byId = new Map<string, (typeof contacts)[number]>();
+    for (const contact of webhookContacts) byId.set(contact.id, contact);
+    for (const contact of mailboxContacts) byId.set(contact.id, contact);
+    return [...byId.values()];
+  }, [mailboxContacts, webhookContacts]);
+
+  const avatarSrcById = useDesktopAvatarSrcMap("contact", avatarContacts);
+
+  const emailDraftCompose = useMemo(
+    () => ({
+      mailboxes: agentMail.mailboxes.map((mailbox) => ({
+        ...mailbox,
+        avatarSrc: mailbox.contactId
+          ? (avatarSrcById[mailbox.contactId] ?? null)
+          : (mailbox.avatarSrc ?? null),
+      })),
+      replyTemplates: agentMail.replyTemplates,
+    }),
+    [agentMail.mailboxes, agentMail.replyTemplates, avatarSrcById],
+  );
 
   const peers = useMemo((): readonly ChatThreadPeer[] => {
     return webhookContacts.map((contact) => ({
@@ -200,6 +239,7 @@ export function ShellChatPanel() {
         allowEmptyPeers
         webhookSetupHref="/settings/api?type=agent"
         webhookSetupMessage={agentChat.agentsLoadError}
+        emailDraftCompose={emailDraftCompose}
       />
       {pdfOverlay ? (
         <ChatPdfOverlay

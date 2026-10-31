@@ -628,6 +628,7 @@ export function buildChatUiDemoMessages(): ChatUiMessage[] {
           data: {
             messageId: "agent-email-draft",
             note: "Not sent until you press Send.",
+            draftId: "draft_demo_inv9",
             from: {
               inboxId: "inbox_demo",
               email: "remon@backsteros.test",
@@ -642,7 +643,13 @@ export function buildChatUiDemoMessages(): ChatUiMessage[] {
             ],
             cc: [{ email: "ops@example.com", name: null, contactId: null }],
             subject: "Invoice INV-9",
-            body: "Hi Ada,\n\nPlease find the invoice details below.\n\nThanks,\nRemon",
+            // Body-only — greeting/sign-off come from From-inbox templates.
+            body: "Please find the invoice details below.",
+            preview: {
+              greeting: "Hi Ada,",
+              signOff: "Thanks,\nRemon",
+              text: "Hi Ada,\n\nPlease find the invoice details below.\n\nThanks,\nRemon",
+            },
             attachments: [
               {
                 id: "att-demo",

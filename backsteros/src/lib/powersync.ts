@@ -175,22 +175,37 @@ export function setPowerSyncGlobalSlot(slot: PowerSyncGlobalSlot | null) {
 
 /** Disconnect and close; ignores a second call from HMR / StrictMode. */
 const closedPowerSyncDatabases = new WeakSet<PowerSyncDatabase>();
+const closingPowerSyncDatabases = new WeakMap<
+  PowerSyncDatabase,
+  Promise<void>
+>();
 
 export async function closePowerSyncDatabase(
   database: PowerSyncDatabase,
   options?: { clear?: boolean },
 ): Promise<void> {
   if (closedPowerSyncDatabases.has(database)) return;
-  closedPowerSyncDatabases.add(database);
-  try {
-    if (options?.clear) {
-      await database.disconnectAndClear();
-      return;
-    }
-    await database.close({ disconnect: true });
-  } catch {
-    /* ignore close races */
+  const inflight = closingPowerSyncDatabases.get(database);
+  if (inflight) {
+    await inflight;
+    return;
   }
+  const done = (async () => {
+    closedPowerSyncDatabases.add(database);
+    try {
+      if (options?.clear) {
+        await database.disconnectAndClear();
+        return;
+      }
+      await database.close({ disconnect: true });
+    } catch {
+      /* ignore close races — PowerSync may still log "close for the second time" */
+    } finally {
+      closingPowerSyncDatabases.delete(database);
+    }
+  })();
+  closingPowerSyncDatabases.set(database, done);
+  await done;
 }
 
 /**

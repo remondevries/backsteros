@@ -1,6 +1,8 @@
 /**
  * Resolve + send helpers for agent-chat email draft cards.
- * Actual AgentMail send is injectable so integration tests never hit the network.
+ * Drafts are native BacksterOS Messages (AgentMail) records; the chat card
+ * stores a reference (`draftId`) plus body-only content. Greeting/sign-off
+ * come from From-inbox templates at preview + send time.
  */
 import { and, eq, inArray, isNull } from "drizzle-orm";
 
@@ -9,6 +11,7 @@ import {
   formatChatThreadEmailDraftResultBody,
   type ChatThreadMessageEmailDraft,
   type ChatThreadMessageEmailDraftInput,
+  type ChatThreadMessageEmailDraftPreview,
   type ChatThreadMessageEmailDraftRecipient,
   type ChatThreadMessageEmailDraftRecipientRef,
   type ChatThreadMessageEmailDraftResult,
@@ -18,10 +21,17 @@ import {
 import { db } from "../db/index.js";
 import { chatThreadAttachments, contacts } from "../db/schema.js";
 import { resolveContactRef } from "../lib/entity-refs.js";
+import { assembleComposeEmail } from "../lib/email-reply-assembler.js";
 import {
+  getEmailReplyTemplatesForInbox,
   getStoredAgentMailCredentials,
   listAgentMailInboxes,
 } from "./agentmail-settings/settings.js";
+import {
+  deleteAgentMailDraft,
+  upsertEmailComposeDraft,
+} from "./agentmail-settings/drafts.js";
+import { sendAgentMailDraft } from "./agentmail-settings/send-lifecycle.js";
 import { startEmailThread } from "./agentmail-settings/send-lifecycle.js";
 import type { StartEmailThreadDeps } from "./agentmail-settings/send-lifecycle.js";
 
@@ -53,6 +63,12 @@ export type SendChatEmailDraftResult = {
   messageId: string | null;
 };
 
+export type MessagesDraftHandle = {
+  draftId: string;
+  inboxId: string;
+  composeSessionId?: string;
+};
+
 export type ChatEmailDraftDeps = {
   listInboxes: (workspaceId: string) => Promise<EmailDraftInbox[]>;
   resolveDefaultInboxId: (workspaceId: string) => Promise<string | null>;
@@ -65,13 +81,53 @@ export type ChatEmailDraftDeps = {
     threadId: string,
     attachmentIds: readonly string[],
   ) => Promise<ChatThreadMessageEmailDraft["attachments"]>;
+  /** Create a native Messages draft storing body-only (wrap:false). */
+  createMessagesDraft: (input: {
+    workspaceId: string;
+    inboxId: string;
+    to: string[];
+    cc?: string[];
+    bcc?: string[];
+    subject: string;
+    body: string;
+    recipientFirstName?: string | null;
+    composeSessionId?: string;
+  }) => Promise<MessagesDraftHandle>;
+  /** Update an existing Messages draft (body-only storage). */
+  updateMessagesDraft: (input: {
+    workspaceId: string;
+    inboxId: string;
+    draftId: string;
+    to: string[];
+    cc?: string[];
+    bcc?: string[];
+    subject: string;
+    body: string;
+    recipientFirstName?: string | null;
+    composeSessionId?: string;
+  }) => Promise<MessagesDraftHandle>;
+  deleteMessagesDraft: (input: {
+    workspaceId: string;
+    inboxId: string;
+    draftId: string;
+  }) => Promise<void>;
+  /** Compose greeting + body + sign-off for the From inbox (current templates). */
+  buildPreview: (input: {
+    workspaceId: string;
+    inboxId: string;
+    to: string[];
+    subject: string;
+    body: string;
+    recipientFirstName?: string | null;
+  }) => Promise<ChatThreadMessageEmailDraftPreview>;
   /**
-   * Send the exact draft (raw body — no greeting/sign-off wrap).
-   * Tests inject a mock; production uses AgentMail via startEmailThread.
+   * Send via Messages. Prefer `draftId` (reassemble shell from templates, then
+   * send). Falls back to startEmailThread with wrap:true.
    */
   sendEmail: (input: {
     workspaceId: string;
     inboxId: string;
+    draftId?: string;
     to: string[];
     cc?: string[];
     bcc?: string[];
@@ -161,6 +217,7 @@ export async function defaultResolveEmailDraftRecipient(
     .select({
       id: contacts.id,
       name: contacts.name,
+      firstName: contacts.firstName,
       email: contacts.email,
     })
     .from(contacts)
@@ -224,10 +281,113 @@ async function defaultLoadAttachments(
   });
 }
 
+export async function defaultCreateMessagesDraft(input: {
+  workspaceId: string;
+  inboxId: string;
+  to: string[];
+  cc?: string[];
+  bcc?: string[];
+  subject: string;
+  body: string;
+  recipientFirstName?: string | null;
+  composeSessionId?: string;
+}): Promise<MessagesDraftHandle> {
+  // wrap:false — Messages draft stores body-only; shell applied on send.
+  const created = await upsertEmailComposeDraft(
+    input.workspaceId,
+    input.inboxId,
+    {
+      to: input.to,
+      cc: input.cc,
+      bcc: input.bcc,
+      subject: input.subject,
+      body: input.body,
+      recipientFirstName: input.recipientFirstName,
+      composeSessionId: input.composeSessionId,
+      wrap: false,
+    },
+  );
+  return {
+    draftId: created.draftId,
+    inboxId: created.inboxId,
+    composeSessionId: created.composeSessionId,
+  };
+}
+
+export async function defaultUpdateMessagesDraft(input: {
+  workspaceId: string;
+  inboxId: string;
+  draftId: string;
+  to: string[];
+  cc?: string[];
+  bcc?: string[];
+  subject: string;
+  body: string;
+  recipientFirstName?: string | null;
+  composeSessionId?: string;
+}): Promise<MessagesDraftHandle> {
+  // upsert with same composeSessionId updates the existing draft when found.
+  const updated = await upsertEmailComposeDraft(
+    input.workspaceId,
+    input.inboxId,
+    {
+      to: input.to,
+      cc: input.cc,
+      bcc: input.bcc,
+      subject: input.subject,
+      body: input.body,
+      recipientFirstName: input.recipientFirstName,
+      composeSessionId: input.composeSessionId ?? input.draftId,
+      wrap: false,
+    },
+  );
+  return {
+    draftId: updated.draftId,
+    inboxId: updated.inboxId,
+    composeSessionId: updated.composeSessionId,
+  };
+}
+
+export async function defaultDeleteMessagesDraft(input: {
+  workspaceId: string;
+  inboxId: string;
+  draftId: string;
+}): Promise<void> {
+  await deleteAgentMailDraft(input.workspaceId, input.inboxId, input.draftId);
+}
+
+export async function defaultBuildEmailDraftPreview(input: {
+  workspaceId: string;
+  inboxId: string;
+  to: string[];
+  subject: string;
+  body: string;
+  recipientFirstName?: string | null;
+}): Promise<ChatThreadMessageEmailDraftPreview> {
+  const templates = await getEmailReplyTemplatesForInbox(
+    input.workspaceId,
+    input.inboxId,
+  );
+  const assembled = assembleComposeEmail({
+    to: input.to,
+    subject: input.subject,
+    body: input.body,
+    templates,
+    recipientFirstName: input.recipientFirstName,
+    wrap: true,
+  });
+  return {
+    greeting: assembled.greeting,
+    signOff: assembled.signOff,
+    text: assembled.text,
+  };
+}
+
 export async function defaultSendChatEmailDraft(
   input: {
     workspaceId: string;
     inboxId: string;
+    draftId?: string;
     to: string[];
     cc?: string[];
     bcc?: string[];
@@ -239,7 +399,20 @@ export async function defaultSendChatEmailDraft(
   },
   startDeps?: StartEmailThreadDeps,
 ): Promise<SendChatEmailDraftResult> {
-  // WYSIWYG: send the stored body exactly (no greeting/sign-off wrap).
+  if (input.draftId?.trim()) {
+    // Native Messages path: sendDraft reassembles greeting/sign-off from
+    // current From-inbox templates, then transmits.
+    const sent = await sendAgentMailDraft(
+      input.workspaceId,
+      input.inboxId,
+      input.draftId.trim(),
+    );
+    return {
+      conversationId: sent.threadId ?? input.replyToConversationId ?? null,
+      messageId: sent.messageId ?? null,
+    };
+  }
+
   const sent = await startEmailThread(
     input.workspaceId,
     {
@@ -250,8 +423,7 @@ export async function defaultSendChatEmailDraft(
       subject: input.subject,
       body: input.body,
       ...(input.contactId ? { contactId: input.contactId } : {}),
-      raw: true,
-      wrap: false,
+      wrap: true,
     },
     startDeps,
   );
@@ -274,6 +446,10 @@ export const defaultChatEmailDraftDeps: ChatEmailDraftDeps = {
   resolveDefaultInboxId: defaultResolveDefaultInboxId,
   resolveRecipient: defaultResolveEmailDraftRecipient,
   loadAttachments: defaultLoadAttachments,
+  createMessagesDraft: defaultCreateMessagesDraft,
+  updateMessagesDraft: defaultUpdateMessagesDraft,
+  deleteMessagesDraft: defaultDeleteMessagesDraft,
+  buildPreview: defaultBuildEmailDraftPreview,
   sendEmail: (input) => defaultSendChatEmailDraft(input),
 };
 
@@ -290,8 +466,19 @@ async function resolveRecipientList(
   return out;
 }
 
+function recipientFirstName(
+  to: ChatThreadMessageEmailDraftRecipient[],
+): string | null {
+  const first = to[0];
+  if (!first) return null;
+  const name = first.name?.trim();
+  if (!name) return null;
+  return name.split(/\s+/).filter(Boolean)[0] ?? null;
+}
+
 /**
- * Validate inbox + recipients + attachments and return the stored card shape.
+ * Validate inbox + recipients + attachments, create a native Messages draft
+ * (body-only), and return the stored card shape with composed preview.
  */
 export async function resolveChatThreadEmailDraft(
   workspaceId: string,
@@ -326,7 +513,32 @@ export async function resolveChatThreadEmailDraft(
       ? await deps.loadAttachments(workspaceId, threadId, attachmentIds)
       : undefined;
 
+  const firstName = recipientFirstName(to);
+  const messagesDraft = await deps.createMessagesDraft({
+    workspaceId,
+    inboxId: inbox.inboxId,
+    to: to.map((r) => r.email),
+    cc: cc?.map((r) => r.email),
+    bcc: bcc?.map((r) => r.email),
+    subject: input.subject.trim(),
+    body: input.body,
+    recipientFirstName: firstName,
+  });
+
+  const preview = await deps.buildPreview({
+    workspaceId,
+    inboxId: inbox.inboxId,
+    to: to.map((r) => r.email),
+    subject: input.subject.trim(),
+    body: input.body,
+    recipientFirstName: firstName,
+  });
+
   const draft: ChatThreadMessageEmailDraft = {
+    draftId: messagesDraft.draftId,
+    ...(messagesDraft.composeSessionId
+      ? { composeSessionId: messagesDraft.composeSessionId }
+      : {}),
     to,
     ...(cc && cc.length > 0 ? { cc } : {}),
     ...(bcc && bcc.length > 0 ? { bcc } : {}),
@@ -337,6 +549,7 @@ export async function resolveChatThreadEmailDraft(
       email: inbox.email,
       displayName: inbox.displayName,
     },
+    preview,
     ...(input.replyToConversationId
       ? { replyToConversationId: input.replyToConversationId }
       : {}),
@@ -373,13 +586,61 @@ export async function applyEmailDraftEdits(
   if (!to || to.length === 0) {
     throw badRequest("At least one To recipient is required");
   }
+
+  let from = draft.from;
+  const nextInboxId = edits.from?.trim();
+  if (nextInboxId && nextInboxId !== draft.from.inboxId) {
+    const inboxes = await deps.listInboxes(workspaceId);
+    const inbox = inboxes.find((row) => row.inboxId === nextInboxId);
+    if (!inbox) {
+      throw badRequest(`Unknown or disallowed sending inbox: ${nextInboxId}`);
+    }
+    from = {
+      inboxId: inbox.inboxId,
+      email: inbox.email,
+      displayName: inbox.displayName,
+    };
+  }
+
+  const subject = edits.subject?.trim() || draft.subject;
+  const body = edits.body ?? draft.body;
+  const firstName = recipientFirstName(to);
+
+  const messagesDraft = await deps.updateMessagesDraft({
+    workspaceId,
+    inboxId: from.inboxId,
+    draftId: draft.draftId,
+    to: to.map((r) => r.email),
+    cc: cc?.map((r) => r.email),
+    bcc: bcc?.map((r) => r.email),
+    subject,
+    body,
+    recipientFirstName: firstName,
+    composeSessionId: draft.composeSessionId,
+  });
+
+  const preview = await deps.buildPreview({
+    workspaceId,
+    inboxId: from.inboxId,
+    to: to.map((r) => r.email),
+    subject,
+    body,
+    recipientFirstName: firstName,
+  });
+
   return {
     ...draft,
+    draftId: messagesDraft.draftId,
+    ...(messagesDraft.composeSessionId
+      ? { composeSessionId: messagesDraft.composeSessionId }
+      : {}),
     to,
     ...(cc ? { cc } : { cc: undefined }),
     ...(bcc ? { bcc } : { bcc: undefined }),
-    subject: edits.subject?.trim() || draft.subject,
-    body: edits.body ?? draft.body,
+    subject,
+    body,
+    from,
+    preview,
   };
 }
 
@@ -388,11 +649,11 @@ export async function sendResolvedEmailDraft(
   draft: ChatThreadMessageEmailDraft,
   deps: ChatEmailDraftDeps = defaultChatEmailDraftDeps,
 ): Promise<SendChatEmailDraftResult> {
-  const inboxId = draft.from?.inboxId;
-  if (!inboxId) throw badRequest("Email draft has no sending inbox");
+  const inboxId = draft.from.inboxId;
   return deps.sendEmail({
     workspaceId,
     inboxId,
+    draftId: draft.draftId,
     to: draft.to.map((r) => r.email),
     cc: draft.cc?.map((r) => r.email),
     bcc: draft.bcc?.map((r) => r.email),
@@ -402,6 +663,22 @@ export async function sendResolvedEmailDraft(
     replyToConversationId: draft.replyToConversationId ?? null,
     attachmentIds: draft.attachmentIds,
   });
+}
+
+export async function discardResolvedEmailDraft(
+  workspaceId: string,
+  draft: ChatThreadMessageEmailDraft,
+  deps: ChatEmailDraftDeps = defaultChatEmailDraftDeps,
+): Promise<void> {
+  try {
+    await deps.deleteMessagesDraft({
+      workspaceId,
+      inboxId: draft.from.inboxId,
+      draftId: draft.draftId,
+    });
+  } catch {
+    // Draft may already be gone — still record discarded on the card.
+  }
 }
 
 export function buildEmailDraftResult(
@@ -428,7 +705,8 @@ export function buildEmailDraftResult(
     messageId: sent?.messageId ?? null,
     finalTo: draft.to,
     finalSubject: draft.subject,
-    finalBody: draft.body,
+    // Composed letter as sent (shell applied).
+    finalBody: draft.preview.text,
   };
 }
 

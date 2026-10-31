@@ -81,7 +81,9 @@ import {
 } from "./chat-form-card.js";
 import {
   ChatEmailDraftAnswerProvider,
+  ChatEmailDraftComposeProvider,
   type ChatEmailDraftAnswerFn,
+  type ChatEmailDraftComposeContextValue,
 } from "./chat-email-draft-card.js";
 import { ChatComposerMentionMenu } from "./chat-composer-mention-menu.js";
 import {
@@ -185,6 +187,11 @@ export type ChatThreadProps = {
    * Messages; posts Sent:/Discarded: as a normal user message.
    */
   onAnswerEmailDraft?: ChatEmailDraftAnswerFn | null;
+  /**
+   * Mailboxes + reply templates for email-draft From picker and letter shell
+   * (greeting / sign-off), same source as compose.
+   */
+  emailDraftCompose?: ChatEmailDraftComposeContextValue | null;
   /**
    * Optional empty state when there are no messages.
    * Pass `null` to show no empty-state copy (composer only).
@@ -815,6 +822,7 @@ export function ChatThread({
   onAnswerApproval = null,
   onAnswerForm = null,
   onAnswerEmailDraft = null,
+  emailDraftCompose = null,
   emptyState,
   className,
 }: ChatThreadProps) {
@@ -1143,6 +1151,7 @@ export function ChatThread({
         <ChatApprovalAnswerProvider onAnswer={onAnswerApproval}>
         <ChatFormAnswerProvider onAnswer={onAnswerForm}>
         <ChatEmailDraftAnswerProvider onAnswer={onAnswerEmailDraft}>
+        <ChatEmailDraftComposeProvider value={emailDraftCompose}>
         <AssistantRuntimeProvider runtime={runtime}>
           <div
             ref={threadRootRef}
@@ -1279,6 +1288,7 @@ export function ChatThread({
             </ThreadPrimitive.Root>
           </div>
         </AssistantRuntimeProvider>
+        </ChatEmailDraftComposeProvider>
         </ChatEmailDraftAnswerProvider>
         </ChatFormAnswerProvider>
         </ChatApprovalAnswerProvider>

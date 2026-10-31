@@ -134,6 +134,7 @@
 
 .chat-ui-thread__peer {
   --peer-spotlight: 0;
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -171,16 +172,34 @@
   cursor: pointer;
 }
 
+.chat-ui-thread__peer-hit {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  cursor: pointer;
+}
+
 .chat-ui-thread__peer.is-selectable:hover:not(.is-active),
-.chat-ui-thread__peer.is-selectable:focus-visible:not(.is-active) {
+.chat-ui-thread__peer.is-selectable:has(.chat-ui-thread__peer-hit:focus-visible):not(
+    .is-active
+  ) {
   opacity: max(0.55, calc(0.2 + var(--peer-spotlight) * 0.8));
   filter: saturate(0.85);
 }
 
-.chat-ui-thread__peer.is-selectable:focus-visible {
+.chat-ui-thread__peer.is-selectable:has(.chat-ui-thread__peer-hit:focus-visible) {
   outline: 2px solid color-mix(in oklab, var(--foreground, #fff) 35%, transparent);
   outline-offset: 4px;
   border-radius: 12px;
+}
+
+.chat-ui-thread__peer-hit:focus {
+  outline: none;
 }
 
 .chat-ui-thread__peer-avatar {
@@ -490,6 +509,7 @@
 .chat-ui-thread__peer-gear-wrap {
   position: absolute;
   inset: 0;
+  z-index: 2;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2264,10 +2284,27 @@
 }
 
 .chat-ui-email-draft-card__note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
   margin: 0;
+  color: color-mix(in oklab, var(--foreground, #fff) 68%, transparent);
+}
+
+.chat-ui-email-draft-card__note-icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  margin-top: 1px;
+  color: color-mix(in oklab, var(--foreground, #fff) 55%, transparent);
+}
+
+.chat-ui-email-draft-card__note-text {
+  margin: 0;
+  min-width: 0;
   font-size: 0.8125rem;
   line-height: 1.4;
-  color: color-mix(in oklab, var(--foreground, #fff) 68%, transparent);
 }
 
 .chat-ui-email-draft-card__headers {
@@ -2309,6 +2346,7 @@
 .chat-ui-email-draft-card__chip {
   display: inline-flex;
   max-width: 100%;
+  align-items: baseline;
   padding: 2px 8px;
   border-radius: 999px;
   border: 1px solid color-mix(in oklab, var(--foreground, #fff) 14%, transparent);
@@ -2318,6 +2356,19 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.chat-ui-email-draft-card__chip-primary {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chat-ui-email-draft-card__chip-secondary {
+  flex-shrink: 0;
+  /* Match `.property-dropdown-trigger__secondary` on From. */
+  color: color-mix(in srgb, var(--foreground, #fff) 42%, transparent);
+  font-weight: 400;
 }
 
 .chat-ui-email-draft-card__control,
@@ -2344,6 +2395,46 @@
   font-size: 0.8125rem;
   line-height: 1.45;
   min-width: 0;
+}
+
+.chat-ui-email-draft-card__from {
+  min-width: 0;
+}
+
+/* Match `.chat-ui-email-draft-card__chip` (To) — not default property inline-chip. */
+.chat-ui-email-draft-card__from .property-dropdown-trigger--inline-chip {
+  gap: 4px;
+  padding: 2px 8px;
+  border: 1px solid color-mix(in oklab, var(--foreground, #fff) 14%, transparent);
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--foreground, #fff) 5%, transparent);
+}
+
+.chat-ui-email-draft-card__from
+  .property-dropdown-trigger--inline-chip:hover:not(:disabled),
+.chat-ui-email-draft-card__from .property-dropdown-trigger--inline-chip.is-open {
+  background: color-mix(in oklab, var(--foreground, #fff) 8%, transparent);
+}
+
+.chat-ui-email-draft-card__from
+  .property-dropdown-trigger--inline-chip
+  .property-dropdown-trigger__label {
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1.35;
+}
+
+.chat-ui-email-draft-card__letter {
+  gap: 10px;
+}
+
+.chat-ui-email-draft-card__letter .email-draft-body-compose__shell,
+.chat-ui-email-draft-card__letter .email-draft-sign-off {
+  margin: 0;
+}
+
+.chat-ui-email-draft-card__letter .chat-ui-email-draft-card__textarea {
+  min-height: 120px;
 }
 
 .chat-ui-email-draft-card__expand {
@@ -2373,9 +2464,60 @@
 
 .chat-ui-email-draft-card__actions {
   display: flex;
-  justify-content: flex-end;
+  justify-content: space-between;
+  align-items: center;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+.chat-ui-email-draft-card__actions-end {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-left: auto;
+}
+
+.chat-ui-email-draft-card__actions .email-draft-actions {
+  width: auto;
+}
+
+/* Invisible auto-growing CodeMirror — matches letter body, not a boxed textarea. */
+.chat-ui-email-draft-card__letter .document-codemirror {
+  width: 100%;
+  min-width: 0;
+  background: transparent;
+}
+
+.chat-ui-email-draft-card__letter .document-codemirror .cm-editor,
+.chat-ui-email-draft-card__letter .document-codemirror .cm-editor.cm-focused {
+  background: transparent;
+  outline: none;
+  border: 0;
+  box-shadow: none;
+}
+
+.chat-ui-email-draft-card__letter .document-codemirror .cm-scroller {
+  overflow: hidden !important;
+  font-family: inherit !important;
+}
+
+.chat-ui-email-draft-card__letter .document-codemirror .cm-content {
+  padding: 0;
+  min-height: 1.5em;
+  caret-color: var(--keyboard-nav-highlight-color, #ee7a47);
+  font-family: inherit !important;
+  font-size: inherit;
+  line-height: inherit;
+  color: inherit;
+}
+
+.chat-ui-email-draft-card__letter .document-codemirror .cm-line {
+  padding: 0;
+}
+
+.chat-ui-email-draft-card__letter .document-codemirror .cm-gutters {
+  display: none;
 }
 
 .chat-ui-email-draft-card__btn {

@@ -702,6 +702,7 @@ export {
 export {
   COMPOSE_UNKNOWN_FIRST_NAME,
   composeContactFirstName,
+  assembleComposeLetterBody,
   languageFromMailboxEmail,
   pickComposeShellLanguage,
   renderComposePreviewShell,

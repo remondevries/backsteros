@@ -73,6 +73,7 @@ import {
   applyEmailDraftEdits,
   buildEmailDraftResult,
   defaultChatEmailDraftDeps,
+  discardResolvedEmailDraft,
   resolveChatThreadEmailDraft,
   sendResolvedEmailDraft,
   type ChatEmailDraftDeps,
@@ -1624,6 +1625,8 @@ export async function answerChatThreadMessageEmailDraft(
       finalDraft,
       emailDraftDeps,
     );
+  } else {
+    await discardResolvedEmailDraft(workspaceId, draft, emailDraftDeps);
   }
 
   const result = buildEmailDraftResult(

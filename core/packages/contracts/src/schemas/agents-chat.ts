@@ -499,18 +499,39 @@ export const chatThreadMessageEmailDraftAttachmentSchema = z.object({
 });
 
 /**
- * Interactive email draft card on an assistant message. Desktop shows the mail
- * exactly as it will go out; owner Send/Discard via the shared `/answer` endpoint.
- * Recipients on the stored card are always resolved `{ email, name?, contactId? }`.
+ * Server-computed letter shell for the card / agent response.
+ * Greeting + sign-off come from workspace templates for the From inbox —
+ * not from the agent. `text` is greeting + body + sign-off as it will send.
+ */
+export const chatThreadMessageEmailDraftPreviewSchema = z.object({
+  greeting: z.string(),
+  signOff: z.string(),
+  text: z.string().min(1).max(40_960),
+});
+
+/**
+ * Interactive email draft card on an assistant message.
+ * Backed by a real BacksterOS Messages (AgentMail) draft — `draftId` + `from.inboxId`.
+ * Stored `body` is body-only (no greeting/sign-off); `preview` is the composed letter.
+ * Owner Send/Discard via the shared `/answer` endpoint.
  */
 export const chatThreadMessageEmailDraftSchema = z.object({
+  /** Messages / AgentMail draft id — card references this native draft. */
+  draftId: z.string().trim().min(1).max(200),
+  /** Compose session used when creating/updating the Messages draft. */
+  composeSessionId: z.string().trim().min(1).max(200).optional(),
   to: z.array(chatThreadMessageEmailDraftRecipientSchema).min(1).max(10),
   cc: z.array(chatThreadMessageEmailDraftRecipientSchema).max(10).optional(),
   bcc: z.array(chatThreadMessageEmailDraftRecipientSchema).max(10).optional(),
   subject: z.string().trim().min(1).max(200),
-  /** Exact body that will be sent (markdown or plain), ≤20KB. */
+  /**
+   * Body-only (markdown or plain), ≤20KB — no greeting or sign-off.
+   * Server wraps with From-inbox templates on send / preview.
+   */
   body: z.string().min(1).max(20_480),
-  from: chatThreadMessageEmailDraftFromSchema.optional(),
+  from: chatThreadMessageEmailDraftFromSchema,
+  /** Composed preview (greeting + body + sign-off) for UI / agent check. */
+  preview: chatThreadMessageEmailDraftPreviewSchema,
   /** Existing Messages email conversation / AgentMail message id to reply in. */
   replyToConversationId: z.string().trim().min(1).max(200).optional(),
   attachmentIds: z.array(z.string().trim().min(1)).max(20).optional(),
@@ -519,19 +540,22 @@ export const chatThreadMessageEmailDraftSchema = z.object({
     .array(chatThreadMessageEmailDraftAttachmentSchema)
     .max(20)
     .optional(),
-  /** Short agent note shown above the card — never sent. */
+  /** Short agent note shown above the card, never sent. */
   note: z.string().trim().min(1).max(500).optional(),
 });
 
 /**
  * Agent POST body for `emailDraft` — recipients may be refs; server resolves
  * them into {@link chatThreadMessageEmailDraftSchema} before storing.
+ * **`body` must be body-only** — do not include greeting or sign-off; the
+ * server composes those from From-inbox templates and returns `preview`.
  */
 export const chatThreadMessageEmailDraftInputSchema = z.object({
   to: z.array(chatThreadMessageEmailDraftRecipientRefSchema).min(1).max(10),
   cc: z.array(chatThreadMessageEmailDraftRecipientRefSchema).max(10).optional(),
   bcc: z.array(chatThreadMessageEmailDraftRecipientRefSchema).max(10).optional(),
   subject: z.string().trim().min(1).max(200),
+  /** Body-only — no greeting / sign-off (≤20KB). */
   body: z.string().min(1).max(20_480),
   /** Allowed sending inbox id; omit to use the workspace default inbox. */
   from: z.string().trim().min(1).max(200).optional(),
@@ -562,7 +586,10 @@ export const answerChatThreadMessageEmailDraftEditsSchema = z.object({
   cc: z.array(chatThreadMessageEmailDraftRecipientRefSchema).max(10).optional(),
   bcc: z.array(chatThreadMessageEmailDraftRecipientRefSchema).max(10).optional(),
   subject: z.string().trim().min(1).max(200).optional(),
+  /** Body-only — no greeting / sign-off. */
   body: z.string().min(1).max(20_480).optional(),
+  /** Sending inbox id — same values as agent `emailDraft.from`. */
+  from: z.string().trim().min(1).max(200).optional(),
 });
 
 /** Owner sends or discards an assistant email draft card (once). */
@@ -1018,6 +1045,9 @@ export type ChatThreadMessageEmailDraftRecipient = z.infer<
 >;
 export type ChatThreadMessageEmailDraftFrom = z.infer<
   typeof chatThreadMessageEmailDraftFromSchema
+>;
+export type ChatThreadMessageEmailDraftPreview = z.infer<
+  typeof chatThreadMessageEmailDraftPreviewSchema
 >;
 export type ChatThreadMessageEmailDraftAttachment = z.infer<
   typeof chatThreadMessageEmailDraftAttachmentSchema

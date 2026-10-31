@@ -112,14 +112,10 @@ test("email draft card: mock send, discard, owner-only, one-shot 409", async (co
     await db.delete(users).where(eq(users.id, userId));
   });
 
-  const original = {
-    listInboxes: defaultChatEmailDraftDeps.listInboxes,
-    resolveDefaultInboxId: defaultChatEmailDraftDeps.resolveDefaultInboxId,
-    resolveRecipient: defaultChatEmailDraftDeps.resolveRecipient,
-    loadAttachments: defaultChatEmailDraftDeps.loadAttachments,
-    sendEmail: defaultChatEmailDraftDeps.sendEmail,
-  };
+  const original = { ...defaultChatEmailDraftDeps };
   let sendCalls = 0;
+  let createCalls = 0;
+  let deleteCalls = 0;
   defaultChatEmailDraftDeps.listInboxes = async () => [
     {
       inboxId: "inbox_test",
@@ -142,6 +138,27 @@ test("email draft card: mock send, discard, owner-only, one-shot 409", async (co
     };
   };
   defaultChatEmailDraftDeps.loadAttachments = async () => [];
+  defaultChatEmailDraftDeps.createMessagesDraft = async () => {
+    createCalls += 1;
+    return {
+      draftId: `draft_mock_${createCalls}`,
+      inboxId: "inbox_test",
+      composeSessionId: `session_mock_${createCalls}`,
+    };
+  };
+  defaultChatEmailDraftDeps.updateMessagesDraft = async (input) => ({
+    draftId: input.draftId,
+    inboxId: input.inboxId,
+    composeSessionId: input.composeSessionId,
+  });
+  defaultChatEmailDraftDeps.deleteMessagesDraft = async () => {
+    deleteCalls += 1;
+  };
+  defaultChatEmailDraftDeps.buildPreview = async (input) => ({
+    greeting: "Hi Ada,",
+    signOff: "Best,\nRemon",
+    text: `Hi Ada,\n\n${input.body}\n\nBest,\nRemon`,
+  });
   defaultChatEmailDraftDeps.sendEmail = async () => {
     sendCalls += 1;
     return { conversationId: "thread_mock_1", messageId: "msg_mock_1" };
@@ -222,7 +239,8 @@ test("email draft card: mock send, discard, owner-only, one-shot 409", async (co
         emailDraft: {
           to: ["ada@example.com"],
           subject: "Invoice INV-9",
-          body: "Hi Ada,\n\nPlease pay.\n\nThanks",
+          // Body-only — no greeting/sign-off (server composes preview).
+          body: "Please pay.",
           note: "Review before send",
         },
       }),
@@ -231,12 +249,23 @@ test("email draft card: mock send, discard, owner-only, one-shot 409", async (co
   assert.equal(draftReply.status, 201, JSON.stringify(draftReply.body));
   const draftMessage = draftReply.body?.message as {
     id: string;
-    emailDraft?: { subject: string; to: Array<{ email: string }> };
+    emailDraft?: {
+      subject: string;
+      to: Array<{ email: string }>;
+      draftId: string;
+      body: string;
+      preview?: { greeting: string; signOff: string; text: string };
+    };
     emailDraftResult: unknown;
   };
   assert.equal(draftMessage?.emailDraft?.subject, "Invoice INV-9");
   assert.equal(draftMessage?.emailDraft?.to?.[0]?.email, "ada@example.com");
+  assert.equal(draftMessage?.emailDraft?.body, "Please pay.");
+  assert.ok(draftMessage?.emailDraft?.draftId);
+  assert.equal(draftMessage?.emailDraft?.preview?.greeting, "Hi Ada,");
+  assert.match(draftMessage?.emailDraft?.preview?.text ?? "", /Please pay/);
   assert.equal(draftMessage.emailDraftResult, null);
+  assert.equal(createCalls, 1);
 
   const userDenied = await json(
     app,
@@ -341,6 +370,7 @@ test("email draft card: mock send, discard, owner-only, one-shot 409", async (co
   );
   assert.equal(discarded.status, 201);
   assert.equal(sendCalls, beforeSend);
+  assert.equal(deleteCalls, 1);
   assert.equal(
     (discarded.body?.reply as { message?: { body?: string } })?.message?.body,
     "Discarded: Hold",

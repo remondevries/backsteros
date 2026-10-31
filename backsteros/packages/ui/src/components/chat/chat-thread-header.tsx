@@ -437,44 +437,30 @@ export function ChatThreadHeader({
               .filter(Boolean)
               .join(" ");
 
-            const avatarBlock = (
-              <span className="chat-ui-thread__peer-avatar-wrap">
-                <ChatThreadPeerAvatar peer={peer} />
-                {showGear ? (
-                  <ActivePeerGear onEnterSelectMode={onEnterSelectMode} />
-                ) : null}
-              </span>
-            );
-
-            if (selectable) {
-              return (
-                <button
-                  key={peer.id}
-                  ref={(node) => setPeerRef(peer.id, node)}
-                  type="button"
-                  role="tab"
-                  aria-selected={active}
-                  className={className}
-                  onClick={() => onSelectPeer?.(peer.id)}
-                >
-                  {avatarBlock}
-                  <span className="chat-ui-thread__peer-name">{peer.name}</span>
-                  {subtitle ? (
-                    <span className="chat-ui-thread__peer-subtitle">
-                      {subtitle}
-                    </span>
-                  ) : null}
-                </button>
-              );
-            }
-
+            // Outer peer is always a div — gear is a real <button>, so it must
+            // not nest inside the peer select control (invalid HTML / React warn).
             return (
               <div
                 key={peer.id}
                 ref={(node) => setPeerRef(peer.id, node)}
                 className={className}
               >
-                {avatarBlock}
+                {selectable ? (
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={active}
+                    aria-label={peer.name}
+                    className="chat-ui-thread__peer-hit"
+                    onClick={() => onSelectPeer?.(peer.id)}
+                  />
+                ) : null}
+                <span className="chat-ui-thread__peer-avatar-wrap">
+                  <ChatThreadPeerAvatar peer={peer} />
+                  {showGear ? (
+                    <ActivePeerGear onEnterSelectMode={onEnterSelectMode} />
+                  ) : null}
+                </span>
                 <div className="chat-ui-thread__peer-name">{peer.name}</div>
                 {subtitle ? (
                   <div className="chat-ui-thread__peer-subtitle">{subtitle}</div>

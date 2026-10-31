@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import {
+  assembleComposeLetterBody,
   COMPOSE_UNKNOWN_FIRST_NAME,
   composeContactFirstName,
   languageFromMailboxEmail,
@@ -111,5 +112,24 @@ describe("email-compose-shell", () => {
   it("composeContactFirstName takes the first token", () => {
     assert.equal(composeContactFirstName("Ada Lovelace"), "Ada");
     assert.equal(composeContactFirstName(null), null);
+  });
+
+  it("assembleComposeLetterBody joins greeting, body, and sign-off", () => {
+    assert.equal(
+      assembleComposeLetterBody({
+        greeting: "Hi Ada,",
+        body: "Please see attached.",
+        signOff: "Best,\nRemon",
+      }),
+      "Hi Ada,\n\nPlease see attached.\n\nBest,\nRemon",
+    );
+    assert.equal(
+      assembleComposeLetterBody({
+        greeting: null,
+        body: "Just the body",
+        signOff: "  ",
+      }),
+      "Just the body",
+    );
   });
 });

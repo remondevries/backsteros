@@ -88,6 +88,7 @@ export type ShellAgentChatApi = {
       bcc?: string[];
       subject?: string;
       body?: string;
+      from?: string;
     },
   ) => Promise<AnswerChatThreadMessageResult>;
 };
@@ -326,6 +327,7 @@ export function useShellAgentChat(): ShellAgentChatApi {
         bcc?: string[];
         subject?: string;
         body?: string;
+        from?: string;
       },
     ) => {
       return cloudCoreRequestJson<AnswerChatThreadMessageResult>(

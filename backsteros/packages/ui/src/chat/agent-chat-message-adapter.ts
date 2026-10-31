@@ -128,7 +128,13 @@ function emailDraftCardPart(
     ...(message.emailDraft.bcc ? { bcc: message.emailDraft.bcc } : {}),
     subject: message.emailDraft.subject,
     body: message.emailDraft.body,
+    ...(message.emailDraft.draftId
+      ? { draftId: message.emailDraft.draftId }
+      : {}),
     ...(message.emailDraft.from ? { from: message.emailDraft.from } : {}),
+    ...(message.emailDraft.preview
+      ? { preview: message.emailDraft.preview }
+      : {}),
     ...(message.emailDraft.replyToConversationId
       ? { replyToConversationId: message.emailDraft.replyToConversationId }
       : {}),

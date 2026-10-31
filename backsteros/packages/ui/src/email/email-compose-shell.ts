@@ -155,3 +155,22 @@ export function renderComposePreviewShell(input: {
     signOff: renderTemplate(signOffTemplate, vars),
   };
 }
+
+/**
+ * Join greeting + core body + sign-off the same way AgentMail assemble does
+ * (`greeting\\n\\nbody\\n\\nsignOff`), skipping empty parts.
+ */
+export function assembleComposeLetterBody(input: {
+  greeting?: string | null;
+  body: string;
+  signOff?: string | null;
+}): string {
+  const parts: string[] = [];
+  const greeting = input.greeting?.trim();
+  const body = input.body.replace(/\r\n/g, "\n").trim();
+  const signOff = input.signOff?.trim();
+  if (greeting) parts.push(greeting);
+  if (body) parts.push(body);
+  if (signOff) parts.push(signOff);
+  return parts.join("\n\n");
+}

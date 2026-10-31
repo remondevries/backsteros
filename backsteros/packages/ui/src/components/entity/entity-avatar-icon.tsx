@@ -24,7 +24,8 @@ export function EntityAvatarIcon({
   style,
   kind = "contact",
 }: EntityAvatarIconProps) {
-  const [failed, setFailed] = useState(false);
+  const [failedSrc, setFailedSrc] = useState<string | null>(null);
+  const failed = Boolean(src) && failedSrc === src;
 
   if (src && !failed) {
     return (
@@ -41,7 +42,7 @@ export function EntityAvatarIcon({
           height: size,
           ...style,
         }}
-        onError={() => setFailed(true)}
+        onError={() => setFailedSrc(src)}
       />
     );
   }

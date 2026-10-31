@@ -21,6 +21,12 @@ type ApiContextValue = {
 
 const ApiContext = createContext<ApiContextValue | null>(null);
 
+/**
+ * Survives Vite HMR when `api-context.tsx` remounts with a new Context object
+ * while a still-mounted child (e.g. PowerSync) briefly reads the old one.
+ */
+let latestApiContext: ApiContextValue | null = null;
+
 /** True for SSE event streams (`…/events`), not REST like `external-calendar-events`. */
 function isSseEventsUrl(url: string): boolean {
   try {
@@ -80,11 +86,13 @@ export function ApiProvider({
     [apiUrl, hasTokenProvider],
   );
 
+  latestApiContext = value;
+
   return <ApiContext.Provider value={value}>{children}</ApiContext.Provider>;
 }
 
 export function useDesktopApi() {
-  const context = useContext(ApiContext);
+  const context = useContext(ApiContext) ?? latestApiContext;
   if (!context) {
     throw new Error("useDesktopApi must be used within ApiProvider");
   }

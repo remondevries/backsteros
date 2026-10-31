@@ -562,12 +562,23 @@ export const chatUiEmailDraftCardDataSchema = z.object({
     .max(10)
     .optional(),
   subject: z.string().min(1).max(200),
+  /** Body-only (no greeting/sign-off). */
   body: z.string().min(1).max(20_480),
+  /** Native Messages / AgentMail draft id. */
+  draftId: z.string().optional(),
   from: z
     .object({
       inboxId: z.string(),
       email: z.string().email(),
       displayName: z.string().nullable().optional(),
+    })
+    .optional(),
+  /** Server-composed letter shell for preview (greeting + sign-off + full text). */
+  preview: z
+    .object({
+      greeting: z.string(),
+      signOff: z.string(),
+      text: z.string(),
     })
     .optional(),
   replyToConversationId: z.string().optional(),
