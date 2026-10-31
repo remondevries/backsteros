@@ -1539,9 +1539,16 @@
   background: color-mix(in oklab, var(--foreground, #fff) 10%, transparent);
 }
 
+/* Match app white primary buttons in dark mode (foreground fill, surface text). */
 .chat-ui-choices__option.is-primary {
-  border-color: color-mix(in oklab, #3b82f6 55%, transparent);
-  background: color-mix(in oklab, #3b82f6 18%, transparent);
+  border-color: transparent;
+  background: var(--foreground, #fff);
+  color: var(--surface, #0b1220);
+}
+
+.chat-ui-choices__option.is-primary:hover:not(:disabled) {
+  background: color-mix(in oklab, var(--foreground, #fff) 90%, var(--surface, #0b1220));
+  color: var(--surface, #0b1220);
 }
 
 .chat-ui-choices__option.is-danger {
@@ -1554,9 +1561,18 @@
   outline-offset: 1px;
 }
 
+.chat-ui-choices__option.is-primary.is-selected {
+  outline-color: color-mix(in oklab, var(--surface, #0b1220) 35%, transparent);
+}
+
 .chat-ui-choices__option:disabled {
   cursor: default;
   opacity: 0.85;
+}
+
+/* Keep answered primary readable when the disabled opacity kicks in. */
+.chat-ui-choices.is-answered .chat-ui-choices__option.is-primary:disabled {
+  opacity: 1;
 }
 
 .chat-ui-choices.is-dismissed {
