@@ -3,6 +3,8 @@ import {
   chatThreadLinkPreviewSchema,
   chatThreadMessageChoicesAnswerSchema,
   chatThreadMessageChoicesSchema,
+  chatThreadMessageProgressSchema,
+  isChatThreadProgressTerminal,
   type AgentWebhookTestResult,
   type AnswerChatThreadMessageChoicesResult,
   type ChatResolvedMention,
@@ -15,9 +17,11 @@ import {
   type ChatThreadMessage,
   type ChatThreadMessageChoices,
   type ChatThreadMessageChoicesAnswer,
+  type ChatThreadMessageProgress,
   type ChatThreadWithMessages,
   type CreateChatThreadMessageResult,
   type DeleteChatThreadMessagesResult,
+  type UpdateChatThreadMessageResult,
 } from "@backsteros/contracts";
 
 import { db } from "../db/index.js";
@@ -167,6 +171,14 @@ function parseLinkPreviewsColumn(
   return items.length > 0 ? items : undefined;
 }
 
+function parseProgressColumn(
+  value: unknown,
+): ChatThreadMessageProgress | undefined {
+  if (value == null) return undefined;
+  const parsed = chatThreadMessageProgressSchema.safeParse(value);
+  return parsed.success ? parsed.data : undefined;
+}
+
 type MessageRow = {
   id: string;
   threadId: string;
@@ -177,6 +189,7 @@ type MessageRow = {
   status: string;
   choices?: unknown;
   choicesAnswer?: unknown;
+  progress?: unknown;
   linkPreviews?: unknown;
   createdAt: Date;
   updatedAt: Date;
@@ -199,6 +212,7 @@ function toWebhookMessage(
           choicesAnswer: message.choicesAnswer ?? null,
         }
       : {}),
+    ...(message.progress ? { progress: message.progress } : {}),
     ...(message.attachments && message.attachments.length > 0
       ? { attachments: message.attachments }
       : {}),
@@ -225,6 +239,7 @@ function toMessage(
   const choicesAnswer = choices
     ? (parseChoicesAnswerColumn(row.choicesAnswer) ?? null)
     : undefined;
+  const progress = parseProgressColumn(row.progress);
   const linkPreviews = parseLinkPreviewsColumn(row.linkPreviews);
   return {
     id: row.id,
@@ -238,6 +253,7 @@ function toMessage(
     updatedAt: row.updatedAt.toISOString(),
     ...(mentions && mentions.length > 0 ? { mentions } : {}),
     ...(choices ? { choices, choicesAnswer: choicesAnswer ?? null } : {}),
+    ...(progress ? { progress } : {}),
     ...(attachments && attachments.length > 0 ? { attachments } : {}),
     ...(linkPreviews ? { linkPreviews } : {}),
   };
@@ -305,11 +321,15 @@ function publishShellMessageEvent(input: {
       body: previewAgentChatMessageBody(previewSource),
       fullBody: input.message.body,
       createdAt: input.message.createdAt,
+      updatedAt: input.message.updatedAt,
       ...(input.message.choices
         ? {
             choices: input.message.choices,
             choicesAnswer: input.message.choicesAnswer ?? null,
           }
+        : {}),
+      ...(input.message.progress
+        ? { progress: input.message.progress }
         : {}),
       ...(input.message.attachments && input.message.attachments.length > 0
         ? { attachments: input.message.attachments }
@@ -653,6 +673,7 @@ export async function deliverAgentChatWebhook(
 
 export type PostChatThreadMessageOptions = {
   choices?: ChatThreadMessageChoices;
+  progress?: ChatThreadMessageProgress;
   attachmentIds?: string[];
   skipLinkPreviews?: boolean;
 };
@@ -709,6 +730,9 @@ export async function postChatThreadMessage(
   if (options.choices && !isAgentReply) {
     throw badRequest("choices are only allowed on assistant messages");
   }
+  if (options.progress && !isAgentReply) {
+    throw badRequest("progress is only allowed on assistant messages");
+  }
 
   const linkPreviews = await resolveChatLinkPreviews(text, {
     skip: options.skipLinkPreviews === true || !text,
@@ -730,6 +754,7 @@ export async function postChatThreadMessage(
         status: "done",
         choices: options.choices ?? null,
         choicesAnswer: null,
+        progress: options.progress ?? null,
         linkPreviews: linkPreviews.length > 0 ? linkPreviews : null,
         createdAt: now,
         updatedAt: now,
@@ -879,6 +904,120 @@ export async function postChatThreadMessage(
     thinking,
     webhookError,
   };
+}
+
+/**
+ * Agent-only in-place update of an assistant message it owns (progress and/or
+ * body). Publishes SSE so desktop replaces the card — does **not** fire the
+ * agent.chat.message webhook (avoids update loops).
+ */
+export async function updateChatThreadMessage(
+  workspaceId: string,
+  threadId: string,
+  messageId: string,
+  patch: {
+    progress?: ChatThreadMessageProgress;
+    body?: string;
+  },
+  auth: { apiKeyId: string },
+): Promise<UpdateChatThreadMessageResult> {
+  if (patch.progress === undefined && patch.body === undefined) {
+    throw badRequest("At least one of progress or body is required");
+  }
+
+  const [threadRow] = await db
+    .select({
+      thread: chatThreads,
+      agent: agents,
+    })
+    .from(chatThreads)
+    .innerJoin(agents, eq(agents.id, chatThreads.agentId))
+    .where(
+      and(
+        eq(chatThreads.workspaceId, workspaceId),
+        eq(chatThreads.id, threadId),
+      ),
+    )
+    .limit(1);
+  if (!threadRow) throw notFound("Thread");
+
+  const { agent } = threadRow;
+  if (!agent.apiKeyId || agent.apiKeyId !== auth.apiKeyId) {
+    throw Object.assign(
+      new Error("This API key cannot update messages in this agent thread"),
+      { status: 403, code: "forbidden" },
+    );
+  }
+
+  const [row] = await db
+    .select()
+    .from(chatThreadMessages)
+    .where(
+      and(
+        eq(chatThreadMessages.workspaceId, workspaceId),
+        eq(chatThreadMessages.threadId, threadId),
+        eq(chatThreadMessages.id, messageId),
+        isNull(chatThreadMessages.deletedAt),
+      ),
+    )
+    .limit(1);
+  if (!row) throw notFound("Message");
+  if (row.role !== "assistant") {
+    throw badRequest("Only assistant messages can be patched");
+  }
+
+  const existingProgress = parseProgressColumn(row.progress);
+  if (
+    patch.progress !== undefined &&
+    existingProgress &&
+    isChatThreadProgressTerminal(existingProgress.state)
+  ) {
+    throw conflict("Progress is already finalized");
+  }
+
+  const now = new Date();
+  const nextBody =
+    patch.body !== undefined ? patch.body.trim() : row.body;
+  if (patch.body !== undefined && !nextBody) {
+    throw badRequest("Message body cannot be empty");
+  }
+
+  const [updated] = await db
+    .update(chatThreadMessages)
+    .set({
+      ...(patch.body !== undefined ? { body: nextBody } : {}),
+      ...(patch.progress !== undefined ? { progress: patch.progress } : {}),
+      updatedAt: now,
+    })
+    .where(
+      and(
+        eq(chatThreadMessages.workspaceId, workspaceId),
+        eq(chatThreadMessages.id, messageId),
+        isNull(chatThreadMessages.deletedAt),
+      ),
+    )
+    .returning();
+  if (!updated) throw notFound("Message");
+
+  await db
+    .update(chatThreads)
+    .set({ updatedAt: now })
+    .where(eq(chatThreads.id, threadId));
+
+  const attachments = (
+    await listAttachmentsForMessages(workspaceId, [messageId])
+  ).get(messageId);
+  const mentions = await resolveChatMentionsInBody(workspaceId, updated.body);
+  const message = toMessage(updated, mentions, attachments);
+
+  publishShellMessageEvent({
+    workspaceId,
+    threadId,
+    agentId: agent.id,
+    message,
+  });
+
+  return { message };
 }
 
 /**

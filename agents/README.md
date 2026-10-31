@@ -94,6 +94,15 @@ reply with the agent’s API key to `replyUrl` (same as
 | `agent.chat.message` | Remon sent a chat message | Normal chat turn |
 | `agent.webhook.test` | Settings → Test connection | Match **only** on `event`; never on message text. Optional short welcome via `replyUrl` |
 
+**Live progress cards:** attach optional `progress` on the reply POST (`title`, `state`, optional `steps` ≤20 / labels ≤80, `current`/`total`, `detail`). Update the same message with:
+
+```http
+PATCH /api/v1/chat/threads/{threadId}/messages/{messageId}
+{ "progress": { "title": "…", "state": "succeeded", "current": 3, "total": 3 } }
+```
+
+Desktop replaces the card via SSE. Progress PATCHes do **not** fire `agent.chat.message` (no loops). Terminal states lock further progress updates (HTTP 409).
+
 Full shapes: `docs/04-api-and-sync.md` (Shell agent chat webhooks).
 
 ## Agents: start a conversation (OS-146)

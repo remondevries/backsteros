@@ -1504,6 +1504,139 @@
   overflow: hidden;
 }
 
+/* Agent live progress / status card — below bubble. */
+.chat-ui-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+  max-width: min(100%, 420px);
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid color-mix(in oklab, var(--foreground, #fff) 12%, transparent);
+  background: color-mix(in oklab, var(--foreground, #fff) 3.5%, transparent);
+}
+
+.chat-ui-progress.is-succeeded {
+  border-color: color-mix(in oklab, #3d9a5f 45%, transparent);
+}
+
+.chat-ui-progress.is-failed {
+  border-color: color-mix(in oklab, #c45c5c 50%, transparent);
+}
+
+.chat-ui-progress.is-canceled {
+  opacity: 0.78;
+}
+
+.chat-ui-progress__header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.chat-ui-progress__title {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.chat-ui-progress.is-succeeded .chat-ui-progress__title {
+  color: color-mix(in oklab, #3d9a5f 88%, var(--foreground));
+}
+
+.chat-ui-progress.is-failed .chat-ui-progress__title {
+  color: color-mix(in oklab, #e07070 90%, var(--foreground));
+}
+
+.chat-ui-progress__elapsed {
+  flex: 0 0 auto;
+  font-size: 0.6875rem;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.55;
+}
+
+.chat-ui-progress__bar {
+  height: 4px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: color-mix(in oklab, var(--foreground, #fff) 10%, transparent);
+}
+
+.chat-ui-progress__bar-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: color-mix(in oklab, var(--foreground, #fff) 55%, transparent);
+  transition: width 180ms ease;
+}
+
+.chat-ui-progress.is-running .chat-ui-progress__bar-fill {
+  background: color-mix(in oklab, var(--foreground, #fff) 72%, transparent);
+}
+
+.chat-ui-progress.is-succeeded .chat-ui-progress__bar-fill {
+  background: #3d9a5f;
+}
+
+.chat-ui-progress.is-failed .chat-ui-progress__bar-fill {
+  background: #c45c5c;
+}
+
+.chat-ui-progress__detail {
+  margin: 0;
+  font-size: 0.75rem;
+  opacity: 0.7;
+  line-height: 1.35;
+}
+
+.chat-ui-progress__steps {
+  list-style: none;
+  margin: 2px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.chat-ui-progress__step {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.75rem;
+  opacity: 0.72;
+}
+
+.chat-ui-progress__step.is-running {
+  opacity: 1;
+}
+
+.chat-ui-progress__step.is-done {
+  opacity: 0.85;
+}
+
+.chat-ui-progress__step.is-failed {
+  opacity: 1;
+  color: color-mix(in oklab, #e07070 85%, var(--foreground));
+}
+
+.chat-ui-progress__step.is-pending {
+  opacity: 0.5;
+}
+
+.chat-ui-progress__step-icon {
+  flex: 0 0 auto;
+  opacity: 0.85;
+}
+
+.chat-ui-progress__step-label {
+  min-width: 0;
+}
+
+.chat-ui-progress.is-locked {
+  pointer-events: none;
+}
+
 /* Agent choice card — below bubble; soft gradient like social calendar posts. */
 .chat-ui-choices {
   display: flex;

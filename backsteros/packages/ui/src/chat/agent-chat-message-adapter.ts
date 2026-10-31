@@ -6,6 +6,7 @@ import type {
   ChatUiLinkPreviewsCardData,
   ChatUiMessage,
   ChatUiMessagePart,
+  ChatUiProgressCardData,
 } from "@backsteros/contracts";
 
 export type ChatThreadMessageToUiOptions = {
@@ -79,6 +80,29 @@ function linkPreviewsCardPart(message: ChatThreadMessage): ChatUiCardPart | null
   };
 }
 
+function progressCardPart(message: ChatThreadMessage): ChatUiCardPart | null {
+  if (!message.progress) return null;
+  const data: ChatUiProgressCardData = {
+    messageId: message.id,
+    title: message.progress.title,
+    state: message.progress.state,
+    ...(message.progress.steps ? { steps: message.progress.steps } : {}),
+    ...(message.progress.current != null
+      ? { current: message.progress.current }
+      : {}),
+    ...(message.progress.total != null ? { total: message.progress.total } : {}),
+    ...(message.progress.detail ? { detail: message.progress.detail } : {}),
+    createdAt: message.createdAt,
+    updatedAt: message.updatedAt,
+  };
+  return {
+    type: "card",
+    cardType: "progress",
+    id: `progress:${message.id}`,
+    data,
+  };
+}
+
 /** Map a persisted shell chat message into ChatThread's UI shape. */
 export function chatThreadMessageToUi(
   message: ChatThreadMessage,
@@ -92,6 +116,8 @@ export function chatThreadMessageToUi(
   if (attachments) parts.push(attachments);
   const linkPreviews = linkPreviewsCardPart(message);
   if (linkPreviews) parts.push(linkPreviews);
+  const progress = progressCardPart(message);
+  if (progress) parts.push(progress);
   const choices = choicesCardPart(message, options?.dismissed === true);
   if (choices) parts.push(choices);
 

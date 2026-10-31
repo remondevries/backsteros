@@ -9,6 +9,7 @@ import {
   deleteChatThreadMessagesInputSchema,
   getOrCreateChatThreadInputSchema,
   updateChatThreadAgentStatusInputSchema,
+  updateChatThreadMessageInputSchema,
 } from "@backsteros/contracts";
 
 import * as agentChat from "../services/agent-chat.js";
@@ -247,6 +248,7 @@ export function registerAgentChatRoutes(app: Hono) {
         undefined,
         {
           choices: parsed.data.choices,
+          progress: parsed.data.progress,
           attachmentIds: parsed.data.attachmentIds,
           skipLinkPreviews: parsed.data.skipLinkPreviews,
         },
@@ -375,6 +377,51 @@ export function registerAgentChatRoutes(app: Hono) {
         const status = errorStatus(error);
         const message =
           error instanceof Error ? error.message : "Could not answer choices";
+        return c.json({ error: message, code: errorCode(status) }, status);
+      }
+    },
+  );
+
+  /**
+   * Agent-only: update own assistant message progress (and optional body).
+   * SSE push only — never fires agent.chat.message webhook.
+   */
+  app.patch(
+    "/api/v1/chat/threads/:threadId/messages/:messageId",
+    async (c) => {
+      const auth = getAuth(c);
+      if (!canWriteAgentReply(auth) || !auth.apiKeyId) {
+        return c.json(forbidden(), 403);
+      }
+      let body: unknown;
+      try {
+        body = await c.req.json();
+      } catch {
+        return c.json({ error: "Invalid JSON body", code: "bad_request" }, 400);
+      }
+      const parsed = updateChatThreadMessageInputSchema.safeParse(body);
+      if (!parsed.success) {
+        return c.json(
+          { error: "Invalid update payload", code: "bad_request" },
+          400,
+        );
+      }
+      try {
+        const result = await agentChat.updateChatThreadMessage(
+          auth.workspaceId,
+          c.req.param("threadId"),
+          c.req.param("messageId"),
+          {
+            progress: parsed.data.progress,
+            body: parsed.data.body,
+          },
+          { apiKeyId: auth.apiKeyId },
+        );
+        return c.json(result);
+      } catch (error) {
+        const status = errorStatus(error);
+        const message =
+          error instanceof Error ? error.message : "Could not update message";
         return c.json({ error: message, code: errorCode(status) }, status);
       }
     },

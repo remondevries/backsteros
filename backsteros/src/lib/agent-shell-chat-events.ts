@@ -8,11 +8,13 @@ import {
   chatThreadLinkPreviewSchema,
   chatThreadMessageChoicesAnswerSchema,
   chatThreadMessageChoicesSchema,
+  chatThreadMessageProgressSchema,
   sanitizeChatThreadStatusLabel,
   type ChatThreadAttachment,
   type ChatThreadLinkPreview,
   type ChatThreadMessageChoices,
   type ChatThreadMessageChoicesAnswer,
+  type ChatThreadMessageProgress,
 } from "@backsteros/contracts";
 
 import {
@@ -40,8 +42,10 @@ export type AgentShellChatMessagePayload = {
     /** Full markdown body; null from cloud-cores that only send the preview. */
     fullBody: string | null;
     createdAt: string;
+    updatedAt?: string;
     choices?: ChatThreadMessageChoices;
     choicesAnswer?: ChatThreadMessageChoicesAnswer | null;
+    progress?: ChatThreadMessageProgress;
     attachments?: ChatThreadAttachment[];
     linkPreviews?: ChatThreadLinkPreview[];
   };
@@ -112,8 +116,10 @@ export function parseAgentShellChatMessagePayload(
         body?: unknown;
         fullBody?: unknown;
         createdAt?: unknown;
+        updatedAt?: unknown;
         choices?: unknown;
         choicesAnswer?: unknown;
+        progress?: unknown;
         attachments?: unknown;
         linkPreviews?: unknown;
       };
@@ -135,6 +141,10 @@ export function parseAgentShellChatMessagePayload(
       typeof parsed.message?.createdAt === "string"
         ? parsed.message.createdAt.trim()
         : "";
+    const updatedAt =
+      typeof parsed.message?.updatedAt === "string"
+        ? parsed.message.updatedAt.trim()
+        : undefined;
     if (!threadId || !agentId || !messageId || !createdAt) return null;
     const choicesParsed = chatThreadMessageChoicesSchema.safeParse(
       parsed.message?.choices,
@@ -150,6 +160,10 @@ export function parseAgentShellChatMessagePayload(
           ? null
           : null
       : undefined;
+    const progressParsed = chatThreadMessageProgressSchema.safeParse(
+      parsed.message?.progress,
+    );
+    const progress = progressParsed.success ? progressParsed.data : undefined;
     const attachments: ChatThreadAttachment[] = [];
     if (Array.isArray(parsed.message?.attachments)) {
       for (const entry of parsed.message.attachments) {
@@ -172,7 +186,9 @@ export function parseAgentShellChatMessagePayload(
         body,
         fullBody,
         createdAt,
+        ...(updatedAt ? { updatedAt } : {}),
         ...(choices ? { choices, choicesAnswer: choicesAnswer ?? null } : {}),
+        ...(progress ? { progress } : {}),
         ...(attachments.length > 0 ? { attachments } : {}),
         ...(linkPreviews.length > 0 ? { linkPreviews } : {}),
       },

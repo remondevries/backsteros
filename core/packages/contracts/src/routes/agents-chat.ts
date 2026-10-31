@@ -11,6 +11,8 @@ import {
   answerChatThreadMessageChoicesResultSchema,
   createChatThreadMessageInputSchema,
   createChatThreadMessageResultSchema,
+  updateChatThreadMessageInputSchema,
+  updateChatThreadMessageResultSchema,
   chatThreadMessagesListSchema,
   chatThreadSchema,
   chatThreadWithMessagesSchema,
@@ -235,6 +237,25 @@ export const agentsChatRoutes: AppRouter = c.router({
     },
     summary:
       "Answer assistant choice buttons once (owner); posts a normal user message",
+  },
+  updateChatThreadMessage: {
+    method: "PATCH",
+    path: "/api/v1/chat/threads/:threadId/messages/:messageId",
+    pathParams: z.object({
+      threadId: z.string(),
+      messageId: z.string(),
+    }),
+    body: updateChatThreadMessageInputSchema,
+    responses: {
+      200: updateChatThreadMessageResultSchema,
+      400: badRequestSchema,
+      401: errorSchema,
+      403: errorSchema,
+      404: errorSchema,
+      409: errorSchema,
+    },
+    summary:
+      "Agent-only: update own assistant message progress (and optional body); SSE only, no webhook",
   },
   deleteChatThreadMessage: {
     method: "DELETE",

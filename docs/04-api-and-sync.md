@@ -553,6 +553,60 @@ POST /api/v1/chat/threads/{threadId}/messages
 - Desktop keeps `body` as the bubble copy and renders buttons below.
 - Thread/SSE/webhook message objects may include `choices` and `choicesAnswer` (`null` until answered).
 
+**Agent reply with a live progress card** (assistant only — optional `progress`):
+
+```json
+{
+  "body": "Working on the LinkedIn draft…",
+  "progress": {
+    "title": "Publishing post",
+    "state": "running",
+    "current": 1,
+    "total": 3,
+    "detail": "Uploading media",
+    "steps": [
+      { "label": "Validate", "state": "done" },
+      { "label": "Upload", "state": "running" },
+      { "label": "Post", "state": "pending" }
+    ]
+  }
+}
+```
+
+- `progress.title` required, ≤120 chars.
+- `progress.state`: `running` | `succeeded` | `failed` | `canceled`.
+- `progress.steps` optional, ≤20; each `label` 1–80 chars; step `state`: `pending` | `running` | `done` | `failed`.
+- `progress.current` / `progress.total` optional (bar when both set; `current` ≤ `total`).
+- `progress.detail` optional short text ≤200 chars.
+- Desktop renders a compact below-bubble card (title, optional bar, steps, elapsed time). Terminal states lock the card.
+- Thread / SSE / webhook message objects may include `progress`.
+
+**Agent updates progress in place** (agent API key for that thread only — own assistant messages):
+
+```http
+PATCH /api/v1/chat/threads/{threadId}/messages/{messageId}
+Content-Type: application/json
+
+{
+  "progress": {
+    "title": "Publishing post",
+    "state": "succeeded",
+    "current": 3,
+    "total": 3,
+    "steps": [
+      { "label": "Validate", "state": "done" },
+      { "label": "Upload", "state": "done" },
+      { "label": "Post", "state": "done" }
+    ]
+  }
+}
+```
+
+- Body may also include optional `body` to rewrite the bubble copy.
+- At least one of `progress` or `body` is required.
+- HTTP **409** when existing progress is already terminal (`succeeded` / `failed` / `canceled`).
+- Pushes the updated message over shell SSE (`agent.chat.message`) so desktop replaces the card in place — **does not** fire the outbound `agent.chat.message` webhook (avoids update loops).
+
 **File attachments** (Remon or agent):
 
 ```http

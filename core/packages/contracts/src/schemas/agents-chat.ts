@@ -126,6 +126,64 @@ export const chatThreadMessageChoicesAnswerSchema = z.object({
   answeredAt: z.string().datetime(),
 });
 
+/** Live progress card on an assistant message (agent updates via PATCH). */
+export const chatThreadMessageProgressStateSchema = z.enum([
+  "running",
+  "succeeded",
+  "failed",
+  "canceled",
+]);
+
+export const chatThreadMessageProgressStepStateSchema = z.enum([
+  "pending",
+  "running",
+  "done",
+  "failed",
+]);
+
+export const chatThreadMessageProgressStepSchema = z.object({
+  label: z.string().trim().min(1).max(80),
+  state: chatThreadMessageProgressStepStateSchema,
+});
+
+export const chatThreadMessageProgressSchema = z
+  .object({
+    title: z.string().trim().min(1).max(120),
+    state: chatThreadMessageProgressStateSchema,
+    steps: z.array(chatThreadMessageProgressStepSchema).max(20).optional(),
+    current: z.number().int().nonnegative().optional(),
+    total: z.number().int().positive().optional(),
+    /** Short status line under the title / bar. */
+    detail: z.string().trim().min(1).max(200).optional(),
+  })
+  .superRefine((value, ctx) => {
+    if (
+      value.current != null &&
+      value.total != null &&
+      value.current > value.total
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "progress.current cannot exceed progress.total",
+        path: ["current"],
+      });
+    }
+  });
+
+export const CHAT_THREAD_PROGRESS_TERMINAL_STATES = [
+  "succeeded",
+  "failed",
+  "canceled",
+] as const;
+
+export function isChatThreadProgressTerminal(
+  state: z.infer<typeof chatThreadMessageProgressStateSchema>,
+): boolean {
+  return (CHAT_THREAD_PROGRESS_TERMINAL_STATES as readonly string[]).includes(
+    state,
+  );
+}
+
 /** File attached to a shell chat message (Spaces/R2-backed). */
 export const chatThreadAttachmentKindSchema = z.enum([
   "image",
@@ -171,6 +229,8 @@ export const chatThreadMessageSchema = z.object({
   choices: chatThreadMessageChoicesSchema.optional(),
   /** Present (possibly null) when `choices` is set. */
   choicesAnswer: chatThreadMessageChoicesAnswerSchema.nullable().optional(),
+  /** Assistant-only live progress / status card. */
+  progress: chatThreadMessageProgressSchema.optional(),
   /** Files linked to this message (upload then reference by id). */
   attachments: z.array(chatThreadAttachmentSchema).optional(),
   /** URL previews for http(s) links in `body` (unless skipped). */
@@ -220,6 +280,11 @@ export const createChatThreadMessageInputSchema = z
      * Desktop renders buttons below the bubble; `body` is still the copy.
      */
     choices: chatThreadMessageChoicesSchema.optional(),
+    /**
+     * Assistant replies only. Live status / progress card below the bubble;
+     * agents PATCH the same message to update it.
+     */
+    progress: chatThreadMessageProgressSchema.optional(),
     /** Previously uploaded attachment ids to attach to this message (max 20). */
     attachmentIds: z.array(z.string().trim().min(1)).max(20).optional(),
     /**
@@ -239,6 +304,24 @@ export const createChatThreadMessageInputSchema = z
       });
     }
   });
+
+/**
+ * Agent-only PATCH of an assistant message it owns. Updates progress (and
+ * optionally body) in place — no new message, no agent.chat.message webhook.
+ */
+export const updateChatThreadMessageInputSchema = z
+  .object({
+    progress: chatThreadMessageProgressSchema.optional(),
+    body: z.string().trim().min(1).max(32_000).optional(),
+  })
+  .refine(
+    (value) => value.progress !== undefined || value.body !== undefined,
+    { message: "At least one of progress or body is required" },
+  );
+
+export const updateChatThreadMessageResultSchema = z.object({
+  message: chatThreadMessageSchema,
+});
 
 /** Result of uploading a chat attachment before posting a message. */
 export const uploadChatThreadAttachmentResultSchema = chatThreadAttachmentSchema;
@@ -372,6 +455,24 @@ export type ChatThreadMessageChoices = z.infer<
 >;
 export type ChatThreadMessageChoicesAnswer = z.infer<
   typeof chatThreadMessageChoicesAnswerSchema
+>;
+export type ChatThreadMessageProgressState = z.infer<
+  typeof chatThreadMessageProgressStateSchema
+>;
+export type ChatThreadMessageProgressStepState = z.infer<
+  typeof chatThreadMessageProgressStepStateSchema
+>;
+export type ChatThreadMessageProgressStep = z.infer<
+  typeof chatThreadMessageProgressStepSchema
+>;
+export type ChatThreadMessageProgress = z.infer<
+  typeof chatThreadMessageProgressSchema
+>;
+export type UpdateChatThreadMessageInput = z.infer<
+  typeof updateChatThreadMessageInputSchema
+>;
+export type UpdateChatThreadMessageResult = z.infer<
+  typeof updateChatThreadMessageResultSchema
 >;
 export type ChatThreadAttachmentKind = z.infer<
   typeof chatThreadAttachmentKindSchema

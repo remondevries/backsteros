@@ -36,6 +36,10 @@ import {
   findChoicesCardPart,
 } from "./chat-choices-card.js";
 import {
+  ChatProgressCard,
+  findProgressCardPart,
+} from "./chat-progress-card.js";
+import {
   ChatLinkPreviewsCard,
   findLinkPreviewsCardPart,
 } from "./chat-link-previews-card.js";
@@ -295,6 +299,10 @@ export function ChatUiMessageBody({
     () => findChoicesCardPart(message.parts),
     [message.parts],
   );
+  const progressPart = useMemo(
+    () => findProgressCardPart(message.parts),
+    [message.parts],
+  );
   const attachmentsPart = useMemo(
     () => findAttachmentsCardPart(message.parts),
     [message.parts],
@@ -421,6 +429,7 @@ export function ChatUiMessageBody({
         {linkPreviewsPart ? (
           <ChatLinkPreviewsCard part={linkPreviewsPart} />
         ) : null}
+        {progressPart ? <ChatProgressCard part={progressPart} /> : null}
         {choicesPart ? <ChatChoicesCard part={choicesPart} /> : null}
       </div>
     </div>

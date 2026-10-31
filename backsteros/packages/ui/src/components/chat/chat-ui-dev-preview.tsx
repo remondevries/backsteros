@@ -15,6 +15,7 @@ import type {
   ChatThreadLinkPreview,
   ChatThreadMessageChoices,
   ChatThreadMessageChoicesAnswer,
+  ChatThreadMessageProgress,
   ChatThreadWithMessages,
   ChatUiFilePart,
   ChatUiMessage,
@@ -468,8 +469,10 @@ export function ChatUiDevPreview({
             body?: string;
             fullBody?: string | null;
             createdAt?: string;
+            updatedAt?: string;
             choices?: ChatThreadMessageChoices;
             choicesAnswer?: ChatThreadMessageChoicesAnswer | null;
+            progress?: ChatThreadMessageProgress;
             attachments?: ChatThreadAttachment[];
             linkPreviews?: ChatThreadLinkPreview[];
           };
@@ -479,6 +482,7 @@ export function ChatUiDevPreview({
       if (!threadId || threadId !== liveRef.current.threadId) return;
       const messageId = detail?.message?.id?.trim() || "";
       const createdAt = detail?.message?.createdAt?.trim() || "";
+      const updatedAt = detail?.message?.updatedAt?.trim() || undefined;
       const fullBody = detail?.message?.fullBody || null;
       if (messageId && createdAt) {
         dispatchLive({
@@ -488,11 +492,15 @@ export function ChatUiDevPreview({
             id: messageId,
             body: fullBody ?? detail?.message?.body ?? "",
             createdAt,
+            ...(updatedAt ? { updatedAt } : {}),
             ...(detail.message?.choices
               ? {
                   choices: detail.message.choices,
                   choicesAnswer: detail.message.choicesAnswer ?? null,
                 }
+              : {}),
+            ...(detail.message?.progress
+              ? { progress: detail.message.progress }
               : {}),
             ...(detail.message?.attachments &&
             detail.message.attachments.length > 0

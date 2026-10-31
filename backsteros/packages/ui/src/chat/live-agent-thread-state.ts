@@ -13,6 +13,7 @@ import type {
   ChatThreadMessage,
   ChatThreadMessageChoices,
   ChatThreadMessageChoicesAnswer,
+  ChatThreadMessageProgress,
   ChatThreadWithMessages,
   ChatUiMessage,
 } from "@backsteros/contracts";
@@ -57,8 +58,10 @@ export type LiveAgentMessagePush = {
   id: string;
   body: string;
   createdAt: string;
+  updatedAt?: string;
   choices?: ChatThreadMessageChoices;
   choicesAnswer?: ChatThreadMessageChoicesAnswer | null;
+  progress?: ChatThreadMessageProgress;
   attachments?: ChatThreadAttachment[];
   linkPreviews?: ChatThreadLinkPreview[];
 };
@@ -305,12 +308,15 @@ export function liveAgentThreadReducer(
         body: action.message.body,
         status: "done",
         createdAt: action.message.createdAt,
-        updatedAt: action.message.createdAt,
+        updatedAt: action.message.updatedAt ?? action.message.createdAt,
         ...(action.message.choices
           ? {
               choices: action.message.choices,
               choicesAnswer: action.message.choicesAnswer ?? null,
             }
+          : {}),
+        ...(action.message.progress
+          ? { progress: action.message.progress }
           : {}),
         ...(action.message.attachments && action.message.attachments.length > 0
           ? { attachments: action.message.attachments }
@@ -320,7 +326,7 @@ export function liveAgentThreadReducer(
           ? { linkPreviews: action.message.linkPreviews }
           : {}),
       });
-      // Same id may arrive again with choicesAnswer filled in.
+      // Same id may arrive again with choicesAnswer / progress filled in.
       const without = state.messages.filter(
         (message) => message.id !== pushed.id,
       );

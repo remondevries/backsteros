@@ -3165,6 +3165,12 @@ export const chatThreadMessages = pgTable(
      */
     choicesAnswer: jsonb("choices_answer").$type<Record<string, unknown> | null>(),
     /**
+     * Assistant-only live progress / status card
+     * (`{ title, state, steps?, current?, total?, detail? }`).
+     * Null on user/system rows and older assistant messages.
+     */
+    progress: jsonb("progress").$type<Record<string, unknown> | null>(),
+    /**
      * Server-fetched Open Graph / HTML link previews for URLs in `body`.
      * Null when skipped or none found.
      */

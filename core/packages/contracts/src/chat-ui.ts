@@ -430,6 +430,30 @@ export const chatUiChoicesCardDataSchema = z.object({
 });
 export type ChatUiChoicesCardData = z.infer<typeof chatUiChoicesCardDataSchema>;
 
+/** Card payload for `cardType: "progress"` (agent live status / progress). */
+export const chatUiProgressCardDataSchema = z.object({
+  messageId: z.string(),
+  title: z.string().min(1).max(120),
+  state: z.enum(["running", "succeeded", "failed", "canceled"]),
+  steps: z
+    .array(
+      z.object({
+        label: z.string().min(1).max(80),
+        state: z.enum(["pending", "running", "done", "failed"]),
+      }),
+    )
+    .max(20)
+    .optional(),
+  current: z.number().int().nonnegative().optional(),
+  total: z.number().int().positive().optional(),
+  detail: z.string().min(1).max(200).optional(),
+  /** Message createdAt — elapsed timer origin. */
+  createdAt: z.string().datetime(),
+  /** Last progress / body update. */
+  updatedAt: z.string().datetime(),
+});
+export type ChatUiProgressCardData = z.infer<typeof chatUiProgressCardDataSchema>;
+
 /** Card payload for `cardType: "attachments"` (files below the bubble). */
 export const chatUiAttachmentsCardDataSchema = z.object({
   items: z

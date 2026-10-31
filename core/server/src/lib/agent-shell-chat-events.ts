@@ -38,6 +38,20 @@ export type AgentShellChatMessageLinkPreview = {
   imageUrl?: string | null;
 };
 
+export type AgentShellChatMessageProgressStep = {
+  label: string;
+  state: "pending" | "running" | "done" | "failed";
+};
+
+export type AgentShellChatMessageProgress = {
+  title: string;
+  state: "running" | "succeeded" | "failed" | "canceled";
+  steps?: AgentShellChatMessageProgressStep[];
+  current?: number;
+  total?: number;
+  detail?: string;
+};
+
 export type AgentShellChatMessageEvent = {
   workspaceId: string;
   threadId: string;
@@ -49,9 +63,13 @@ export type AgentShellChatMessageEvent = {
     /** Full markdown body so the open thread can render without refetching. */
     fullBody: string;
     createdAt: string;
+    /** Last body/progress update (same as createdAt on first publish). */
+    updatedAt?: string;
     /** Assistant choice buttons (when the reply includes them). */
     choices?: AgentShellChatMessageChoices;
     choicesAnswer?: AgentShellChatMessageChoicesAnswer | null;
+    /** Live progress / status card (agents PATCH to update). */
+    progress?: AgentShellChatMessageProgress;
     attachments?: AgentShellChatMessageAttachment[];
     linkPreviews?: AgentShellChatMessageLinkPreview[];
   };

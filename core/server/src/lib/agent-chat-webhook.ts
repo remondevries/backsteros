@@ -86,6 +86,20 @@ export type AgentChatWebhookLinkPreview = {
   imageUrl?: string | null;
 };
 
+export type AgentChatWebhookProgressStep = {
+  label: string;
+  state: "pending" | "running" | "done" | "failed";
+};
+
+export type AgentChatWebhookProgress = {
+  title: string;
+  state: "running" | "succeeded" | "failed" | "canceled";
+  steps?: AgentChatWebhookProgressStep[];
+  current?: number;
+  total?: number;
+  detail?: string;
+};
+
 export type AgentChatWebhookMessage = {
   id: string;
   role: "user" | "assistant" | "system";
@@ -96,6 +110,8 @@ export type AgentChatWebhookMessage = {
   /** Assistant-only interactive options (when present on context messages). */
   choices?: AgentChatWebhookChoices;
   choicesAnswer?: AgentChatWebhookChoicesAnswer | null;
+  /** Assistant-only live progress (when present on context messages). */
+  progress?: AgentChatWebhookProgress;
   /** Files attached to this message. */
   attachments?: AgentChatWebhookAttachment[];
   /** Server-resolved URL previews for links in `text`. */

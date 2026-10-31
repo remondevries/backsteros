@@ -85,6 +85,39 @@ describe("chatThreadMessageToUi attachments + link previews", () => {
   });
 });
 
+describe("chatThreadMessageToUi progress", () => {
+  it("keeps body copy and appends a progress card", () => {
+    const ui = chatThreadMessageToUi({
+      id: "m-prog",
+      threadId: "t1",
+      role: "assistant",
+      authorContactId: null,
+      authorName: "Sander",
+      body: "Working…",
+      status: "done",
+      createdAt: "2026-10-31T10:00:00.000Z",
+      updatedAt: "2026-10-31T10:00:05.000Z",
+      progress: {
+        title: "Draft",
+        state: "running",
+        current: 1,
+        total: 2,
+        steps: [
+          { label: "Outline", state: "done" },
+          { label: "Write", state: "running" },
+        ],
+      },
+    });
+    assert.equal(ui.parts[0]?.type, "text");
+    const card = ui.parts.find(
+      (part) => part.type === "card" && part.cardType === "progress",
+    );
+    assert.ok(card && card.type === "card");
+    assert.equal(card.cardType, "progress");
+    assert.equal((card.data as { title?: string }).title, "Draft");
+  });
+});
+
 describe("chatThreadMessageToUi choices", () => {
   it("keeps body copy and appends a choices card", () => {
     const ui = chatThreadMessageToUi(assistantWithChoices("m1", false));
