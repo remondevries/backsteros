@@ -5,10 +5,20 @@
  * Long text (`description` / `summary` / `context` / `notes` / `transcription`)
  * is omitted from list watches. Task descriptions load via one-row PowerSync
  * (`useDesktopTaskDescription`). Letter notes load via `useDesktopLetterContext`.
- * Meeting notes/transcription load via `useDesktopMeetingNotes`.
+ * Meeting notes/transcription load via `useDesktopMeetingNotes` (REST after
+ * sync-config drops those columns — OS-163 / audit #4).
+ *
+ * Always-on workspace list watches use {@link WORKSPACE_LIST_SOFT_LIMIT} so
+ * growth does not materialize unbounded SQLite result sets.
  */
 
 import { INBOX_TASKS_WHERE_SQL } from "./inbox-task-query";
+
+/** Soft cap for authenticated always-on list watches (OS-163 / audit #4). */
+export const WORKSPACE_LIST_SOFT_LIMIT = 2500;
+
+/** Meetings calendar/list soft cap — prefer recent by start_at DESC. */
+export const MEETINGS_LIST_SOFT_LIMIT = 500;
 
 export const TASK_LIST_COLUMNS = [
   "id",
@@ -280,17 +290,17 @@ export const MEETING_LIST_COLUMNS = [
   "deleted_at",
 ].join(", ");
 
-export const ALL_TASKS_LIST_SQL = `SELECT ${TASK_LIST_COLUMNS} FROM tasks WHERE deleted_at IS NULL ORDER BY sort_order, updated_at DESC`;
+export const ALL_TASKS_LIST_SQL = `SELECT ${TASK_LIST_COLUMNS} FROM tasks WHERE deleted_at IS NULL ORDER BY sort_order, updated_at DESC LIMIT ${WORKSPACE_LIST_SOFT_LIMIT}`;
 
-export const TASKS_LIST_SQL = `SELECT ${TASK_LIST_COLUMNS} FROM tasks WHERE deleted_at IS NULL AND (inbox = 0 OR inbox IS NULL) ORDER BY sort_order, updated_at DESC`;
+export const TASKS_LIST_SQL = `SELECT ${TASK_LIST_COLUMNS} FROM tasks WHERE deleted_at IS NULL AND (inbox = 0 OR inbox IS NULL) ORDER BY sort_order, updated_at DESC LIMIT ${WORKSPACE_LIST_SOFT_LIMIT}`;
 
-export const INBOX_TASKS_LIST_SQL = `SELECT ${TASK_LIST_COLUMNS} FROM tasks WHERE deleted_at IS NULL AND (${INBOX_TASKS_WHERE_SQL}) ORDER BY sort_order, updated_at DESC`;
+export const INBOX_TASKS_LIST_SQL = `SELECT ${TASK_LIST_COLUMNS} FROM tasks WHERE deleted_at IS NULL AND (${INBOX_TASKS_WHERE_SQL}) ORDER BY sort_order, updated_at DESC LIMIT ${WORKSPACE_LIST_SOFT_LIMIT}`;
 
-export const PROJECTS_LIST_SQL = `SELECT ${PROJECT_LIST_COLUMNS} FROM projects WHERE deleted_at IS NULL ORDER BY sort_order, updated_at DESC`;
+export const PROJECTS_LIST_SQL = `SELECT ${PROJECT_LIST_COLUMNS} FROM projects WHERE deleted_at IS NULL ORDER BY sort_order, updated_at DESC LIMIT ${WORKSPACE_LIST_SOFT_LIMIT}`;
 
-export const LETTERS_LIST_SQL = `SELECT ${LETTER_LIST_COLUMNS} FROM letters WHERE deleted_at IS NULL ORDER BY sort_order, updated_at DESC`;
+export const LETTERS_LIST_SQL = `SELECT ${LETTER_LIST_COLUMNS} FROM letters WHERE deleted_at IS NULL ORDER BY sort_order, updated_at DESC LIMIT ${WORKSPACE_LIST_SOFT_LIMIT}`;
 
-export const CONTACTS_LIST_SQL = `SELECT ${CONTACT_LIST_COLUMNS} FROM contacts WHERE deleted_at IS NULL ORDER BY sort_order, updated_at DESC`;
+export const CONTACTS_LIST_SQL = `SELECT ${CONTACT_LIST_COLUMNS} FROM contacts WHERE deleted_at IS NULL ORDER BY sort_order, updated_at DESC LIMIT ${WORKSPACE_LIST_SOFT_LIMIT}`;
 
 /** Contact → CRM group chips for the contacts overview list. */
 export const CRM_CONTACT_GROUP_MEMBERSHIPS_SQL = `
@@ -412,12 +422,13 @@ export const CRM_SUBJECT_GROUPS_SQL = `
   ORDER BY g.sort_order ASC, g.name COLLATE NOCASE ASC
 `.trim();
 
-export const ORGANIZATIONS_LIST_SQL = `SELECT ${ORGANIZATION_LIST_COLUMNS} FROM organizations WHERE deleted_at IS NULL ORDER BY sort_order, updated_at DESC`;
+export const ORGANIZATIONS_LIST_SQL = `SELECT ${ORGANIZATION_LIST_COLUMNS} FROM organizations WHERE deleted_at IS NULL ORDER BY sort_order, updated_at DESC LIMIT ${WORKSPACE_LIST_SOFT_LIMIT}`;
 
-export const AREAS_LIST_SQL = `SELECT ${AREA_LIST_COLUMNS} FROM areas WHERE deleted_at IS NULL ORDER BY sort_order, name`;
+export const AREAS_LIST_SQL = `SELECT ${AREA_LIST_COLUMNS} FROM areas WHERE deleted_at IS NULL ORDER BY sort_order, name LIMIT ${WORKSPACE_LIST_SOFT_LIMIT}`;
 
-export const DOCUMENTS_LIST_SQL = `SELECT ${DOCUMENT_LIST_COLUMNS} FROM documents WHERE deleted_at IS NULL ORDER BY sort_order, path, updated_at DESC`;
+export const DOCUMENTS_LIST_SQL = `SELECT ${DOCUMENT_LIST_COLUMNS} FROM documents WHERE deleted_at IS NULL ORDER BY sort_order, path, updated_at DESC LIMIT ${WORKSPACE_LIST_SOFT_LIMIT}`;
 
-export const HABITS_LIST_SQL = `SELECT ${HABIT_LIST_COLUMNS} FROM habits WHERE deleted_at IS NULL ORDER BY sort_order, created_at`;
+export const HABITS_LIST_SQL = `SELECT ${HABIT_LIST_COLUMNS} FROM habits WHERE deleted_at IS NULL ORDER BY sort_order, created_at LIMIT ${WORKSPACE_LIST_SOFT_LIMIT}`;
 
-export const MEETINGS_LIST_SQL = `SELECT ${MEETING_LIST_COLUMNS} FROM meetings WHERE deleted_at IS NULL ORDER BY start_at, number`;
+/** Recent meetings first so the soft cap keeps the calendar-relevant window. */
+export const MEETINGS_LIST_SQL = `SELECT ${MEETING_LIST_COLUMNS} FROM meetings WHERE deleted_at IS NULL ORDER BY start_at DESC, number DESC LIMIT ${MEETINGS_LIST_SOFT_LIMIT}`;
