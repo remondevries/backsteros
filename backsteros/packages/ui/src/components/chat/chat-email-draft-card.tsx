@@ -16,10 +16,7 @@ import type {
 import { chatUiEmailDraftCardDataSchema } from "@backsteros/contracts";
 
 import { buildEmailMailboxDropdownOptions } from "../dropdowns/dropdown-options.js";
-import {
-  PropertyDropdown,
-  PropertyInlineChip,
-} from "../dropdowns/property-dropdown.js";
+import { PropertyDropdown } from "../dropdowns/property-dropdown.js";
 import { DocumentMarkdownEditor } from "../documents/document-markdown-editor.js";
 import { DocumentMarkdownPreview } from "../documents/document-markdown-preview.js";
 import {
@@ -170,9 +167,25 @@ function EmailDraftGreetingShell({ children }: { children: string }) {
   return <p className="email-draft-body-compose__shell">{children}</p>;
 }
 
+/** Open-in-Messages mark (diagonal expand arrows). */
+function EmailDraftOpenIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      fill="currentColor"
+      viewBox="0 0 24 24"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden="true"
+    >
+      <path d="M14 3.25a.75.75 0 0 0-.75.75l2.845 2.845L13.47 9.47a.75.75 0 1 0 1.06 1.06l2.625-2.625L20 10.75a.75.75 0 0 0 .75-.75V4a.75.75 0 0 0-.75-.75zm-10 10a.75.75 0 0 0-.75.75v6c0 .414.336.75.75.75h6a.75.75 0 0 0 .75-.75l-2.845-2.845 2.625-2.625a.75.75 0 1 0-1.06-1.06l-2.625 2.625z" />
+    </svg>
+  );
+}
+
 const BODY_COLLAPSE_CHARS = 600;
-const DEFAULT_EMAIL_DRAFT_NOTE =
-  "Test draft. Only goes out if you press Send.";
+const EMAIL_DRAFT_STATUS_NEW = "New e-mail message";
+const EMAIL_DRAFT_STATUS_SENT = "E-mail has been sent";
 
 export function ChatEmailDraftCard({ part }: { part: ChatUiCardPart }) {
   const data = useMemo(() => parseData(part), [part]);
@@ -389,10 +402,6 @@ export function ChatEmailDraftCard({ part }: { part: ChatUiCardPart }) {
     : null;
 
   const canPickFrom = !locked && mailboxes.length > 0;
-  const selectedFromOption = selectedInboxId
-    ? (inboxOptions.find((option) => option.value === selectedInboxId) ?? null)
-    : null;
-  const fromChipIcon = selectedFromOption?.icon ?? null;
 
   return (
     <div
@@ -407,13 +416,30 @@ export function ChatEmailDraftCard({ part }: { part: ChatUiCardPart }) {
         .join(" ")}
       data-message-id={data.messageId}
     >
-      <div className="chat-ui-email-draft-card__note">
-        <span className="chat-ui-email-draft-card__note-icon" aria-hidden="true">
-          <InboxItemTypeIcon kind="email" size={14} />
-        </span>
-        <p className="chat-ui-email-draft-card__note-text">
-          {data.note?.trim() || DEFAULT_EMAIL_DRAFT_NOTE}
-        </p>
+      <div className="chat-ui-email-draft-card__top">
+        <div className="chat-ui-email-draft-card__note">
+          <span
+            className="chat-ui-email-draft-card__note-icon"
+            aria-hidden="true"
+          >
+            <InboxItemTypeIcon kind="email" size={14} />
+          </span>
+          <p className="chat-ui-email-draft-card__note-text">
+            {result?.action === "sent"
+              ? EMAIL_DRAFT_STATUS_SENT
+              : EMAIL_DRAFT_STATUS_NEW}
+          </p>
+        </div>
+        {result?.action === "sent" && conversationHref ? (
+          <a
+            className="chat-ui-email-draft-card__open"
+            href={conversationHref}
+            title="Open in Messages"
+          >
+            <span>Open</span>
+            <EmailDraftOpenIcon size={14} />
+          </a>
+        ) : null}
       </div>
 
       <div className="chat-ui-email-draft-card__headers">
@@ -441,13 +467,25 @@ export function ChatEmailDraftCard({ part }: { part: ChatUiCardPart }) {
                   panelWidth={320}
                 />
               </div>
-            ) : selectedMailboxParts ? (
-              <PropertyInlineChip
-                icon={fromChipIcon}
-                label={selectedMailboxParts.primary}
-                secondaryLabel={selectedMailboxParts.secondary}
-                ariaLabel="From"
-              />
+            ) : selectedMailbox ? (
+              <span className="chat-ui-email-draft-card__chips">
+                <RecipientChip
+                  email={selectedMailbox.email}
+                  name={
+                    selectedMailbox.contactName?.trim() ||
+                    selectedMailbox.displayName?.trim() ||
+                    data.from?.displayName ||
+                    null
+                  }
+                />
+              </span>
+            ) : data.from ? (
+              <span className="chat-ui-email-draft-card__chips">
+                <RecipientChip
+                  email={data.from.email}
+                  name={data.from.displayName}
+                />
+              </span>
             ) : fromFallbackLabel ? (
               <span className="chat-ui-email-draft-card__value">
                 {fromFallbackLabel}
@@ -566,25 +604,17 @@ export function ChatEmailDraftCard({ part }: { part: ChatUiCardPart }) {
 
       {result ? (
         <div className="chat-ui-email-draft-card__result-row">
+          <span className="chat-ui-email-draft-card__result-time">
+            {formatAnsweredAt(result.sentAt)}
+          </span>
           <span
             className={[
               "chat-ui-email-draft-card__result",
               result.action === "sent" ? "is-sent" : "is-discarded",
             ].join(" ")}
           >
-            <span>{result.action === "sent" ? "Sent" : "Discarded"}</span>
-            <span className="chat-ui-email-draft-card__result-time">
-              {formatAnsweredAt(result.sentAt)}
-            </span>
+            {result.action === "sent" ? "Sent" : "Discarded"}
           </span>
-          {result.action === "sent" && conversationHref ? (
-            <a
-              className="chat-ui-email-draft-card__open"
-              href={conversationHref}
-            >
-              Open in Messages
-            </a>
-          ) : null}
         </div>
       ) : !locked ? (
         <div className="chat-ui-email-draft-card__actions">

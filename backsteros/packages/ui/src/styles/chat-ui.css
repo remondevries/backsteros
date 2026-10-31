@@ -2283,11 +2283,20 @@
   box-sizing: border-box;
 }
 
+.chat-ui-email-draft-card__top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
 .chat-ui-email-draft-card__note {
   display: flex;
   align-items: flex-start;
   gap: 8px;
   margin: 0;
+  min-width: 0;
+  flex: 1 1 auto;
   color: color-mix(in oklab, var(--foreground, #fff) 68%, transparent);
 }
 
@@ -2586,8 +2595,9 @@
 
 .chat-ui-email-draft-card__result {
   display: inline-flex;
+  flex-shrink: 0;
   align-items: center;
-  gap: 6px;
+  margin-left: auto;
   padding: 4px 10px;
   border-radius: 999px;
   font-size: 0.75rem;
@@ -2606,14 +2616,36 @@
 }
 
 .chat-ui-email-draft-card__result-time {
+  min-width: 0;
+  font-size: 0.75rem;
   font-weight: 500;
-  opacity: 0.78;
+  line-height: 1.3;
+  opacity: 0.72;
 }
 
 .chat-ui-email-draft-card__open {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: none;
   font-size: 0.75rem;
+  font-weight: 560;
+  line-height: 1.3;
   color: inherit;
-  opacity: 0.8;
+  opacity: 0.72;
+  text-decoration: none;
+}
+
+.chat-ui-email-draft-card__open:hover {
+  opacity: 1;
+}
+
+.chat-ui-email-draft-card__open svg {
+  display: block;
 }
 
 .chat-ui-email-draft-card.is-dismissed {
