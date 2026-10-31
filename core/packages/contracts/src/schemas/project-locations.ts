@@ -162,15 +162,126 @@ export const PROJECT_CHANNEL_STATUSES = [
 export const projectChannelStatusSchema = z.enum(PROJECT_CHANNEL_STATUSES);
 export type ProjectChannelStatus = z.infer<typeof projectChannelStatusSchema>;
 
+const CHANNEL_PENDING_THREAD_ID_RE = /^[A-Za-z0-9_.:-]{8,128}$/;
+const CHANNEL_PENDING_MESSAGE_ID_RE = /^[A-Za-z0-9_.:-]{1,128}$/;
+
+export type ParsedProjectChannelPendingLink = {
+  threadId: string;
+  messageId: string;
+};
+
+/**
+ * Parse a Channel `needs_details` deep link.
+ * Only:
+ * - `backsteros://chat/<threadId>?message=<msgId>`
+ * - `/chat/<threadId>?message=<msgId>`
+ * Both require a non-empty `message` query param. Anything else → null.
+ */
+export function parseProjectChannelPendingLink(
+  value: string | null | undefined,
+): ParsedProjectChannelPendingLink | null {
+  const raw = value?.trim() ?? "";
+  if (!raw || raw.length > 2048) return null;
+
+  try {
+    let threadId = "";
+    let messageId = "";
+
+    if (raw.startsWith("backsteros://")) {
+      const url = new URL(raw);
+      // backsteros://chat/<threadId> → hostname=chat, pathname=/<threadId>
+      if (url.hostname.toLowerCase() !== "chat") return null;
+      const pathId = url.pathname.replace(/^\//, "").split("/")[0]?.trim() ?? "";
+      if (!pathId || pathId.includes("/")) return null;
+      // Reject extra path segments (pathname is /id only).
+      if (url.pathname.replace(/^\//, "").includes("/")) return null;
+      threadId = pathId;
+      messageId = url.searchParams.get("message")?.trim() ?? "";
+      // Only the message query key is allowed (ignore empty others).
+      for (const key of url.searchParams.keys()) {
+        if (key !== "message") return null;
+      }
+    } else if (raw.startsWith("/chat/")) {
+      const url = new URL(raw, "https://backsteros.local");
+      const parts = url.pathname.split("/").filter(Boolean);
+      if (parts.length !== 2 || parts[0] !== "chat" || !parts[1]) return null;
+      threadId = parts[1].trim();
+      messageId = url.searchParams.get("message")?.trim() ?? "";
+      for (const key of url.searchParams.keys()) {
+        if (key !== "message") return null;
+      }
+    } else {
+      return null;
+    }
+
+    if (!CHANNEL_PENDING_THREAD_ID_RE.test(threadId)) return null;
+    if (!CHANNEL_PENDING_MESSAGE_ID_RE.test(messageId)) return null;
+    return { threadId, messageId };
+  } catch {
+    return null;
+  }
+}
+
+export function assertProjectChannelPendingLink(
+  value: unknown,
+):
+  | { ok: true; value: string }
+  | { ok: false; message: string } {
+  if (value == null || value === "") {
+    return { ok: false, message: "channelPendingLink is empty" };
+  }
+  if (typeof value !== "string") {
+    return { ok: false, message: "channelPendingLink must be a string" };
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return { ok: false, message: "channelPendingLink is empty" };
+  }
+  if (trimmed.length > 2048) {
+    return { ok: false, message: "channelPendingLink is too long" };
+  }
+  if (!parseProjectChannelPendingLink(trimmed)) {
+    return {
+      ok: false,
+      message:
+        "channelPendingLink must be backsteros://chat/<threadId>?message=<id> or /chat/<threadId>?message=<id>",
+    };
+  }
+  return { ok: true, value: trimmed };
+}
+
+export function normalizeProjectChannelPendingLink(
+  value: string | null | undefined,
+): string | null {
+  const result = assertProjectChannelPendingLink(value);
+  return result.ok ? result.value : null;
+}
+
+export function isProjectChannelPendingLink(
+  value: string | null | undefined,
+): boolean {
+  return parseProjectChannelPendingLink(value) != null;
+}
+
 /**
  * Chat deep link stored while `needs_details`.
- * Accepts `backsteros://chat/<threadId>?message=<msgId>` or `/chat/<threadId>?message=<msgId>`.
+ * Only `backsteros://chat/<threadId>?message=<id>` or `/chat/<threadId>?message=<id>`.
  */
 export const projectChannelPendingLinkSchema = z
   .string()
   .trim()
   .min(1)
-  .max(2048);
+  .max(2048)
+  .superRefine((value, ctx) => {
+    const result = assertProjectChannelPendingLink(value);
+    if (!result.ok) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: result.message,
+      });
+    }
+  })
+  .transform((value) => value.trim());
 
 export function normalizeProjectChannel(
   value: ProjectChannel | string | null | undefined,

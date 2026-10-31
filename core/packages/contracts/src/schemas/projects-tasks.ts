@@ -14,6 +14,7 @@ import {
   nullableProjectChannelSchema,
   nullableProjectDevelopmentSchema,
   nullableProjectProductionSchema,
+  projectChannelPendingLinkSchema,
   projectChannelStatusSchema,
 } from "./project-locations.js";
 export {
@@ -32,6 +33,10 @@ export {
   PROJECT_CHANNEL_STATUSES,
   projectChannelStatusSchema,
   projectChannelPendingLinkSchema,
+  parseProjectChannelPendingLink,
+  assertProjectChannelPendingLink,
+  normalizeProjectChannelPendingLink,
+  isProjectChannelPendingLink,
   normalizeProjectChannelUri,
   normalizeProjectChannel,
   assertProjectChannelUri,
@@ -52,6 +57,7 @@ export {
   type ProjectChannelScheme,
   type ProjectChannel,
   type ProjectChannelStatus,
+  type ParsedProjectChannelPendingLink,
 } from "./project-locations.js";
 /** Project short ID — 2–3 alphanumeric characters (any case; stored uppercase). */
 export const projectKeySchema = z
@@ -121,7 +127,8 @@ export const projectSchema = z.object({
   channelStatus: projectChannelStatusSchema,
   /**
    * Chat deep link while `needs_details`
-   * (`backsteros://chat/<threadId>?message=<id>` or `/chat/…`).
+   * (`backsteros://chat/<threadId>?message=<id>` or `/chat/<threadId>?message=<id>`).
+   * Read is permissive; writes use {@link projectChannelPendingLinkSchema}.
    */
   channelPendingLink: z.string().max(2048).nullable(),
   /** When Connect was requested (connecting / needs_details). */
@@ -204,8 +211,8 @@ export const createProjectSchema = z.object({
   channel: nullableProjectChannelSchema.optional(),
   /** Self-service Channel connect lifecycle (agents may set needs_details/active/inactive). */
   channelStatus: projectChannelStatusSchema.optional(),
-  /** Chat deep link while `needs_details`. */
-  channelPendingLink: z.string().max(2048).nullable().optional(),
+  /** Chat deep link while `needs_details` (strict deep-link form only). */
+  channelPendingLink: projectChannelPendingLinkSchema.nullable().optional(),
   /** When Connect was requested. */
   channelRequestedAt: z.string().datetime().nullable().optional(),
   /** @deprecated Folded into localWorkingDirectory on write. */

@@ -1042,7 +1042,7 @@ export function CodebaseProjectWorkbench({
             onOpenChatDeepLink={(href) => {
               void import("../lib/shell-chat-deep-link").then(
                 ({ openShellChatDeepLink }) => {
-                  openShellChatDeepLink(href);
+                  openShellChatDeepLink(href, { requirePendingForm: true });
                 },
               );
             }}

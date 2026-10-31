@@ -3,6 +3,7 @@
 import type { ProjectChannel, ProjectChannelStatus } from "@backsteros/contracts";
 import {
   isGrokBotChannelUri,
+  isProjectChannelPendingLink,
   normalizeProjectChannel,
 } from "@backsteros/contracts";
 import { SyncIcon, XIcon } from "@primer/octicons-react";
@@ -216,16 +217,17 @@ export function ProjectChannelField({
 
   function openPendingLink() {
     const href = project.channelPendingLink?.trim();
-    if (!href) return;
+    // Only the two chat deep-link forms — never open arbitrary URLs.
+    if (!href || !isProjectChannelPendingLink(href)) {
+      setError(
+        "Channel pending link is invalid (expected backsteros://chat/…?message=… or /chat/…?message=…).",
+      );
+      return;
+    }
     if (onOpenChatDeepLink) {
       onOpenChatDeepLink(href);
       return;
     }
-    if (href.startsWith("/")) {
-      window.location.assign(href);
-      return;
-    }
-    void openProjectChannelUri(href);
   }
 
   const errorNode = error ? (
@@ -263,7 +265,9 @@ export function ProjectChannelField({
           className="project-channel-badge project-channel-badge--needs-details"
           title="Open chat to finish Channel details"
           aria-label="Channel needs details"
-          disabled={saving || !project.channelPendingLink}
+          disabled={
+            saving || !isProjectChannelPendingLink(project.channelPendingLink)
+          }
           onClick={() => openPendingLink()}
         >
           <span

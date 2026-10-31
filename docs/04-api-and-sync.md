@@ -114,7 +114,7 @@ available on any project type:
 | `production` | `{ server?, url?, deployMethod?, branch?, path? }` or `null` (at least one field when set) |
 | `channel` | `{ uri, name? }` or `null` — uri e.g. `grokbot://app/v1/agent?id=<uuid>` (Grok Bot); `slack:<channel id>` reserved; other schemes allowed; `name` is optional display label |
 | `channelStatus` | `inactive` \| `connecting` \| `needs_details` \| `active` |
-| `channelPendingLink` | Chat deep link while `needs_details` (`backsteros://chat/<threadId>?message=<msgId>` or `/chat/<threadId>?message=<msgId>`), else `null` |
+| `channelPendingLink` | Chat deep link while `needs_details`. **Only** `backsteros://chat/<threadId>?message=<msgId>` or `/chat/<threadId>?message=<msgId>` (message required); anything else → **400** `channel_pending_link_invalid`. Else `null` |
 | `channelRequestedAt` | ISO datetime when Connect was requested, else `null` |
 
 Compat mirrors (still written): `localWorkingDirectory` (Development path when

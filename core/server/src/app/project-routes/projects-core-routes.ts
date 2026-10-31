@@ -250,6 +250,19 @@ export function registerProjectCoreRoutes(app: Hono) {
             400,
           );
         }
+        if (
+          error instanceof Error &&
+          error.message === "CHANNEL_PENDING_LINK_INVALID"
+        ) {
+          return c.json(
+            {
+              error:
+                "channelPendingLink must be backsteros://chat/<threadId>?message=<id> or /chat/<threadId>?message=<id>",
+              code: "channel_pending_link_invalid",
+            },
+            400,
+          );
+        }
         throw error;
       }
     },
@@ -390,6 +403,19 @@ export function registerProjectCoreRoutes(app: Hono) {
               error:
                 "channelPendingLink is required when channelStatus is needs_details",
               code: "channel_pending_link_required",
+            },
+            400,
+          );
+        }
+        if (
+          error instanceof Error &&
+          error.message === "CHANNEL_PENDING_LINK_INVALID"
+        ) {
+          return c.json(
+            {
+              error:
+                "channelPendingLink must be backsteros://chat/<threadId>?message=<id> or /chat/<threadId>?message=<id>",
+              code: "channel_pending_link_invalid",
             },
             400,
           );

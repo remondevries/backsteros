@@ -2656,14 +2656,8 @@ function ProjectDetailScreen({
         }}
         onOpenChatDeepLink={(href) => {
           void import("../lib/shell-chat-deep-link").then(
-            ({ openShellChatDeepLink, parseShellChatDeepLink, shellChatDeepLinkHref }) => {
-              if (openShellChatDeepLink(href)) return;
-              const parsed = parseShellChatDeepLink(href);
-              if (parsed) {
-                openShellChatDeepLink(
-                  shellChatDeepLinkHref(parsed.threadId, parsed.messageId),
-                );
-              }
+            ({ openShellChatDeepLink }) => {
+              openShellChatDeepLink(href, { requirePendingForm: true });
             },
           );
         }}

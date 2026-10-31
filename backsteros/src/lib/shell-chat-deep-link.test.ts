@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import {
+  isShellChatPendingLink,
+  openShellChatDeepLink,
   parseShellChatDeepLink,
   shellChatDeepLinkHref,
   shellChatDeepLinkScheme,
@@ -28,9 +30,45 @@ describe("parseShellChatDeepLink", () => {
     });
   });
 
+  it("allows thread-only links for notifications", () => {
+    assert.deepEqual(parseShellChatDeepLink("backsteros://chat/th_abc12345"), {
+      threadId: "th_abc12345",
+      messageId: null,
+    });
+  });
+
   it("returns null for unrelated hrefs", () => {
     assert.equal(parseShellChatDeepLink("/projects/OS"), null);
     assert.equal(parseShellChatDeepLink("https://example.com/chat/x"), null);
+    assert.equal(parseShellChatDeepLink("javascript:alert(1)"), null);
+  });
+});
+
+describe("isShellChatPendingLink / openShellChatDeepLink", () => {
+  it("requires message= for Channel pending links", () => {
+    assert.equal(
+      isShellChatPendingLink("backsteros://chat/th_abc12345?message=m1"),
+      true,
+    );
+    assert.equal(isShellChatPendingLink("/chat/th_abc12345?message=m1"), true);
+    assert.equal(isShellChatPendingLink("backsteros://chat/th_abc12345"), false);
+    assert.equal(isShellChatPendingLink("https://evil.example/chat/x"), false);
+    assert.equal(isShellChatPendingLink("grokbot://app/v1/agent?id=x"), false);
+  });
+
+  it("refuses to open non-pending forms when requirePendingForm is set", () => {
+    assert.equal(
+      openShellChatDeepLink("https://evil.example/phish", {
+        requirePendingForm: true,
+      }),
+      false,
+    );
+    assert.equal(
+      openShellChatDeepLink("backsteros://chat/th_abc12345", {
+        requirePendingForm: true,
+      }),
+      false,
+    );
   });
 });
 

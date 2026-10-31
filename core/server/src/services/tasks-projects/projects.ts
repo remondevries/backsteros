@@ -9,6 +9,7 @@ import type {
 } from "@backsteros/contracts";
 import {
   assertProjectChannel,
+  assertProjectChannelPendingLink,
   developmentFromLegacyLocations,
   mirrorProjectLocationCompat,
   normalizeProjectDevelopment,
@@ -143,6 +144,14 @@ function resolveChannelConnectPatch(input: {
       ? new Date(input.input.channelRequestedAt)
       : null
     : input.existing.channelRequestedAt;
+
+  if (nextLink != null) {
+    const linkResult = assertProjectChannelPendingLink(nextLink);
+    if (!linkResult.ok) {
+      throw new Error("CHANNEL_PENDING_LINK_INVALID");
+    }
+    nextLink = linkResult.value;
+  }
 
   if (nextStatus === "needs_details") {
     if (!nextLink) {
@@ -548,7 +557,15 @@ export async function createProject(
       channelStatus:
         input.channelStatus ??
         (resolveProjectChannel(input.channel) ? "active" : "inactive"),
-      channelPendingLink: input.channelPendingLink?.trim() || null,
+      channelPendingLink: (() => {
+        const raw = input.channelPendingLink?.trim() || null;
+        if (!raw) return null;
+        const linkResult = assertProjectChannelPendingLink(raw);
+        if (!linkResult.ok) {
+          throw new Error("CHANNEL_PENDING_LINK_INVALID");
+        }
+        return linkResult.value;
+      })(),
       channelRequestedAt: input.channelRequestedAt
         ? new Date(input.channelRequestedAt)
         : null,

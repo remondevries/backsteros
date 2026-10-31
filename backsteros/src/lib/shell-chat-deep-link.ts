@@ -2,12 +2,19 @@
  * Chat deep links: open the shell chat panel on a thread and optionally
  * scroll/highlight a message.
  *
- * Accepted forms:
+ * Channel pending links (strict, require `message=`):
  * - `backsteros://chat/<threadId>?message=<msgId>`
  * - `/chat/<threadId>?message=<msgId>`
  *
+ * Notifications may also open a thread without a message id.
+ *
  * Reused by notifications, Channel needs_details, and in-app routes.
  */
+
+import {
+  isProjectChannelPendingLink,
+  parseProjectChannelPendingLink,
+} from "@backsteros/contracts";
 
 export const SHELL_CHAT_OPEN_THREAD_EVENT = "backsteros:shell-chat-open-thread";
 
@@ -21,48 +28,44 @@ export type ParsedShellChatDeepLink = {
   messageId: string | null;
 };
 
-const UUID_LIKE =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const ID_RE = /^[A-Za-z0-9_.:-]{8,128}$/;
-
-function isThreadId(value: string): boolean {
-  return UUID_LIKE.test(value) || ID_RE.test(value);
-}
+const THREAD_ID_RE = /^[A-Za-z0-9_.:-]{8,128}$/;
 
 /**
  * Parse a chat deep link (custom scheme or in-app path). Returns null when
  * the input is not a chat deep link.
+ *
+ * For Channel `channelPendingLink`, prefer {@link isProjectChannelPendingLink}
+ * / {@link parseProjectChannelPendingLink} (message required).
  */
 export function parseShellChatDeepLink(
   href: string | null | undefined,
 ): ParsedShellChatDeepLink | null {
+  const pending = parseProjectChannelPendingLink(href);
+  if (pending) {
+    return { threadId: pending.threadId, messageId: pending.messageId };
+  }
+
+  // Allow thread-only links for notifications (not for channelPendingLink).
   const raw = href?.trim() ?? "";
   if (!raw) return null;
 
   try {
     if (raw.startsWith("backsteros://")) {
       const url = new URL(raw);
-      if (url.hostname !== "chat" && url.pathname.split("/")[1] !== "chat") {
-        // backsteros://chat/<id> → hostname=chat, pathname=/<id>
-        // backsteros://chat/<id> with some parsers may differ
-      }
-      const hostPath =
-        url.hostname === "chat"
-          ? url.pathname.replace(/^\//, "")
-          : url.pathname.replace(/^\/chat\/?/, "");
-      const threadId = (hostPath.split("/")[0] || "").trim();
-      if (!threadId || !isThreadId(threadId)) return null;
+      if (url.hostname.toLowerCase() !== "chat") return null;
+      if (url.pathname.replace(/^\//, "").includes("/")) return null;
+      const threadId = url.pathname.replace(/^\//, "").split("/")[0]?.trim() ?? "";
+      if (!THREAD_ID_RE.test(threadId)) return null;
       const messageId = url.searchParams.get("message")?.trim() || null;
       return { threadId, messageId };
     }
 
-    if (raw.startsWith("/chat/") || raw.startsWith("chat/")) {
-      const path = raw.startsWith("/") ? raw : `/${raw}`;
-      const url = new URL(path, "https://backsteros.local");
+    if (raw.startsWith("/chat/")) {
+      const url = new URL(raw, "https://backsteros.local");
       const parts = url.pathname.split("/").filter(Boolean);
-      if (parts[0] !== "chat" || !parts[1]) return null;
+      if (parts.length !== 2 || parts[0] !== "chat" || !parts[1]) return null;
       const threadId = parts[1].trim();
-      if (!isThreadId(threadId)) return null;
+      if (!THREAD_ID_RE.test(threadId)) return null;
       const messageId = url.searchParams.get("message")?.trim() || null;
       return { threadId, messageId };
     }
@@ -70,6 +73,13 @@ export function parseShellChatDeepLink(
     return null;
   }
   return null;
+}
+
+/** True when href is a Channel-safe pending link (message required). */
+export function isShellChatPendingLink(
+  href: string | null | undefined,
+): boolean {
+  return isProjectChannelPendingLink(href);
 }
 
 /** Build the in-app router href for a thread (+ optional message). */
@@ -110,8 +120,18 @@ export function openShellChatThread(
   );
 }
 
-/** Parse any accepted deep-link form and open the shell chat panel. */
-export function openShellChatDeepLink(href: string): boolean {
+/**
+ * Parse an accepted deep-link form and open the shell chat panel.
+ * When `requirePendingForm` is true (Channel Needs details), only the strict
+ * pending-link shapes with `message=` are opened.
+ */
+export function openShellChatDeepLink(
+  href: string,
+  options?: { requirePendingForm?: boolean },
+): boolean {
+  if (options?.requirePendingForm && !isProjectChannelPendingLink(href)) {
+    return false;
+  }
   const parsed = parseShellChatDeepLink(href);
   if (!parsed) return false;
   openShellChatThread(parsed.threadId, parsed.messageId);

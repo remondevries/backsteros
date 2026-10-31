@@ -3,17 +3,22 @@ import { describe, it } from "node:test";
 
 import {
   assertProjectChannel,
+  assertProjectChannelPendingLink,
   assertProjectChannelUri,
   developmentFromLegacyLocations,
   grokBotAgentIdFromChannel,
   isGrokBotChannelUri,
+  isProjectChannelPendingLink,
   mirrorProjectLocationCompat,
   normalizeProjectChannel,
+  normalizeProjectChannelPendingLink,
   normalizeProjectChannelUri,
   normalizeProjectDevelopment,
   normalizeProjectProduction,
+  parseProjectChannelPendingLink,
   productionFromLegacyLocations,
   projectChannelDisplayName,
+  projectChannelPendingLinkSchema,
   projectChannelScheme,
 } from "./project-locations.js";
 
@@ -190,5 +195,62 @@ describe("project locations", () => {
         name: null,
       },
     );
+  });
+
+  it("accepts only chat deep-link forms for channelPendingLink", () => {
+    assert.deepEqual(
+      parseProjectChannelPendingLink(
+        "backsteros://chat/th_abc12345?message=msg_1",
+      ),
+      { threadId: "th_abc12345", messageId: "msg_1" },
+    );
+    assert.deepEqual(
+      parseProjectChannelPendingLink("/chat/th_abc12345?message=msg_1"),
+      { threadId: "th_abc12345", messageId: "msg_1" },
+    );
+    assert.equal(
+      normalizeProjectChannelPendingLink(
+        "  /chat/th_abc12345?message=msg_1  ",
+      ),
+      "/chat/th_abc12345?message=msg_1",
+    );
+    assert.equal(
+      projectChannelPendingLinkSchema.safeParse(
+        "backsteros://chat/th_abc12345?message=msg_1",
+      ).success,
+      true,
+    );
+  });
+
+  it("rejects non-chat channelPendingLink values", () => {
+    const rejects = [
+      "https://evil.example/phish",
+      "javascript:alert(1)",
+      "grokbot://app/v1/agent?id=550e8400-e29b-41d4-a716-446655440000",
+      "backsteros://chat/th_abc12345",
+      "/chat/th_abc12345",
+      "backsteros://chat/th_abc12345?message=msg_1&other=1",
+      "backsteros://other/th_abc12345?message=msg_1",
+      "/projects/OS",
+      "chat/th_abc12345?message=msg_1",
+      "",
+    ];
+    for (const value of rejects) {
+      assert.equal(
+        isProjectChannelPendingLink(value),
+        false,
+        `expected reject: ${value}`,
+      );
+      assert.equal(
+        assertProjectChannelPendingLink(value).ok,
+        false,
+        `expected assert fail: ${value}`,
+      );
+      assert.equal(
+        projectChannelPendingLinkSchema.safeParse(value).success,
+        false,
+        `expected schema fail: ${value}`,
+      );
+    }
   });
 });
