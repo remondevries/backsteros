@@ -128,11 +128,10 @@ export function ProjectChannelField({
               <ProjectOcticon icon="comment-discussion" size={14} />
             )}
           </span>
-          <span
-            className="project-channel-badge__dot"
-            aria-hidden="true"
-          />
-          <span className="project-channel-badge__label">Active</span>
+          <span className="project-channel-badge__status">
+            <span className="project-channel-badge__dot" aria-hidden="true" />
+            <span className="project-channel-badge__label">Active</span>
+          </span>
         </button>
         <button
           type="button"

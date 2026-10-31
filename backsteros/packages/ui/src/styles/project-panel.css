@@ -426,13 +426,23 @@
   display: block;
 }
 
+.project-channel-badge__status {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+}
+
 .project-channel-badge__dot {
+  display: block;
   flex: 0 0 auto;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: #22c55e;
-  box-shadow: 0 0 0 0 color-mix(in srgb, #22c55e 55%, transparent);
+  box-sizing: border-box;
+  width: 8px;
+  height: 8px;
+  min-width: 8px;
+  min-height: 8px;
+  border-radius: 999px;
+  background-color: #22c55e;
   /* Always pulse — Remon: ignore prefers-reduced-motion. */
   animation: project-channel-dot-pulse 1.6s ease-in-out infinite;
 }
@@ -441,12 +451,12 @@
   0%,
   100% {
     opacity: 1;
-    box-shadow: 0 0 0 0 color-mix(in srgb, #22c55e 45%, transparent);
+    transform: scale(1);
   }
 
   50% {
-    opacity: 0.45;
-    box-shadow: 0 0 0 4px color-mix(in srgb, #22c55e 0%, transparent);
+    opacity: 0.4;
+    transform: scale(0.85);
   }
 }
 
