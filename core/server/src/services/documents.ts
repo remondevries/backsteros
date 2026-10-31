@@ -1182,10 +1182,8 @@ export async function listDocumentsForTask(
         eq(documents.workspaceId, workspaceId),
         isNull(documents.deletedAt),
         eq(documents.kind, "document"),
-        or(
-          sql`${documents.properties}->'linkedTasks' @> ${JSON.stringify([displayKey])}::jsonb`,
-          sql`${documents.properties}->>'linkedTasks' = ${displayKey}`,
-        ),
+        // Array containment only — scalar `->>'linkedTasks' =` blocks GIN use.
+        sql`${documents.properties}->'linkedTasks' @> ${JSON.stringify([displayKey])}::jsonb`,
       ),
     )
     .orderBy(desc(documents.updatedAt));

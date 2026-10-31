@@ -264,13 +264,8 @@ function linkedDocumentsCondition(documentIds: string[]): SQL {
       )})
       and d.deleted_at is null
       and d.kind = 'document'
-      and (
-        d.properties->'linkedTasks' @> to_jsonb(
-          coalesce(${projects.key}, 'INBOX') || '-' || ${tasks.number}::text
-        )
-        or d.properties->>'linkedTasks' = (
-          coalesce(${projects.key}, 'INBOX') || '-' || ${tasks.number}::text
-        )
+      and d.properties->'linkedTasks' @> to_jsonb(
+        coalesce(${projects.key}, 'INBOX') || '-' || ${tasks.number}::text
       )
   )`;
 }
@@ -312,10 +307,7 @@ function linkedTasksCondition(
       where d.workspace_id = ${workspaceId}
         and d.deleted_at is null
         and d.kind = 'document'
-        and (
-          d.properties->'linkedTasks' @> to_jsonb(s.display_key)
-          or d.properties->>'linkedTasks' = s.display_key
-        )
+        and d.properties->'linkedTasks' @> to_jsonb(s.display_key)
     ),
     keys as (
       select distinct trim(both '"' from elem::text) as display_key
@@ -473,10 +465,7 @@ async function loadTaskLinkEnrichment(
         or(
           ...keys.map(
             (key) =>
-              sql`(
-                ${documents.properties}->'linkedTasks' @> ${JSON.stringify([key])}::jsonb
-                or ${documents.properties}->>'linkedTasks' = ${key}
-              )`,
+              sql`${documents.properties}->'linkedTasks' @> ${JSON.stringify([key])}::jsonb`,
           ),
         ),
       ),

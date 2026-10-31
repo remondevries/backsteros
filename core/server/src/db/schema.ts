@@ -1124,6 +1124,19 @@ export const tasks = pgTable(
       .where(sql`${table.notification} = true and ${table.deletedAt} is null`),
     index("tasks_habit_id_idx").on(table.habitId),
     index("tasks_penpot_file_id_idx").on(table.penpotFileId),
+    /** Containment filters (`@>`) for CRM related contacts (OS-162). */
+    index("tasks_related_contact_ids_gin_idx").using(
+      "gin",
+      table.relatedContactIds.op("jsonb_path_ops"),
+    ),
+    index("tasks_related_organization_ids_gin_idx").using(
+      "gin",
+      table.relatedOrganizationIds.op("jsonb_path_ops"),
+    ),
+    index("tasks_linked_email_ids_gin_idx").using(
+      "gin",
+      table.linkedEmailIds.op("jsonb_path_ops"),
+    ),
     uniqueIndex("tasks_habit_due_unique")
       .on(table.habitId, table.dueDate)
       .where(
