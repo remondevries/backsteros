@@ -788,6 +788,52 @@ test("fillMissingCodebaseFieldsFromApi keeps local channel when present", () => 
   assert.deepEqual(filled[0]?.channel, localChannel);
 });
 
+test("fillMissingCodebaseFieldsFromApi promotes connecting → active from API", () => {
+  const apiChannel = {
+    uri: "grokbot://app/v1/agent?id=550e8400-e29b-41d4-a716-446655440000",
+    name: "PF",
+  };
+  const filled = fillMissingCodebaseFieldsFromApi(
+    [
+      {
+        id: "1",
+        channel: null,
+        channelStatus: "connecting",
+      },
+    ],
+    [
+      {
+        id: "1",
+        channel: apiChannel,
+        channelStatus: "active",
+      },
+    ],
+  );
+  assert.equal(filled[0]?.channelStatus, "active");
+  assert.deepEqual(filled[0]?.channel, apiChannel);
+});
+
+test("fillMissingCodebaseFieldsFromApi copies channelStage when local omitted it", () => {
+  const filled = fillMissingCodebaseFieldsFromApi(
+    [
+      {
+        id: "1",
+        channelStage: null,
+      },
+    ],
+    [
+      {
+        id: "1",
+        channelStage: "creating_room",
+      },
+    ],
+  );
+  assert.equal(
+    (filled[0] as { channelStage?: string | null }).channelStage,
+    "creating_room",
+  );
+});
+
 test("fillMissingCodebaseFieldsFromApi copies leadAgentContactId when local omitted it", () => {
   const filled = fillMissingCodebaseFieldsFromApi(
     [

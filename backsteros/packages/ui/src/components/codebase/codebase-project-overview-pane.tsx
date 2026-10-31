@@ -2168,6 +2168,10 @@ export function CodebaseProjectOverviewPane({
                               (updated.channelStatus as
                                 | typeof project.channelStatus
                                 | undefined) ?? project.channelStatus,
+                            channelStage:
+                              (updated.channelStage as
+                                | typeof project.channelStage
+                                | undefined) ?? project.channelStage,
                             channelPendingLink:
                               updated.channelPendingLink ?? null,
                             channelRequestedAt:

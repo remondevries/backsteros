@@ -639,7 +639,26 @@ export function fillMissingCodebaseFieldsFromApi<
     }
     const rowStatus = (row as { channelStatus?: string | null }).channelStatus;
     const apiStatus = (api as { channelStatus?: string | null }).channelStatus;
+    // Promote Channel connect status when API/live is ahead of stale local
+    // PowerSync (connecting stuck after agent set active via cloud twin).
+    const channelStatusRank = (status: string | null | undefined): number => {
+      if (status === "active") return 3;
+      if (status === "needs_details") return 2;
+      if (status === "connecting") return 1;
+      return 0;
+    };
     if (
+      apiStatus &&
+      channelStatusRank(apiStatus) > channelStatusRank(rowStatus)
+    ) {
+      next = {
+        ...next,
+        channelStatus: apiStatus,
+      } as T;
+      if (!channelMissing(api.channel)) {
+        next = { ...next, channel: api.channel as T["channel"] };
+      }
+    } else if (
       (rowStatus == null || rowStatus === "" || rowStatus === "inactive") &&
       apiStatus &&
       apiStatus !== "inactive"
@@ -647,6 +666,14 @@ export function fillMissingCodebaseFieldsFromApi<
       next = {
         ...next,
         channelStatus: apiStatus,
+      } as T;
+    }
+    const rowStage = (row as { channelStage?: string | null }).channelStage;
+    const apiStage = (api as { channelStage?: string | null }).channelStage;
+    if (textMissing(rowStage) && !textMissing(apiStage)) {
+      next = {
+        ...next,
+        channelStage: apiStage,
       } as T;
     }
     const rowLink = (row as { channelPendingLink?: string | null })

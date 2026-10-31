@@ -15,6 +15,7 @@ import {
   nullableProjectDevelopmentSchema,
   nullableProjectProductionSchema,
   projectChannelPendingLinkSchema,
+  projectChannelStageSchema,
   projectChannelStatusSchema,
 } from "./project-locations.js";
 export {
@@ -32,6 +33,9 @@ export {
   nullableProjectChannelUriSchema,
   PROJECT_CHANNEL_STATUSES,
   projectChannelStatusSchema,
+  PROJECT_CHANNEL_STAGES,
+  projectChannelStageSchema,
+  projectChannelStageLabel,
   projectChannelPendingLinkSchema,
   parseProjectChannelPendingLink,
   assertProjectChannelPendingLink,
@@ -57,6 +61,7 @@ export {
   type ProjectChannelScheme,
   type ProjectChannel,
   type ProjectChannelStatus,
+  type ProjectChannelStage,
   type ParsedProjectChannelPendingLink,
 } from "./project-locations.js";
 /** Project short ID — 2–3 alphanumeric characters (any case; stored uppercase). */
@@ -130,6 +135,12 @@ export const projectSchema = z.object({
    * `inactive` | `connecting` | `needs_details` | `active`.
    */
   channelStatus: projectChannelStatusSchema,
+  /**
+   * Agent progress while `connecting`
+   * (`looking_for_room` | `joining_room` | `creating_room` | `adding_users` | `finishing`).
+   * Null when unset / after active|inactive.
+   */
+  channelStage: projectChannelStageSchema.nullable(),
   /**
    * Chat deep link while `needs_details`
    * (`backsteros://chat/<threadId>?message=<id>` or `/chat/<threadId>?message=<id>`).
@@ -221,6 +232,8 @@ export const createProjectSchema = z.object({
   channel: nullableProjectChannelSchema.optional(),
   /** Self-service Channel connect lifecycle (agents may set needs_details/active/inactive). */
   channelStatus: projectChannelStatusSchema.optional(),
+  /** Agent progress while connecting (cleared on active/inactive). */
+  channelStage: projectChannelStageSchema.nullable().optional(),
   /** Chat deep link while `needs_details` (strict deep-link form only). */
   channelPendingLink: projectChannelPendingLinkSchema.nullable().optional(),
   /** When Connect was requested. */

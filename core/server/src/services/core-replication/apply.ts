@@ -47,7 +47,10 @@ import {
   taskNumberScopeId,
 } from "./task-number-conflicts.js";
 import { getTableSpec, rowIdFromPk, type KnownTable, type TableSpec } from "./tables.js";
-import { publishProjectUpdateWorkspaceUpdated } from "../../lib/workspace-events.js";
+import {
+  publishProjectUpdateWorkspaceUpdated,
+  publishProjectWorkspaceUpdated,
+} from "../../lib/workspace-events.js";
 import {
   recordReplicationDeadLetter,
   toApplyFailed,
@@ -926,6 +929,19 @@ export async function applyReplicationRow(
       return applyApiKeyAuditLogRow(row);
     default: {
       const result = await applyGenericRow(spec, row, localRole);
+      if (result === "applied" && spec.name === "projects") {
+        // Table-twin project updates (e.g. agent Channel Connect on cloud)
+        // must wake open shells — sync_events pull can lag or skip while LWW
+        // still lands the row.
+        const projectId = typeof row.id === "string" ? row.id : "";
+        const workspaceId =
+          typeof row.workspace_id === "string" ? row.workspace_id : "";
+        if (projectId && workspaceId) {
+          publishProjectWorkspaceUpdated(workspaceId, projectId, {
+            operation: row.deleted_at ? "delete" : "upsert",
+          });
+        }
+      }
       if (result === "applied" && spec.name === "project_updates") {
         const updateId = typeof row.id === "string" ? row.id : "";
         const workspaceId =

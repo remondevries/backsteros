@@ -901,6 +901,11 @@ export const projects = pgTable(
      * Self-service Channel connect: inactive | connecting | needs_details | active.
      */
     channelStatus: text("channel_status").notNull().default("inactive"),
+    /**
+     * Agent progress while connecting:
+     * looking_for_room | joining_room | creating_room | adding_users | finishing.
+     */
+    channelStage: text("channel_stage"),
     /** Chat deep link while needs_details (`backsteros://chat/…` or `/chat/…`). */
     channelPendingLink: text("channel_pending_link"),
     /** When Connect was requested (connecting / needs_details). */

@@ -682,6 +682,22 @@ export function mapProjectUpsert(
       }
       return "inactive";
     })(),
+    channelStage: (() => {
+      const raw = asNullableString(
+        payloadValue(payload, "channel_stage", "channelStage"),
+      );
+      if (raw === undefined) return undefined;
+      if (
+        raw === "looking_for_room" ||
+        raw === "joining_room" ||
+        raw === "creating_room" ||
+        raw === "adding_users" ||
+        raw === "finishing"
+      ) {
+        return raw;
+      }
+      return null;
+    })(),
     channelPendingLink: asNullableString(
       payloadValue(payload, "channel_pending_link", "channelPendingLink"),
     ),

@@ -1,16 +1,22 @@
 "use client";
 
-import type { ProjectChannel, ProjectChannelStatus } from "@backsteros/contracts";
+import type {
+  ProjectChannel,
+  ProjectChannelStage,
+  ProjectChannelStatus,
+} from "@backsteros/contracts";
 import {
   isGrokBotChannelUri,
   isProjectChannelPendingLink,
   normalizeProjectChannel,
+  projectChannelStageLabel,
 } from "@backsteros/contracts";
-import { SyncIcon, XIcon } from "@primer/octicons-react";
+import { XIcon } from "@primer/octicons-react";
 import { useEffect, useRef, useState } from "react";
 
 import { XaiMarkIcon } from "../icons/xai-mark-icon.js";
 import { ProjectOcticon } from "../projects/project-octicon.js";
+import { TaskStatusWorkingPulse } from "../tasks/task-status-working-pulse.js";
 import { apiErrorMessage } from "./api-error-message.js";
 import type { CodebaseRequestJson } from "./codebase-request-json.js";
 import { startProjectChannelConnect } from "./project-channel-connect.js";
@@ -22,6 +28,7 @@ export type ProjectChannelFieldProject = {
   id: string;
   channel?: ProjectChannel | string | null;
   channelStatus?: ProjectChannelStatus | string | null;
+  channelStage?: ProjectChannelStage | string | null;
   channelPendingLink?: string | null;
   channelRequestedAt?: string | null;
   updatedAt?: string;
@@ -158,6 +165,7 @@ export function ProjectChannelField({
       onProjectUpdated({
         ...project,
         channelStatus: "connecting",
+        channelStage: null,
         channelPendingLink: null,
         channelRequestedAt: requestedAt,
         updatedAt: requestedAt,
@@ -236,20 +244,26 @@ export function ProjectChannelField({
   ) : null;
 
   if (status === "connecting" && !timedOutConnecting) {
+    const stageLabel =
+      projectChannelStageLabel(project.channelStage) ?? "Connecting…";
     return (
       <div className="project-channel-field">
         <span
           className="project-channel-badge project-channel-badge--connecting"
           title="Waiting for the Channel Connect agent"
-          aria-label="Channel connecting"
+          aria-label={`Channel connecting — ${stageLabel}`}
         >
+          <TaskStatusWorkingPulse
+            size={14}
+            compact
+            className="project-channel-badge__icon"
+            aria-label="In progress"
+          />
           <span
-            className="project-channel-badge__icon project-channel-badge__icon--spin"
-            aria-hidden="true"
+            className="project-channel-badge__label live-status-shine"
           >
-            <SyncIcon size={14} />
+            {stageLabel}
           </span>
-          <span className="project-channel-badge__label">Connecting…</span>
         </span>
         {errorNode}
       </div>

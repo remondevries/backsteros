@@ -102,6 +102,14 @@ export function toProject(row: DbProject): Project {
       row.channelStatus === "active"
         ? row.channelStatus
         : "inactive",
+    channelStage:
+      row.channelStage === "looking_for_room" ||
+      row.channelStage === "joining_room" ||
+      row.channelStage === "creating_room" ||
+      row.channelStage === "adding_users" ||
+      row.channelStage === "finishing"
+        ? row.channelStage
+        : null,
     channelPendingLink: row.channelPendingLink ?? null,
     channelRequestedAt: toIso(row.channelRequestedAt),
     localLocation: row.localLocation ?? null,

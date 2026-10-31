@@ -206,6 +206,7 @@ export async function applySyncChange(
           leadAgentContactId: input.leadAgentContactId,
           channel: input.channel,
           channelStatus: input.channelStatus,
+          channelStage: input.channelStage,
           channelPendingLink: input.channelPendingLink,
           channelRequestedAt: input.channelRequestedAt,
           localLocation: input.localLocation,

@@ -238,6 +238,13 @@ export function mapProject(project: ApiProject): ProjectOverviewRowProject & {
   } | null;
   leadAgentContactId?: string | null;
   channelStatus?: "inactive" | "connecting" | "needs_details" | "active" | null;
+  channelStage?:
+    | "looking_for_room"
+    | "joining_room"
+    | "creating_room"
+    | "adding_users"
+    | "finishing"
+    | null;
   channelPendingLink?: string | null;
   channelRequestedAt?: string | null;
   localLocation?: string | null;
@@ -429,6 +436,22 @@ export function mapProject(project: ApiProject): ProjectOverviewRowProject & {
         return raw;
       }
       return "inactive";
+    })(),
+    channelStage: (() => {
+      const raw =
+        (project as { channelStage?: unknown; channel_stage?: unknown })
+          .channelStage ??
+        (project as { channel_stage?: unknown }).channel_stage;
+      if (
+        raw === "looking_for_room" ||
+        raw === "joining_room" ||
+        raw === "creating_room" ||
+        raw === "adding_users" ||
+        raw === "finishing"
+      ) {
+        return raw;
+      }
+      return null;
     })(),
     channelPendingLink: (() => {
       const raw =

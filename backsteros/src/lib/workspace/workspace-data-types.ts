@@ -66,6 +66,13 @@ export type DesktopWorkspaceData = {
         | "needs_details"
         | "active"
         | null;
+      channelStage?:
+        | "looking_for_room"
+        | "joining_room"
+        | "creating_room"
+        | "adding_users"
+        | "finishing"
+        | null;
       channelPendingLink?: string | null;
       channelRequestedAt?: string | null;
     }

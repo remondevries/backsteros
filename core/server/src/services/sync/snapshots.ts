@@ -56,6 +56,7 @@ export function projectSnapshot(row: typeof projects.$inferSelect) {
     lead_agent_contact_id: row.leadAgentContactId ?? null,
     channel: row.channel ? JSON.stringify(row.channel) : null,
     channel_status: row.channelStatus ?? "inactive",
+    channel_stage: row.channelStage ?? null,
     channel_pending_link: row.channelPendingLink ?? null,
     channel_requested_at: row.channelRequestedAt?.toISOString() ?? null,
     local_location: row.localLocation,

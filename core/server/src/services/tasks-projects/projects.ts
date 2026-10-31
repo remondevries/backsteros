@@ -117,21 +117,39 @@ function resolveProjectChannel(
 type ChannelConnectExisting = {
   channel: ProjectChannel | null;
   channelStatus: string;
+  channelStage: string | null;
   channelPendingLink: string | null;
   channelRequestedAt: Date | null;
 };
+
+type ProjectChannelStageValue =
+  | "looking_for_room"
+  | "joining_room"
+  | "creating_room"
+  | "adding_users"
+  | "finishing";
+
+const CHANNEL_STAGES = new Set<string>([
+  "looking_for_room",
+  "joining_room",
+  "creating_room",
+  "adding_users",
+  "finishing",
+]);
 
 /**
  * Coerce Channel connect fields on PATCH.
  * Setting `channel` to a uri implies `active`; clearing channel implies `inactive`.
  * `needs_details` requires `channelPendingLink`. Agents must not set `connecting`
  * via PATCH — use POST …/channel/connect (owner-only).
+ * `channelStage` is agent progress while connecting; cleared on active/inactive.
  */
 export function resolveChannelConnectPatch(input: {
   existing: ChannelConnectExisting;
   input: {
     channel?: ProjectChannel | null;
     channelStatus?: ProjectChannelStatus;
+    channelStage?: ProjectChannelStageValue | null;
     channelPendingLink?: string | null;
     channelRequestedAt?: string | null;
   };
@@ -139,15 +157,23 @@ export function resolveChannelConnectPatch(input: {
   allowConnectingStatus?: boolean;
 }): {
   channelStatus?: ProjectChannelStatus;
+  channelStage?: ProjectChannelStageValue | null;
   channelPendingLink?: string | null;
   channelRequestedAt?: Date | null;
 } {
   const channelTouched = input.input.channel !== undefined;
   const statusTouched = input.input.channelStatus !== undefined;
+  const stageTouched = input.input.channelStage !== undefined;
   const linkTouched = input.input.channelPendingLink !== undefined;
   const requestedTouched = input.input.channelRequestedAt !== undefined;
 
-  if (!channelTouched && !statusTouched && !linkTouched && !requestedTouched) {
+  if (
+    !channelTouched &&
+    !statusTouched &&
+    !stageTouched &&
+    !linkTouched &&
+    !requestedTouched
+  ) {
     return {};
   }
 
@@ -194,6 +220,16 @@ export function resolveChannelConnectPatch(input: {
       : null
     : input.existing.channelRequestedAt;
 
+  let nextStage: ProjectChannelStageValue | null =
+    stageTouched
+      ? input.input.channelStage ?? null
+      : CHANNEL_STAGES.has(input.existing.channelStage ?? "")
+        ? (input.existing.channelStage as ProjectChannelStageValue)
+        : null;
+  if (stageTouched && nextStage != null && !CHANNEL_STAGES.has(nextStage)) {
+    throw new Error("CHANNEL_STAGE_INVALID");
+  }
+
   if (nextLink != null) {
     const linkResult = assertProjectChannelPendingLink(nextLink);
     if (!linkResult.ok) {
@@ -210,13 +246,16 @@ export function resolveChannelConnectPatch(input: {
   if (nextStatus === "inactive") {
     nextLink = null;
     nextRequestedAt = null;
+    nextStage = null;
   }
   if (nextStatus === "active") {
     nextLink = null;
+    nextStage = null;
   }
 
   return {
     channelStatus: nextStatus,
+    channelStage: nextStage,
     channelPendingLink: nextLink,
     channelRequestedAt: nextRequestedAt,
   };
@@ -235,6 +274,7 @@ export async function beginProjectChannelConnect(
     .update(projects)
     .set({
       channelStatus: "connecting",
+      channelStage: null,
       channelPendingLink: null,
       channelRequestedAt: requestedAt,
       // Keep existing channel until agent replaces / clears; Connect from
@@ -612,6 +652,7 @@ export async function createProject(
       channelStatus:
         input.channelStatus ??
         (resolveProjectChannel(input.channel) ? "active" : "inactive"),
+      channelStage: input.channelStage ?? null,
       channelPendingLink: (() => {
         const raw = input.channelPendingLink?.trim() || null;
         if (!raw) return null;
@@ -766,12 +807,14 @@ export async function updateProject(
     existing: {
       channel: existing.channel ?? null,
       channelStatus: existing.channelStatus ?? "inactive",
+      channelStage: existing.channelStage ?? null,
       channelPendingLink: existing.channelPendingLink ?? null,
       channelRequestedAt: existing.channelRequestedAt ?? null,
     },
     input: {
       channel: nextChannel,
       channelStatus: input.channelStatus,
+      channelStage: input.channelStage,
       channelPendingLink: input.channelPendingLink,
       channelRequestedAt: input.channelRequestedAt,
     },
@@ -881,6 +924,9 @@ export async function updateProject(
         ...(nextChannel !== undefined ? { channel: nextChannel } : {}),
         ...(channelConnectPatch.channelStatus !== undefined
           ? { channelStatus: channelConnectPatch.channelStatus }
+          : {}),
+        ...(channelConnectPatch.channelStage !== undefined
+          ? { channelStage: channelConnectPatch.channelStage }
           : {}),
         ...(channelConnectPatch.channelPendingLink !== undefined
           ? { channelPendingLink: channelConnectPatch.channelPendingLink }

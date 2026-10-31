@@ -167,6 +167,9 @@ function toApiProject(project: CodebaseWorkbenchProject): ApiProject {
     channelStatus:
       (project as { channelStatus?: ApiProject["channelStatus"] })
         .channelStatus ?? "inactive",
+    channelStage:
+      (project as { channelStage?: ApiProject["channelStage"] }).channelStage ??
+      null,
     channelPendingLink:
       (project as { channelPendingLink?: string | null }).channelPendingLink ??
       null,

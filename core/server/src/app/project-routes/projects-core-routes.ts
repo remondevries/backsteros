@@ -265,6 +265,19 @@ export function registerProjectCoreRoutes(app: Hono) {
         }
         if (
           error instanceof Error &&
+          error.message === "CHANNEL_STAGE_INVALID"
+        ) {
+          return c.json(
+            {
+              error:
+                "channelStage must be looking_for_room, joining_room, creating_room, adding_users, or finishing",
+              code: "channel_stage_invalid",
+            },
+            400,
+          );
+        }
+        if (
+          error instanceof Error &&
           error.message === "LEAD_AGENT_CONTACT_NOT_FOUND"
         ) {
           return c.json(
@@ -441,6 +454,19 @@ export function registerProjectCoreRoutes(app: Hono) {
               error:
                 "channelPendingLink must be backsteros://chat/<threadId>?message=<id> or /chat/<threadId>?message=<id>",
               code: "channel_pending_link_invalid",
+            },
+            400,
+          );
+        }
+        if (
+          error instanceof Error &&
+          error.message === "CHANNEL_STAGE_INVALID"
+        ) {
+          return c.json(
+            {
+              error:
+                "channelStage must be looking_for_room, joining_room, creating_room, adding_users, or finishing",
+              code: "channel_stage_invalid",
             },
             400,
           );

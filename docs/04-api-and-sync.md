@@ -115,6 +115,7 @@ Lead agent + Channel. GitHub / Development / Production apply to
 | `leadAgentContactId` | Contact id (or contact key on write) of the lead agent, or `null`. Must be a contact linked to an enabled `agents` row. Default `null` on create |
 | `channel` | `{ uri, name? }` or `null` — uri e.g. `grokbot://app/v1/agent?id=<uuid>` (Grok Bot); `slack:<channel id>` reserved; other schemes allowed; `name` is optional display label |
 | `channelStatus` | `inactive` \| `connecting` \| `needs_details` \| `active` |
+| `channelStage` | While `connecting`: `looking_for_room` \| `joining_room` \| `creating_room` \| `adding_users` \| `finishing` (agent progress). Cleared on `active` / `inactive`. Else `null` |
 | `channelPendingLink` | Chat deep link while `needs_details`. **Only** `backsteros://chat/<threadId>?message=<msgId>` or `/chat/<threadId>?message=<msgId>` (message required); anything else → **400** `channel_pending_link_invalid`. Else `null` |
 | `channelRequestedAt` | ISO datetime when Connect was requested, else `null` |
 
@@ -148,13 +149,27 @@ agents finish the room.
 | Status | Badge | Who moves here |
 | --- | --- | --- |
 | `inactive` | muted **Connect** | default; owner disconnect; Connect timeout (~10 min) |
-| `connecting` | spinner **Connecting…** | owner only via `POST /api/v1/projects/:id/channel/connect` |
+| `connecting` | working pulse + stage label (or **Connecting…**) | owner only via `POST /api/v1/projects/:id/channel/connect` |
 | `needs_details` | amber **Needs details** (opens `channelPendingLink`) | agent `PATCH` with `channelStatus` + `channelPendingLink` |
 | `active` | green pulse **Active** (opens `channel.uri`) | agent `PATCH` with `channel` uri (status becomes `active`) |
 
+**`channelStage` (while `connecting`)** — agents should PATCH each step so the
+owner sees progress:
+
+| Stage | Label |
+| --- | --- |
+| `looking_for_room` | Looking for room |
+| `joining_room` | Joining room |
+| `creating_room` | Creating room |
+| `adding_users` | Adding users |
+| `finishing` | Finishing |
+
+Use `joining_room` **or** `creating_room` (not both paths). Stage is cleared
+automatically when status becomes `active` or `inactive`.
+
 Agents may `PATCH` `channelStatus` to `needs_details`, `active`, or `inactive`
-(and set `channel` / `channelPendingLink` accordingly). Agents **cannot** set
-`connecting` and **cannot** call the Connect endpoint (`403`).
+(and set `channel` / `channelPendingLink` / `channelStage` accordingly). Agents
+**cannot** set `connecting` and **cannot** call the Connect endpoint (`403`).
 
 **Owner Connect endpoint**
 
@@ -211,13 +226,16 @@ from notifications and Channel `needs_details`.
 **Agent routine sketch (Niels / Grok Bot)**
 
 1. Receive `project.channel.connect` webhook.
-2. Ask the owner for room details in shell chat; store a deep link on the
+2. Report stages while working (each is a `PATCH`):
+   `{ "channelStage": "looking_for_room" }` → then
+   `joining_room` **or** `creating_room` → `adding_users` → `finishing`.
+3. If you need owner input: ask in shell chat; store a deep link on the
    project: `PATCH /api/v1/projects/:id` with
    `{ "channelStatus": "needs_details", "channelPendingLink": "backsteros://chat/<threadId>?message=<msgId>" }`.
-3. When the room exists: `PATCH` with
+4. When the room exists: `PATCH` with
    `{ "channel": { "uri": "grokbot://app/v1/agent?id=<uuid>", "name": "…" }, "channelStatus": "active" }`
-   (setting `channel` alone also flips status to `active`).
-4. To abort: `PATCH` `{ "channelStatus": "inactive", "channel": null }`.
+   (setting `channel` alone also flips status to `active` and clears `channelStage`).
+5. To abort: `PATCH` `{ "channelStatus": "inactive", "channel": null }`.
 
 #### `GET /search` (agents)
 

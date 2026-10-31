@@ -75,6 +75,7 @@ export const PROJECT_LIST_COLUMNS = [
   "lead_agent_contact_id",
   "channel",
   "channel_status",
+  "channel_stage",
   "channel_pending_link",
   "channel_requested_at",
   "local_location",

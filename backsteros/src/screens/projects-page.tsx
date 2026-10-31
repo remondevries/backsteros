@@ -157,6 +157,7 @@ import {
 } from "../lib/project-type-cache";
 import { navigateToHref } from "../router/navigate-href";
 import {
+  pruneProjectChannelOverlay,
   useProjectsWithOverlay,
   type ProjectOverlay,
   type WorkspaceProject,
@@ -310,6 +311,15 @@ function ProjectDetailScreen({
   // Lead picker: any enabled local persona with a contact — not chat webhook gate.
   const { agents: shellAgents } = useShellAgentChat();
   const projects = useProjectsWithOverlay(workspace.projects, projectOverlay);
+
+  // Clear stuck Channel Connect optimistic overlays once live sync advances
+  // (agent may set active via cloud twin without a local Connect response).
+  useEffect(() => {
+    setProjectOverlay((current) =>
+      pruneProjectChannelOverlay(current, workspace.projects),
+    );
+  }, [setProjectOverlay, workspace.projects]);
+
   const documents = useMemo(() => {
     const omitted = new Set(omittedDocumentIds);
     const byId = new Map<string, KnowledgeListItem>();
@@ -2681,6 +2691,8 @@ function ProjectDetailScreen({
               .channel ?? null,
           channelStatus:
             (project as { channelStatus?: string | null }).channelStatus ?? null,
+          channelStage:
+            (project as { channelStage?: string | null }).channelStage ?? null,
           channelPendingLink:
             (project as { channelPendingLink?: string | null })
               .channelPendingLink ?? null,
@@ -2702,6 +2714,10 @@ function ProjectDetailScreen({
                 | "needs_details"
                 | "active"
                 | null
+                | undefined) ?? null,
+            channelStage:
+              (updated.channelStage as
+                | WorkspaceProject["channelStage"]
                 | undefined) ?? null,
             channelPendingLink: updated.channelPendingLink ?? null,
             channelRequestedAt: updated.channelRequestedAt ?? null,

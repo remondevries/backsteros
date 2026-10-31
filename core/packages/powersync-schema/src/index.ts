@@ -39,6 +39,7 @@ const projects = new Table(
     lead_agent_contact_id: column.text,
     channel: column.text,
     channel_status: column.text,
+    channel_stage: column.text,
     channel_pending_link: column.text,
     channel_requested_at: column.text,
     local_location: column.text,

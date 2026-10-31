@@ -108,6 +108,50 @@ Desktop replaces the card via SSE. Progress PATCHes do **not** fire `agent.chat.
 
 Full shapes: `docs/04-api-and-sync.md` (Shell agent chat webhooks).
 
+## Channel Connect (project Locations → Channel)
+
+See **[CHANNEL-CONNECT.md](./CHANNEL-CONNECT.md)** for the agent routine.
+
+Owner clicks **Connect** on a project → core fires `project.channel.connect`
+(lead-agent webhook). Agents finish the room via `PATCH /api/v1/projects/:id`
+(scopes: `projects:write`). Full lifecycle: `docs/04-api-and-sync.md`
+(Channel Connect).
+
+While `channelStatus` is `connecting`, report progress with `channelStage`
+(desktop shows the stage label with the same live status shine as progress
+cards; falls back to **Connecting…** when unset):
+
+```http
+PATCH /api/v1/projects/{id}
+{ "channelStage": "looking_for_room" }
+# then joining_room OR creating_room → adding_users → finishing
+```
+
+| `channelStage` | When |
+| --- | --- |
+| `looking_for_room` | Searching for an existing room |
+| `joining_room` | Joining an existing room |
+| `creating_room` | Creating a new room |
+| `adding_users` | Inviting members |
+| `finishing` | Finalizing before Active |
+
+```http
+# Needs owner input
+PATCH /api/v1/projects/{id}
+{ "channelStatus": "needs_details", "channelPendingLink": "backsteros://chat/<threadId>?message=<msgId>" }
+
+# Done
+PATCH /api/v1/projects/{id}
+{ "channel": { "uri": "grokbot://app/v1/agent?id=<uuid>", "name": "…" }, "channelStatus": "active" }
+
+# Abort
+PATCH /api/v1/projects/{id}
+{ "channelStatus": "inactive", "channel": null }
+```
+
+`channelStage` clears automatically on `active` / `inactive`. Agents cannot set
+`connecting` and cannot call `POST …/channel/connect` (`403`).
+
 ## Agents: start a conversation (OS-146)
 
 Required scopes on the agent persona key: `chat:read` / `chat:write` and/or

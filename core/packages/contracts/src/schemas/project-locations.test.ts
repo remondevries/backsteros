@@ -20,6 +20,8 @@ import {
   projectChannelDisplayName,
   projectChannelPendingLinkSchema,
   projectChannelScheme,
+  projectChannelStageLabel,
+  projectChannelStageSchema,
 } from "./project-locations.js";
 
 describe("project locations", () => {
@@ -131,6 +133,17 @@ describe("project locations", () => {
         branch: null,
       },
     );
+  });
+
+  it("labels Channel Connect stages", () => {
+    assert.equal(
+      projectChannelStageLabel("looking_for_room"),
+      "Looking for room",
+    );
+    assert.equal(projectChannelStageLabel("creating_room"), "Creating room");
+    assert.equal(projectChannelStageLabel(null), null);
+    assert.equal(projectChannelStageSchema.safeParse("finishing").success, true);
+    assert.equal(projectChannelStageSchema.safeParse("bogus").success, false);
   });
 
   it("normalizes Grok Bot Channel objects", () => {

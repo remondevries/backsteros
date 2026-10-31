@@ -42,6 +42,7 @@ describe("lead agent validation (REST + sync)", () => {
     );
     assert.match(sql, /"lead_agent_contact_id"/);
     assert.match(sql, /"channel_status"/);
+    assert.match(sql, /"channel_stage"/);
     assert.match(sql, /"channel_pending_link"/);
     assert.match(sql, /"channel_requested_at"/);
   });

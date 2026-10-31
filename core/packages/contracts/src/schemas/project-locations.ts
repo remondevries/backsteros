@@ -162,6 +162,40 @@ export const PROJECT_CHANNEL_STATUSES = [
 export const projectChannelStatusSchema = z.enum(PROJECT_CHANNEL_STATUSES);
 export type ProjectChannelStatus = z.infer<typeof projectChannelStatusSchema>;
 
+/**
+ * Agent-reported progress while `channelStatus=connecting`.
+ * Use `joining_room` or `creating_room` (not both paths at once).
+ * Cleared when status becomes `active` or `inactive`.
+ */
+export const PROJECT_CHANNEL_STAGES = [
+  "looking_for_room",
+  "joining_room",
+  "creating_room",
+  "adding_users",
+  "finishing",
+] as const;
+export const projectChannelStageSchema = z.enum(PROJECT_CHANNEL_STAGES);
+export type ProjectChannelStage = z.infer<typeof projectChannelStageSchema>;
+
+const CHANNEL_STAGE_LABELS: Record<ProjectChannelStage, string> = {
+  looking_for_room: "Looking for room",
+  joining_room: "Joining room",
+  creating_room: "Creating room",
+  adding_users: "Adding users",
+  finishing: "Finishing",
+};
+
+/** Human label for a Channel Connect stage; null when unset/unknown. */
+export function projectChannelStageLabel(
+  stage: string | null | undefined,
+): string | null {
+  if (!stage) return null;
+  if ((PROJECT_CHANNEL_STAGES as readonly string[]).includes(stage)) {
+    return CHANNEL_STAGE_LABELS[stage as ProjectChannelStage];
+  }
+  return null;
+}
+
 const CHANNEL_PENDING_THREAD_ID_RE = /^[A-Za-z0-9_.:-]{8,128}$/;
 const CHANNEL_PENDING_MESSAGE_ID_RE = /^[A-Za-z0-9_.:-]{1,128}$/;
 
