@@ -29,7 +29,7 @@ import {
 
 import { DesktopTaskActivityPanel } from "../components/desktop-task-activity-panel";
 import { DesktopTaskLayout } from "../components/desktop-task-layout";
-import { TaskShellTerminal } from "../components/task-shell-terminal";
+import { TaskShellWorkspace } from "../components/task-shell-workspace";
 import { resolveTaskShellCwd } from "../lib/task-shell-cwd";
 import { navigateToHref } from "../router/navigate-href";
 import { useDesktopSectionBreadcrumb } from "../lib/use-desktop-breadcrumb";
@@ -674,7 +674,7 @@ function InboxPageBody() {
             canLinkCommits={canLinkCommit}
             terminalTabVisible
             terminalPane={
-              <TaskShellTerminal
+              <TaskShellWorkspace
                 key={`${selectedTask.id}-${terminalSessionKey}`}
                 active={
                   !collapsed &&
@@ -684,16 +684,6 @@ function InboxPageBody() {
                 cwd={shellCwd ?? workingDirectory}
               />
             }
-            onCloseTerminal={() => {
-              setTerminalSessionKey((n) => n + 1);
-              const nextCommit =
-                linkedCommitShas[linkedCommitShas.length - 1] ?? null;
-              if (nextCommit) {
-                setActiveSideSurfaceId(nextCommit);
-              } else {
-                hide();
-              }
-            }}
             onLinkCommit={async (sha) => {
               const next = [
                 ...linkedCommitShas.filter(

@@ -2314,6 +2314,25 @@ button.entity-overview-subgroup__header:focus-visible {
   display: none;
 }
 
+/** Side-by-side property columns (e.g. Development | Production). */
+.entity-overview-field-pair {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px 16px;
+  min-width: 0;
+  align-items: start;
+}
+
+.entity-overview-field-pair > .entity-overview-field {
+  min-width: 0;
+}
+
+@media (max-width: 720px) {
+  .entity-overview-field-pair {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 .entity-overview-field {
   display: flex;
   min-width: 0;

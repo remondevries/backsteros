@@ -349,7 +349,7 @@ export function ProjectPropertiesInlineChips({
             panelAlign="start"
           />
         ) : null}
-        {onProviderChange || projectProvider ? (
+        {projectType === "domeinname" ? (
           <PropertyDropdown
             value={projectProvider ?? "__none__"}
             options={providerOptions}

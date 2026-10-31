@@ -144,7 +144,7 @@ export type ProjectDetailViewProps = {
   overviewDescription?: ReactNode;
   /** Type-specific property rows in the right rail (Codebase, Registration…). */
   propertiesExtra?: ReactNode;
-  /** Lead agent + Channel — Agents section under Financials. */
+  /** Lead agent + Channel — Agents subgroup under Financials. */
   agentsExtra?: ReactNode;
   /** Sections below Progress (Activity, domain registrar, …). */
   belowProperties?: ReactNode;
@@ -350,23 +350,28 @@ export function ProjectDetailView({
                         void onSaveSummary?.(summary.trim());
                       }}
                     />
-                    <ProjectPropertiesInlineChips
-                      project={project}
-                      nestedAreas={nestedAreas}
-                      onStatusChange={onStatusChange}
-                      onPriorityChange={onPriorityChange}
-                      onProviderChange={onProviderChange}
-                      onCategoryChange={onCategoryChange}
-                      onAreaChange={onAreaChange}
-                      onAreaIdChange={onAreaIdChange}
-                      onOrganizationChange={onOrganizationChange}
-                      onStartDateChange={onStartDateChange}
-                      onDueDateChange={onDueDateChange}
-                      organizationOptions={organizationOptions}
-                      onCreateOrganizationFromQuery={
-                        onCreateOrganizationFromQuery
-                      }
-                    />
+                    <div className="project-detail__properties-row">
+                      <span className="project-detail__properties-row-label">
+                        Properties
+                      </span>
+                      <ProjectPropertiesInlineChips
+                        project={project}
+                        nestedAreas={nestedAreas}
+                        onStatusChange={onStatusChange}
+                        onPriorityChange={onPriorityChange}
+                        onProviderChange={onProviderChange}
+                        onCategoryChange={onCategoryChange}
+                        onAreaChange={onAreaChange}
+                        onAreaIdChange={onAreaIdChange}
+                        onOrganizationChange={onOrganizationChange}
+                        onStartDateChange={onStartDateChange}
+                        onDueDateChange={onDueDateChange}
+                        organizationOptions={organizationOptions}
+                        onCreateOrganizationFromQuery={
+                          onCreateOrganizationFromQuery
+                        }
+                      />
+                    </div>
                   </header>
 
                   {latestUpdate ? (

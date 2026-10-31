@@ -255,7 +255,10 @@ export function TaskDueDateDropdown({
           fallbackIcon={dueDateIcon}
           fallbackLabel={displayLabel}
           selectedDisplayLabel={displayLabel}
+          // Empty dates still select the clear/"none" option, so mute via
+          // mutedSelected — mutedFallback only applies when nothing is selected.
           mutedFallback={!hasDueDate}
+          mutedSelected={!hasDueDate}
           triggerVariant={triggerVariant}
           onQuerySubmit={handleQuerySubmit}
           queryPreviewLabel={handleQueryPreview}

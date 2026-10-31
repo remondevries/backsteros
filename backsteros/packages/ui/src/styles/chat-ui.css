@@ -2617,8 +2617,8 @@
 .chat-ui-email-draft-card__result-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 10px;
+  justify-content: flex-end;
+  gap: 8px;
   width: 100%;
 }
 
@@ -2626,7 +2626,6 @@
   display: inline-flex;
   flex-shrink: 0;
   align-items: center;
-  margin-left: auto;
   padding: 4px 10px;
   border-radius: 999px;
   font-size: 0.75rem;

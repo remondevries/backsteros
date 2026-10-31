@@ -107,14 +107,10 @@ export type TaskLinkedCommitSectionProps = {
    * Ignored when already at the link cap.
    */
   openPickerRequest?: number;
-  /**
-   * When set, show a Terminal tab before commit chips. Closing that tab (X)
-   * calls `onCloseTerminal` and should kill the shell session.
-   */
+  /** When set, show a durable Terminal tab before commit chips (not closable). */
   terminalPane?: ReactNode;
   /** When false, hide the Terminal tab entirely. Default true if `terminalPane` set. */
   terminalTabVisible?: boolean;
-  onCloseTerminal?: () => void;
   /** Allow linking commits (GitHub-backed). Default true. */
   canLinkCommits?: boolean;
 };
@@ -139,7 +135,6 @@ export function TaskLinkedCommitSection({
   openPickerRequest = 0,
   terminalPane = null,
   terminalTabVisible,
-  onCloseTerminal,
   canLinkCommits = true,
 }: TaskLinkedCommitSectionProps) {
   const shas = normalizeShaList(linkedCommitShas);
@@ -419,7 +414,10 @@ export function TaskLinkedCommitSection({
             aria-label="Terminal and linked commits"
           >
             {showTerminalTab ? (
-              <div
+              <button
+                type="button"
+                role="tab"
+                aria-selected={terminalActive}
                 className={[
                   "task-linked-commit__sha-chip",
                   "task-linked-commit__sha-chip--terminal",
@@ -427,33 +425,11 @@ export function TaskLinkedCommitSection({
                 ]
                   .filter(Boolean)
                   .join(" ")}
+                title="Terminal"
+                onClick={() => setActiveSurface(TASK_SIDE_PANEL_TERMINAL_ID)}
               >
-                {onCloseTerminal ? (
-                  <button
-                    type="button"
-                    className="task-linked-commit__sha-chip-remove"
-                    title="Close terminal"
-                    aria-label="Close terminal"
-                    onClick={(event) => {
-                      event.preventDefault();
-                      event.stopPropagation();
-                      onCloseTerminal();
-                    }}
-                  >
-                    <XIcon size={10} />
-                  </button>
-                ) : null}
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={terminalActive}
-                  className="task-linked-commit__sha-chip-select"
-                  title="Terminal"
-                  onClick={() => setActiveSurface(TASK_SIDE_PANEL_TERMINAL_ID)}
-                >
-                  Terminal
-                </button>
-              </div>
+                Terminal
+              </button>
             ) : null}
             {shas.map((sha) => {
               const selected =

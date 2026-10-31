@@ -46,6 +46,7 @@ import { EntityPropertiesSection } from "../entity/entity-properties-section.js"
 import { PropertyFieldGroup } from "../content/property-field-group.js";
 import { PropertyDropdown } from "../dropdowns/property-dropdown.js";
 import { PropertyDropdownNavigateRow } from "../dropdowns/property-dropdown-navigate-row.js";
+import { EntityOverviewSubgroup } from "../shared/entity-overview-subgroup.js";
 import { ProjectKeyEditor } from "./project-key-editor.js";
 import { ProjectProgressRing } from "./project-progress-ring.js";
 import { ProjectStatusIcon } from "./project-status-icon.js";
@@ -94,12 +95,13 @@ export type ProjectPropertiesDisplayProps = {
   organizationNavigateHref?: string | null;
   onCreateOrganizationFromQuery?: (query: string) => void;
   /**
-   * Type-specific property rows (e.g. Codebase section) rendered after
+   * Type-specific property rows (e.g. codebase Codebase section) rendered after
    * the shared Properties / Areas / Financials stack.
    */
   propertiesExtra?: ReactNode;
   /**
-   * Lead agent + Channel. Rendered as an Agents section after Financials.
+   * Lead agent + Channel. Rendered as an Agents subgroup after Financials
+   * inside the Properties card.
    */
   agentsExtra?: ReactNode;
   /** Recent activity / registrar extras below Progress. */
@@ -308,58 +310,62 @@ export function ProjectPropertiesDisplay({
               </span>
             </div>
           )}
-          <PropertyFieldGroup label="Status">
-            <PropertyDropdown
-              value={status}
-              options={statusOptions}
-              onChange={onStatusChange}
-              searchPlaceholder="Change status…"
-              searchShortcutLabel="S"
-              ariaLabel="Status"
-              taskPropertyDropdownId="status"
-              fallbackIcon={<ProjectStatusIcon status={status} size={14} />}
-              fallbackLabel={getProjectStatusLabel(status)}
-            />
-          </PropertyFieldGroup>
-          <PropertyFieldGroup label="Priority">
-            <PropertyDropdown
-              value={String(project.priority)}
-              options={priorityOptions}
-              onChange={(next) => onPriorityChange?.(Number(next))}
-              searchPlaceholder="Change priority…"
-              searchShortcutLabel="P"
-              ariaLabel="Priority"
-              taskPropertyDropdownId="priority"
-              fallbackIcon={
-                <TaskPriorityIcon priority={project.priority} size={14} />
-              }
-              fallbackLabel={getTaskPriorityLabel(project.priority)}
-            />
-          </PropertyFieldGroup>
-          <PropertyFieldGroup label="Provider">
-            <PropertyDropdown
-              value={projectProvider ?? "__none__"}
-              options={providerOptions}
-              onChange={(next) =>
-                onProviderChange?.(
-                  next === "__none__" ? null : (next as ProjectProvider),
-                )
-              }
-              searchPlaceholder="Change provider…"
-              ariaLabel="Provider"
-              fallbackIcon={
-                projectProvider === "transip" ? (
-                  <TransipIcon size={14} />
-                ) : null
-              }
-              fallbackLabel={
-                projectProvider
-                  ? getProjectProviderLabel(projectProvider)
-                  : "No provider"
-              }
-              mutedFallback={!projectProvider}
-            />
-          </PropertyFieldGroup>
+          <div className="project-properties-field-row">
+            <PropertyFieldGroup label="Status">
+              <PropertyDropdown
+                value={status}
+                options={statusOptions}
+                onChange={onStatusChange}
+                searchPlaceholder="Change status…"
+                searchShortcutLabel="S"
+                ariaLabel="Status"
+                taskPropertyDropdownId="status"
+                fallbackIcon={<ProjectStatusIcon status={status} size={14} />}
+                fallbackLabel={getProjectStatusLabel(status)}
+              />
+            </PropertyFieldGroup>
+            <PropertyFieldGroup label="Priority">
+              <PropertyDropdown
+                value={String(project.priority)}
+                options={priorityOptions}
+                onChange={(next) => onPriorityChange?.(Number(next))}
+                searchPlaceholder="Change priority…"
+                searchShortcutLabel="P"
+                ariaLabel="Priority"
+                taskPropertyDropdownId="priority"
+                fallbackIcon={
+                  <TaskPriorityIcon priority={project.priority} size={14} />
+                }
+                fallbackLabel={getTaskPriorityLabel(project.priority)}
+              />
+            </PropertyFieldGroup>
+          </div>
+          {projectType === "domeinname" ? (
+            <PropertyFieldGroup label="Provider">
+              <PropertyDropdown
+                value={projectProvider ?? "__none__"}
+                options={providerOptions}
+                onChange={(next) =>
+                  onProviderChange?.(
+                    next === "__none__" ? null : (next as ProjectProvider),
+                  )
+                }
+                searchPlaceholder="Change provider…"
+                ariaLabel="Provider"
+                fallbackIcon={
+                  projectProvider === "transip" ? (
+                    <TransipIcon size={14} />
+                  ) : null
+                }
+                fallbackLabel={
+                  projectProvider
+                    ? getProjectProviderLabel(projectProvider)
+                    : "No provider"
+                }
+                mutedFallback={!projectProvider}
+              />
+            </PropertyFieldGroup>
+          ) : null}
           {projectType === "email" ? (
             <PropertyFieldGroup label="Category">
               <PropertyDropdown
@@ -380,42 +386,6 @@ export function ProjectPropertiesDisplay({
                 }
                 mutedFallback={!projectCategory}
               />
-            </PropertyFieldGroup>
-          ) : null}
-          {organizationOptions.length > 0 || onOrganizationChange ? (
-            <PropertyFieldGroup label="Organization">
-              <PropertyDropdownNavigateRow
-                navigateHref={
-                  project.organizationId ? organizationNavigateHref : null
-                }
-                navigateLabel={
-                  project.organizationId
-                    ? `Open organization ${organizationLabel}`
-                    : undefined
-                }
-              >
-                <PropertyDropdown
-                  value={project.organizationId ?? "__none__"}
-                  options={orgOptions}
-                  onChange={(next) =>
-                    onOrganizationChange?.(next === "__none__" ? null : next)
-                  }
-                  searchPlaceholder="Change organization…"
-                  searchShortcutLabel="O"
-                  ariaLabel="Organization"
-                  taskPropertyDropdownId="organization"
-                  fallbackIcon={<OrganizationIcon size={14} />}
-                  fallbackLabel={organizationLabel}
-                  mutedFallback={!project.organizationId}
-                  createFromQueryLabel={
-                    onCreateOrganizationFromQuery
-                      ? (query) =>
-                          getCreateEntityFromQueryLabel("organization", query)
-                      : undefined
-                  }
-                  onCreateFromQuery={onCreateOrganizationFromQuery}
-                />
-              </PropertyDropdownNavigateRow>
             </PropertyFieldGroup>
           ) : null}
           <PropertyFieldGroup label="Dates">
@@ -453,79 +423,119 @@ export function ProjectPropertiesDisplay({
               />
             </span>
           </PropertyFieldGroup>
-        </EntityPropertiesSection>
-
-        <EntityPropertiesSection title="Areas">
-          <span className="project-detail__area-fields">
-            <PropertyDropdown
-              value={project.area ?? "__none__"}
-              options={areaOptions}
-              onChange={(next) => {
-                onAreaChange?.(
-                  next === "__none__" ? null : (next as ProjectArea),
-                );
-                onAreaIdChange?.(null);
-              }}
-              searchPlaceholder="Change area…"
-              searchShortcutLabel="⇧A"
-              ariaLabel="Area"
-              taskPropertyDropdownId="area"
-              fallbackIcon={null}
-              fallbackLabel={
-                project.area ? PROJECT_AREA_LABELS[project.area] : "No area"
-              }
-              mutedFallback={!project.area}
-            />
-            {subAreasForParent.length > 0 ? (
-              <>
-                <span className="project-detail__area-sep" aria-hidden="true">
-                  /
-                </span>
-                <PropertyDropdown
-                  value={project.areaId ?? "__none__"}
-                  options={subAreaOptions}
-                  onChange={(next) =>
-                    onAreaIdChange?.(next === "__none__" ? null : next)
+          <div className="project-properties-field-row">
+            {organizationOptions.length > 0 || onOrganizationChange ? (
+              <PropertyFieldGroup label="Organization">
+                <PropertyDropdownNavigateRow
+                  navigateHref={
+                    project.organizationId ? organizationNavigateHref : null
                   }
-                  searchPlaceholder="Change sub-area…"
-                  ariaLabel="Sub-area"
-                  taskPropertyDropdownId="areaId"
-                  fallbackIcon={null}
-                  fallbackLabel={selectedSubArea?.name ?? "No sub-area"}
-                  mutedFallback={!selectedSubArea}
-                />
-              </>
+                  navigateLabel={
+                    project.organizationId
+                      ? `Open organization ${organizationLabel}`
+                      : undefined
+                  }
+                >
+                  <PropertyDropdown
+                    value={project.organizationId ?? "__none__"}
+                    options={orgOptions}
+                    onChange={(next) =>
+                      onOrganizationChange?.(next === "__none__" ? null : next)
+                    }
+                    searchPlaceholder="Change organization…"
+                    searchShortcutLabel="O"
+                    ariaLabel="Organization"
+                    taskPropertyDropdownId="organization"
+                    fallbackIcon={<OrganizationIcon size={14} />}
+                    fallbackLabel={organizationLabel}
+                    mutedFallback={!project.organizationId}
+                    createFromQueryLabel={
+                      onCreateOrganizationFromQuery
+                        ? (query) =>
+                            getCreateEntityFromQueryLabel("organization", query)
+                        : undefined
+                    }
+                    onCreateFromQuery={onCreateOrganizationFromQuery}
+                  />
+                </PropertyDropdownNavigateRow>
+              </PropertyFieldGroup>
             ) : null}
-          </span>
+            <PropertyFieldGroup label="Area">
+              <span className="project-detail__area-fields">
+                <PropertyDropdown
+                  value={project.area ?? "__none__"}
+                  options={areaOptions}
+                  onChange={(next) => {
+                    onAreaChange?.(
+                      next === "__none__" ? null : (next as ProjectArea),
+                    );
+                    onAreaIdChange?.(null);
+                  }}
+                  searchPlaceholder="Change area…"
+                  searchShortcutLabel="⇧A"
+                  ariaLabel="Area"
+                  taskPropertyDropdownId="area"
+                  fallbackIcon={null}
+                  fallbackLabel={
+                    project.area ? PROJECT_AREA_LABELS[project.area] : "No area"
+                  }
+                  mutedFallback={!project.area}
+                />
+                {subAreasForParent.length > 0 ? (
+                  <>
+                    <span
+                      className="project-detail__area-sep"
+                      aria-hidden="true"
+                    >
+                      /
+                    </span>
+                    <PropertyDropdown
+                      value={project.areaId ?? "__none__"}
+                      options={subAreaOptions}
+                      onChange={(next) =>
+                        onAreaIdChange?.(next === "__none__" ? null : next)
+                      }
+                      searchPlaceholder="Change sub-area…"
+                      ariaLabel="Sub-area"
+                      taskPropertyDropdownId="areaId"
+                      fallbackIcon={null}
+                      fallbackLabel={selectedSubArea?.name ?? "No sub-area"}
+                      mutedFallback={!selectedSubArea}
+                    />
+                  </>
+                ) : null}
+              </span>
+            </PropertyFieldGroup>
+          </div>
+          {showBilling ? (
+            <EntityOverviewSubgroup title="Financials" collapsible={false}>
+              <div className="project-properties-field-row">
+                <PropertyFieldGroup label="Hourly">
+                  <ProjectHourlyRateEditor
+                    value={project.hourlyRateCents ?? null}
+                    disabled={!onHourlyRateChange}
+                    variant="chip"
+                    onSave={(next) => onHourlyRateChange?.(next)}
+                  />
+                </PropertyFieldGroup>
+                <PropertyFieldGroup label="Weekly">
+                  <ProjectBudgetsEditor
+                    budgets={project.budgets ?? []}
+                    disabled={!onBudgetsChange}
+                    variant="chip"
+                    chipPeriod="weekly"
+                    onSave={(next) => onBudgetsChange?.(next)}
+                  />
+                </PropertyFieldGroup>
+              </div>
+            </EntityOverviewSubgroup>
+          ) : null}
+          {agentsExtra ? (
+            <EntityOverviewSubgroup title="Agents" collapsible={false}>
+              {agentsExtra}
+            </EntityOverviewSubgroup>
+          ) : null}
         </EntityPropertiesSection>
-
-        {showBilling ? (
-          <EntityPropertiesSection title="Financials">
-            <PropertyFieldGroup label="Hourly">
-              <ProjectHourlyRateEditor
-                value={project.hourlyRateCents ?? null}
-                disabled={!onHourlyRateChange}
-                variant="chip"
-                onSave={(next) => onHourlyRateChange?.(next)}
-              />
-            </PropertyFieldGroup>
-            <PropertyFieldGroup label="Weekly">
-              <ProjectBudgetsEditor
-                budgets={project.budgets ?? []}
-                disabled={!onBudgetsChange}
-                variant="chip"
-                chipPeriod="weekly"
-                onSave={(next) => onBudgetsChange?.(next)}
-              />
-            </PropertyFieldGroup>
-          </EntityPropertiesSection>
-        ) : null}
-
-        {agentsExtra ? (
-          <EntityPropertiesSection title="Agents">
-            {agentsExtra}
-          </EntityPropertiesSection>
-        ) : null}
 
         {propertiesExtra}
 

@@ -89,10 +89,10 @@ export function TaskShellTerminal({
         fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
         scrollback: 5_000,
         theme: {
-          background: "#0f1115",
+          background: "#0A0A0A",
           foreground: "#e8e8e8",
           cursor: "#e8e8e8",
-          cursorAccent: "#0f1115",
+          cursorAccent: "#0A0A0A",
         },
       });
       fit = new FitAddon();

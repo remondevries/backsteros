@@ -41,7 +41,7 @@ import {
   type TaskSpellcheckAppliedPayload,
 } from "../components/desktop-task-activity-panel";
 import { DesktopTaskLayout } from "../components/desktop-task-layout";
-import { TaskShellTerminal } from "../components/task-shell-terminal";
+import { TaskShellWorkspace } from "../components/task-shell-workspace";
 import { resolveTaskShellCwd } from "../lib/task-shell-cwd";
 import { navigateToHref } from "../router/navigate-href";
 import {
@@ -1118,7 +1118,7 @@ export function TaskDetailPage({
             canLinkCommits={canLinkCommit}
             terminalTabVisible
             terminalPane={
-              <TaskShellTerminal
+              <TaskShellWorkspace
                 key={`${task.id}-${terminalSessionKey}`}
                 active={
                   !collapsed &&
@@ -1128,17 +1128,6 @@ export function TaskDetailPage({
                 cwd={shellCwd ?? workingDirectory}
               />
             }
-            onCloseTerminal={() => {
-              // Kill the live PTY; collapse when no commit tab remains.
-              setTerminalSessionKey((n) => n + 1);
-              const nextCommit =
-                linkedCommitShas[linkedCommitShas.length - 1] ?? null;
-              if (nextCommit) {
-                setActiveSideSurfaceId(nextCommit);
-              } else {
-                hide();
-              }
-            }}
             onLinkCommit={async (sha) => {
               const next = [
                 ...linkedCommitShas.filter(

@@ -647,7 +647,11 @@ export function ProjectPanelDetailView({
                   {organizationControl}
                 </EntityOverviewField>
               ) : null}
-              <EntityOverviewField label="Provider">{providerControl}</EntityOverviewField>
+              {projectType === "domeinname" ? (
+                <EntityOverviewField label="Provider">
+                  {providerControl}
+                </EntityOverviewField>
+              ) : null}
               {categoryControl ? (
                 <EntityOverviewField label="Category">
                   {categoryControl}
