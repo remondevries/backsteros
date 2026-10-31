@@ -146,11 +146,15 @@ test("email draft card: mock send, discard, owner-only, one-shot 409", async (co
       composeSessionId: `session_mock_${createCalls}`,
     };
   };
-  defaultChatEmailDraftDeps.updateMessagesDraft = async (input) => ({
-    draftId: input.draftId,
-    inboxId: input.inboxId,
-    composeSessionId: input.composeSessionId,
-  });
+  const updateWrapCalls: boolean[] = [];
+  defaultChatEmailDraftDeps.updateMessagesDraft = async (input) => {
+    updateWrapCalls.push(input.wrap === true);
+    return {
+      draftId: input.draftId,
+      inboxId: input.inboxId,
+      composeSessionId: input.composeSessionId,
+    };
+  };
   defaultChatEmailDraftDeps.deleteMessagesDraft = async () => {
     deleteCalls += 1;
   };
@@ -314,6 +318,11 @@ test("email draft card: mock send, discard, owner-only, one-shot 409", async (co
   );
   assert.equal(sent.status, 201, JSON.stringify(sent.body));
   assert.equal(sendCalls, 1);
+  // Send must wrap the Messages draft (greeting + footer) before transmit.
+  assert.ok(
+    updateWrapCalls.includes(true),
+    `expected wrap:true before send, got ${JSON.stringify(updateWrapCalls)}`,
+  );
   assert.equal(
     (sent.body?.message as { emailDraftResult?: { action: string } })
       ?.emailDraftResult?.action,

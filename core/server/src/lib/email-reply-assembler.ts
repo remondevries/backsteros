@@ -1141,9 +1141,30 @@ function signOffOpenerLines(options?: {
 }
 
 /**
- * True when AgentMail already stores greeting/sign-off (or HTML).
+ * Body-only compose (`wrap:false`) used to store HTML with an empty greeting
+ * and empty sign-off cell plus an avatar CID. That HTML must NOT count as a
+ * stored shell — otherwise send skips reassembly and the recipient gets no
+ * "Aan …," / footer text (live remon@lemo-design.nl → email@remondevries.com).
+ */
+export function htmlLooksLikeEmptyComposeShell(html: string): boolean {
+  const trimmed = html.trim();
+  if (!trimmed) return false;
+  const emptySignOffCell =
+    /<td\b[^>]*style="[^"]*font-size:14px[^"]*"[^>]*>\s*<\/td>/i.test(trimmed) ||
+    /<td\b[^>]*style="[^"]*color:#444444[^"]*"[^>]*>\s*<\/td>/i.test(trimmed);
+  const emptySignOffDiv =
+    /<div\b[^>]*style="[^"]*color:#444444[^"]*"[^>]*>\s*<\/div>/i.test(trimmed);
+  if (!emptySignOffCell && !emptySignOffDiv) return false;
+  // assembleEmailHtml with empty greeting starts with the wrapper then two <br>s.
+  return /^<div\b[^>]*>\s*(?:<br\s*\/?>\s*){2}/i.test(trimmed);
+}
+
+/**
+ * True when AgentMail already stores greeting/sign-off (or real shelled HTML).
  * Send must use those stored bytes and must not reassemble.
- * Empty text + non-empty HTML counts as shelled (HTML-only drafts).
+ * Empty text + non-empty HTML counts as shelled (HTML-only drafts), except the
+ * empty wrap:false shell (avatar footer, blank greeting/sign-off) which must
+ * reassemble.
  * An empty/blank signOffName never matches via substring.
  * A name line that follows a sign-off opener anywhere in the body counts
  * (trailing P.S. / title lines after the name are OK).
@@ -1159,7 +1180,7 @@ export function draftHasStoredShell(
 ): boolean {
   const storedText = (text ?? "").replace(/\r\n/g, "\n").trim();
   const storedHtml = (html ?? "").trim();
-  if (storedHtml) return true;
+  if (storedHtml && !htmlLooksLikeEmptyComposeShell(storedHtml)) return true;
   if (!storedText) return false;
   const name = signOffName.trim();
   if (!name) return false;
@@ -1301,11 +1322,13 @@ export function assembleEmailHtml(
   const signOffHtml = escapeEmailHtml(assembled.signOff).replace(/\n/g, "<br>\n");
   const cid = options?.signOffAvatarCid?.trim() || null;
 
+  // border-radius is a bonus for clients that honor it; the CID attachment is a
+  // pre-cropped circular PNG so Outlook / webmail still show a round avatar.
   const footer = cid
     ? `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin-top:4px;border-collapse:collapse">
   <tr>
     <td style="vertical-align:middle;padding-right:16px">
-      <img src="cid:${cid}" width="96" height="96" alt="" style="display:block;border:1px solid #dddddd;border-radius:9999px;width:96px;height:96px;object-fit:cover" />
+      <img src="cid:${cid}" width="96" height="96" alt="" style="display:block;border:0;border-radius:9999px;width:96px;height:96px" />
     </td>
     <td style="vertical-align:middle;font-size:14px;line-height:1.55;color:#444444">${signOffHtml}</td>
   </tr>

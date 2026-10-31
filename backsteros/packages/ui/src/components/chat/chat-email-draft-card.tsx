@@ -357,25 +357,26 @@ export function ChatEmailDraftCard({ part }: { part: ChatUiCardPart }) {
   const result = data.result;
   const displayTo = result?.finalTo ?? data.to;
   const displaySubject = result?.finalSubject ?? (subject || data.subject);
-  // After send, result.finalBody is the composed letter; while open, body is core-only.
-  const showShell = !result;
+  // Keep greeting + sign-off (with avatar) after send/discard — only the
+  // actions row flips to the Sent/Discarded badge. Strip shell from
+  // composed finalBody so we do not double-render greeting/sign-off.
+  const shellParts = {
+    greeting: letterShell.greeting,
+    signOff: letterShell.signOff,
+  };
   const previewCoreBody = body.trim()
     ? body
-    : stripEmailDraftShell(data.body, {
-        greeting: letterShell.greeting,
-        signOff: letterShell.signOff,
-      });
-  const lockedDisplayBody = result?.finalBody ?? data.body;
-  const bodyForLength = showShell ? previewCoreBody : lockedDisplayBody;
-  const longBody = bodyForLength.length > BODY_COLLAPSE_CHARS;
+    : stripEmailDraftShell(data.body, shellParts);
+  const lockedCoreBody = stripEmailDraftShell(
+    result?.finalBody ?? data.body,
+    shellParts,
+  );
+  const coreBody = result ? lockedCoreBody : previewCoreBody;
+  const longBody = coreBody.length > BODY_COLLAPSE_CHARS;
   const shownBody =
-    showShell
-      ? !expanded && longBody && !editing
-        ? `${previewCoreBody.slice(0, BODY_COLLAPSE_CHARS).trimEnd()}…`
-        : previewCoreBody
-      : !expanded && longBody
-        ? `${lockedDisplayBody.slice(0, BODY_COLLAPSE_CHARS).trimEnd()}…`
-        : lockedDisplayBody;
+    !expanded && longBody && !editing
+      ? `${coreBody.slice(0, BODY_COLLAPSE_CHARS).trimEnd()}…`
+      : coreBody;
 
   const fromFallbackLabel = data.from
     ? data.from.displayName?.trim()
@@ -388,6 +389,10 @@ export function ChatEmailDraftCard({ part }: { part: ChatUiCardPart }) {
     : null;
 
   const canPickFrom = !locked && mailboxes.length > 0;
+  const selectedFromOption = selectedInboxId
+    ? (inboxOptions.find((option) => option.value === selectedInboxId) ?? null)
+    : null;
+  const fromChipIcon = selectedFromOption?.icon ?? null;
 
   return (
     <div
@@ -438,6 +443,7 @@ export function ChatEmailDraftCard({ part }: { part: ChatUiCardPart }) {
               </div>
             ) : selectedMailboxParts ? (
               <PropertyInlineChip
+                icon={fromChipIcon}
                 label={selectedMailboxParts.primary}
                 secondaryLabel={selectedMailboxParts.secondary}
                 ariaLabel="From"
@@ -504,7 +510,7 @@ export function ChatEmailDraftCard({ part }: { part: ChatUiCardPart }) {
 
       <div className="chat-ui-email-draft-card__body">
         <div className="email-draft-body-compose email-draft-body-compose--letter chat-ui-email-draft-card__letter">
-          {showShell && letterShell.greeting ? (
+          {letterShell.greeting ? (
             <EmailDraftGreetingShell>
               {letterShell.greeting}
             </EmailDraftGreetingShell>
@@ -533,7 +539,7 @@ export function ChatEmailDraftCard({ part }: { part: ChatUiCardPart }) {
               </button>
             ) : null}
           </div>
-          {showShell && letterShell.signOff ? (
+          {letterShell.signOff ? (
             <EmailDraftSignOffShell
               key={selectedInboxId || selectedMailbox?.email || "sign-off"}
               avatarSrc={selectedMailbox?.avatarSrc ?? null}

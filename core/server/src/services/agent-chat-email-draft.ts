@@ -93,7 +93,7 @@ export type ChatEmailDraftDeps = {
     recipientFirstName?: string | null;
     composeSessionId?: string;
   }) => Promise<MessagesDraftHandle>;
-  /** Update an existing Messages draft (body-only storage). */
+  /** Update an existing Messages draft. Default wrap:false (body-only). */
   updateMessagesDraft: (input: {
     workspaceId: string;
     inboxId: string;
@@ -105,6 +105,8 @@ export type ChatEmailDraftDeps = {
     body: string;
     recipientFirstName?: string | null;
     composeSessionId?: string;
+    /** When true, write greeting + footer HTML before send. */
+    wrap?: boolean;
   }) => Promise<MessagesDraftHandle>;
   deleteMessagesDraft: (input: {
     workspaceId: string;
@@ -325,6 +327,7 @@ export async function defaultUpdateMessagesDraft(input: {
   body: string;
   recipientFirstName?: string | null;
   composeSessionId?: string;
+  wrap?: boolean;
 }): Promise<MessagesDraftHandle> {
   // upsert with same composeSessionId updates the existing draft when found.
   const updated = await upsertEmailComposeDraft(
@@ -338,7 +341,7 @@ export async function defaultUpdateMessagesDraft(input: {
       body: input.body,
       recipientFirstName: input.recipientFirstName,
       composeSessionId: input.composeSessionId ?? input.draftId,
-      wrap: false,
+      wrap: input.wrap !== true ? false : true,
     },
   );
   return {
@@ -650,10 +653,28 @@ export async function sendResolvedEmailDraft(
   deps: ChatEmailDraftDeps = defaultChatEmailDraftDeps,
 ): Promise<SendChatEmailDraftResult> {
   const inboxId = draft.from.inboxId;
-  return deps.sendEmail({
+  const firstName = recipientFirstName(draft.to);
+  // Pending chat drafts store body-only (wrap:false). Write the full shell
+  // (greeting + body + footer HTML + circular avatar) immediately before send
+  // so AgentMail transmits what the card preview showed — including contact
+  // first name. sendAgentMailDraft then use_stored or reassemble-safely.
+  const shelled = await deps.updateMessagesDraft({
     workspaceId,
     inboxId,
     draftId: draft.draftId,
+    to: draft.to.map((r) => r.email),
+    cc: draft.cc?.map((r) => r.email),
+    bcc: draft.bcc?.map((r) => r.email),
+    subject: draft.subject,
+    body: draft.body,
+    recipientFirstName: firstName,
+    composeSessionId: draft.composeSessionId,
+    wrap: true,
+  });
+  return deps.sendEmail({
+    workspaceId,
+    inboxId,
+    draftId: shelled.draftId,
     to: draft.to.map((r) => r.email),
     cc: draft.cc?.map((r) => r.email),
     bcc: draft.bcc?.map((r) => r.email),

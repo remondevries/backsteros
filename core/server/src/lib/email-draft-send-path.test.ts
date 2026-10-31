@@ -50,6 +50,12 @@ const TEMPLATES = resolveEmailReplyTemplates({
   signOffName: "Remon",
 });
 
+const TEMPLATES_EN = resolveEmailReplyTemplates({
+  greetingTemplateEn: "Hi {firstName},",
+  signOffTemplateEn: "Sincerely,\n{name}",
+  signOffName: "Remon",
+});
+
 function baseDraft(
   overrides: Partial<AgentMailDraftDetail> = {},
 ): AgentMailDraftDetail {
@@ -104,6 +110,40 @@ describe("email draft send path helpers", () => {
     assert.equal(plan.kind, "use_stored");
     if (plan.kind !== "use_stored") return;
     assert.equal(plan.html, html);
+  });
+
+  it("reassembles wrap:false empty-shell HTML (chat draft live bug)", () => {
+    // Captured from AgentMail for remon@lemo-design.nl → email@remondevries.com
+    // on 21aa271: body-only text + HTML with empty greeting/sign-off + avatar.
+    const bodyOnly =
+      "This is a test email sent from remon@lemo-design.nl via BacksterOS.";
+    const emptyShellHtml = `<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:14px;line-height:1.55;color:#222222"><br />
+<br />
+${bodyOnly}<br />
+<br />
+<table cellpadding="0" cellspacing="0" border="0" style="margin-top:4px;border-collapse:collapse">
+  <tr>
+    <td style="vertical-align:middle;padding-right:16px">
+      <img src="cid:backsteros-signoff-avatar" width="96" height="96" alt="" style="display:block;border:1px solid #dddddd;border-radius:9999px;width:96px;height:96px;object-fit:cover" />
+    </td>
+    <td style="vertical-align:middle;font-size:14px;line-height:1.55;color:#444444"></td>
+  </tr>
+</table></div>`;
+    assert.equal(
+      draftHasStoredShell(bodyOnly, emptyShellHtml, "Remon de Vries, Lemo-Design", {
+        signOffTemplateEn: TEMPLATES.signOffTemplateEn,
+        signOffTemplateNl: TEMPLATES.signOffTemplateNl,
+      }),
+      false,
+    );
+    const plan = planDraftSendBodies({
+      text: bodyOnly,
+      html: emptyShellHtml,
+      signOffName: "Remon de Vries, Lemo-Design",
+      signOffTemplateEn: TEMPLATES.signOffTemplateEn,
+      signOffTemplateNl: TEMPLATES.signOffTemplateNl,
+    });
+    assert.equal(plan.kind, "reassemble");
   });
 
   it("does not treat empty signOffName or bare name mentions as shelled", () => {
@@ -472,6 +512,100 @@ describe("sendAgentMailDraft (mocked AgentMail client)", () => {
       0,
     );
     assert.deepEqual(deleted, ["draft:draft_os48"]);
+  });
+
+  it("reassembles chat wrap:false draft so sent text/html include greeting + footer", async () => {
+    stubLifecycle();
+    mock.method(agentMailDraftLifecycleDeps, "getTemplates", async () => TEMPLATES_EN);
+
+    const bodyOnly =
+      "This is a test email sent from remon@lemo-design.nl via BacksterOS.";
+    const emptyShellHtml = `<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:14px;line-height:1.55;color:#222222"><br />
+<br />
+${bodyOnly}<br />
+<br />
+<table cellpadding="0" cellspacing="0" border="0" style="margin-top:4px;border-collapse:collapse">
+  <tr>
+    <td style="vertical-align:middle;padding-right:16px">
+      <img src="cid:backsteros-signoff-avatar" width="96" height="96" alt="" />
+    </td>
+    <td style="vertical-align:middle;font-size:14px;line-height:1.55;color:#444444"></td>
+  </tr>
+</table></div>`;
+
+    const draft = baseDraft({
+      draftId: "draft_chat_body_only",
+      subject: "Test from remon@lemo-design.nl",
+      text: bodyOnly,
+      html: emptyShellHtml,
+      // Bare role-ish address; reassembly still must add greeting + footer.
+      to: ["ops@example.com"],
+      inReplyTo: null,
+      clientId: "bsh-compose-chat",
+      attachments: [
+        {
+          attachmentId: "att_avatar",
+          filename: "signoff-avatar.jpg",
+          contentType: "image/jpeg",
+          size: 100,
+          contentId: "<backsteros-signoff-avatar>",
+        },
+      ],
+    });
+
+    let sendCalls = 0;
+    const updateBodies: Record<string, unknown>[] = [];
+    mock.method(AgentMailClient.prototype, "getDraft", async () => draft);
+    mock.method(
+      AgentMailClient.prototype,
+      "updateDraft",
+      async (
+        _inboxId: string,
+        _draftId: string,
+        body: Record<string, unknown>,
+      ) => {
+        updateBodies.push(body);
+        return { ...draft, ...body, html: String(body.html ?? ""), text: String(body.text ?? "") };
+      },
+    );
+    mock.method(
+      AgentMailClient.prototype,
+      "sendDraft",
+      async (inboxId: string, draftId: string) => {
+        sendCalls += 1;
+        assert.equal(inboxId, "inbox_1");
+        assert.equal(draftId, "draft_chat_body_only");
+        return {
+          inboxId: "inbox_1",
+          messageId: "msg_chat_sent",
+          threadId: "thread_chat_sent",
+        };
+      },
+    );
+    mock.method(agentMailDraftLifecycleDeps, "deleteThread", async () => true);
+
+    await sendAgentMailDraft("ws_1", "inbox_1", "draft_chat_body_only");
+    assert.equal(sendCalls, 1);
+
+    const shellUpdate = updateBodies.find(
+      (body) => typeof body.text === "string" && typeof body.html === "string",
+    );
+    assert.ok(shellUpdate, "expected updateDraft with reassembled text/html");
+    const text = String(shellUpdate.text);
+    const html = String(shellUpdate.html);
+    assert.match(text, /^(Hi |Hello,)/);
+    assert.match(text, /This is a test email sent from remon@lemo-design\.nl/);
+    assert.match(text, /Sincerely,/);
+    assert.match(text, /Remon/);
+    assert.match(html, /(Hi |Hello,)/);
+    assert.match(html, /This is a test email sent from remon@lemo-design\.nl/);
+    assert.match(html, /Sincerely,/);
+    assert.match(html, /Remon/);
+    // Footer cell must not be empty after reassembly.
+    assert.doesNotMatch(
+      html,
+      /<td style="vertical-align:middle;font-size:14px;line-height:1\.55;color:#444444"><\/td>/,
+    );
   });
 
   it("rejects a lossy rebuild and never calls sendDraft", async () => {

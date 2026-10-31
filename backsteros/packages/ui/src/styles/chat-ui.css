@@ -2424,6 +2424,35 @@
   line-height: 1.35;
 }
 
+/* After Send/Discard — headers are read-only; drop chip chrome so From/To/Cc
+   match Subject (avatar on From stays). */
+.chat-ui-email-draft-card.is-answered .chat-ui-email-draft-card__chip,
+.chat-ui-email-draft-card.is-answered
+  .chat-ui-email-draft-card__from
+  .property-dropdown-trigger--inline-chip {
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  font-size: 0.8125rem;
+  line-height: 1.4;
+}
+
+.chat-ui-email-draft-card.is-answered
+  .chat-ui-email-draft-card__from
+  .property-dropdown-trigger--inline-chip:hover:not(:disabled) {
+  background: transparent;
+}
+
+.chat-ui-email-draft-card.is-answered
+  .chat-ui-email-draft-card__from
+  .property-dropdown-trigger--inline-chip
+  .property-dropdown-trigger__label {
+  font-size: 0.8125rem;
+  font-weight: inherit;
+  line-height: 1.4;
+}
+
 .chat-ui-email-draft-card__letter {
   gap: 10px;
 }

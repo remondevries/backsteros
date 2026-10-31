@@ -39,6 +39,7 @@ import {
   resolveEditableDraftBody,
   resolveReplyPartyFromMessage,
 } from "../../lib/email-reply-assembler.js";
+import { renderCircularSignOffAvatarPng } from "../../lib/email-signoff-avatar.js";
 import {
   AgentMailApiError,
   AgentMailClient,
@@ -75,32 +76,63 @@ async function resolveSignOffAvatarAttachment(
   if (!contactId) return null;
   const avatar = await getAvatar(workspaceId, "contact", contactId);
   if (!avatar?.bytes?.length) return null;
-  const contentType = avatar.row.contentType?.trim() || "image/png";
-  const extension = contentType.includes("jpeg")
-    ? "jpg"
-    : contentType.includes("webp")
-      ? "webp"
-      : contentType.includes("gif")
-        ? "gif"
-        : "png";
+  // Pre-crop to a circular PNG — CSS border-radius is ignored by Outlook/etc.
+  let pngBytes: Uint8Array;
+  try {
+    pngBytes = await renderCircularSignOffAvatarPng(avatar.bytes);
+  } catch {
+    return null;
+  }
   return {
-    filename: `signoff-avatar.${extension}`,
-    content_type: contentType,
+    filename: "signoff-avatar.png",
+    content_type: "image/png",
     content_disposition: "inline",
     content_id: EMAIL_SIGN_OFF_AVATAR_CID,
-    content: Buffer.from(avatar.bytes).toString("base64"),
+    content: Buffer.from(pngBytes).toString("base64"),
   };
 }
 
+/**
+ * Body-only (`wrap:false`) drafts store text only — no HTML and no avatar.
+ * Shelled HTML with empty greeting/sign-off would make send treat the draft as
+ * already assembled and skip reassembly.
+ */
 function buildAssembledDraftBodies(
   assembled: AssembledReplyEmail | AssembledComposeEmail,
   avatar: SignOffAvatarInlineAttachment | null,
-): { text: string; html: string } {
+): { text: string; html: string | null; attachAvatar: boolean } {
+  const hasShell = Boolean(
+    assembled.greeting?.trim() || assembled.signOff?.trim(),
+  );
+  if (!hasShell) {
+    return { text: assembled.text, html: null, attachAvatar: false };
+  }
   return {
     text: assembled.text,
     html: assembleEmailHtml(assembled, {
       signOffAvatarCid: avatar?.content_id ?? null,
     }),
+    attachAvatar: Boolean(avatar),
+  };
+}
+
+/** AgentMail create/update fields for assembled text/html (+ optional avatar). */
+function draftBodyPayload(
+  bodies: { text: string; html: string | null; attachAvatar: boolean },
+  avatar: SignOffAvatarInlineAttachment | null,
+  existing: AgentMailDraftDetail | null = null,
+): {
+  text: string;
+  html?: string;
+  add_attachments?: SignOffAvatarInlineAttachment[];
+  remove_attachments?: string[];
+} {
+  const avatarForUpdate = bodies.attachAvatar ? avatar : null;
+  return {
+    text: bodies.text,
+    // Empty string clears a previously stored empty wrap:false HTML shell.
+    html: bodies.html ?? "",
+    ...draftUpdateAttachmentFields(existing, avatarForUpdate),
   };
 }
 
@@ -446,6 +478,7 @@ async function saveConceptReplyDraft(
     inboxId,
   );
   const bodies = buildAssembledDraftBodies(assembled, avatar);
+  const bodyFields = draftBodyPayload(bodies, avatar);
 
   // Always include to/subject — AgentMail reply-only creates (in_reply_to alone)
   // have been returning opaque "Draft not found" for some Message-IDs.
@@ -454,11 +487,11 @@ async function saveConceptReplyDraft(
     to,
     ...(cc.length > 0 ? { cc } : {}),
     subject: assembled.subject,
-    text: bodies.text,
-    html: bodies.html,
+    text: bodyFields.text,
+    ...(bodyFields.html ? { html: bodyFields.html } : {}),
     client_id: clientId,
     in_reply_to: messageId,
-    ...(avatar ? { attachments: [avatar] } : {}),
+    ...(bodies.attachAvatar && avatar ? { attachments: [avatar] } : {}),
   };
 
   const tryUpdate = async (
@@ -469,12 +502,10 @@ async function saveConceptReplyDraft(
       // Confirm the draft still exists before PATCH — list rows can be stale.
       const existing = await client.getDraft(targetInboxId, draftId);
       return await client.updateDraft(targetInboxId, draftId, {
-        text: bodies.text,
-        html: bodies.html,
+        ...draftBodyPayload(bodies, avatar, existing),
         to,
         cc,
         subject: assembled.subject,
-        ...draftUpdateAttachmentFields(existing, avatar),
       });
     } catch (error) {
       if (isDraftNotFoundError(error)) return null;
@@ -524,10 +555,10 @@ async function saveConceptReplyDraft(
           to,
           ...(cc.length > 0 ? { cc } : {}),
           subject: assembled.subject,
-          text: bodies.text,
-          html: bodies.html,
+          text: bodyFields.text,
+          ...(bodyFields.html ? { html: bodyFields.html } : {}),
           in_reply_to: messageId,
-          ...(avatar ? { attachments: [avatar] } : {}),
+          ...(bodies.attachAvatar && avatar ? { attachments: [avatar] } : {}),
         });
       } catch (threadedRetryError) {
         // Last resort: standalone draft (still shown as the concept reply).
@@ -541,10 +572,10 @@ async function saveConceptReplyDraft(
             to,
             ...(cc.length > 0 ? { cc } : {}),
             subject: assembled.subject,
-            text: bodies.text,
-            html: bodies.html,
+            text: bodyFields.text,
+            ...(bodyFields.html ? { html: bodyFields.html } : {}),
             client_id: `${clientId}-loose`,
-            ...(avatar ? { attachments: [avatar] } : {}),
+            ...(bodies.attachAvatar && avatar ? { attachments: [avatar] } : {}),
           });
         }
       throw threadedRetryError;
@@ -577,21 +608,20 @@ async function saveComposeDraft(
       cc,
       bcc,
       subject: assembled.subject,
-      text: bodies.text,
-      html: bodies.html,
-      ...draftUpdateAttachmentFields(current, avatar),
+      ...draftBodyPayload(bodies, avatar, current),
     });
   }
 
+  const bodyFields = draftBodyPayload(bodies, avatar);
   return client.createDraft(inboxId, {
     to: assembled.to,
     ...(cc.length > 0 ? { cc } : {}),
     ...(bcc.length > 0 ? { bcc } : {}),
     subject: assembled.subject,
-    text: bodies.text,
-    html: bodies.html,
+    text: bodyFields.text,
+    ...(bodyFields.html ? { html: bodyFields.html } : {}),
     client_id: clientId,
-    ...(avatar ? { attachments: [avatar] } : {}),
+    ...(bodies.attachAvatar && avatar ? { attachments: [avatar] } : {}),
   });
 }
 
@@ -953,8 +983,9 @@ export async function ensureDraftHasAssembledShell(
   );
   const bodies = buildAssembledDraftBodies(assembled, avatar);
   const storedHtml = (draft.html ?? "").trim();
-  const desiredHtml = bodies.html;
+  const desiredHtml = (bodies.html ?? "").trim();
   const hasAvatarCid =
+    !bodies.attachAvatar ||
     !avatar ||
     storedHtml.includes(`cid:${EMAIL_SIGN_OFF_AVATAR_CID}`) ||
     (draft.attachments ?? []).some(
@@ -964,10 +995,9 @@ export async function ensureDraftHasAssembledShell(
     );
   const needsTextUpdate = storedText !== desiredText;
   const needsHtmlUpdate =
-    !storedHtml ||
-    !storedHtml.includes(assembled.signOff.trim()) ||
     storedHtml !== desiredHtml ||
-    !hasAvatarCid;
+    (Boolean(desiredHtml) &&
+      (!desiredHtml.includes(assembled.signOff.trim()) || !hasAvatarCid));
   const needsRecipientUpdate =
     JSON.stringify(nextTo) !== JSON.stringify(assembled.to) ||
     JSON.stringify(storedTo) !== JSON.stringify(assembled.to) ||
@@ -979,13 +1009,11 @@ export async function ensureDraftHasAssembledShell(
   }
 
   return client.updateDraft(draft.inboxId, draft.draftId, {
-    text: bodies.text,
-    html: desiredHtml,
+    ...draftBodyPayload(bodies, avatar, draft),
     ...(assembled.to.length > 0 ? { to: assembled.to } : {}),
     cc: assembled.cc,
     bcc: assembled.bcc,
     ...(subject ? { subject } : {}),
-    ...draftUpdateAttachmentFields(draft, avatar),
   });
 }
 
@@ -1272,13 +1300,11 @@ export async function updateAgentMailDraft(
   );
   const bodies = buildAssembledDraftBodies(assembled, avatar);
   const updated = await client.updateDraft(draft.inboxId, draft.draftId, {
-    text: bodies.text,
-    html: bodies.html,
+    ...draftBodyPayload(bodies, avatar, draft),
     to: assembled.to,
     cc: assembled.cc,
     bcc: assembled.bcc,
     subject: assembled.subject,
-    ...draftUpdateAttachmentFields(draft, avatar),
   });
   await ensureDraftEmailThreadRegistered(
     workspaceId,
