@@ -139,6 +139,12 @@ export async function buildSyncEventsFeed(input: {
   limit?: number;
 }): Promise<SyncEventsFeedResponse> {
   const limit = Math.min(Math.max(input.limit ?? PAGE_SIZE, 1), 500);
+  // Peer `after` means every event ≤ afterCursor is already applied — retention
+  // must keep anything above this watermark (OS-162).
+  const { recordSyncEventFeedConsumerCursor } = await import(
+    "../sync/sync-events-retention.js"
+  );
+  await recordSyncEventFeedConsumerCursor(input.workspaceId, input.afterCursor);
   const rows = await listSyncEventsAfter({
     workspaceId: input.workspaceId,
     afterCursor: input.afterCursor,

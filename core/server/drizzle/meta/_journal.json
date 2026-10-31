@@ -1338,6 +1338,13 @@
       "when": 1796250000000,
       "tag": "0189_tasks_jsonb_filter_gin",
       "breakpoints": true
+    },
+    {
+      "idx": 191,
+      "version": "7",
+      "when": 1796260000000,
+      "tag": "0190_sync_events_retention_peer_cursor",
+      "breakpoints": true
     }
   ]
 }

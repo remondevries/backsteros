@@ -16,6 +16,7 @@ import { startCoreReplicationWorker } from "./services/core-replication/worker.j
 import { startMeetingPortalReminderScheduler } from "./services/meeting-portal-emails.js";
 import { startRecurringTaskRunner } from "./services/recurring-tasks.js";
 import { startAutoReviewWebhookWorker } from "./services/auto-review-webhook.js";
+import { startSyncEventsRetentionPruner } from "./services/sync/sync-events-retention.js";
 
 loadBacksterosR2Env();
 assertPowerSyncSecrets();
@@ -77,5 +78,6 @@ serve(
     startMeetingPortalReminderScheduler();
     startAutoReviewWebhookWorker();
     startCoreReplicationWorker();
+    startSyncEventsRetentionPruner();
   },
 );

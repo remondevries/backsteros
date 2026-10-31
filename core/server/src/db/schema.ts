@@ -801,12 +801,17 @@ export const replicationReconcileMismatches = pgTable(
  * Per-workspace watermark for peer sync_events delta pull (Linear-shaped).
  * Replica advances `after_cursor` only after applying peer events in order.
  * Does not invent a second LWW path — peer `sync_events.cursor` is authority.
+ *
+ * `peer_after_cursor` (OS-162): on the feed-serving core (cloud leader), the
+ * highest `after` a consumer has reported — events at or below this cursor
+ * are processed and eligible for retention prune.
  */
 export const coreSyncEventReplicationState = pgTable(
   "core_sync_event_replication_state",
   {
     workspaceId: text("workspace_id").primaryKey(),
     afterCursor: integer("after_cursor").notNull().default(0),
+    peerAfterCursor: integer("peer_after_cursor").notNull().default(0),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
