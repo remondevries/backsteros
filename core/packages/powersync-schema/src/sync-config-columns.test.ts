@@ -46,14 +46,12 @@ function schemaColumnsForTable(tableName: string): Set<string> {
  * (OS-163 / audit #12). Sync SELECT may omit these; schema may still declare them.
  */
 const DETAIL_ONLY_SCHEMA_COLUMNS: Readonly<Record<string, readonly string[]>> = {
+  // Desktop list SQL + REST gap-fill; not bulk-synced (OS-163 #12 / review).
   projects: ["description"],
-  tasks: ["description"],
   organizations: ["notes"],
   contacts: ["notes"],
-  habits: ["description"],
+  // Still synced (mobile reads these) — listed here only if removed again.
   meetings: ["notes", "transcription"],
-  task_comments: ["body"],
-  crm_activities: ["body"],
 };
 
 describe("PowerSync sync-config ↔ powersync-schema columns", () => {

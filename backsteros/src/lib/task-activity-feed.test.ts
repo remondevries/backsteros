@@ -19,12 +19,12 @@ describe("task activity feed SQL (OS-163 #5)", () => {
     );
   });
 
-  it("does not watch task_comments for the local feed", () => {
+  it("still watches task_comments as orphan-body fallback", () => {
     const src = readFileSync(
       join(dirname(fileURLToPath(import.meta.url)), "task-activity-feed.ts"),
       "utf8",
     );
-    assert.equal(src.includes("FROM task_comments"), false);
+    assert.ok(src.includes("FROM task_comments"));
     assert.ok(src.includes("task_activities"));
   });
 });

@@ -46,6 +46,7 @@ import {
   CRM_GROUPS_LIST_SQL,
   CRM_RELATIONSHIP_LABELS_SQL,
 } from "./workspace/workspace-sql";
+import { mergeCrmActivityBodiesFromRest } from "./crm-activity-body-merge";
 import { CRM_ACTIVITY_ROW_COMPARATOR } from "./powersync-row-comparators";
 import {
   WORKSPACE_CRM_DATA_UPDATED_EVENT,
@@ -114,8 +115,13 @@ export function useCrmActivityFeed(
       : `/api/v1/organizations/${encodeURIComponent(subjectId ?? "")}/activity`;
 
   const reloadRest = useCallback(async () => {
-    if (!enabled || !subjectId || localEnabled) return;
-    setRestState((prev) => ({ ...prev, loading: true, error: null }));
+    if (!enabled || !subjectId) return;
+    // Always fetch REST bodies — local sync may be preview-only (OS-163).
+    setRestState((prev) => ({
+      ...prev,
+      loading: localEnabled ? prev.loading : true,
+      error: null,
+    }));
     try {
       const body = await client.requestJson<{
         activities: CrmActivity[];
@@ -164,26 +170,26 @@ export function useCrmActivityFeed(
   }, [reloadRest]);
 
   useEffect(() => {
-    if (!enabled || !subjectId || localEnabled) return;
+    if (!enabled || !subjectId) return;
     const onChange = () => {
       void reloadRest();
     };
     window.addEventListener(WORKSPACE_CRM_DATA_UPDATED_EVENT, onChange);
     return () =>
       window.removeEventListener(WORKSPACE_CRM_DATA_UPDATED_EVENT, onChange);
-  }, [enabled, localEnabled, reloadRest, subjectId]);
+  }, [enabled, reloadRest, subjectId]);
 
   const localActivities = useMemo(() => {
     if (!localEnabled || !activityQuery.data) return null;
-    return activityQuery.data
+    const mapped = activityQuery.data
       .map(mapCrmActivityRow)
       .filter((row): row is CrmActivity => row != null);
-  }, [activityQuery.data, localEnabled]);
+    return mergeCrmActivityBodiesFromRest(mapped, restState.items);
+  }, [activityQuery.data, localEnabled, restState.items]);
 
   const items = localEnabled
     ? (localActivities?.slice(0, visibleCount) ?? [])
-    : restState.items;
-  const nextCursor = localEnabled
+    : restState.items;  const nextCursor = localEnabled
     ? localActivities && visibleCount < localActivities.length
       ? "local"
       : null

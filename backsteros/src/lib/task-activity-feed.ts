@@ -3,6 +3,7 @@ import type { TaskActivity, TaskActivityType, TaskComment } from "@backsteros/co
 
 import { useDesktopPowerSync, usePowerSyncQuery } from "./powersync-context";
 import type { PowerSyncRowComparator } from "./powersync-row-comparators";
+import { sqliteRowToTaskComment } from "./workspace/task-comment-mutations";
 
 /** Match UI page size (+ expand headroom); avoid materializing 900+ rows (OS-163 #5). */
 export const TASK_ACTIVITY_FEED_LIMIT = 100;
@@ -29,6 +30,49 @@ WHERE task_id = ?
 ORDER BY created_at DESC
 LIMIT ${TASK_ACTIVITY_FEED_LIMIT}
 `;
+
+/** Orphan comments (no matching activity row) still need a body path (OS-163 review). */
+const TASK_COMMENTS_SQL = `
+SELECT
+  tc.id,
+  tc.task_id,
+  tc.parent_comment_id,
+  tc.author_user_id,
+  tc.author_contact_id,
+  tc.author_email,
+  tc.body,
+  tc.resolved_at,
+  tc.created_at,
+  tc.updated_at,
+  tc.deleted_at,
+  ct.name AS contact_name
+FROM task_comments tc
+LEFT JOIN contacts ct ON ct.id = tc.author_contact_id AND ct.deleted_at IS NULL
+WHERE tc.task_id = ? AND tc.deleted_at IS NULL
+`;
+
+type CommentRow = {
+  id: string;
+  task_id: string;
+  parent_comment_id: string | null;
+  author_user_id: string | null;
+  author_contact_id: string | null;
+  author_email: string | null;
+  body: string;
+  resolved_at: string | null;
+  created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
+  contact_name?: string | null;
+};
+
+const COMMENT_ROW_COMPARATOR: PowerSyncRowComparator<CommentRow> = {
+  keyBy: (row) => String(row.id ?? ""),
+  compareBy: (row) =>
+    `${row.updated_at ?? ""}\0${row.resolved_at ?? ""}\0${row.body ?? ""}\0${
+      row.deleted_at ?? ""
+    }`,
+};
 
 const ACTIVITY_TYPES = new Set<TaskActivityType>([
   "created",
@@ -255,8 +299,8 @@ export function writeTaskActivityFeedCache(
 
 /**
  * Local-first task activity + comments from PowerSync SQLite.
- * Comment bodies come from `task_activities` only (OS-163 #5) — no dual
- * `task_comments` watch. Falls back to null when PowerSync is not ready.
+ * Prefer `task_activities` comment rows; merge `task_comments` for orphans
+ * that never got a matching activity (OS-163 review: 13 locally).
  */
 export function useTaskActivityLocalFeed(taskId: string | null | undefined) {
   const { ready } = useDesktopPowerSync();
@@ -266,6 +310,11 @@ export function useTaskActivityLocalFeed(taskId: string | null | undefined) {
     enabled ? TASK_ACTIVITIES_SQL : null,
     taskId ? [taskId] : [],
     { rowComparator: ACTIVITY_ROW_COMPARATOR },
+  );
+  const commentQuery = usePowerSyncQuery<CommentRow>(
+    enabled ? TASK_COMMENTS_SQL : null,
+    taskId ? [taskId] : [],
+    { rowComparator: COMMENT_ROW_COMPARATOR },
   );
 
   useEffect(() => {
@@ -286,12 +335,29 @@ export function useTaskActivityLocalFeed(taskId: string | null | undefined) {
       .filter((row) => SYSTEM_ACTIVITY_TYPES.has(row.type));
   }, [activityQuery.data]);
 
-  const sqliteComments = useMemo(() => {
+  const commentsFromActivities = useMemo(() => {
     if (!activityQuery.data) return null;
     return activityQuery.data
       .map(sqliteActivityRowToTaskComment)
       .filter((row): row is TaskComment => row != null);
   }, [activityQuery.data]);
+
+  const sqliteComments = useMemo(() => {
+    const fromCommentsTable = commentQuery.data
+      ? commentQuery.data.map(sqliteRowToTaskComment)
+      : null;
+    if (commentsFromActivities && commentsFromActivities.length > 0) {
+      const byId = new Map(commentsFromActivities.map((c) => [c.id, c]));
+      for (const comment of fromCommentsTable ?? []) {
+        const existing = byId.get(comment.id);
+        if (!existing || existing.updatedAt < comment.updatedAt) {
+          byId.set(comment.id, comment);
+        }
+      }
+      return [...byId.values()];
+    }
+    return fromCommentsTable;
+  }, [commentQuery.data, commentsFromActivities]);
 
   useEffect(() => {
     if (!taskId || !sqliteComments) return;
@@ -325,7 +391,7 @@ export function useTaskActivityLocalFeed(taskId: string | null | undefined) {
   }, [activities, comments, enabled, snapshotReady, taskId]);
 
   return {
-    active: enabled && !activityQuery.error,
+    active: enabled && !activityQuery.error && !commentQuery.error,
     activities: snapshotReady
       ? activities
       : (cached?.activities ?? null),
@@ -335,8 +401,9 @@ export function useTaskActivityLocalFeed(taskId: string | null | undefined) {
     loading:
       enabled &&
       !activityQuery.error &&
+      !commentQuery.error &&
       !snapshotReady &&
       cached == null,
-    error: activityQuery.error,
+    error: activityQuery.error ?? commentQuery.error,
   };
 }
