@@ -232,6 +232,10 @@ export function mapProject(project: ApiProject): ProjectOverviewRowProject & {
     branch?: string | null;
     path?: string | null;
   } | null;
+  channel?: {
+    uri: string;
+    name?: string | null;
+  } | null;
   localLocation?: string | null;
   developmentSetupStatus?: "pending" | "ready" | "failed" | null;
   developmentSetupError?: string | null;
@@ -378,6 +382,30 @@ export function mapProject(project: ApiProject): ProjectOverviewRowProject & {
     productionLocation: project.productionLocation ?? null,
     development,
     production,
+    channel: (() => {
+      const raw = (project as { channel?: unknown }).channel;
+      if (raw == null) return null;
+      if (typeof raw === "string") {
+        try {
+          const parsed = JSON.parse(raw) as {
+            uri?: string;
+            name?: string | null;
+          };
+          return typeof parsed?.uri === "string"
+            ? { uri: parsed.uri, name: parsed.name ?? null }
+            : null;
+        } catch {
+          return raw.trim() ? { uri: raw.trim(), name: null } : null;
+        }
+      }
+      if (typeof raw === "object" && !Array.isArray(raw)) {
+        const obj = raw as { uri?: string; name?: string | null };
+        return typeof obj.uri === "string"
+          ? { uri: obj.uri, name: obj.name ?? null }
+          : null;
+      }
+      return null;
+    })(),
     localLocation: project.localLocation ?? null,
     developmentSetupStatus: project.developmentSetupStatus ?? null,
     developmentSetupError: project.developmentSetupError ?? null,

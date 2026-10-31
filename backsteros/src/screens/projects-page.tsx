@@ -2664,6 +2664,37 @@ function ProjectDetailScreen({
           })()}
         />
       </PropertyFieldGroup>
+      <PropertyFieldGroup label="Channel">
+        <PropertyInlineChip
+          label={(() => {
+            const raw = (project as { channel?: unknown }).channel;
+            let channel: { uri?: string; name?: string | null } | null = null;
+            if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+              channel = raw as { uri?: string; name?: string | null };
+            } else if (typeof raw === "string" && raw.trim()) {
+              try {
+                channel = JSON.parse(raw) as {
+                  uri?: string;
+                  name?: string | null;
+                };
+              } catch {
+                channel = { uri: raw };
+              }
+            }
+            const name = channel?.name?.trim();
+            if (name) return name;
+            const uri = channel?.uri?.trim() || "";
+            if (!uri) return "No channel";
+            if (uri.startsWith("grokbot://")) return "Grok Bot room";
+            const colon = uri.indexOf(":");
+            if (colon > 0) {
+              const scheme = uri.slice(0, colon);
+              return scheme.charAt(0).toUpperCase() + scheme.slice(1);
+            }
+            return "Channel";
+          })()}
+        />
+      </PropertyFieldGroup>
     </EntityPropertiesSection>
   ) : null;
 

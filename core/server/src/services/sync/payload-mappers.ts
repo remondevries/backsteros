@@ -646,6 +646,22 @@ export function mapProjectUpsert(
       }
       return raw as CreateProjectInput["production"];
     })(),
+    channel: (() => {
+      const raw = payloadValue(payload, "channel", "channel");
+      if (raw === undefined) return undefined;
+      if (raw == null) return null;
+      if (typeof raw === "string") {
+        const trimmed = raw.trim();
+        if (!trimmed) return null;
+        try {
+          return JSON.parse(trimmed) as CreateProjectInput["channel"];
+        } catch {
+          // Legacy plain URI string → object.
+          return { uri: trimmed, name: null };
+        }
+      }
+      return raw as CreateProjectInput["channel"];
+    })(),
     localLocation: asNullableString(
       payloadValue(payload, "local_location", "localLocation"),
     ),

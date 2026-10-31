@@ -150,6 +150,7 @@ function toApiProject(project: CodebaseWorkbenchProject): ApiProject {
       null,
     production:
       (project as { production?: ApiProject["production"] }).production ?? null,
+    channel: (project as { channel?: ApiProject["channel"] }).channel ?? null,
     localLocation: project.localLocation ?? null,
     developmentSetupStatus: project.developmentSetupStatus ?? null,
     developmentSetupError: project.developmentSetupError ?? null,

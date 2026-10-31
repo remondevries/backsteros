@@ -356,6 +356,194 @@
   line-height: 16px;
 }
 
+.project-channel-field {
+  display: inline-flex;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.project-channel-badge {
+  display: inline-flex;
+  min-width: 0;
+  max-width: 100%;
+  align-items: stretch;
+  gap: 0;
+  border: 0.5px solid color-mix(in srgb, var(--foreground) 12%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--foreground) 4%, transparent);
+  overflow: hidden;
+}
+
+.project-channel-badge--grokbot {
+  border-color: color-mix(in srgb, var(--foreground) 16%, transparent);
+}
+
+.project-channel-badge--neutral {
+  border-style: dashed;
+}
+
+.project-channel-badge:hover,
+.project-channel-badge.is-open {
+  background: color-mix(in srgb, var(--foreground) 8%, transparent);
+}
+
+.project-channel-badge__open-btn {
+  display: inline-flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 5px;
+  margin: 0;
+  padding: 5px 8px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+}
+
+.project-channel-badge__icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  align-items: center;
+  justify-content: center;
+}
+
+.project-channel-badge__mark {
+  display: block;
+}
+
+.project-channel-badge__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 16px;
+}
+
+.project-channel-badge__affordance {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.project-channel-badge:hover .project-channel-badge__affordance,
+.project-channel-badge.is-open .project-channel-badge__affordance,
+.project-channel-badge__open-btn:focus-visible .project-channel-badge__affordance {
+  opacity: 0.7;
+}
+
+.project-channel-badge__edit {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  padding: 0 8px;
+  border: 0;
+  border-left: 0.5px solid color-mix(in srgb, var(--foreground) 10%, transparent);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  opacity: 0.45;
+}
+
+.project-channel-badge__edit:hover,
+.project-channel-badge__edit:focus-visible {
+  opacity: 0.9;
+  background: color-mix(in srgb, var(--foreground) 6%, transparent);
+}
+
+.project-channel-panel__body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+}
+
+.project-channel-panel__field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.project-channel-panel__label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
+}
+
+.project-channel-panel__input {
+  width: 100%;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 7px 9px;
+  border: 0.5px solid color-mix(in srgb, var(--foreground) 14%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--foreground) 3%, transparent);
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  line-height: 16px;
+}
+
+.project-channel-panel__input:focus {
+  outline: none;
+  border-color: color-mix(in srgb, var(--foreground) 35%, transparent);
+}
+
+.project-channel-panel__error {
+  margin: 0;
+  color: var(--destructive, #ef4444);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.project-channel-panel__actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.project-channel-panel__clear,
+.project-channel-panel__save {
+  margin: 0;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 8px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.project-channel-panel__clear {
+  background: transparent;
+  color: color-mix(in srgb, var(--foreground) 65%, transparent);
+}
+
+.project-channel-panel__clear:hover {
+  color: inherit;
+}
+
+.project-channel-panel__save {
+  background: color-mix(in srgb, var(--foreground) 12%, transparent);
+  color: inherit;
+}
+
+.project-channel-panel__save:hover {
+  background: color-mix(in srgb, var(--foreground) 18%, transparent);
+}
+
 .project-detail--panel {
   display: flex;
   flex: 1 1 auto;

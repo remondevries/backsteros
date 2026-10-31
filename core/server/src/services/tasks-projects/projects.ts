@@ -7,11 +7,13 @@ import type {
   UpdateProjectInput,
 } from "@backsteros/contracts";
 import {
+  assertProjectChannel,
   developmentFromLegacyLocations,
   mirrorProjectLocationCompat,
   normalizeProjectDevelopment,
   normalizeProjectProduction,
   productionFromLegacyLocations,
+  type ProjectChannel,
 } from "@backsteros/contracts";
 
 import {
@@ -47,6 +49,23 @@ type ProjectLocationInput = {
   productionLocation?: string | null;
   localWorkingDirectory?: string | null;
 };
+
+/**
+ * Normalize Channel `{ uri, name? }` for write. `undefined` = leave unchanged;
+ * `null` / empty = clear; invalid → CHANNEL_INVALID.
+ */
+function resolveProjectChannel(
+  value: ProjectChannel | string | null | undefined,
+): ProjectChannel | null | undefined {
+  if (value === undefined) return undefined;
+  if (value == null) return null;
+  if (typeof value === "string" && !value.trim()) return null;
+  const result = assertProjectChannel(value);
+  if (!result.ok) {
+    throw new Error("CHANNEL_INVALID");
+  }
+  return result.value;
+}
 
 function assertCodebaseLocationFields(
   type: string,
@@ -404,6 +423,7 @@ export async function createProject(
       productionLocation: createLocations.productionLocation,
       development: createLocations.development,
       production: createLocations.production,
+      channel: resolveProjectChannel(input.channel) ?? null,
       localLocation: null,
       developmentSetupStatus: input.developmentSetupStatus ?? null,
       developmentSetupError: input.developmentSetupError ?? null,
@@ -536,6 +556,7 @@ export async function updateProject(
       : input.healthCheckDomain;
   const leavingCodebase =
     input.type !== undefined && input.type !== "codebase";
+  const nextChannel = resolveProjectChannel(input.channel);
 
   // Fold deprecated localLocation into localWorkingDirectory; always clear column.
   const consolidatedUpdate = consolidateLocalPaths({
@@ -634,6 +655,7 @@ export async function updateProject(
           : existing.localLocation
             ? { localLocation: null }
             : {}),
+        ...(nextChannel !== undefined ? { channel: nextChannel } : {}),
         ...(input.developmentSetupStatus !== undefined
           ? { developmentSetupStatus: input.developmentSetupStatus }
           : {}),

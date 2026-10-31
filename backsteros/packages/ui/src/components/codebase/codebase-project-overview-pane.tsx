@@ -69,6 +69,7 @@ import {
 } from "./github-project-cache.js";
 import { GithubPullRequestIcon } from "./github-pull-request-icon.js";
 import { LocationFolderPicker } from "./location-folder-picker.js";
+import { ProjectChannelField } from "./project-channel-field.js";
 import { normalizeWorkingDirectory } from "./normalize-working-directory.js";
 import type { ProjectFsClient } from "./project-fs-types.js";
 import { ProjectWorkingDirectoryTree } from "./project-working-directory-tree.js";
@@ -2109,6 +2110,13 @@ export function CodebaseProjectOverviewPane({
                     </EntityOverviewField>
                     <EntityOverviewField label="Production">
                       <ProjectProductionField
+                        project={project}
+                        onProjectUpdated={onProjectUpdated}
+                        requestJson={requestJson}
+                      />
+                    </EntityOverviewField>
+                    <EntityOverviewField label="Channel">
+                      <ProjectChannelField
                         project={project}
                         onProjectUpdated={onProjectUpdated}
                         requestJson={requestJson}

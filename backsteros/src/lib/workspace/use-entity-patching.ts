@@ -1082,6 +1082,7 @@ export function useWorkspaceEntityPatching({
           "productionLocation" in values ||
           "development" in values ||
           "production" in values ||
+          "channel" in values ||
           "localLocation" in values ||
           "healthCheckMode" in values ||
           "healthCheckDomain" in values ||

@@ -232,6 +232,19 @@ export function registerProjectCoreRoutes(app: Hono) {
             400,
           );
         }
+        if (
+          error instanceof Error &&
+          error.message === "CHANNEL_INVALID"
+        ) {
+          return c.json(
+            {
+              error:
+                "Channel must be { uri, name? } with a valid uri (e.g. grokbot://app/v1/agent?id=<uuid>)",
+              code: "channel_invalid",
+            },
+            400,
+          );
+        }
         throw error;
       }
     },
@@ -333,6 +346,19 @@ export function registerProjectCoreRoutes(app: Hono) {
               error:
                 "Development, production, and local locations can only be set on codebase projects",
               code: "location_requires_codebase",
+            },
+            400,
+          );
+        }
+        if (
+          error instanceof Error &&
+          error.message === "CHANNEL_INVALID"
+        ) {
+          return c.json(
+            {
+              error:
+                "Channel must be { uri, name? } with a valid uri (e.g. grokbot://app/v1/agent?id=<uuid>)",
+              code: "channel_invalid",
             },
             400,
           );

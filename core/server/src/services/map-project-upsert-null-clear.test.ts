@@ -69,6 +69,11 @@ describe("mapProjectUpsert null clears", () => {
       mapped: "production",
     },
     {
+      snake: "channel",
+      camel: "channel",
+      mapped: "channel",
+    },
+    {
       snake: "local_location",
       camel: "localLocation",
       mapped: "localLocation",

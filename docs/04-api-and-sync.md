@@ -103,14 +103,16 @@ with a `field` in the body.
 
 #### Codebase project locations (agents)
 
-`GET` / `PATCH /api/v1/projects/:id` expose GitHub + Development + Production for
-`type=codebase` projects:
+`GET` / `PATCH /api/v1/projects/:id` expose GitHub + Development + Production +
+Channel. GitHub / Development / Production apply to `type=codebase`; Channel is
+available on any project type:
 
 | Field | Shape |
 | --- | --- |
 | `githubRepository` | `owner/repo` or `null` |
 | `development` | `{ kind: "local" \| "server", path, host? }` or `null` — Local is folded into `kind: "local"` |
 | `production` | `{ server?, url?, deployMethod?, branch?, path? }` or `null` (at least one field when set) |
+| `channel` | `{ uri, name? }` or `null` — uri e.g. `grokbot://app/v1/agent?id=<uuid>` (Grok Bot); `slack:<channel id>` reserved; other schemes allowed; `name` is optional display label |
 
 Compat mirrors (still written): `localWorkingDirectory` (Development path when
 `kind=local`), `developmentLocation` / `productionLocation` (path mirrors for

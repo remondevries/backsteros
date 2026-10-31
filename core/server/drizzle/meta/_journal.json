@@ -1296,6 +1296,13 @@
       "when": 1796190000000,
       "tag": "0183_project_development_production",
       "breakpoints": true
+    },
+    {
+      "idx": 185,
+      "version": "7",
+      "when": 1796200000000,
+      "tag": "0184_project_channel",
+      "breakpoints": true
     }
   ]
 }

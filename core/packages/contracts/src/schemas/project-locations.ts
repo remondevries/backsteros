@@ -1,5 +1,216 @@
 import { z } from "zod";
 
+/**
+ * Project chat-room Channel — `{ uri, name? }`.
+ * URI is self-describing by scheme. Known shapes:
+ * - `grokbot://app/v1/agent?id=<uuid>` (Grok Bot room)
+ * - `slack:<channel id>` (reserved)
+ * Other schemes are stored as-is for future clients (neutral badge in UI).
+ */
+export const PROJECT_CHANNEL_SCHEMES = ["grokbot", "slack"] as const;
+export const projectChannelSchemeSchema = z.enum(PROJECT_CHANNEL_SCHEMES);
+export type ProjectChannelScheme = z.infer<typeof projectChannelSchemeSchema>;
+
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+/** Grok Bot room deep link: `grokbot://app/v1/agent?id=<uuid>`. */
+const GROKBOT_CHANNEL_RE =
+  /^grokbot:\/\/app\/v1\/agent\?id=([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/i;
+
+/** Reserved Slack channel form: `slack:<channel id>`. */
+const SLACK_CHANNEL_RE = /^slack:([A-Za-z0-9_-]{1,255})$/;
+
+/** Any scheme:rest URI (letters/digits/+.- before first colon). */
+const GENERIC_CHANNEL_URI_RE = /^[a-z][a-z0-9+.-]*:.+$/i;
+
+export function projectChannelSchemeFromUri(
+  uri: string | null | undefined,
+): string | null {
+  const trimmed = uri?.trim() ?? "";
+  if (!trimmed) return null;
+  const colon = trimmed.indexOf(":");
+  if (colon <= 0) return null;
+  return trimmed.slice(0, colon).toLowerCase();
+}
+
+export function projectChannelScheme(
+  value: string | null | undefined,
+): ProjectChannelScheme | null {
+  const scheme = projectChannelSchemeFromUri(value);
+  if (scheme === "grokbot" || scheme === "slack") return scheme;
+  return null;
+}
+
+export function isGrokBotChannelUri(value: string | null | undefined): boolean {
+  return GROKBOT_CHANNEL_RE.test(value?.trim() ?? "");
+}
+
+export function grokBotAgentIdFromChannel(
+  value: string | null | undefined,
+): string | null {
+  const match = GROKBOT_CHANNEL_RE.exec(value?.trim() ?? "");
+  return match?.[1] ?? null;
+}
+
+/** Normalize a Channel URI string. Empty → null; invalid → null. */
+export function normalizeProjectChannelUri(
+  value: string | null | undefined,
+): string | null {
+  if (value == null) return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const scheme = projectChannelSchemeFromUri(trimmed);
+  if (!scheme) return null;
+  if (scheme === "grokbot") {
+    const match = GROKBOT_CHANNEL_RE.exec(trimmed);
+    if (!match) return null;
+    const id = match[1]!;
+    if (!UUID_RE.test(id)) return null;
+    return `grokbot://app/v1/agent?id=${id.toLowerCase()}`;
+  }
+  if (scheme === "slack") {
+    const match = SLACK_CHANNEL_RE.exec(trimmed);
+    if (!match) return null;
+    return `slack:${match[1]}`;
+  }
+  if (!GENERIC_CHANNEL_URI_RE.test(trimmed) || trimmed.length > 2048) {
+    return null;
+  }
+  return trimmed;
+}
+
+export function assertProjectChannelUri(
+  value: string,
+): { ok: true; value: string } | { ok: false; message: string } {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return { ok: false, message: "Channel URI is empty" };
+  }
+  const scheme = projectChannelSchemeFromUri(trimmed);
+  if (!scheme) {
+    return {
+      ok: false,
+      message: "Channel URI must include a scheme (e.g. grokbot://…)",
+    };
+  }
+  const normalized = normalizeProjectChannelUri(trimmed);
+  if (!normalized) {
+    if (scheme === "grokbot") {
+      return {
+        ok: false,
+        message:
+          "Grok Bot Channel must be grokbot://app/v1/agent?id=<uuid>",
+      };
+    }
+    if (scheme === "slack") {
+      return {
+        ok: false,
+        message: "Slack Channel must be slack:<channel id>",
+      };
+    }
+    return { ok: false, message: "Channel URI is invalid" };
+  }
+  return { ok: true, value: normalized };
+}
+
+export const projectChannelUriSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(2048)
+  .superRefine((value, ctx) => {
+    const result = assertProjectChannelUri(value);
+    if (!result.ok) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: result.message,
+      });
+    }
+  })
+  .transform((value) => normalizeProjectChannelUri(value)!);
+
+/**
+ * Project chat-room Channel object.
+ * Never render `uri` raw in UI — use {@link projectChannelDisplayName}.
+ */
+export const projectChannelSchema = z.object({
+  uri: projectChannelUriSchema,
+  /** Optional room display name (e.g. "BacksterOS"). */
+  name: z.string().trim().max(255).nullable().optional(),
+});
+export type ProjectChannel = z.infer<typeof projectChannelSchema>;
+
+export const nullableProjectChannelSchema = projectChannelSchema.nullable();
+
+/** @deprecated Prefer {@link nullableProjectChannelSchema}. */
+export const nullableProjectChannelUriSchema = nullableProjectChannelSchema;
+
+export function normalizeProjectChannel(
+  value: ProjectChannel | string | null | undefined,
+): ProjectChannel | null {
+  if (value == null) return null;
+  if (typeof value === "string") {
+    const uri = normalizeProjectChannelUri(value);
+    return uri ? { uri, name: null } : null;
+  }
+  const uri = normalizeProjectChannelUri(value.uri);
+  if (!uri) return null;
+  const name = value.name?.trim() || null;
+  return { uri, name };
+}
+
+export function assertProjectChannel(
+  value: unknown,
+): { ok: true; value: ProjectChannel } | { ok: false; message: string } {
+  if (value == null) {
+    return { ok: false, message: "Channel is empty" };
+  }
+  if (typeof value === "string") {
+    const uriResult = assertProjectChannelUri(value);
+    if (!uriResult.ok) return uriResult;
+    return { ok: true, value: { uri: uriResult.value, name: null } };
+  }
+  if (typeof value !== "object" || Array.isArray(value)) {
+    return { ok: false, message: "Channel must be { uri, name? }" };
+  }
+  const record = value as { uri?: unknown; name?: unknown };
+  if (typeof record.uri !== "string") {
+    return { ok: false, message: "Channel.uri is required" };
+  }
+  const uriResult = assertProjectChannelUri(record.uri);
+  if (!uriResult.ok) return uriResult;
+  const name =
+    record.name == null || record.name === ""
+      ? null
+      : typeof record.name === "string"
+        ? record.name.trim() || null
+        : null;
+  if (record.name != null && typeof record.name !== "string") {
+    return { ok: false, message: "Channel.name must be a string" };
+  }
+  if (name != null && name.length > 255) {
+    return { ok: false, message: "Channel.name is too long" };
+  }
+  return { ok: true, value: { uri: uriResult.value, name } };
+}
+
+/**
+ * Polished label for Locations UI — never the raw URI.
+ * Grok Bot → name or "Grok Bot room"; others → name or scheme label.
+ */
+export function projectChannelDisplayName(
+  channel: ProjectChannel | null | undefined,
+): string {
+  if (!channel?.uri?.trim()) return "No channel";
+  const name = channel.name?.trim();
+  if (name) return name;
+  if (isGrokBotChannelUri(channel.uri)) return "Grok Bot room";
+  const scheme = projectChannelSchemeFromUri(channel.uri);
+  if (!scheme) return "Channel";
+  return scheme.charAt(0).toUpperCase() + scheme.slice(1);
+}
+
 /** Where Development work happens: this Mac, or a remote server. */
 export const PROJECT_DEVELOPMENT_KINDS = ["local", "server"] as const;
 export const projectDevelopmentKindSchema = z.enum(PROJECT_DEVELOPMENT_KINDS);

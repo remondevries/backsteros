@@ -11,6 +11,7 @@ import {
   taskStatusSchema,
 } from "./common.js";
 import {
+  nullableProjectChannelSchema,
   nullableProjectDevelopmentSchema,
   nullableProjectProductionSchema,
 } from "./project-locations.js";
@@ -21,6 +22,21 @@ export {
   projectProductionSchema,
   nullableProjectDevelopmentSchema,
   nullableProjectProductionSchema,
+  PROJECT_CHANNEL_SCHEMES,
+  projectChannelSchemeSchema,
+  projectChannelUriSchema,
+  projectChannelSchema,
+  nullableProjectChannelSchema,
+  nullableProjectChannelUriSchema,
+  normalizeProjectChannelUri,
+  normalizeProjectChannel,
+  assertProjectChannelUri,
+  assertProjectChannel,
+  projectChannelScheme,
+  projectChannelSchemeFromUri,
+  projectChannelDisplayName,
+  isGrokBotChannelUri,
+  grokBotAgentIdFromChannel,
   normalizeProjectDevelopment,
   normalizeProjectProduction,
   mirrorProjectLocationCompat,
@@ -29,6 +45,8 @@ export {
   type ProjectDevelopmentKind,
   type ProjectDevelopment,
   type ProjectProduction,
+  type ProjectChannelScheme,
+  type ProjectChannel,
 } from "./project-locations.js";
 /** Project short ID — 2–3 alphanumeric characters (any case; stored uppercase). */
 export const projectKeySchema = z
@@ -86,6 +104,11 @@ export const projectSchema = z.object({
    * Codebase Production deploy target (server, URL, method, branch, path).
    */
   production: nullableProjectProductionSchema,
+  /**
+   * Project chat-room Channel `{ uri, name? }`
+   * (e.g. uri `grokbot://app/v1/agent?id=<uuid>`). Null when unset.
+   */
+  channel: nullableProjectChannelSchema,
   /**
    * @deprecated Folded into {@link localWorkingDirectory}. Still accepted on
    * write (mapped then cleared); always null on read after ensure/update.
@@ -160,6 +183,8 @@ export const createProjectSchema = z.object({
   productionLocation: z.string().max(4096).nullable().optional(),
   development: nullableProjectDevelopmentSchema.optional(),
   production: nullableProjectProductionSchema.optional(),
+  /** Project chat-room Channel `{ uri, name? }`. */
+  channel: nullableProjectChannelSchema.optional(),
   /** @deprecated Folded into localWorkingDirectory on write. */
   localLocation: z.string().max(4096).nullable().optional(),
   /** Legacy; core no longer writes these on location set. */

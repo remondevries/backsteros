@@ -874,6 +874,14 @@ export const projects = pgTable(
       branch?: string | null;
       path?: string | null;
     } | null>(),
+    /**
+     * Project chat-room Channel: `{ uri, name? }`.
+     * uri e.g. `grokbot://app/v1/agent?id=<uuid>`; name is optional display label.
+     */
+    channel: jsonb("channel").$type<{
+      uri: string;
+      name?: string | null;
+    } | null>(),
     /** @deprecated Folded into local_working_directory; kept for sync compat. */
     localLocation: text("local_location"),
     /** Legacy: `pending` | `ready` | `failed` — core no longer auto-clones. */
