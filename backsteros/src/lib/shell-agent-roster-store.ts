@@ -1,12 +1,10 @@
 /**
  * Shared agent roster for shell chat, lead picker, and Settings.
  *
- * Prefer local-core (instant after agents twin), then refresh from the cloud
- * agents door so webhook URL / secretConfigured stay authoritative for chat.
- *
- * Webhook URL + secret ciphertext are cloud-only (not twin'd). After a Settings
- * Test, verifiedAt can land on local via replication while URL/secret stay
- * absent locally — never replace a cloud-enriched snapshot with local-only rows.
+ * Paint local-core first (instant after agents twin), then overlay the cloud
+ * agents door (write leader) row-for-row. Chat readiness only reads
+ * `webhookVerifiedAt`, which twins, so local alone is enough to show agents;
+ * cloud wins on conflict because it sees Settings changes first.
  */
 import type { Agent } from "@backsteros/contracts";
 
@@ -50,37 +48,14 @@ function setSnapshot(next: Partial<ShellAgentRosterSnapshot>): void {
   emit();
 }
 
-/**
- * Overlay `right` onto `left`, keeping the stronger webhook credential fields
- * from either side (URL / secretConfigured / verifiedAt are often split across
- * local twin vs cloud door).
- */
-export function mergeAgentWebhookFields(left: Agent, right: Agent): Agent {
-  return {
-    ...left,
-    ...right,
-    webhookUrl: right.webhookUrl?.trim() || left.webhookUrl?.trim() || null,
-    webhookSecretConfigured:
-      right.webhookSecretConfigured || left.webhookSecretConfigured,
-    webhookVerifiedAt:
-      right.webhookVerifiedAt?.trim() || left.webhookVerifiedAt?.trim() || null,
-  };
-}
-
-/** Local paints first; cloud overlays webhook fields by id. */
+/** Local paints first; a cloud row replaces the local row with the same id. */
 export function mergeAgentRosters(
   local: readonly Agent[],
   cloud: readonly Agent[],
 ): Agent[] {
   const byId = new Map<string, Agent>();
   for (const agent of local) byId.set(agent.id, agent);
-  for (const agent of cloud) {
-    const previous = byId.get(agent.id);
-    byId.set(
-      agent.id,
-      previous ? mergeAgentWebhookFields(previous, agent) : agent,
-    );
-  }
+  for (const agent of cloud) byId.set(agent.id, agent);
   return sortAgentsForDisplay(
     [...byId.values()].filter((agent) => agent.enabled),
   );
@@ -96,25 +71,13 @@ function cloudLoadErrorMessage(error: unknown): string {
 async function loadOnce(): Promise<void> {
   let localAgents: Agent[] = [];
   let sawLocal = false;
-  const previousAgents = snapshot.agents;
 
   if (localFetcher) {
     try {
       const body = await localFetcher();
-      localAgents = sortAgentsForDisplay(
-        body.agents.filter((agent) => agent.enabled),
-      );
+      localAgents = mergeAgentRosters(body.agents, []);
       sawLocal = true;
-      // Keep prior cloud webhook URL/secret while local catches up (verifiedAt
-      // twins without credentials). Avoid flashing an empty chat strip.
-      const painted =
-        previousAgents.length > 0
-          ? mergeAgentRosters(localAgents, previousAgents)
-          : localAgents;
-      setSnapshot({
-        agents: painted,
-        error: null,
-      });
+      setSnapshot({ agents: localAgents, error: null });
     } catch {
       // Local miss is fine — fall through to cloud.
     }
@@ -124,16 +87,13 @@ async function loadOnce(): Promise<void> {
     const cloudBody = await cloudCoreRequestJson<{ agents: Agent[] }>(
       "/api/v1/agents",
     );
-    const cloudAgents = cloudBody.agents.filter((agent) => agent.enabled);
-    const merged = mergeAgentRosters(localAgents, cloudAgents);
     setSnapshot({
-      agents: merged,
+      agents: mergeAgentRosters(localAgents, cloudBody.agents),
       loading: false,
       error: null,
     });
   } catch (error) {
     if (sawLocal) {
-      // Keep coalesced local+previous webhook fields; do not wipe to local-only.
       setSnapshot({
         loading: false,
         error: cloudLoadErrorMessage(error),
@@ -157,40 +117,6 @@ export function configureShellAgentRosterLocalFetcher(
   fetcher: LocalAgentsFetcher | null,
 ): void {
   localFetcher = fetcher;
-}
-
-/**
- * Optimistic roster update after Settings → Test (URL/secret live on cloud;
- * verifiedAt may twin later without credentials on local).
- */
-export function patchShellAgentRosterAgent(
-  agentId: string,
-  patch: {
-    webhookUrl?: string | null;
-    webhookSecretConfigured?: boolean;
-    webhookVerifiedAt?: string | null;
-  },
-): void {
-  const id = agentId.trim();
-  if (!id) return;
-  const agents = snapshot.agents.map((agent) => {
-    if (agent.id !== id) return agent;
-    return {
-      ...agent,
-      ...(patch.webhookUrl !== undefined
-        ? { webhookUrl: patch.webhookUrl?.trim() || null }
-        : {}),
-      ...(patch.webhookSecretConfigured !== undefined
-        ? { webhookSecretConfigured: patch.webhookSecretConfigured }
-        : {}),
-      ...(patch.webhookVerifiedAt !== undefined
-        ? { webhookVerifiedAt: patch.webhookVerifiedAt }
-        : {}),
-    };
-  });
-  setSnapshot({
-    agents: sortAgentsForDisplay(agents.filter((agent) => agent.enabled)),
-  });
 }
 
 let rosterChangedBound = false;

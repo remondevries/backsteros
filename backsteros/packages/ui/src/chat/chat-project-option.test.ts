@@ -7,9 +7,35 @@ import {
   matchProjectsBySlashQuery,
   orderChatProjects,
   projectCommandSlug,
+  resolveProjectRoomPeer,
   resolveRecentChatProjectsForStrip,
   type ChatProjectOption,
 } from "./chat-project-option.ts";
+
+describe("resolveProjectRoomPeer", () => {
+  const judith = { id: "c-judith", name: "Judith" };
+  const niels = { id: "c-niels", name: "Niels" };
+  const peers = [judith, niels];
+
+  it("uses the project's lead agent when it is in the roster", () => {
+    assert.equal(
+      resolveProjectRoomPeer({ leadAgentContactId: "c-niels" }, peers, judith),
+      niels,
+    );
+  });
+
+  it("falls back when there is no project, no lead, or the lead is not a peer", () => {
+    assert.equal(resolveProjectRoomPeer(null, peers, judith), judith);
+    assert.equal(
+      resolveProjectRoomPeer({ leadAgentContactId: null }, peers, judith),
+      judith,
+    );
+    assert.equal(
+      resolveProjectRoomPeer({ leadAgentContactId: "c-gone" }, peers, judith),
+      judith,
+    );
+  });
+});
 
 const projects: ChatProjectOption[] = [
   { id: "a", key: "AAA", name: "Alpha" },

@@ -29,29 +29,30 @@ export function agentHasWebhookUrl(agent: Agent): boolean {
 }
 
 /**
- * Webhook Test pass for the chat roster.
+ * Shell chat roster gate: enabled + a passing Settings webhook Test.
  *
- * New cores always send `webhookVerifiedAt` (ISO string or null) — trust that.
- * Old cores omit the property entirely — fall back to the desktop localStorage
- * mark so the chat bar is not empty before cloud migrates.
+ * New cores always send `webhookVerifiedAt` (ISO string or null). The server
+ * only sets it after a successful delivery and clears it whenever the URL or
+ * secret changes, so it alone proves URL + secret exist on the write leader —
+ * even on local-core, where replication strips the URL and secret.
+ *
+ * Old cores omit the property entirely — fall back to URL + secret + the
+ * desktop localStorage mark so the chat bar is not empty before cloud migrates.
  */
-export function agentHasWebhookVerified(
-  agent: Pick<Agent, "id"> & { webhookVerifiedAt?: string | null },
+export function agentReadyForChatRoster(
+  agent: Pick<
+    Agent,
+    "id" | "enabled" | "webhookUrl" | "webhookSecretConfigured"
+  > & { webhookVerifiedAt?: string | null },
 ): boolean {
-  if (!Object.prototype.hasOwnProperty.call(agent, "webhookVerifiedAt")) {
-    return isAgentWebhookVerified(agent.id);
+  if (!agent.enabled) return false;
+  if (Object.prototype.hasOwnProperty.call(agent, "webhookVerifiedAt")) {
+    return Boolean(agent.webhookVerifiedAt?.trim());
   }
-  return Boolean(agent.webhookVerifiedAt?.trim());
-}
-
-/**
- * Shell chat roster gate: URL + secret + successful Settings webhook Test.
- */
-export function agentReadyForChatRoster(agent: Agent): boolean {
   return (
-    agentHasWebhookUrl(agent) &&
+    Boolean(agent.webhookUrl?.trim()) &&
     agent.webhookSecretConfigured &&
-    agentHasWebhookVerified(agent)
+    isAgentWebhookVerified(agent.id)
   );
 }
 

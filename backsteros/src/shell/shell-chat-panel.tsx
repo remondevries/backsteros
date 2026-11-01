@@ -107,9 +107,11 @@ export function ShellChatPanel() {
   const webhookContacts = useMemo(() => {
     const byId = new Map(contacts.map((contact) => [contact.id, contact]));
     const ordered: typeof contacts = [];
+    const seen = new Set<string>();
     for (const agent of agentChat.webhookReadyAgents) {
       const contactId = agent.contactId?.trim();
-      if (!contactId) continue;
+      if (!contactId || seen.has(contactId)) continue;
+      seen.add(contactId);
       const contact = byId.get(contactId);
       if (contact) ordered.push(contact);
     }

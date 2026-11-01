@@ -34,6 +34,7 @@ import {
   pruneRecentChatProjectIds,
   readRecentChatProjectIds,
   rememberRecentChatProjectId,
+  resolveProjectRoomPeer,
   resolveRecentChatProjectsForStrip,
   type ChatProjectOption,
 } from "../../chat/chat-project-option.js";
@@ -146,12 +147,6 @@ const FALLBACK_JUDITH: ChatThreadPeer = {
   name: "Judith",
 };
 
-const FALLBACK_NIELS: ChatThreadPeer = {
-  id: "niels-fallback",
-  kind: "contact",
-  name: "Niels",
-};
-
 function peerMatchesName(peer: ChatThreadPeer, name: string): boolean {
   const target = name.trim().toLowerCase();
   const full = peer.name.trim().toLowerCase();
@@ -245,7 +240,7 @@ function ensureThreadMessages(
 
 export type LiveAgentChatPanelProps = {
   /**
-   * Peers for the header (Judith + Niels + agent contacts). Desktop resolves
+   * Peers for the header (agent contacts). Desktop resolves
    * these from workspace contacts and Settings → API → Agent keys.
    */
   peers?: readonly ChatThreadPeer[] | null;
@@ -314,9 +309,6 @@ export function LiveAgentChatPanel({
     findPeerByName(resolvedPeers, "Judith") ??
     resolvedPeers[0] ??
     (allowEmptyPeers ? null : FALLBACK_JUDITH);
-  /** Default project-room agent — only shown in the strip while in a project. */
-  const projectPeer =
-    findPeerByName(resolvedPeers, "Niels") ?? FALLBACK_NIELS;
 
   const [activePeerId, setActivePeerId] = useState(
     defaultPeer?.id ?? FALLBACK_JUDITH.id,
@@ -436,6 +428,12 @@ export function LiveAgentChatPanel({
     projectId == null
       ? null
       : (resolvedProjects.find((project) => project.id === projectId) ?? null);
+  /** Project-room counterpart: the project's lead agent, else the default peer. */
+  const projectPeer = resolveProjectRoomPeer(
+    activeProject,
+    resolvedPeers,
+    defaultPeer ?? FALLBACK_JUDITH,
+  );
 
   // Drop deleted projects from the MRU strip + leave a room whose project vanished.
   useEffect(() => {
@@ -447,16 +445,8 @@ export function LiveAgentChatPanel({
     }
   }, [defaultPeer, projectId, resolvedProjects]);
 
-  /**
-   * Header strip: last ≤5 visited project rooms (newest immediately left of
-   * Judith), then agents. Niels stays out of the strip — he's the default
-   * project-room counterpart under the hood, not a header peer.
-   */
-  const agentPeers = useMemo(
-    () =>
-      resolvedPeers.filter((peer) => !peerMatchesName(peer, "Niels")),
-    [resolvedPeers],
-  );
+  /** Header strip: last ≤5 visited project rooms (newest immediately left of Judith), then agents. */
+  const agentPeers = resolvedPeers;
 
   const leadSubtitleForProject = useCallback(
     (project: ChatProjectOption): string | null => {
@@ -495,7 +485,7 @@ export function LiveAgentChatPanel({
     [agentPeers, stripProjectPeers],
   );
 
-  /** Agent used for demo fallback — Niels inside a project room, else focused agent. */
+  /** Agent used for demo fallback — project lead inside a project room, else focused agent. */
   const threadAgent =
     (projectId
       ? projectPeer
@@ -801,9 +791,15 @@ export function LiveAgentChatPanel({
       if (!project || !isChatProjectRoomReady(project)) return;
       setRecentProjectIds(rememberRecentChatProjectId(project.id));
       setProjectId(project.id);
-      setActivePeerId(projectPeer.id);
+      setActivePeerId(
+        resolveProjectRoomPeer(
+          project,
+          resolvedPeers,
+          defaultPeer ?? FALLBACK_JUDITH,
+        ).id,
+      );
     },
-    [projectPeer.id, resolvedProjects],
+    [defaultPeer, resolvedPeers, resolvedProjects],
   );
 
   const onPeerChange = useCallback(

@@ -47,9 +47,11 @@ import {
   writeAgentApiKeySortOrderIds,
   writeAgentSortOrderIds,
 } from "../lib/shell-agent-order";
-import { preferAgentForApiKey } from "../lib/prefer-agent-for-api-key";
+import {
+  existingAgentIdFromConflict,
+  preferAgentForApiKey,
+} from "../lib/prefer-agent-for-api-key";
 import { notifyShellAgentRosterChanged } from "../lib/shell-agent-roster";
-import { patchShellAgentRosterAgent } from "../lib/shell-agent-roster-store";
 import {
   clearAgentWebhookVerified,
   markAgentWebhookVerified,
@@ -326,53 +328,57 @@ function SettingsApiTab({
   ): Promise<AgentWebhookSettings | null> {
     const existing = preferAgentForApiKey(agents, apiKeyId);
     const apiKey = apiKeys.find((entry) => entry.id === apiKeyId);
+    const patchAgent = (agentId: string) =>
+      cloudCoreRequestJson<Agent>(
+        `/api/v1/agents/${encodeURIComponent(agentId)}`,
+        { method: "PATCH", body: JSON.stringify(input) },
+      );
     try {
       let saved: Agent;
       if (existing) {
-        saved = await cloudCoreRequestJson<Agent>(
-          `/api/v1/agents/${encodeURIComponent(existing.id)}`,
-          {
-            method: "PATCH",
-            body: JSON.stringify(input),
-          },
-        );
-        setAgents((current) => {
-          const next = current.map((entry) =>
-            entry.id === saved.id
-              ? {
-                  ...saved,
-                  // Keep list position — PATCH often returns sortOrder 0.
-                  sortOrder: entry.sortOrder ?? saved.sortOrder ?? 0,
-                }
-              : entry,
-          );
-          const ordered = sortAgentsForDisplay(next);
-          writeAgentSortOrderIds(ordered.map((agent) => agent.id));
-          return ordered;
-        });
+        saved = await patchAgent(existing.id);
       } else {
         if (!apiKey) {
           setErrorMessage("API key not found for agent webhook.");
           return null;
         }
-        saved = await cloudCoreRequestJson<Agent>("/api/v1/agents", {
-          method: "POST",
-          body: JSON.stringify({
-            name: apiKey.name,
-            contactId: apiKey.contactId,
-            apiKeyId,
-            webhookUrl: input.webhookUrl ?? null,
-            ...(input.webhookSecret !== undefined
-              ? { webhookSecret: input.webhookSecret }
-              : {}),
-          }),
-        });
-        setAgents((current) => {
-          const ordered = sortAgentsForDisplay([...current, saved]);
-          writeAgentSortOrderIds(ordered.map((agent) => agent.id));
-          return ordered;
-        });
+        try {
+          saved = await cloudCoreRequestJson<Agent>("/api/v1/agents", {
+            method: "POST",
+            body: JSON.stringify({
+              name: apiKey.name,
+              contactId: apiKey.contactId,
+              apiKeyId,
+              webhookUrl: input.webhookUrl ?? null,
+              ...(input.webhookSecret !== undefined
+                ? { webhookSecret: input.webhookSecret }
+                : {}),
+            }),
+          });
+        } catch (error) {
+          // Core rejects a second agent per API key; update that row instead.
+          const existingAgentId = existingAgentIdFromConflict(error);
+          if (!existingAgentId) throw error;
+          saved = await patchAgent(existingAgentId);
+        }
       }
+      setAgents((current) => {
+        const known = current.some((entry) => entry.id === saved.id);
+        const next = known
+          ? current.map((entry) =>
+              entry.id === saved.id
+                ? {
+                    ...saved,
+                    // Keep list position — PATCH often returns sortOrder 0.
+                    sortOrder: entry.sortOrder ?? saved.sortOrder ?? 0,
+                  }
+                : entry,
+            )
+          : [...current, saved];
+        const ordered = sortAgentsForDisplay(next);
+        writeAgentSortOrderIds(ordered.map((agent) => agent.id));
+        return ordered;
+      });
       // Server clears webhookVerifiedAt only when URL/secret actually change.
       // Refresh roster so chat strip drops unverified agents immediately.
       notifyShellAgentRosterChanged();
@@ -499,19 +505,11 @@ function SettingsApiTab({
     if (!result.ok) {
       // New core clears webhookVerifiedAt; old core still needs localStorage.
       clearAgentWebhookVerified(agentId);
-      patchShellAgentRosterAgent(agentId, { webhookVerifiedAt: null });
       notifyShellAgentRosterChanged();
       throw new Error(result.error?.trim() || "Webhook test failed");
     }
     // New core sets webhookVerifiedAt; old core still needs localStorage.
-    // Patch roster immediately: local twin has verifiedAt without URL/secret
-    // (cloud-only credentials), so a refresh must not drop this agent.
     markAgentWebhookVerified(agentId);
-    patchShellAgentRosterAgent(agentId, {
-      webhookUrl: input.webhookUrl,
-      webhookSecretConfigured: true,
-      webhookVerifiedAt: new Date().toISOString(),
-    });
     notifyShellAgentRosterChanged();
 
     const threadId = result.threadId?.trim() || null;

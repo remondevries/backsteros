@@ -28,6 +28,20 @@ export function isChatProjectRoomReady(
   return project.channelStatus === "active" && uri.length > 0;
 }
 
+/**
+ * Agent peer that represents a project room: the project's lead agent when it
+ * is in the roster, else `fallback` (the default header peer).
+ */
+export function resolveProjectRoomPeer<P extends { id: string }>(
+  project: Pick<ChatProjectOption, "leadAgentContactId"> | null,
+  peers: readonly P[],
+  fallback: P,
+): P {
+  const leadId = project?.leadAgentContactId?.trim();
+  if (!leadId) return fallback;
+  return peers.find((peer) => peer.id === leadId) ?? fallback;
+}
+
 export const CHAT_RECENT_PROJECTS_STORAGE_KEY =
   "backsteros:chat-recent-projects";
 /** Max project rooms shown left of Judith / first agent in the chat header. */

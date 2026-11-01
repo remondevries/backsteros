@@ -2,10 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { Agent } from "@backsteros/contracts";
 
-import {
-  mergeAgentRosters,
-  mergeAgentWebhookFields,
-} from "./shell-agent-roster-store";
+import { mergeAgentRosters } from "./shell-agent-roster-store";
 
 function stubAgent(
   partial: Pick<Agent, "id" | "name"> & Partial<Agent>,
@@ -28,7 +25,7 @@ function stubAgent(
 }
 
 describe("mergeAgentRosters", () => {
-  it("keeps local rows and overlays cloud webhook fields", () => {
+  it("keeps local-only rows and replaces matching rows with cloud", () => {
     const merged = mergeAgentRosters(
       [
         stubAgent({ id: "a1", name: "Niels", webhookUrl: null }),
@@ -47,56 +44,33 @@ describe("mergeAgentRosters", () => {
     assert.equal(merged.length, 2);
     const niels = merged.find((row) => row.id === "a1");
     assert.equal(niels?.webhookUrl, "https://example.com/niels");
-    assert.equal(niels?.webhookSecretConfigured, true);
     assert.equal(niels?.webhookVerifiedAt, "2026-11-01T00:00:00.000Z");
     assert.equal(merged.find((row) => row.id === "a2")?.webhookUrl, null);
   });
 
-  it("OS-164: keeps cloud URL/secret when local only gained verifiedAt", () => {
-    // After Test, verifiedAt twins to local without webhook credentials.
+  it("cloud clearing verifiedAt wins over a stale local twin", () => {
+    // Settings changed the URL on cloud; replication has not caught up yet.
     const local = stubAgent({
-      id: "XcvoBfuvYFr-vrHLeBsru",
+      id: "a1",
       name: "Niels",
-      contactId: "Vxxot5Rh1uAzqgfxkRvEQ",
-      webhookUrl: null,
-      webhookSecretConfigured: false,
-      webhookVerifiedAt: "2026-11-01T06:31:38.145Z",
+      webhookVerifiedAt: "2026-11-01T06:40:00.000Z",
     });
-    const priorCloudEnriched = stubAgent({
-      id: "XcvoBfuvYFr-vrHLeBsru",
+    const cloud = stubAgent({
+      id: "a1",
       name: "Niels",
-      contactId: "Vxxot5Rh1uAzqgfxkRvEQ",
-      webhookUrl: "https://example.com/niels",
+      webhookUrl: "https://example.com/new",
       webhookSecretConfigured: true,
       webhookVerifiedAt: null,
     });
-    const merged = mergeAgentRosters([local], [priorCloudEnriched]);
-    const niels = merged.find((row) => row.id === local.id);
-    assert.equal(niels?.webhookUrl, "https://example.com/niels");
-    assert.equal(niels?.webhookSecretConfigured, true);
-    assert.equal(niels?.webhookVerifiedAt, "2026-11-01T06:31:38.145Z");
+    const [niels] = mergeAgentRosters([local], [cloud]);
+    assert.equal(niels?.webhookVerifiedAt, null);
   });
-});
 
-describe("mergeAgentWebhookFields", () => {
-  it("prefers non-empty URL and either secret/verified flag", () => {
-    const left = stubAgent({
-      id: "a1",
-      name: "Niels",
-      webhookUrl: null,
-      webhookSecretConfigured: false,
-      webhookVerifiedAt: "2026-11-01T06:31:38.145Z",
-    });
-    const right = stubAgent({
-      id: "a1",
-      name: "Niels",
-      webhookUrl: "https://example.com/niels",
-      webhookSecretConfigured: true,
-      webhookVerifiedAt: null,
-    });
-    const merged = mergeAgentWebhookFields(left, right);
-    assert.equal(merged.webhookUrl, "https://example.com/niels");
-    assert.equal(merged.webhookSecretConfigured, true);
-    assert.equal(merged.webhookVerifiedAt, "2026-11-01T06:31:38.145Z");
+  it("drops disabled agents from either side", () => {
+    const merged = mergeAgentRosters(
+      [stubAgent({ id: "a1", name: "Judith", enabled: false })],
+      [stubAgent({ id: "a2", name: "Lotte", enabled: false })],
+    );
+    assert.deepEqual(merged, []);
   });
 });

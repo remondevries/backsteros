@@ -5,7 +5,6 @@ import type { Agent } from "@backsteros/contracts";
 
 import {
   agentHasWebhookUrl,
-  agentHasWebhookVerified,
   agentReadyForChatRoster,
 } from "./use-shell-agent-chat.js";
 import {
@@ -98,18 +97,29 @@ describe("OS-164 agentReadyForChatRoster", () => {
         webhookSecretConfigured: true,
         webhookVerifiedAt: null,
       });
-      assert.equal(agentHasWebhookVerified(ready), false);
       assert.equal(agentReadyForChatRoster(ready), false);
 
       const verified = {
         ...ready,
         webhookVerifiedAt: "2026-11-01T00:00:00.000Z",
       };
-      assert.equal(agentHasWebhookVerified(verified), true);
       assert.equal(agentReadyForChatRoster(verified), true);
       clearAgentWebhookVerified("a");
       assert.equal(agentReadyForChatRoster(verified), true);
     });
+  });
+
+  it("new core: local-core row without URL/secret is ready once verified", () => {
+    // Replication strips URL + secret; verifiedAt twins. Niels on local-core.
+    const niels = agent({
+      id: "XcvoBfuvYFr-vrHLeBsru",
+      name: "Niels",
+      webhookUrl: null,
+      webhookSecretConfigured: false,
+      webhookVerifiedAt: "2026-11-01T06:40:00.000Z",
+    });
+    assert.equal(agentReadyForChatRoster(niels), true);
+    assert.equal(agentReadyForChatRoster({ ...niels, enabled: false }), false);
   });
 
   it("old core: omits webhookVerifiedAt and falls back to localStorage", () => {
@@ -124,11 +134,13 @@ describe("OS-164 agentReadyForChatRoster", () => {
         Object.prototype.hasOwnProperty.call(ready, "webhookVerifiedAt"),
         false,
       );
-      assert.equal(agentHasWebhookVerified(ready), false);
       assert.equal(agentReadyForChatRoster(ready), false);
       markAgentWebhookVerified("a");
-      assert.equal(agentHasWebhookVerified(ready), true);
       assert.equal(agentReadyForChatRoster(ready), true);
+      assert.equal(
+        agentReadyForChatRoster({ ...ready, webhookSecretConfigured: false }),
+        false,
+      );
       clearAgentWebhookVerified("a");
       assert.equal(agentReadyForChatRoster(ready), false);
     });

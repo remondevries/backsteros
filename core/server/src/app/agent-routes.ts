@@ -102,13 +102,22 @@ export function registerAgentRoutes(app: Hono) {
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Could not create agent";
+      const meta = (error ?? {}) as {
+        status?: unknown;
+        existingAgentId?: unknown;
+      };
+      if (meta.status === 409 && typeof meta.existingAgentId === "string") {
+        return c.json(
+          {
+            error: message,
+            code: "conflict",
+            existingAgentId: meta.existingAgentId,
+          },
+          409,
+        );
+      }
       const status =
-        error &&
-        typeof error === "object" &&
-        "status" in error &&
-        typeof (error as { status: unknown }).status === "number"
-          ? ((error as { status: number }).status as 400)
-          : 400;
+        typeof meta.status === "number" ? (meta.status as 400) : 400;
       return c.json({ error: message, code: "bad_request" }, status);
     }
   });

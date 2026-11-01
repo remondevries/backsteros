@@ -179,6 +179,15 @@ test("OS-151/150 agents + chat loop: secret write-only, webhook fire, agent repl
   assertNoSecretLeak(listed.body, webhookPlain);
   assert.equal(typeof created.body.sortOrder, "number");
 
+  // A second agent for the same API key is rejected (duplicate Judith).
+  const duplicate = await json(app, "/api/v1/agents", ownerSecret, {
+    method: "POST",
+    body: JSON.stringify({ name: "Sander again", apiKeyId: agentKeyId }),
+  });
+  assert.equal(duplicate.status, 409);
+  assert.equal(duplicate.body?.code, "conflict");
+  assert.equal(duplicate.body?.existingAgentId, agentId);
+
   const second = await json(app, "/api/v1/agents", ownerSecret, {
     method: "POST",
     body: JSON.stringify({

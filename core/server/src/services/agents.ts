@@ -166,6 +166,25 @@ export async function createAgent(
 ): Promise<Agent> {
   await assertContact(workspaceId, input.contactId);
   await assertApiKey(workspaceId, input.apiKeyId);
+  if (input.apiKeyId != null) {
+    const [linked] = await db
+      .select({ id: agents.id })
+      .from(agents)
+      .where(
+        and(
+          eq(agents.workspaceId, workspaceId),
+          eq(agents.apiKeyId, input.apiKeyId),
+        ),
+      )
+      .orderBy(desc(agents.enabled), asc(agents.createdAt))
+      .limit(1);
+    if (linked) {
+      throw Object.assign(
+        new Error("An agent already exists for this API key"),
+        { status: 409, code: "conflict", existingAgentId: linked.id },
+      );
+    }
+  }
   const webhookUrl =
     input.webhookUrl === undefined
       ? null

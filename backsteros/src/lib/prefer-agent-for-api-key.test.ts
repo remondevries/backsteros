@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { Agent } from "@backsteros/contracts";
 
-import { preferAgentForApiKey } from "./prefer-agent-for-api-key.ts";
+import {
+  existingAgentIdFromConflict,
+  preferAgentForApiKey,
+} from "./prefer-agent-for-api-key.ts";
 
 function agent(partial: Partial<Agent> & Pick<Agent, "id" | "name">): Agent {
   return {
@@ -39,5 +42,44 @@ describe("preferAgentForApiKey", () => {
     });
     const picked = preferAgentForApiKey([empty, configured], "key-judith");
     assert.equal(picked?.id, "configured");
+  });
+
+  it("prefers the enabled row over a disabled duplicate", () => {
+    const disabled = agent({
+      id: "disabled",
+      name: "Judith",
+      enabled: false,
+      webhookUrl: "https://example.com/judith",
+      webhookSecretConfigured: true,
+      webhookVerifiedAt: "2026-11-01T06:33:21.123Z",
+    });
+    const enabled = agent({ id: "enabled", name: "Judith", sortOrder: 9 });
+    assert.equal(
+      preferAgentForApiKey([disabled, enabled], "key-judith")?.id,
+      "enabled",
+    );
+  });
+});
+
+describe("existingAgentIdFromConflict", () => {
+  function apiError(status: number, message: string): Error {
+    return Object.assign(new Error(message), { status });
+  }
+
+  it("reads existingAgentId from a 409 create response", () => {
+    const error = apiError(
+      409,
+      '409 {"error":"An agent already exists for this API key","code":"conflict","existingAgentId":"agent-1"}',
+    );
+    assert.equal(existingAgentIdFromConflict(error), "agent-1");
+  });
+
+  it("returns null for other statuses and malformed bodies", () => {
+    assert.equal(
+      existingAgentIdFromConflict(apiError(400, '400 {"existingAgentId":"x"}')),
+      null,
+    );
+    assert.equal(existingAgentIdFromConflict(apiError(409, "409 Conflict")), null);
+    assert.equal(existingAgentIdFromConflict("409"), null);
   });
 });
