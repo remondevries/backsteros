@@ -48,6 +48,7 @@ import {
   writeAgentSortOrderIds,
 } from "../lib/shell-agent-order";
 import { notifyShellAgentRosterChanged } from "../lib/shell-agent-roster";
+import { patchShellAgentRosterAgent } from "../lib/shell-agent-roster-store";
 import {
   clearAgentWebhookVerified,
   markAgentWebhookVerified,
@@ -493,11 +494,19 @@ function SettingsApiTab({
     if (!result.ok) {
       // New core clears webhookVerifiedAt; old core still needs localStorage.
       clearAgentWebhookVerified(agentId);
+      patchShellAgentRosterAgent(agentId, { webhookVerifiedAt: null });
       notifyShellAgentRosterChanged();
       throw new Error(result.error?.trim() || "Webhook test failed");
     }
     // New core sets webhookVerifiedAt; old core still needs localStorage.
+    // Patch roster immediately: local twin has verifiedAt without URL/secret
+    // (cloud-only credentials), so a refresh must not drop this agent.
     markAgentWebhookVerified(agentId);
+    patchShellAgentRosterAgent(agentId, {
+      webhookUrl: input.webhookUrl,
+      webhookSecretConfigured: true,
+      webhookVerifiedAt: new Date().toISOString(),
+    });
     notifyShellAgentRosterChanged();
 
     const threadId = result.threadId?.trim() || null;

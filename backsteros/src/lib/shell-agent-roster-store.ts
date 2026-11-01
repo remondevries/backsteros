@@ -3,6 +3,10 @@
  *
  * Prefer local-core (instant after agents twin), then refresh from the cloud
  * agents door so webhook URL / secretConfigured stay authoritative for chat.
+ *
+ * Webhook URL + secret ciphertext are cloud-only (not twin'd). After a Settings
+ * Test, verifiedAt can land on local via replication while URL/secret stay
+ * absent locally — never replace a cloud-enriched snapshot with local-only rows.
  */
 import type { Agent } from "@backsteros/contracts";
 
@@ -46,6 +50,23 @@ function setSnapshot(next: Partial<ShellAgentRosterSnapshot>): void {
   emit();
 }
 
+/**
+ * Overlay `right` onto `left`, keeping the stronger webhook credential fields
+ * from either side (URL / secretConfigured / verifiedAt are often split across
+ * local twin vs cloud door).
+ */
+export function mergeAgentWebhookFields(left: Agent, right: Agent): Agent {
+  return {
+    ...left,
+    ...right,
+    webhookUrl: right.webhookUrl?.trim() || left.webhookUrl?.trim() || null,
+    webhookSecretConfigured:
+      right.webhookSecretConfigured || left.webhookSecretConfigured,
+    webhookVerifiedAt:
+      right.webhookVerifiedAt?.trim() || left.webhookVerifiedAt?.trim() || null,
+  };
+}
+
 /** Local paints first; cloud overlays webhook fields by id. */
 export function mergeAgentRosters(
   local: readonly Agent[],
@@ -55,7 +76,10 @@ export function mergeAgentRosters(
   for (const agent of local) byId.set(agent.id, agent);
   for (const agent of cloud) {
     const previous = byId.get(agent.id);
-    byId.set(agent.id, previous ? { ...previous, ...agent } : agent);
+    byId.set(
+      agent.id,
+      previous ? mergeAgentWebhookFields(previous, agent) : agent,
+    );
   }
   return sortAgentsForDisplay(
     [...byId.values()].filter((agent) => agent.enabled),
@@ -72,6 +96,7 @@ function cloudLoadErrorMessage(error: unknown): string {
 async function loadOnce(): Promise<void> {
   let localAgents: Agent[] = [];
   let sawLocal = false;
+  const previousAgents = snapshot.agents;
 
   if (localFetcher) {
     try {
@@ -80,10 +105,14 @@ async function loadOnce(): Promise<void> {
         body.agents.filter((agent) => agent.enabled),
       );
       sawLocal = true;
-      // Paint local roster immediately; keep loading until cloud merge so chat
-      // does not flash the empty-webhook card before webhook fields arrive.
+      // Keep prior cloud webhook URL/secret while local catches up (verifiedAt
+      // twins without credentials). Avoid flashing an empty chat strip.
+      const painted =
+        previousAgents.length > 0
+          ? mergeAgentRosters(localAgents, previousAgents)
+          : localAgents;
       setSnapshot({
-        agents: localAgents,
+        agents: painted,
         error: null,
       });
     } catch {
@@ -104,7 +133,7 @@ async function loadOnce(): Promise<void> {
     });
   } catch (error) {
     if (sawLocal) {
-      // Keep local roster; surface cloud error only when chat needs webhooks.
+      // Keep coalesced local+previous webhook fields; do not wipe to local-only.
       setSnapshot({
         loading: false,
         error: cloudLoadErrorMessage(error),
@@ -128,6 +157,40 @@ export function configureShellAgentRosterLocalFetcher(
   fetcher: LocalAgentsFetcher | null,
 ): void {
   localFetcher = fetcher;
+}
+
+/**
+ * Optimistic roster update after Settings → Test (URL/secret live on cloud;
+ * verifiedAt may twin later without credentials on local).
+ */
+export function patchShellAgentRosterAgent(
+  agentId: string,
+  patch: {
+    webhookUrl?: string | null;
+    webhookSecretConfigured?: boolean;
+    webhookVerifiedAt?: string | null;
+  },
+): void {
+  const id = agentId.trim();
+  if (!id) return;
+  const agents = snapshot.agents.map((agent) => {
+    if (agent.id !== id) return agent;
+    return {
+      ...agent,
+      ...(patch.webhookUrl !== undefined
+        ? { webhookUrl: patch.webhookUrl?.trim() || null }
+        : {}),
+      ...(patch.webhookSecretConfigured !== undefined
+        ? { webhookSecretConfigured: patch.webhookSecretConfigured }
+        : {}),
+      ...(patch.webhookVerifiedAt !== undefined
+        ? { webhookVerifiedAt: patch.webhookVerifiedAt }
+        : {}),
+    };
+  });
+  setSnapshot({
+    agents: sortAgentsForDisplay(agents.filter((agent) => agent.enabled)),
+  });
 }
 
 let rosterChangedBound = false;
