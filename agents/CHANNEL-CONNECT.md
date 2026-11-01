@@ -66,6 +66,33 @@ BacksterOS uses it to show which agents can pick up the project's tasks.
   list (e.g. renaming the room).
 - Up to 100 ids; letters, digits and `. _ : @ -` only.
 
+### `project.channel.members.sync`
+
+The owner can press **Sync** on the project's Team property. That POSTs this
+event to the lead agent's webhook:
+
+```json
+{
+  "event": "project.channel.members.sync",
+  "projectId": "…",
+  "projectKey": "OS",
+  "projectName": "BacksterOS",
+  "requestedAt": "…",
+  "channel": { "uri": "grokbot://…", "name": "…", "members": ["…"] },
+  "report": {
+    "reportUrl": "https://agent.backsteros.com/api/v1/projects/<projectId>",
+    "method": "PATCH",
+    "body": { "channel": { "uri": "grokbot://…", "members": ["…"] } }
+  }
+}
+```
+
+Look up who is in the room right now and PATCH `channel` with the same `uri`
+and the full `members` list. `channel.members` in the payload is what
+BacksterOS has stored, so you can see what is out of date.
+
+## Status
+
 `channelStage` clears automatically on `active` / `inactive`. Do **not** set
 `channelStatus` to `connecting` and do **not** call
 `POST /projects/:id/channel/connect` (owner only → `403`).

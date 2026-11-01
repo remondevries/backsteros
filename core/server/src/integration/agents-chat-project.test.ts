@@ -260,6 +260,41 @@ test("project chat room: routes to lead, auth, no-lead notice", async (context) 
   );
   assert.equal(badMembers.status, 400);
 
+  // Team sync: owner asks the lead agent to re-report the room's members.
+  webhookHit = null;
+  const teamSync = await json(
+    app,
+    `/api/v1/projects/${projectId}/channel/members/sync`,
+    ownerSecret,
+    { method: "POST" },
+  );
+  assert.equal(teamSync.status, 200);
+  assert.equal(teamSync.body?.ok, true);
+  assert.ok(webhookHit);
+  const syncPayload = JSON.parse(webhookHit.body) as {
+    event: string;
+    projectId: string;
+    channel: { uri: string; members: string[] } | null;
+    report: { reportUrl: string; method: string };
+  };
+  assert.equal(syncPayload.event, "project.channel.members.sync");
+  assert.equal(syncPayload.projectId, projectId);
+  assert.equal(syncPayload.channel?.uri, roomUri);
+  assert.deepEqual(syncPayload.channel?.members, ["g-niels", "g-sander"]);
+  assert.equal(syncPayload.report.method, "PATCH");
+  assert.equal(
+    syncPayload.report.reportUrl,
+    `https://agent.backsteros.com/api/v1/projects/${projectId}`,
+  );
+  // Agents cannot trigger it; a project without a room cannot either.
+  const agentSync = await json(
+    app,
+    `/api/v1/projects/${projectId}/channel/members/sync`,
+    leadAgentSecret,
+    { method: "POST" },
+  );
+  assert.equal(agentSync.status, 403);
+
   const open = await json(app, "/api/v1/chat/threads", ownerSecret, {
     method: "POST",
     body: JSON.stringify({ projectId }),

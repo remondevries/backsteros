@@ -29,10 +29,14 @@ import {
   zValidator,
 } from "../route-deps.js";
 import type { Hono } from "../route-deps.js";
+import { projectChannelMemberIds } from "@backsteros/contracts";
+
 import {
   CHANNEL_CONNECT_WEBHOOK_EVENT,
+  CHANNEL_MEMBERS_SYNC_WEBHOOK_EVENT,
   postChannelConnectWebhook,
 } from "../../lib/channel-connect-webhook.js";
+import { resolveAgentsPublicBase } from "../../lib/agents-public-url.js";
 
 /** Projects CRUD, vault and relations. */
 export function registerProjectCoreRoutes(app: Hono) {
@@ -574,6 +578,80 @@ export function registerProjectCoreRoutes(app: Hono) {
       );
     }
     return c.json(body);
+  });
+
+  /**
+   * Owner-only: ask the lead agent to re-report the room's members. The agent
+   * answers asynchronously by PATCHing `channel.members`.
+   */
+  app.post("/api/v1/projects/:id/channel/members/sync", async (c) => {
+    const auth = getAuth(c);
+    if (!requireScope("projects:write")(auth)) {
+      return c.json(auth ? forbidden() : unauthorized(), auth ? 403 : 401);
+    }
+    if (isAgentPersonaAuth(auth)) {
+      return c.json(
+        {
+          error: "Only the owner can request a Team sync",
+          code: "channel_members_sync_owner_only",
+        },
+        403,
+      );
+    }
+
+    const projectIdRaw = c.req.param("id");
+    const projectId = await routeProjectId(auth.workspaceId, projectIdRaw);
+    if (!projectId) return c.json(notFound("Project"), 404);
+    const row = await taskProjectService.getProjectById(
+      auth.workspaceId,
+      projectId,
+    );
+    if (!row) return c.json(notFound("Project"), 404);
+    const channel = row.channel ?? null;
+    if (!channel?.uri?.trim()) {
+      return c.json(
+        {
+          error: "Connect a Channel before syncing the Team",
+          code: "channel_not_connected",
+        },
+        400,
+      );
+    }
+
+    const requestedAt = new Date().toISOString();
+    const webhook = await postChannelConnectWebhook({
+      workspaceId: auth.workspaceId,
+      payload: {
+        event: CHANNEL_MEMBERS_SYNC_WEBHOOK_EVENT,
+        projectId: row.id,
+        projectKey: row.key,
+        projectName: row.name,
+        type: row.type,
+        requestedAt,
+        leadAgentContactId: row.leadAgentContactId ?? null,
+        channel: {
+          uri: channel.uri,
+          name: channel.name ?? null,
+          members: projectChannelMemberIds(channel),
+        },
+        report: {
+          reportUrl: `${resolveAgentsPublicBase()}/api/v1/projects/${row.id}`,
+          method: "PATCH",
+          body: {
+            channel: {
+              uri: channel.uri,
+              members: ["<grok bot agent id of each agent in the room>"],
+            },
+          },
+        },
+      },
+    });
+
+    return c.json({
+      ok: webhook.ok,
+      requestedAt,
+      error: webhook.ok ? null : webhook.error,
+    });
   });
 
   app.delete("/api/v1/projects/:id", async (c) => {

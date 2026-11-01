@@ -4,7 +4,7 @@
  * Agent webhook URL + secret ciphertext are not replicated. Connect on
  * local-core must ask cloud (where secrets live) to POST the outbound webhook.
  */
-import type { ChannelConnectWebhookPayload } from "./channel-connect-webhook.js";
+import type { ChannelOutboundWebhookPayload } from "./channel-connect-webhook.js";
 import { getCoreReplicationConfig } from "../services/core-replication/config.js";
 
 const FORWARD_TIMEOUT_MS = 15_000;
@@ -69,7 +69,7 @@ async function peerFetch(
  */
 export async function forwardChannelConnectWebhookToCloud(input: {
   workspaceId: string;
-  payload: ChannelConnectWebhookPayload;
+  payload: ChannelOutboundWebhookPayload;
   fetchImpl?: typeof fetch;
 }): Promise<{ ok: true } | { ok: false; error: string }> {
   try {

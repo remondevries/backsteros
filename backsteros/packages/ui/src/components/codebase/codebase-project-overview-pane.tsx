@@ -71,6 +71,8 @@ import { GithubPullRequestIcon } from "./github-pull-request-icon.js";
 import { LocationFolderPicker } from "./location-folder-picker.js";
 import { ProjectChannelField } from "./project-channel-field.js";
 import { ProjectLeadAgentField } from "./project-lead-agent-field.js";
+import { ProjectTeamField } from "./project-team-field.js";
+import type { ProjectTeamAgent } from "./project-team-members.js";
 import type { AssigneeDropdownContact } from "../dropdowns/dropdown-options.js";
 import { normalizeWorkingDirectory } from "./normalize-working-directory.js";
 import type { ProjectFsClient } from "./project-fs-types.js";
@@ -1777,6 +1779,8 @@ export type CodebaseProjectOverviewPaneProps = {
   onOpenChatDeepLink?: ((href: string) => void) | null;
   /** Agent persona contacts for the Lead agent picker. */
   agentContacts?: readonly AssigneeDropdownContact[] | null;
+  /** Agent personas with Grok Bot ids — resolves the Team property. */
+  teamAgents?: readonly ProjectTeamAgent[] | null;
   avatarSrcById?: Readonly<Record<string, string | null | undefined>>;
 };
 
@@ -1812,6 +1816,7 @@ export function CodebaseProjectOverviewPane({
   copyIdShortcutEnabled = true,
   onOpenChatDeepLink = null,
   agentContacts = null,
+  teamAgents = null,
   avatarSrcById,
 }: CodebaseProjectOverviewPaneProps) {
   const tasksPanelToggle =
@@ -2180,6 +2185,14 @@ export function CodebaseProjectOverviewPane({
                         }}
                         requestJson={requestJson}
                         onOpenChatDeepLink={onOpenChatDeepLink}
+                      />
+                    </EntityOverviewField>
+                    <EntityOverviewField label="Team" layout="stacked">
+                      <ProjectTeamField
+                        project={project}
+                        agents={teamAgents ?? []}
+                        avatarSrcById={avatarSrcById}
+                        requestJson={requestJson}
                       />
                     </EntityOverviewField>
                   </div>

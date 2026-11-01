@@ -365,6 +365,85 @@
   gap: 6px;
 }
 
+.project-team-field {
+  display: inline-flex;
+  min-width: 0;
+  max-width: 100%;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.project-team-field__list {
+  display: inline-flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.project-team-field__member {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px 3px 4px;
+  border: 0.5px solid color-mix(in srgb, var(--foreground) 12%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--foreground) 4%, transparent);
+}
+
+.project-team-field__member.is-unknown {
+  opacity: 0.6;
+}
+
+.project-team-field__name {
+  overflow: hidden;
+  font-size: 12px;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-team-field__empty {
+  font-size: 12px;
+  line-height: 16px;
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
+}
+
+.project-team-field__sync {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 9px;
+  border: 0.5px solid color-mix(in srgb, var(--foreground) 12%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--foreground) 4%, transparent);
+  color: color-mix(in srgb, var(--foreground) 70%, transparent);
+  font: inherit;
+  font-size: 12px;
+  line-height: 16px;
+  cursor: pointer;
+}
+
+.project-team-field__sync:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--foreground) 8%, transparent);
+}
+
+.project-team-field__sync:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.project-team-field__notice {
+  font-size: 12px;
+  line-height: 16px;
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
+}
+
 .project-channel-field__error {
   font-size: 12px;
   line-height: 16px;

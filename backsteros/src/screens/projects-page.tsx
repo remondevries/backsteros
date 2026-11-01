@@ -37,6 +37,7 @@ import {
   ProjectHealthCheckProperty,
   ProjectLeadAgentField,
   ProjectOcticon,
+  ProjectTeamField,
   PillNav,
   RegisterEntityDeleteAction,
   RegisterEntityDuplicateAction,
@@ -363,6 +364,20 @@ function ProjectDetailScreen({
     }
     return ordered;
   }, [contacts, selected, shellAgents]);
+
+  // Team property: room member ids resolve through the agents' Grok Bot ids.
+  const teamAgents = useMemo(() => {
+    const byId = new Map(contacts.map((contact) => [contact.id, contact]));
+    return shellAgents.map((agent) => {
+      const contactId = agent.contactId?.trim() || null;
+      return {
+        contactId,
+        name: (contactId ? byId.get(contactId)?.name : null) || agent.name,
+        role: agent.role ?? null,
+        grokbotAgentId: agent.grokbotAgentId ?? null,
+      };
+    });
+  }, [contacts, shellAgents]);
 
   const navTypeForDocs = projectTypeFromLocationState(location.state);
   const selectedIsCodebase = Boolean(
@@ -2265,6 +2280,7 @@ function ProjectDetailScreen({
           organizations={Object.values(workspace.organizationDetails)}
           nestedAreas={mapWorkspaceNestedAreas(workspace.areas)}
           agentContacts={agentContactsForLead}
+          teamAgents={teamAgents}
           contactAvatarSrcById={contactAvatarSrc}
           tasks={[]}
           taskProgress={taskProgress}
@@ -2804,11 +2820,33 @@ function ProjectDetailScreen({
     </EntityPropertiesSection>
   ) : null;
 
+  const teamField = (
+    <PropertyFieldGroup label="Team">
+      <ProjectTeamField
+        project={{
+          id: project.id,
+          channel:
+            (
+              project as {
+                channel?: { uri: string; name?: string | null } | null;
+              }
+            ).channel ?? null,
+        }}
+        agents={teamAgents}
+        avatarSrcById={contactAvatarSrc}
+        requestJson={(path, init) => desktopApiClient.requestJson(path, init)}
+      />
+    </PropertyFieldGroup>
+  );
+
   const agentsExtra = (
-    <div className="project-properties-field-row">
-      {leadAgentField}
-      {channelField}
-    </div>
+    <>
+      <div className="project-properties-field-row">
+        {leadAgentField}
+        {channelField}
+      </div>
+      {teamField}
+    </>
   );
 
   const domainBelowProperties = isDomainProject ? (

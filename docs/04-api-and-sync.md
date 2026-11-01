@@ -240,6 +240,12 @@ from notifications and Channel `needs_details`.
    `channel` write without `members` keeps the stored list. Re-PATCH `channel`
    when agents join or leave. Desktop task Agents tab lists only these agents
    (plus the lead) once set.
+6. Team sync — owner-only `POST /api/v1/projects/:id/channel/members/sync`
+   (403 for agent keys, 400 without a connected channel) POSTs
+   `project.channel.members.sync` to the lead agent's webhook with the stored
+   `channel` and a `report` block. The agent answers by PATCHing
+   `channel.members`; the response is just `{ ok, requestedAt, error }`.
+   Locations → Team shows the resolved members and hosts the Sync button.
 5. To abort: `PATCH` `{ "channelStatus": "inactive", "channel": null }`.
 
 #### `GET /search` (agents)

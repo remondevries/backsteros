@@ -61,9 +61,9 @@ import { AgentMailApiError } from "../../lib/agentmail-client.js";
 import * as agentmailSettingsService from "../agentmail-settings.js";
 import { readEmailAgentCallback } from "../email-agent-callbacks.js";
 import {
-  CHANNEL_CONNECT_WEBHOOK_EVENT,
+  isChannelOutboundWebhookEvent,
   postChannelConnectWebhook,
-  type ChannelConnectWebhookPayload,
+  type ChannelOutboundWebhookPayload,
 } from "../../lib/channel-connect-webhook.js";
 import {
   AGENT_CHAT_WEBHOOK_EVENT,
@@ -990,7 +990,7 @@ export function registerCoreReplicationRoutes(app: Hono) {
 
       const body = (await c.req.json().catch(() => null)) as {
         workspace_id?: string;
-        payload?: ChannelConnectWebhookPayload;
+        payload?: ChannelOutboundWebhookPayload;
       } | null;
 
       const workspaceId = body?.workspace_id?.trim();
@@ -999,7 +999,7 @@ export function registerCoreReplicationRoutes(app: Hono) {
         !workspaceId ||
         !payload ||
         typeof payload !== "object" ||
-        payload.event !== CHANNEL_CONNECT_WEBHOOK_EVENT ||
+        !isChannelOutboundWebhookEvent(payload.event) ||
         typeof payload.projectId !== "string" ||
         !payload.projectId.trim()
       ) {

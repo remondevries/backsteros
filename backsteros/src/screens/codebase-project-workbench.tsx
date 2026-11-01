@@ -31,6 +31,7 @@ import {
   type ProjectDetailNestedArea,
   type ProjectFsClient,
   type ProjectRouteScope,
+  type ProjectTeamAgent,
   type SelectProjectFileHandler,
 } from "@backsteros/ui";
 
@@ -100,6 +101,7 @@ type Props = {
     email?: string | null;
     avatarSrc?: string | null;
   }>;
+  teamAgents?: readonly ProjectTeamAgent[];
   contactAvatarSrcById?: Readonly<Record<string, string | null | undefined>>;
   tasks: ApiTask[];
   taskProgress: { total: number; completed: number };
@@ -199,6 +201,7 @@ export function CodebaseProjectWorkbench({
   organizations,
   nestedAreas = [],
   agentContacts = [],
+  teamAgents = [],
   contactAvatarSrcById,
   tasks,
   taskProgress,
@@ -1074,6 +1077,7 @@ export function CodebaseProjectWorkbench({
             organizations={organizations}
             nestedAreas={nestedAreas}
             agentContacts={agentContacts}
+            teamAgents={teamAgents}
             avatarSrcById={contactAvatarSrcById}
             onCreateOrganizationFromQuery={onCreateOrganizationFromQuery}
             tasks={tasks}

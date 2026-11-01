@@ -5489,6 +5489,17 @@ export {
   type ProjectLeadAgentFieldProject,
 } from "./components/codebase/project-lead-agent-field.js";
 
+export {
+  ProjectTeamField,
+  type ProjectTeamFieldProps,
+  type ProjectTeamFieldProject,
+} from "./components/codebase/project-team-field.js";
+export {
+  resolveProjectTeamMembers,
+  type ProjectTeamAgent,
+  type ProjectTeamMember,
+} from "./components/codebase/project-team-members.js";
+
 export { apiErrorMessage as codebaseApiErrorMessage } from "./components/codebase/api-error-message.js";
 export {
   fileExtension,

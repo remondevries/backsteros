@@ -24,13 +24,15 @@ import {
 } from "./channel-connect-cloud-forward.js";
 
 export const CHANNEL_CONNECT_WEBHOOK_EVENT = "project.channel.connect" as const;
+/** Owner asked the lead agent to re-report who is in the room. */
+export const CHANNEL_MEMBERS_SYNC_WEBHOOK_EVENT =
+  "project.channel.members.sync" as const;
 export const CHANNEL_CONNECT_WEBHOOK_TIMEOUT_MS = 10_000;
 /** Same secret header as agent chat (Cursor automations accept Bearer too). */
 export const CHANNEL_CONNECT_WEBHOOK_SECRET_HEADER =
   AGENT_CHAT_WEBHOOK_SECRET_HEADER;
 
-export type ChannelConnectWebhookPayload = {
-  event: typeof CHANNEL_CONNECT_WEBHOOK_EVENT;
+type ChannelWebhookPayloadBase = {
   projectId: string;
   projectKey: string;
   projectName: string;
@@ -38,6 +40,37 @@ export type ChannelConnectWebhookPayload = {
   requestedAt: string;
   leadAgentContactId: string | null;
 };
+
+export type ChannelConnectWebhookPayload = ChannelWebhookPayloadBase & {
+  event: typeof CHANNEL_CONNECT_WEBHOOK_EVENT;
+};
+
+/**
+ * Ask the lead agent for the room's current members. The agent answers by
+ * PATCHing the project `channel` with the full `members` list.
+ */
+export type ChannelMembersSyncWebhookPayload = ChannelWebhookPayloadBase & {
+  event: typeof CHANNEL_MEMBERS_SYNC_WEBHOOK_EVENT;
+  channel: { uri: string; name?: string | null; members?: string[] } | null;
+  report: {
+    reportUrl: string;
+    method: "PATCH";
+    body: { channel: { uri: string; members: string[] } };
+  };
+};
+
+export type ChannelOutboundWebhookPayload =
+  | ChannelConnectWebhookPayload
+  | ChannelMembersSyncWebhookPayload;
+
+export function isChannelOutboundWebhookEvent(
+  event: unknown,
+): event is ChannelOutboundWebhookPayload["event"] {
+  return (
+    event === CHANNEL_CONNECT_WEBHOOK_EVENT ||
+    event === CHANNEL_MEMBERS_SYNC_WEBHOOK_EVENT
+  );
+}
 
 export type ChannelConnectWebhookConfig = {
   url: string;
@@ -129,7 +162,7 @@ export async function resolveChannelConnectWebhookConfig(
 export async function postChannelConnectWebhook(
   input: {
     workspaceId: string;
-    payload: ChannelConnectWebhookPayload;
+    payload: ChannelOutboundWebhookPayload;
     fetchImpl?: typeof fetch;
     /** Test/inject override — never log. */
     configOverride?: ChannelConnectWebhookConfig | null;
@@ -168,7 +201,7 @@ export async function postChannelConnectWebhook(
   }
 
   const fetchImpl = input.fetchImpl ?? fetch;
-  const deliveryId = `channel-connect:${input.payload.projectId}:${input.payload.requestedAt}`;
+  const deliveryId = `${input.payload.event}:${input.payload.projectId}:${input.payload.requestedAt}`;
   // Same auth as agent chat → Cursor automations (Bearer + secret header).
   const headers = buildAgentChatWebhookHeaders({
     secret: config.secret,
