@@ -20,6 +20,7 @@ import {
   ensureShellAgentRosterLoaded,
   getShellAgentRosterSnapshot,
   subscribeShellAgentRoster,
+  type ShellAgentRosterSnapshot,
 } from "../lib/shell-agent-roster-store";
 import { isAgentWebhookVerified } from "../lib/shell-agent-webhook-verified";
 
@@ -123,7 +124,8 @@ export type ShellAgentChatApi = {
  * Shell chat + lead-agent roster. Local-core agents paint first (after twin);
  * cloud refresh merges webhook fields. Chat threads still use the agents door.
  */
-export function useShellAgentChat(): ShellAgentChatApi {
+/** Shared agent roster snapshot (local-core first, cloud overlay). */
+export function useShellAgentRoster(): ShellAgentRosterSnapshot {
   const { client } = useDesktopApi();
   const [roster, setRoster] = useState(getShellAgentRosterSnapshot);
 
@@ -135,6 +137,12 @@ export function useShellAgentChat(): ShellAgentChatApi {
     ensureShellAgentRosterLoaded();
     return unsubscribe;
   }, [client]);
+
+  return roster;
+}
+
+export function useShellAgentChat(): ShellAgentChatApi {
+  const roster = useShellAgentRoster();
 
   const agents = roster.agents;
   const agentsLoading = roster.loading;

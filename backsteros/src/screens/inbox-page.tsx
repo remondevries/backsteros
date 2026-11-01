@@ -7,6 +7,7 @@ import {
   RegisterEntityDeleteAction,
   RegisterEntityDuplicateAction,
   TASK_SIDE_PANEL_TERMINAL_ID,
+  TaskAgentsPanel,
   TaskDetailView,
   TaskLinkedCommitSection,
   buildAssigneeDropdownOptions,
@@ -31,6 +32,7 @@ import { DesktopTaskActivityPanel } from "../components/desktop-task-activity-pa
 import { DesktopTaskLayout } from "../components/desktop-task-layout";
 import { TaskShellWorkspace } from "../components/task-shell-workspace";
 import { resolveTaskShellCwd } from "../lib/task-shell-cwd";
+import { useTaskAgentCandidates } from "../lib/use-task-agent-candidates";
 import { navigateToHref } from "../router/navigate-href";
 import { useDesktopSectionBreadcrumb } from "../lib/use-desktop-breadcrumb";
 import { useTaskFileAttachments } from "../lib/use-task-file-attachments";
@@ -280,6 +282,10 @@ function InboxPageBody() {
 
   useEnsureProjectVault(
     keepAliveActive ? selectedTaskRecord?.projectId : null);
+
+  const taskAgents = useTaskAgentCandidates(
+    selectedTaskRecord?.projectKey ?? null,
+  );
 
   const bumpActivityFeed = useCallback(() => {
     setActivityFeedBump((n) => n + 1);
@@ -637,7 +643,7 @@ function InboxPageBody() {
     ? [
         {
           id: TASK_SIDE_PANEL_TERMINAL_ID,
-          label: "Terminal",
+          label: taskAgents.tabLabel,
           kind: "terminal" as const,
         },
         ...linkedCommitShas.map((sha) => ({
@@ -673,6 +679,7 @@ function InboxPageBody() {
             onHidePanel={hide}
             canLinkCommits={canLinkCommit}
             terminalTabVisible
+            terminalTabLabel={taskAgents.tabLabel}
             terminalPane={
               <TaskShellWorkspace
                 key={`${selectedTask.id}-${terminalSessionKey}`}
@@ -682,6 +689,12 @@ function InboxPageBody() {
                 }
                 taskId={selectedTask.id}
                 cwd={shellCwd ?? workingDirectory}
+                agentsPane={
+                  <TaskAgentsPanel
+                    candidates={taskAgents.candidates}
+                    loading={taskAgents.loading}
+                  />
+                }
               />
             }
             onLinkCommit={async (sha) => {

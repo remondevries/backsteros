@@ -7,6 +7,7 @@ import {
   RegisterEntityDuplicateAction,
   RegisterPageTitle,
   TASK_SIDE_PANEL_TERMINAL_ID,
+  TaskAgentsPanel,
   TaskDetailSkeleton,
   TaskDetailView,
   TaskLinkedCommitSection,
@@ -43,6 +44,7 @@ import {
 import { DesktopTaskLayout } from "../components/desktop-task-layout";
 import { TaskShellWorkspace } from "../components/task-shell-workspace";
 import { resolveTaskShellCwd } from "../lib/task-shell-cwd";
+import { useTaskAgentCandidates } from "../lib/use-task-agent-candidates";
 import { navigateToHref } from "../router/navigate-href";
 import {
   listReturnHrefFromState,
@@ -827,6 +829,8 @@ export function TaskDetailPage({
     }
   }, [base, contacts, navigate, projects, workspace]);
 
+  const taskAgents = useTaskAgentCandidates(task?.projectKey ?? null);
+
   if (!task) {
     // Hydrating, or a just-created opaque id before the workspace index lands.
     // A stale bootstrap prop used to force Not found here (`!bootstrapTask` gate).
@@ -880,7 +884,7 @@ export function TaskDetailPage({
     ? [
         {
           id: TASK_SIDE_PANEL_TERMINAL_ID,
-          label: "Terminal",
+          label: taskAgents.tabLabel,
           kind: "terminal" as const,
         },
         ...linkedCommitShas.map((sha) => ({
@@ -1117,6 +1121,7 @@ export function TaskDetailPage({
             onHidePanel={hide}
             canLinkCommits={canLinkCommit}
             terminalTabVisible
+            terminalTabLabel={taskAgents.tabLabel}
             terminalPane={
               <TaskShellWorkspace
                 key={`${task.id}-${terminalSessionKey}`}
@@ -1126,6 +1131,12 @@ export function TaskDetailPage({
                 }
                 taskId={task.id}
                 cwd={shellCwd ?? workingDirectory}
+                agentsPane={
+                  <TaskAgentsPanel
+                    candidates={taskAgents.candidates}
+                    loading={taskAgents.loading}
+                  />
+                }
               />
             }
             onLinkCommit={async (sha) => {

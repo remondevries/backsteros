@@ -5524,6 +5524,16 @@ export {
   type TaskLinkedCommitSectionProps,
 } from "./components/codebase/task-linked-commit-section.js";
 export {
+  TaskAgentsPanel,
+  type TaskAgentsPanelProps,
+} from "./components/codebase/task-agents-panel.js";
+export {
+  buildTaskAgentCandidates,
+  taskAgentTabLabel,
+  type TaskAgentCandidate,
+  type TaskAgentCandidateInput,
+} from "./tasks/task-agent-candidates.js";
+export {
   PullRequestDetailPane,
   type PullDetailTab,
   type PullRequestDetailPaneProps,

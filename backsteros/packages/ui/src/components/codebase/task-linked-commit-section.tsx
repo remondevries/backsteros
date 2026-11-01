@@ -111,6 +111,8 @@ export type TaskLinkedCommitSectionProps = {
   terminalPane?: ReactNode;
   /** When false, hide the Terminal tab entirely. Default true if `terminalPane` set. */
   terminalTabVisible?: boolean;
+  /** Label for the durable first tab (e.g. the project's lead agent). */
+  terminalTabLabel?: string;
   /** Allow linking commits (GitHub-backed). Default true. */
   canLinkCommits?: boolean;
 };
@@ -135,6 +137,7 @@ export function TaskLinkedCommitSection({
   openPickerRequest = 0,
   terminalPane = null,
   terminalTabVisible,
+  terminalTabLabel = "Terminal",
   canLinkCommits = true,
 }: TaskLinkedCommitSectionProps) {
   const shas = normalizeShaList(linkedCommitShas);
@@ -425,10 +428,10 @@ export function TaskLinkedCommitSection({
                 ]
                   .filter(Boolean)
                   .join(" ")}
-                title="Terminal"
+                title={terminalTabLabel}
                 onClick={() => setActiveSurface(TASK_SIDE_PANEL_TERMINAL_ID)}
               >
-                Terminal
+                {terminalTabLabel}
               </button>
             ) : null}
             {shas.map((sha) => {

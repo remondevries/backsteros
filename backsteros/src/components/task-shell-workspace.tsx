@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import {
   SegmentedPillToggle,
   type SegmentedPillToggleOption,
@@ -6,12 +6,12 @@ import {
 
 import { TaskShellTerminal } from "./task-shell-terminal";
 
-export type TaskShellWorkspaceMode = "terminal" | "ui";
+export type TaskShellWorkspaceMode = "agents" | "terminal";
 
 const MODE_OPTIONS: readonly SegmentedPillToggleOption<TaskShellWorkspaceMode>[] =
   [
+    { value: "agents", label: "Agents" },
     { value: "terminal", label: "Terminal" },
-    { value: "ui", label: "UI" },
   ];
 
 export type TaskShellWorkspaceProps = {
@@ -19,44 +19,54 @@ export type TaskShellWorkspaceProps = {
   active: boolean;
   taskId: string;
   cwd: string | null;
+  /** Agents view (who can work on this task). */
+  agentsPane: ReactNode;
 };
 
 /**
- * Terminal tab body: interactive shell or placeholder chat UI, with a
- * bottom-left Terminal / UI toggle.
+ * Agent tab body: the task's agents or an interactive shell, with a
+ * bottom-right Agents / Terminal toggle.
  */
 export function TaskShellWorkspace({
   active,
   taskId,
   cwd,
+  agentsPane,
 }: TaskShellWorkspaceProps) {
-  const [mode, setMode] = useState<TaskShellWorkspaceMode>("terminal");
+  const [mode, setMode] = useState<TaskShellWorkspaceMode>("agents");
+  const [terminalStarted, setTerminalStarted] = useState(false);
+  const changeMode = (next: TaskShellWorkspaceMode) => {
+    if (next === "terminal") setTerminalStarted(true);
+    setMode(next);
+  };
 
   return (
     <div className="task-shell-workspace">
+      <div
+        className="task-shell-workspace__pane task-shell-workspace__pane--agents"
+        hidden={mode !== "agents"}
+        aria-hidden={mode !== "agents" || undefined}
+      >
+        {agentsPane}
+      </div>
       <div
         className="task-shell-workspace__pane"
         hidden={mode !== "terminal"}
         aria-hidden={mode !== "terminal" || undefined}
       >
-        {/* Stay connected while flipping to UI so the shell session survives. */}
-        <TaskShellTerminal active={active} taskId={taskId} cwd={cwd} />
-      </div>
-      <div
-        className="task-shell-workspace__pane task-shell-workspace__pane--ui"
-        hidden={mode !== "ui"}
-        aria-hidden={mode !== "ui" || undefined}
-      >
-        <p className="task-shell-workspace__ui-placeholder">
-          Chat UI coming soon.
-        </p>
+        {/* Start on first open; stays connected while flipping back to Agents. */}
+        <TaskShellTerminal
+          active={active && terminalStarted}
+          taskId={taskId}
+          cwd={cwd}
+        />
       </div>
       <div className="task-shell-workspace__mode-toggle">
         <SegmentedPillToggle
           value={mode}
           options={MODE_OPTIONS}
-          onChange={setMode}
-          ariaLabel="Terminal or UI"
+          onChange={changeMode}
+          ariaLabel="Agents or Terminal"
         />
       </div>
     </div>
