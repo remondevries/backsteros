@@ -47,6 +47,7 @@ import {
   writeAgentApiKeySortOrderIds,
   writeAgentSortOrderIds,
 } from "../lib/shell-agent-order";
+import { preferAgentForApiKey } from "../lib/prefer-agent-for-api-key";
 import { notifyShellAgentRosterChanged } from "../lib/shell-agent-roster";
 import { patchShellAgentRosterAgent } from "../lib/shell-agent-roster-store";
 import {
@@ -213,10 +214,14 @@ function SettingsApiTab({
     const map = new Map<string, AgentWebhookSettings>();
     // Index = display order so webhook edits that return sortOrder 0 cannot
     // reshuffle the Agent tab (table sorts by this field).
-    for (const [index, agent] of sortAgentsForDisplay(agents).entries()) {
-      if (!agent.apiKeyId) continue;
+    const ordered = sortAgentsForDisplay(agents);
+    const seenApiKeys = new Set<string>();
+    for (const [index, agent] of ordered.entries()) {
+      if (!agent.apiKeyId || seenApiKeys.has(agent.apiKeyId)) continue;
+      seenApiKeys.add(agent.apiKeyId);
+      const preferred = preferAgentForApiKey(agents, agent.apiKeyId) ?? agent;
       map.set(agent.apiKeyId, {
-        ...toAgentWebhookSettings(agent),
+        ...toAgentWebhookSettings(preferred),
         sortOrder: index,
       });
     }
@@ -319,7 +324,7 @@ function SettingsApiTab({
     apiKeyId: string,
     input: { webhookUrl?: string | null; webhookSecret?: string },
   ): Promise<AgentWebhookSettings | null> {
-    const existing = agents.find((agent) => agent.apiKeyId === apiKeyId);
+    const existing = preferAgentForApiKey(agents, apiKeyId);
     const apiKey = apiKeys.find((entry) => entry.id === apiKeyId);
     try {
       let saved: Agent;
@@ -525,7 +530,7 @@ function SettingsApiTab({
     const agentIds: string[] = [];
     const seen = new Set<string>();
     for (const apiKeyId of orderedApiKeyIds) {
-      const linked = agents.find((agent) => agent.apiKeyId === apiKeyId);
+      const linked = preferAgentForApiKey(agents, apiKeyId);
       if (!linked || seen.has(linked.id)) continue;
       seen.add(linked.id);
       agentIds.push(linked.id);
