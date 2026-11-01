@@ -86,7 +86,10 @@ export function TaskShellTerminal({
         cursorBlink: true,
         fontSize: 12,
         lineHeight: 1.2,
-        fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+        // Nerd Fonts first so prompt icons (starship / powerline glyphs in the
+        // Private Use Area) render; system monospace has none of them.
+        fontFamily:
+          '"JetBrainsMonoNL Nerd Font", "JetBrainsMono Nerd Font", "MesloLGS Nerd Font", "Hack Nerd Font", "Symbols Nerd Font Mono", ui-monospace, SFMono-Regular, Menlo, monospace',
         scrollback: 5_000,
         theme: {
           background: "#0A0A0A",
