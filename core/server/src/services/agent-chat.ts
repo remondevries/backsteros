@@ -67,6 +67,7 @@ import {
   type AgentWebhookTestPayload,
   buildAgentChatReplyUrl,
   buildAgentChatWebhookHeaders,
+  buildAgentIdentityReportRequest,
   decryptAgentChatWebhookSecret,
 } from "../lib/agent-chat-webhook.js";
 import { resolveChatLinkPreviews } from "../lib/chat-link-preview.js";
@@ -1049,7 +1050,11 @@ export async function testAgentWebhook(
   const message: AgentChatWebhookMessage = {
     id: testId,
     role: "user",
-    text: "BacksterOS webhook test — reply with a short welcome in this thread.",
+    text:
+      "BacksterOS webhook test — reply with a short welcome in this thread. " +
+      "Also report your own Grok Bot agent id: PATCH /api/v1/agents/me with " +
+      '{"grokbotAgentId":"<your id>"} using your BacksterOS API key ' +
+      "(see `identity` in this payload).",
     createdAt: now,
   };
   const prior = await recentContext(
@@ -1069,6 +1074,7 @@ export async function testAgentWebhook(
     context: [...prior, message],
     deliveryId,
     timestamp: now,
+    identity: buildAgentIdentityReportRequest(),
   };
   const result = await deliverAgentChatWebhook(
     payload,

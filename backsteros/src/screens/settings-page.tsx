@@ -129,6 +129,7 @@ function toAgentWebhookSettings(agent: Agent): AgentWebhookSettings {
     webhookUrl: agent.webhookUrl,
     webhookSecretConfigured: agent.webhookSecretConfigured,
     sortOrder: agent.sortOrder ?? 0,
+    grokbotAgentId: agent.grokbotAgentId ?? null,
   };
 }
 

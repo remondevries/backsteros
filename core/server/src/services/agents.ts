@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, ne, sql } from "drizzle-orm";
 import type {
   Agent,
   CreateAgentInput,
@@ -27,6 +27,7 @@ function toPublic(row: {
   webhookUrl: string | null;
   webhookSecretCiphertext: string | null;
   webhookVerifiedAt: Date | null;
+  grokbotAgentId: string | null;
   createdAt: Date;
   updatedAt: Date;
 }): Agent {
@@ -45,6 +46,7 @@ function toPublic(row: {
     webhookVerifiedAt: row.webhookVerifiedAt
       ? row.webhookVerifiedAt.toISOString()
       : null,
+    grokbotAgentId: row.grokbotAgentId,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
@@ -86,6 +88,31 @@ async function assertApiKey(
     .limit(1);
   if (!row || row.revokedAt) {
     throw badRequest("apiKeyId does not match an active workspace API key");
+  }
+}
+
+/** Throws 409 when another agent in the workspace already has this Grok Bot id. */
+async function assertGrokbotAgentIdFree(
+  workspaceId: string,
+  agentId: string,
+  grokbotAgentId: string,
+): Promise<void> {
+  const [claimed] = await db
+    .select({ id: agents.id })
+    .from(agents)
+    .where(
+      and(
+        eq(agents.workspaceId, workspaceId),
+        eq(agents.grokbotAgentId, grokbotAgentId),
+        ne(agents.id, agentId),
+      ),
+    )
+    .limit(1);
+  if (claimed) {
+    throw Object.assign(
+      new Error("Another agent already reported this Grok Bot agent id"),
+      { status: 409, code: "conflict", existingAgentId: claimed.id },
+    );
   }
 }
 
@@ -132,6 +159,43 @@ export async function getAgentByContactId(
       ),
     )
     .limit(1);
+  return row ? toPublic(row) : null;
+}
+
+/**
+ * The agent linked to an API key (agent self-lookup). Prefers the enabled,
+ * oldest row when a stale duplicate still points at the same key.
+ */
+export async function getAgentForApiKey(
+  workspaceId: string,
+  apiKeyId: string,
+): Promise<Agent | null> {
+  const [row] = await db
+    .select()
+    .from(agents)
+    .where(
+      and(eq(agents.workspaceId, workspaceId), eq(agents.apiKeyId, apiKeyId)),
+    )
+    .orderBy(desc(agents.enabled), asc(agents.createdAt))
+    .limit(1);
+  return row ? toPublic(row) : null;
+}
+
+/** Agent reports its own Grok Bot id with its own API key. */
+export async function reportAgentIdentity(
+  workspaceId: string,
+  apiKeyId: string,
+  grokbotAgentId: string,
+): Promise<Agent | null> {
+  const agent = await getAgentForApiKey(workspaceId, apiKeyId);
+  if (!agent) return null;
+  if (agent.grokbotAgentId === grokbotAgentId) return agent;
+  await assertGrokbotAgentIdFree(workspaceId, agent.id, grokbotAgentId);
+  const [row] = await db
+    .update(agents)
+    .set({ grokbotAgentId, updatedAt: new Date() })
+    .where(and(eq(agents.workspaceId, workspaceId), eq(agents.id, agent.id)))
+    .returning();
   return row ? toPublic(row) : null;
 }
 
@@ -250,6 +314,11 @@ export async function updateAgent(
   if ("role" in input) patch.role = input.role ?? null;
   if (input.enabled !== undefined) patch.enabled = input.enabled;
   if (input.sortOrder !== undefined) patch.sortOrder = input.sortOrder;
+  if ("grokbotAgentId" in input) {
+    const next = input.grokbotAgentId ?? null;
+    if (next) await assertGrokbotAgentIdFree(workspaceId, agentId, next);
+    patch.grokbotAgentId = next;
+  }
   let clearWebhookVerified = false;
   if ("webhookUrl" in input) {
     const nextUrl = normalizeWebhookUrl(input.webhookUrl ?? null);

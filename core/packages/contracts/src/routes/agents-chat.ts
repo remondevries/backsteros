@@ -23,6 +23,7 @@ import {
   errorSchema,
   getOrCreateChatThreadInputSchema,
   reorderAgentsInputSchema,
+  reportAgentIdentityInputSchema,
   updateAgentInputSchema,
   updateChatThreadAgentStatusInputSchema,
   uploadChatThreadAttachmentResultSchema,
@@ -41,6 +42,33 @@ export const agentsChatRoutes: AppRouter = c.router({
       403: errorSchema,
     },
     summary: "List chat agents (webhook secret never included)",
+  },
+  getMyAgent: {
+    method: "GET",
+    path: "/api/v1/agents/me",
+    responses: {
+      200: agentSchema,
+      401: errorSchema,
+      403: errorSchema,
+      404: errorSchema,
+    },
+    summary:
+      "Agent self-lookup: the agent linked to the calling API key (no settings scope needed)",
+  },
+  reportMyAgentIdentity: {
+    method: "PATCH",
+    path: "/api/v1/agents/me",
+    body: reportAgentIdentityInputSchema,
+    responses: {
+      200: agentSchema,
+      400: badRequestSchema,
+      401: errorSchema,
+      403: errorSchema,
+      404: errorSchema,
+      409: errorSchema,
+    },
+    summary:
+      "Agent reports its own Grok Bot agent id with its own API key (409 when another agent already claimed that id)",
   },
   getAgent: {
     method: "GET",

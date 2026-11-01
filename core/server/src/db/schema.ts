@@ -3166,6 +3166,11 @@ export const agents = pgTable(
      * test fails. Chat roster reads this instead of desktop localStorage.
      */
     webhookVerifiedAt: timestamp("webhook_verified_at", { withTimezone: true }),
+    /**
+     * The agent's own id inside Grok Bot. Reported by the agent via
+     * `PATCH /api/v1/agents/me`; joins room members to this persona.
+     */
+    grokbotAgentId: text("grokbot_agent_id"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -3175,6 +3180,9 @@ export const agents = pgTable(
   },
   (table) => [
     index("agents_workspace_id_idx").on(table.workspaceId),
+    uniqueIndex("agents_workspace_grokbot_agent_id_unique")
+      .on(table.workspaceId, table.grokbotAgentId)
+      .where(sql`${table.grokbotAgentId} is not null`),
     index("agents_workspace_contact_idx").on(table.workspaceId, table.contactId),
     index("agents_api_key_id_idx").on(table.apiKeyId),
     index("agents_workspace_sort_order_idx").on(

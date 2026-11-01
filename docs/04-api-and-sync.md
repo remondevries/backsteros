@@ -1100,7 +1100,12 @@ direct (no-project) thread so a welcome reply via `replyUrl` appears in chat:
   "message": { "id": "…", "role": "user", "text": "…", "createdAt": "…" },
   "context": [ /* prior thread messages + synthetic test message */ ],
   "deliveryId": "…",
-  "timestamp": "…"
+  "timestamp": "…",
+  "identity": {
+    "reportUrl": "https://agent.backsteros.com/api/v1/agents/me",
+    "method": "PATCH",
+    "body": { "grokbotAgentId": "<your Grok Bot agent id>" }
+  }
 }
 ```
 
@@ -1111,6 +1116,20 @@ POST /api/v1/agents/{agentId}/webhook/test
 Returns `{ ok, error, deliveryId, threadId, testId }`. Settings marks Connected
 on HTTP 2xx from the agent webhook; it may also show Reply received after an
 assistant message lands on that thread.
+
+**Agent identity.** On a test, the agent reports its own Grok Bot agent id:
+
+```http
+GET   /api/v1/agents/me
+PATCH /api/v1/agents/me   { "grokbotAgentId": "…" }
+```
+
+Authenticated with the agent's own API key (no settings scope); the key picks
+the agent row (`agents.api_key_id`), so an agent can only set its own id.
+`grokbot_agent_id` is unique per workspace (409 with `existingAgentId` on a
+clash), replicates with the roster, and lets project room members be joined
+to agent personas. The owner can also set or clear it via
+`PATCH /api/v1/agents/{agentId}`.
 
 ### Agent message webhooks (OS-146)
 

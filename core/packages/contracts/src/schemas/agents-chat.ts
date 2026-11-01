@@ -23,8 +23,26 @@ export const agentSchema = z.object({
    * Null until tested (or after URL/secret change / failed test).
    */
   webhookVerifiedAt: z.string().datetime().nullable(),
+  /**
+   * The agent's own id inside Grok Bot, reported by the agent via
+   * `PATCH /api/v1/agents/me`. Null until reported. Optional for older cores.
+   */
+  grokbotAgentId: z.string().nullable().optional(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
+});
+
+/** Grok Bot agent id (usually a UUID); unique per workspace. */
+export const grokbotAgentIdSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(200)
+  .regex(/^[A-Za-z0-9._:@-]+$/, "Use letters, digits and . _ : @ - only");
+
+/** Body for `PATCH /api/v1/agents/me` — sent by the agent with its own key. */
+export const reportAgentIdentityInputSchema = z.object({
+  grokbotAgentId: grokbotAgentIdSchema,
 });
 
 export const agentsListSchema = z.object({
@@ -56,6 +74,8 @@ export const updateAgentInputSchema = z
     webhookUrl: z.string().trim().max(2000).nullable().optional(),
     /** Set/replace secret. Omit to leave unchanged. Empty string clears. */
     webhookSecret: z.string().max(2000).optional(),
+    /** Owner override; agents normally report this via `/agents/me`. */
+    grokbotAgentId: grokbotAgentIdSchema.nullable().optional(),
   })
   .refine((value) => Object.keys(value).length > 0, {
     message: "At least one field is required",
@@ -1022,6 +1042,9 @@ export type AgentsList = z.infer<typeof agentsListSchema>;
 export type CreateAgentInput = z.infer<typeof createAgentInputSchema>;
 export type UpdateAgentInput = z.infer<typeof updateAgentInputSchema>;
 export type ReorderAgentsInput = z.infer<typeof reorderAgentsInputSchema>;
+export type ReportAgentIdentityInput = z.infer<
+  typeof reportAgentIdentityInputSchema
+>;
 export type AgentWebhookTestResult = z.infer<
   typeof agentWebhookTestResultSchema
 >;

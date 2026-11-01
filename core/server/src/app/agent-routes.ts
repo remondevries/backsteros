@@ -1,10 +1,11 @@
 /**
  * Chat agents CRUD (OS-151) — settings:write; secrets never returned.
  */
-import type { Hono } from "hono";
+import type { Context, Hono } from "hono";
 import {
   createAgentInputSchema,
   reorderAgentsInputSchema,
+  reportAgentIdentityInputSchema,
   updateAgentInputSchema,
 } from "@backsteros/contracts";
 
@@ -26,6 +27,19 @@ function canManageAgents(auth: ReturnType<typeof getAuth>): boolean {
 function canWriteAgents(auth: ReturnType<typeof getAuth>): boolean {
   if (isAgentPersonaAuth(auth)) return false;
   return can(auth, "settings:write");
+}
+
+/** 409 keeps `existingAgentId` so callers can point at the clashing row. */
+function agentWriteErrorResponse(c: Context, error: unknown, fallback: string) {
+  const message = error instanceof Error ? error.message : fallback;
+  const meta = (error ?? {}) as { status?: unknown; existingAgentId?: unknown };
+  if (meta.status === 409 && typeof meta.existingAgentId === "string") {
+    return c.json(
+      { error: message, code: "conflict", existingAgentId: meta.existingAgentId },
+      409,
+    );
+  }
+  return c.json({ error: message, code: "bad_request" }, 400);
 }
 
 export function registerAgentRoutes(app: Hono) {
@@ -66,6 +80,57 @@ export function registerAgentRoutes(app: Hono) {
     }
   });
 
+  // Agent self-service: the calling API key decides which agent row is used,
+  // so no settings scope is needed and an agent can only touch its own row.
+  app.get("/api/v1/agents/me", async (c) => {
+    const auth = getAuth(c);
+    if (auth.kind !== "api_key" || !auth.apiKeyId) {
+      return c.json(forbidden(), 403);
+    }
+    const agent = await agentsService.getAgentForApiKey(
+      auth.workspaceId,
+      auth.apiKeyId,
+    );
+    if (!agent) return c.json(notFound("Agent for this API key"), 404);
+    return c.json(agent);
+  });
+
+  app.patch("/api/v1/agents/me", async (c) => {
+    const auth = getAuth(c);
+    if (auth.kind !== "api_key" || !auth.apiKeyId) {
+      return c.json(forbidden(), 403);
+    }
+    let body: unknown;
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ error: "Invalid JSON body", code: "bad_request" }, 400);
+    }
+    const parsed = reportAgentIdentityInputSchema.safeParse(body);
+    if (!parsed.success) {
+      return c.json(
+        {
+          error:
+            parsed.error.issues[0]?.message ??
+            "Send { \"grokbotAgentId\": \"<your Grok Bot agent id>\" }",
+          code: "bad_request",
+        },
+        400,
+      );
+    }
+    try {
+      const agent = await agentsService.reportAgentIdentity(
+        auth.workspaceId,
+        auth.apiKeyId,
+        parsed.data.grokbotAgentId,
+      );
+      if (!agent) return c.json(notFound("Agent for this API key"), 404);
+      return c.json(agent);
+    } catch (error) {
+      return agentWriteErrorResponse(c, error, "Could not save agent id");
+    }
+  });
+
   app.get("/api/v1/agents/:agentId", async (c) => {
     const auth = getAuth(c);
     if (!canManageAgents(auth)) return c.json(forbidden(), 403);
@@ -100,25 +165,7 @@ export function registerAgentRoutes(app: Hono) {
       );
       return c.json(created, 201);
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Could not create agent";
-      const meta = (error ?? {}) as {
-        status?: unknown;
-        existingAgentId?: unknown;
-      };
-      if (meta.status === 409 && typeof meta.existingAgentId === "string") {
-        return c.json(
-          {
-            error: message,
-            code: "conflict",
-            existingAgentId: meta.existingAgentId,
-          },
-          409,
-        );
-      }
-      const status =
-        typeof meta.status === "number" ? (meta.status as 400) : 400;
-      return c.json({ error: message, code: "bad_request" }, status);
+      return agentWriteErrorResponse(c, error, "Could not create agent");
     }
   });
 
@@ -147,9 +194,7 @@ export function registerAgentRoutes(app: Hono) {
       if (!updated) return c.json(notFound("Agent"), 404);
       return c.json(updated);
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Could not update agent";
-      return c.json({ error: message, code: "bad_request" }, 400);
+      return agentWriteErrorResponse(c, error, "Could not update agent");
     }
   });
 

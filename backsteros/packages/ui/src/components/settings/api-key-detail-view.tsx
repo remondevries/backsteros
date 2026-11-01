@@ -24,6 +24,8 @@ export type AgentWebhookSettings = {
   webhookSecretConfigured: boolean;
   /** Lower first — Settings Agent tab + shell chat peer strip. */
   sortOrder?: number;
+  /** Reported by the agent itself (`PATCH /api/v1/agents/me`). */
+  grokbotAgentId?: string | null;
 };
 
 /** Optional plaintext from the last secret save — used when cloud test is 404. */
@@ -228,6 +230,14 @@ export function ApiKeyDetailView({
           }
         />
       </div>
+      <label className="settings-field api-key-detail-field">
+        <span>Grok Bot agent id</span>
+        <input
+          value={agentWebhook?.grokbotAgentId ?? ""}
+          placeholder="Not reported yet — the agent sends it after Test"
+          readOnly
+        />
+      </label>
       {webhookError ? (
         <p className="api-key-row-error" role="alert">
           {webhookError}

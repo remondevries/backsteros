@@ -210,6 +210,38 @@ test("OS-151/150 agents + chat loop: secret write-only, webhook fire, agent repl
   assert.equal(reorderedAgents[1]?.id, agentId);
   assert.equal(reorderedAgents[1]?.sortOrder, 1);
 
+  // Agent self-service: its own key finds its row and reports its Grok Bot id.
+  const me = await json(app, "/api/v1/agents/me", agentSecret);
+  assert.equal(me.status, 200);
+  assert.equal(me.body?.id, agentId);
+  assert.equal(me.body?.grokbotAgentId, null);
+  assertNoSecretLeak(me.body, webhookPlain);
+  const badIdentity = await json(app, "/api/v1/agents/me", agentSecret, {
+    method: "PATCH",
+    body: JSON.stringify({ grokbotAgentId: "has spaces" }),
+  });
+  assert.equal(badIdentity.status, 400);
+  const grokbotAgentId = randomUUID();
+  const reported = await json(app, "/api/v1/agents/me", agentSecret, {
+    method: "PATCH",
+    body: JSON.stringify({ grokbotAgentId }),
+  });
+  assert.equal(reported.status, 200);
+  assert.equal(reported.body?.id, agentId);
+  assert.equal(reported.body?.grokbotAgentId, grokbotAgentId);
+  const ownerMe = await json(app, "/api/v1/agents/me", ownerSecret);
+  assert.equal(ownerMe.status, 404);
+  const stolenIdentity = await json(
+    app,
+    `/api/v1/agents/${secondId}`,
+    ownerSecret,
+    { method: "PATCH", body: JSON.stringify({ grokbotAgentId }) },
+  );
+  assert.equal(stolenIdentity.status, 409);
+  assert.equal(stolenIdentity.body?.existingAgentId, agentId);
+  const agentList = await json(app, "/api/v1/agents", agentSecret);
+  assert.equal(agentList.status, 403);
+
   // Replace secret — still write-only.
   const patched = await json(app, `/api/v1/agents/${agentId}`, ownerSecret, {
     method: "PATCH",
@@ -323,8 +355,14 @@ test("OS-151/150 agents + chat loop: secret write-only, webhook fire, agent repl
     replyUrl: string;
     workspaceId: string;
     agentId: string;
+    identity: { reportUrl: string; method: string };
   };
   assert.equal(testPayload.event, "agent.webhook.test");
+  assert.equal(
+    testPayload.identity.reportUrl,
+    "https://agent.backsteros.com/api/v1/agents/me",
+  );
+  assert.equal(testPayload.identity.method, "PATCH");
   assert.equal(testPayload.testId, tested.body?.testId);
   assert.equal(testPayload.threadId, threadId);
   assert.equal(testPayload.workspaceId, workspaceId);

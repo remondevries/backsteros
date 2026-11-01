@@ -92,7 +92,22 @@ reply with the agent’s API key to `replyUrl` (same as
 | `event` | When | Handler rule |
 | --- | --- | --- |
 | `agent.chat.message` | Remon sent a chat message | Normal chat turn. When `project` is present, this is a **project room** — reply to the same `threadId` / `replyUrl` only (do not mirror into the Grok Bot DM). |
-| `agent.webhook.test` | Settings → Test connection | Match **only** on `event`; never on message text. Optional short welcome via `replyUrl` |
+| `agent.webhook.test` | Settings → Test connection | Match **only** on `event`; never on message text. Optional short welcome via `replyUrl`. **Report your Grok Bot agent id** (see below) using `identity` |
+
+**Report your Grok Bot agent id.** Every `agent.webhook.test` payload has
+`identity: { reportUrl, method: "PATCH", body: { grokbotAgentId } }`. Send your
+own Grok Bot agent id with your BacksterOS API key:
+
+```http
+PATCH /api/v1/agents/me
+Authorization: Bearer <your agent API key>
+{ "grokbotAgentId": "<your Grok Bot agent id>" }
+```
+
+The key decides which agent row is updated, so you can only set your own id.
+`GET /api/v1/agents/me` returns your row. 409 means another agent already
+reported that id. Allowed characters: letters, digits and `. _ : @ -` (≤200).
+BacksterOS uses this id to match Grok Bot room members to agent personas.
 
 Project-room payloads include `project: { id, key, name, channel }`. Only the
 project's **current lead agent** may POST replies / status on that thread.

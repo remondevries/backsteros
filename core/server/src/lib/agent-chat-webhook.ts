@@ -247,7 +247,26 @@ export type AgentWebhookTestPayload = AgentWebhookPayloadBase & {
   event: typeof AGENT_WEBHOOK_TEST_EVENT;
   /** Unique id for this test ping — correlate logs; do not treat as a chat message id. */
   testId: string;
+  /**
+   * Ask the agent to report its own Grok Bot agent id: send `body` (with the
+   * real id) to `reportUrl` using `method` and the agent's own API key.
+   */
+  identity: AgentIdentityReportRequest;
 };
+
+export type AgentIdentityReportRequest = {
+  reportUrl: string;
+  method: "PATCH";
+  body: { grokbotAgentId: string };
+};
+
+export function buildAgentIdentityReportRequest(): AgentIdentityReportRequest {
+  return {
+    reportUrl: `${resolveAgentsPublicBase()}/api/v1/agents/me`,
+    method: "PATCH",
+    body: { grokbotAgentId: "<your Grok Bot agent id>" },
+  };
+}
 
 export type AgentOutboundWebhookPayload =
   | AgentChatWebhookPayload
