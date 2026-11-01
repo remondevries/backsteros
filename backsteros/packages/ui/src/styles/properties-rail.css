@@ -279,7 +279,9 @@
 
 .detail-properties-panel__timer {
   display: flex;
-  justify-content: flex-start;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   margin: 0 0 12px;
   padding: 0 2px;
 }

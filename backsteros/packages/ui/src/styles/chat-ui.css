@@ -1275,6 +1275,13 @@
   cursor: pointer;
 }
 
+.chat-ui-composer__tools {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
 .chat-ui-composer__row {
   display: flex;
   align-items: flex-end;

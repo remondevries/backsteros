@@ -36,6 +36,8 @@
  *     127.0.0.1 / tauri / *.localhost only (not Expo tunnel domains).
  *     Requested `cwd` may be any absolute / `~/…` path the desktop sends —
  *     owner-only trust, not a chroot.
+ *   GET /cursor/agent-transcript — read latest Cursor IDE agent transcript
+ *     (`~/.cursor/projects/…/agent-transcripts`) for static terminal sync.
  *
  * Cursor Agent hooks POST to /agent-hook so the UI can mark working/idle.
  * Hook POSTs stay unauthenticated (local Cursor → loopback).
@@ -60,6 +62,7 @@ import {
   isTaskShellOriginAcceptable,
   resolveTaskShellCwd as resolveTaskShellCwdSecure,
 } from "./task-shell-security.mjs";
+import { loadCursorAgentTranscript } from "./cursor-agent-transcript.mjs";
 import { ensureCursorAgentHooks } from "./ensure-cursor-agent-hooks.mjs";
 import {
   appendChatTranscriptMessage,
@@ -2524,6 +2527,40 @@ const httpServer = createServer(async (req, res) => {
         ok: true,
         service: "backsteros-pty",
         authRequired: Boolean(AUTH_TOKEN),
+      }),
+    );
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/cursor/agent-transcript") {
+    if (!isLoopbackAddress(resolveRequestRemoteAddress(req))) {
+      res.writeHead(403, { "Content-Type": "application/json; charset=utf-8" });
+      res.end(
+        JSON.stringify({
+          error: "Cursor agent transcripts are local-desktop only (loopback).",
+          code: "cursor_transcript_local_only",
+        }),
+      );
+      return;
+    }
+    if (!isAuthorized(req, url)) {
+      rejectUnauthorized(res);
+      return;
+    }
+    const cwd = url.searchParams.get("cwd")?.trim() || null;
+    const conversationId =
+      url.searchParams.get("conversationId")?.trim() || null;
+    const loaded = loadCursorAgentTranscript({ cwd, conversationId });
+    res.writeHead(loaded.ok ? 200 : 404, {
+      "Content-Type": "application/json; charset=utf-8",
+    });
+    res.end(
+      JSON.stringify({
+        ok: loaded.ok,
+        error: loaded.error,
+        conversationId: loaded.conversationId,
+        mtimeMs: loaded.mtimeMs,
+        messages: loaded.messages,
       }),
     );
     return;

@@ -49,6 +49,7 @@ import {
   chatThreadMessages,
   chatThreads,
   projects,
+  taskAgentRuns,
 } from "../db/schema.js";
 import { newId } from "../lib/crypto.js";
 import { logger } from "../lib/logger.js";
@@ -63,6 +64,7 @@ import {
   type AgentChatWebhookMessage,
   type AgentChatWebhookPayload,
   type AgentChatWebhookProject,
+  type AgentChatWebhookTaskAgentRun,
   type AgentOutboundWebhookPayload,
   type AgentWebhookTestPayload,
   buildAgentChatReplyUrl,
@@ -210,6 +212,38 @@ async function resolveProjectLeadContext(
     .limit(1);
 
   return { project, leadAgent: leadAgent ?? null };
+}
+
+async function findTaskAgentRunForBriefThread(
+  workspaceId: string,
+  threadId: string,
+): Promise<AgentChatWebhookTaskAgentRun | null> {
+  const [row] = await db
+    .select({
+      id: taskAgentRuns.id,
+      taskId: taskAgentRuns.taskId,
+      phase: taskAgentRuns.phase,
+      cycle: taskAgentRuns.cycle,
+      status: taskAgentRuns.status,
+    })
+    .from(taskAgentRuns)
+    .where(
+      and(
+        eq(taskAgentRuns.workspaceId, workspaceId),
+        eq(taskAgentRuns.briefThreadId, threadId),
+        eq(taskAgentRuns.status, "active"),
+      ),
+    )
+    .orderBy(desc(taskAgentRuns.createdAt))
+    .limit(1);
+  if (!row) return null;
+  return {
+    id: row.id,
+    taskId: row.taskId,
+    phase: row.phase,
+    cycle: row.cycle,
+    status: row.status,
+  };
 }
 
 function toWebhookProject(
@@ -1457,6 +1491,10 @@ export async function postChatThreadMessage(
         CONTEXT_MESSAGE_LIMIT,
       );
       const deliveryId = newId();
+      const taskAgentRun = await findTaskAgentRunForBriefThread(
+        workspaceId,
+        threadId,
+      );
       const payload: AgentChatWebhookPayload = {
         event: AGENT_CHAT_WEBHOOK_EVENT,
         workspaceId,
@@ -1469,6 +1507,7 @@ export async function postChatThreadMessage(
         deliveryId,
         timestamp: now.toISOString(),
         ...(webhookProject ? { project: webhookProject } : {}),
+        ...(taskAgentRun ? { taskAgentRun } : {}),
       };
       // On local-core, webhook_url is stripped from the roster — forward the
       // payload to cloud (where secrets live) instead of requiring a local URL.

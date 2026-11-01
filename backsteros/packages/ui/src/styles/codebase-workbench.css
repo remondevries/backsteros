@@ -3249,6 +3249,32 @@ button.console-fs-tree-row.keyboard-nav-item-highlight:focus-visible {
   gap: 10px;
 }
 
+/*
+ * `.project-panel-identity .entity-overview-subgroup__fields { display: flex }`
+ * ties specificity with `.entity-overview-subgroup__fields[hidden]` and wins by
+ * source order — collapsed fields stayed painted / hit-testable in WKWebView.
+ * Force collapse to actually hide (children are also unmounted when collapsed).
+ */
+.project-panel-identity .entity-overview-subgroup__fields[hidden],
+.project-panel-identity
+  .entity-overview-subgroup.is-collapsed
+  .entity-overview-subgroup__fields {
+  display: none !important;
+  pointer-events: none !important;
+}
+
+/* Codebase Local|Server + folder + Repository must stay clickable. */
+.project-panel-identity .project-development-field,
+.project-panel-identity .project-development-field .segmented-pill-toggle,
+.project-panel-identity .project-development-field .segmented-pill-toggle-btn,
+.project-panel-identity .project-development-field__folder,
+.project-panel-identity [data-task-property-dropdown="repository"],
+.project-panel-identity [data-task-property-dropdown="workspace"] {
+  position: relative;
+  z-index: 2;
+  pointer-events: auto !important;
+}
+
 .project-panel-identity .entity-overview-field {
   align-items: center;
   justify-content: flex-start;
@@ -3290,6 +3316,17 @@ button.console-fs-tree-row.keyboard-nav-item-highlight:focus-visible {
   flex: none;
   align-self: flex-start;
   justify-content: flex-start;
+}
+
+/* Lead agent avatar must stay circular (icon box clips oversized images). */
+.project-lead-agent-field .property-dropdown-trigger__icon,
+.project-lead-agent-field .property-dropdown-trigger__icon img,
+.project-lead-agent-field .property-dropdown-trigger__icon .entity-list-avatar,
+.project-lead-agent-field
+  .property-dropdown-trigger__icon
+  .finance-account-dropdown-avatar-fallback {
+  overflow: hidden !important;
+  border-radius: 9999px !important;
 }
 
 .project-panel-identity .project-detail__description-body,

@@ -3016,6 +3016,7 @@ export {
 
 export {
   ProjectDetailView,
+  PROJECT_DETAIL_PROPERTIES_RAIL_BREAKPOINT,
   type ProjectDetailViewProps,
   type ProjectDetailViewProject,
   type ProjectDetailNestedArea,
@@ -5457,6 +5458,9 @@ export {
 export {
   CodebaseProjectOverviewPane,
   ProjectCommitHistory,
+  ProjectDevelopmentField,
+  ProjectGithubRepositoryField,
+  ProjectProductionField,
   CODEBASE_LIST_TAB_OPTIONS,
   type CodebaseProjectOverviewPaneProps,
 } from "./components/codebase/codebase-project-overview-pane.js";

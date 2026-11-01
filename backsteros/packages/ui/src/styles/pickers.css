@@ -986,6 +986,14 @@
   box-shadow: 0 24px 64px rgb(0 0 0 / 0.45);
 }
 
+.location-folder-picker__kind {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 12px 14px 0;
+}
+
 .location-folder-picker__tool {
   flex-shrink: 0;
   border: 0.5px solid rgb(255 255 255 / 0.12);

@@ -1641,6 +1641,97 @@ export const taskAgentPresence = pgTable(
   ],
 );
 
+/**
+ * Multi-phase agent factory run on a task (Brief → Build → Verify → Record → Ship).
+ * Grok (conductor) advances phases via API; desktop executes local Cursor ACP.
+ */
+export const taskAgentRuns = pgTable(
+  "task_agent_runs",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    taskId: text("task_id")
+      .notNull()
+      .references(() => tasks.id, { onDelete: "cascade" }),
+    projectId: text("project_id").references(() => projects.id, {
+      onDelete: "set null",
+    }),
+    conductorAgentId: text("conductor_agent_id")
+      .notNull()
+      .references(() => agents.id, { onDelete: "restrict" }),
+    conductorContactId: text("conductor_contact_id").references(
+      () => contacts.id,
+      { onDelete: "set null" },
+    ),
+    /** brief | build | verify | record | ship | done | failed */
+    phase: text("phase").notNull().default("brief"),
+    cycle: integer("cycle").notNull().default(1),
+    /** active | paused | completed | cancelled */
+    status: text("status").notNull().default("active"),
+    briefThreadId: text("brief_thread_id").references(() => chatThreads.id, {
+      onDelete: "set null",
+    }),
+    /** Cursor ACP session id (also mirrored on tasks.agent_chat_id). */
+    builderSessionId: text("builder_session_id"),
+    buildPrompt: text("build_prompt"),
+    /** pr | commit | null */
+    recordIntent: text("record_intent"),
+    recordNotes: text("record_notes"),
+    lastError: text("last_error"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("task_agent_runs_workspace_id_idx").on(table.workspaceId),
+    index("task_agent_runs_task_id_idx").on(table.taskId),
+    index("task_agent_runs_task_status_idx").on(table.taskId, table.status),
+    index("task_agent_runs_conductor_agent_id_idx").on(table.conductorAgentId),
+  ],
+);
+
+export type DbTaskAgentRun = typeof taskAgentRuns.$inferSelect;
+
+export const taskAgentRunChecks = pgTable(
+  "task_agent_run_checks",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    runId: text("run_id")
+      .notNull()
+      .references(() => taskAgentRuns.id, { onDelete: "cascade" }),
+    key: text("key").notNull(),
+    label: text("label").notNull(),
+    /** pending | running | pass | fail | skipped */
+    status: text("status").notNull().default("pending"),
+    detail: text("detail"),
+    logText: text("log_text"),
+    sortOrder: integer("sort_order").notNull().default(0),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("task_agent_run_checks_run_id_idx").on(table.runId),
+    index("task_agent_run_checks_workspace_id_idx").on(table.workspaceId),
+    uniqueIndex("task_agent_run_checks_run_key_uidx").on(table.runId, table.key),
+  ],
+);
+
+export type DbTaskAgentRunCheck = typeof taskAgentRunChecks.$inferSelect;
+
 export const documents = pgTable(
   "documents",
   {

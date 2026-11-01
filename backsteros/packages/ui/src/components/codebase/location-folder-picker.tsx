@@ -8,9 +8,12 @@ import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 
 import { ComposeFolderIcon } from "../compose/compose-folder-icon.js";
+import { SegmentedPillToggle } from "../list-nav/list-board-view-shell.js";
 import { SidePanelPlusIcon } from "../shell/side-panel-plus-icon.js";
 import { apiErrorMessage } from "./api-error-message.js";
 import type { CodebaseRequestJson } from "./codebase-request-json.js";
+
+export type LocationFolderPickerDevelopmentKind = "local" | "server";
 
 export type LocationFolderPickerProps = {
   open: boolean;
@@ -22,6 +25,14 @@ export type LocationFolderPickerProps = {
   requestJson: CodebaseRequestJson;
   onSelect: (path: string) => void;
   onClose: () => void;
+  /**
+   * Development folder browser: Local|Server toggle in the modal.
+   * Flipping to Server reloads against the development remote target.
+   */
+  developmentKindToggle?: {
+    value: LocationFolderPickerDevelopmentKind;
+    onChange: (next: LocationFolderPickerDevelopmentKind) => void;
+  };
 };
 
 function pathSegments(absolute: string, base: string): string[] {
@@ -82,6 +93,11 @@ function formatLocationDisplayPath(
     : `${scheme}://…`;
 }
 
+const DEVELOPMENT_KIND_OPTIONS = [
+  { value: "local" as const, label: "Local" },
+  { value: "server" as const, label: "Server" },
+];
+
 export function LocationFolderPicker({
   open,
   target,
@@ -91,6 +107,7 @@ export function LocationFolderPicker({
   requestJson,
   onSelect,
   onClose,
+  developmentKindToggle,
 }: LocationFolderPickerProps) {
   const [listing, setListing] = useState<LocationFsListResponse | null>(null);
   const [currentPath, setCurrentPath] = useState<string | null>(
@@ -184,6 +201,17 @@ export function LocationFolderPicker({
         aria-label={title}
         className="location-folder-picker__panel"
       >
+        {developmentKindToggle ? (
+          <div className="location-folder-picker__kind">
+            <SegmentedPillToggle
+              value={developmentKindToggle.value}
+              options={DEVELOPMENT_KIND_OPTIONS}
+              onChange={developmentKindToggle.onChange}
+              ariaLabel="Development location kind"
+              disabled={creating}
+            />
+          </div>
+        ) : null}
         {manualMode ? (
           <div className="location-folder-picker__manual">
             <label className="location-folder-picker__manual-label">
@@ -455,7 +483,20 @@ export function LocationFolderPicker({
           </>
         )}
 
-        {!showRemoteGate ? (
+        {showRemoteGate ? (
+          <footer className="location-folder-picker__footer">
+            <span />
+            <div className="location-folder-picker__footer-actions">
+              <button
+                type="button"
+                className="location-folder-picker__secondary"
+                onClick={onClose}
+              >
+                Cancel
+              </button>
+            </div>
+          </footer>
+        ) : (
           <>
             {error ? (
               <p className="location-folder-picker__error" role="alert">
@@ -508,7 +549,7 @@ export function LocationFolderPicker({
               </div>
             </footer>
           </>
-        ) : null}
+        )}
       </div>
     </div>,
     document.body,

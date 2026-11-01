@@ -1531,14 +1531,21 @@
   padding-inline: 12px 10px;
 }
 
-/* Value-only billing chips (panel overview) — match property inline chips. */
+/* Value-only billing chips — same flat chrome as default property triggers. */
 .project-billing-value-chip {
   display: inline-flex;
   max-width: 100%;
   min-width: 0;
   align-items: center;
   gap: 4px;
+  border: none;
+  background: transparent;
   cursor: text;
+}
+
+.project-billing-value-chip:hover,
+.project-billing-value-chip:focus-within {
+  background: rgb(255 255 255 / 0.04);
 }
 
 .project-billing-value-chip:not(.property-dropdown-trigger--static) {
@@ -2320,8 +2327,9 @@ button.entity-overview-subgroup__header:focus-visible {
   gap: 16px;
 }
 
-.entity-overview-subgroup__fields[hidden] {
-  display: none;
+.entity-overview-subgroup__fields[hidden],
+.entity-overview-subgroup.is-collapsed .entity-overview-subgroup__fields {
+  display: none !important;
 }
 
 /** Side-by-side property columns (e.g. Development | Production). */

@@ -63,6 +63,7 @@ export function useTaskAgentCandidates(projectKey: string | null): {
           contact.id,
           {
             name: contact.name,
+            title: contact.title?.trim() || null,
             avatarSrc: avatarSrcById[contact.id] ?? contact.avatarSrc ?? null,
           },
         ]),

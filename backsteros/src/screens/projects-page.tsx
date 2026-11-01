@@ -32,11 +32,12 @@ import {
   DomainOverviewView,
   EntityPropertiesSection,
   PropertyFieldGroup,
-  PropertyInlineChip,
   ProjectChannelField,
+  ProjectDevelopmentField,
+  ProjectGithubRepositoryField,
   ProjectHealthCheckProperty,
   ProjectLeadAgentField,
-  ProjectOcticon,
+  ProjectProductionField,
   ProjectTeamField,
   ProjectTeamSyncButton,
   projectTeamMemberIdsForField,
@@ -2806,6 +2807,56 @@ function ProjectDetailScreen({
   );
 
   // Health / Repository / Dev / Prod stay codebase-only; Channel + Lead agent are every type.
+  const codebaseLocationProject = {
+    id: project.id,
+    githubRepository: project.githubRepository ?? null,
+    localWorkingDirectory: project.localWorkingDirectory ?? null,
+    developmentLocation: project.developmentLocation ?? null,
+    development:
+      (
+        project as {
+          development?: {
+            kind: "local" | "server";
+            path: string;
+            host?: string | null;
+          } | null;
+        }
+      ).development ?? null,
+    productionLocation: project.productionLocation ?? null,
+    production:
+      (
+        project as {
+          production?: {
+            path?: string | null;
+            server?: string | null;
+            url?: string | null;
+            deployMethod?: string | null;
+            branch?: string | null;
+          } | null;
+        }
+      ).production ?? null,
+  };
+  const syncCodebaseLocationProject = (updated: {
+    githubRepository?: string | null;
+    localWorkingDirectory?: string | null;
+    developmentLocation?: string | null;
+    development?: unknown;
+    productionLocation?: string | null;
+    production?: unknown;
+  }) => {
+    patchSelected({
+      githubRepository: updated.githubRepository ?? null,
+      localWorkingDirectory: updated.localWorkingDirectory ?? null,
+      developmentLocation: updated.developmentLocation ?? null,
+      productionLocation: updated.productionLocation ?? null,
+      development: updated.development,
+      production: updated.production,
+    } as Parameters<typeof patchSelected>[0]);
+  };
+  const codebaseRequestJson = <T,>(
+    path: string,
+    init?: RequestInit,
+  ): Promise<T> => desktopApiClient.requestJson<T>(path, init);
   const locationsExtra = isCodebaseProject ? (
     <EntityPropertiesSection title="Codebase">
       <PropertyFieldGroup label="Health">
@@ -2816,56 +2867,25 @@ function ProjectDetailScreen({
         />
       </PropertyFieldGroup>
       <PropertyFieldGroup label="Repository">
-        <PropertyInlineChip
-          icon={
-            project.githubRepository?.trim() ? (
-              <ProjectOcticon icon="mark-github" size={14} />
-            ) : null
-          }
-          label={project.githubRepository?.trim() || "No repository"}
+        <ProjectGithubRepositoryField
+          project={codebaseLocationProject as never}
+          onProjectUpdated={syncCodebaseLocationProject}
+          requestJson={codebaseRequestJson}
         />
       </PropertyFieldGroup>
       <div className="project-properties-field-row">
         <PropertyFieldGroup label="Development">
-          <PropertyInlineChip
-            label={(() => {
-              const development = (
-                project as {
-                  development?: {
-                    kind?: string;
-                    path?: string;
-                  } | null;
-                }
-              ).development;
-              const path =
-                development?.path?.trim() ||
-                project.localWorkingDirectory?.trim() ||
-                project.developmentLocation?.trim() ||
-                "";
-              if (!path) return "No folder";
-              const leaf =
-                path.split(/[/\\]/).filter(Boolean).at(-1) ?? path;
-              return development?.kind === "server"
-                ? `Server: ${leaf}`
-                : leaf;
-            })()}
+          <ProjectDevelopmentField
+            project={codebaseLocationProject as never}
+            onProjectUpdated={syncCodebaseLocationProject}
+            requestJson={codebaseRequestJson}
           />
         </PropertyFieldGroup>
         <PropertyFieldGroup label="Production">
-          <PropertyInlineChip
-            label={(() => {
-              const production = (
-                project as {
-                  production?: { path?: string | null } | null;
-                }
-              ).production;
-              const path =
-                production?.path?.trim() ||
-                project.productionLocation?.trim() ||
-                "";
-              if (!path) return "No folder";
-              return path.split(/[/\\]/).filter(Boolean).at(-1) ?? path;
-            })()}
+          <ProjectProductionField
+            project={codebaseLocationProject as never}
+            onProjectUpdated={syncCodebaseLocationProject}
+            requestJson={codebaseRequestJson}
           />
         </PropertyFieldGroup>
       </div>

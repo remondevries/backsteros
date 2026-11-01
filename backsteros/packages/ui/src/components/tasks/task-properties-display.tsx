@@ -1,5 +1,7 @@
 "use client";
 
+import type { ReactNode } from "react";
+
 import { getTaskPriorityLabel } from "../../tasks/task-priority.js";
 import { TASK_PRIORITY_ORDER } from "../../tasks/task-priority.js";
 import {
@@ -111,6 +113,8 @@ export type TaskPropertiesDisplayProps = {
     seconds?: number | null,
   ) => void;
   timerSession?: TrackedTimerSessionMeta | null;
+  /** Trailing control beside the timer (e.g. Changes side-panel toggle). */
+  timerRowEnd?: ReactNode;
 };
 
 function toDate(value: number | Date | null | undefined): Date | null {
@@ -151,6 +155,7 @@ export function TaskPropertiesDisplay({
   onTrackedDurationSecondsChange,
   onTimerSessionChange,
   timerSession = null,
+  timerRowEnd = null,
 }: TaskPropertiesDisplayProps) {
   const disabled = task == null;
   const status = migrateLegacyTaskStatus(task?.status ?? "triage");
@@ -204,6 +209,7 @@ export function TaskPropertiesDisplay({
             onTimerSessionChange={onTimerSessionChange}
             timerSession={timerSession}
           />
+          {timerRowEnd}
         </div>
       )}
       <div className="entity-properties-stack">

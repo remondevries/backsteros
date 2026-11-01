@@ -244,6 +244,13 @@ export default defineConfig(async ({ command }) => {
         timeout: 0,
         proxyTimeout: 0,
       },
+      // Local PTY sidecar (Cursor transcript sync, etc.) — same-origin during
+      // `tauri:dev` / `dev:vite` so WebKit does not hit cross-origin :3101.
+      "/__pty__": {
+        target: "http://127.0.0.1:3101",
+        changeOrigin: true,
+        rewrite: (p: string) => p.replace(/^\/__pty__/, "") || "/",
+      },
       // SSE through Vite so browser streams do not fight REST for the
       // HTTP/1.1 6-connection cap on local-core :8788 (presence/email banners).
       ...Object.fromEntries(

@@ -171,6 +171,7 @@ export function TaskStatusIcon({
         <TaskStatusWorkingPulse
           className={className}
           size={size}
+          color={model.color}
           aria-label={title ?? "Agent working"}
         />
       </IconWithInboxUpdateIndicator>

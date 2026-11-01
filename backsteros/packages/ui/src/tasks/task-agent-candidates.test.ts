@@ -81,16 +81,24 @@ describe("buildTaskAgentCandidates", () => {
     assert.equal(unknownRoom.length, 4);
   });
 
-  it("prefers the contact name and avatar over the agent row", () => {
+  it("prefers the contact name, avatar, and job title over the agent row", () => {
     const [only] = buildTaskAgentCandidates({
-      agents: [agent({ id: "n", name: "niels-bot", role: " Lead dev " })],
+      agents: [agent({ id: "n", name: "niels-bot", role: "Grok Bot agent" })],
       leadAgentContactId: "c-n",
       contactsById: new Map([
-        ["c-n", { name: "Niels", avatarSrc: "blob:niels" }],
+        [
+          "c-n",
+          {
+            name: "Niels",
+            avatarSrc: "blob:niels",
+            title: " Lead developer ",
+          },
+        ],
       ]),
     });
     assert.equal(only?.name, "Niels");
     assert.equal(only?.avatarSrc, "blob:niels");
-    assert.equal(only?.role, "Lead dev");
+    assert.equal(only?.role, "Grok Bot agent");
+    assert.equal(only?.jobTitle, "Lead developer");
   });
 });

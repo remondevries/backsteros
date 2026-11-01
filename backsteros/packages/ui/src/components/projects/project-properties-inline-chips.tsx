@@ -1,7 +1,7 @@
 "use client";
 
-import { MailIcon, ProjectIcon } from "@primer/octicons-react";
-import { useMemo } from "react";
+import { KebabHorizontalIcon, MailIcon, ProjectIcon } from "@primer/octicons-react";
+import { useMemo, useState } from "react";
 
 import {
   PROJECT_AREA_LABELS,
@@ -70,7 +70,8 @@ function toDate(value: number | Date | null | undefined): Date | null {
 
 /**
  * Compact Linear-style property chips under the project summary.
- * Mirrors the right-rail fields without lead/members/labels (not on projects).
+ * Primary chips stay visible; the rest expand behind a ⋯ control so the
+ * row does not crowd the header when the right rail is hidden.
  */
 export function ProjectPropertiesInlineChips({
   project,
@@ -87,6 +88,7 @@ export function ProjectPropertiesInlineChips({
   organizationOptions = [],
   onCreateOrganizationFromQuery,
 }: ProjectPropertiesInlineChipsProps) {
+  const [moreExpanded, setMoreExpanded] = useState(false);
   const status = migrateLegacyProjectStatus(project.status);
   const projectType = migrateLegacyProjectType(project.type);
   const registrarOwnedDates = projectTypeHasRegistrarOwnedDates(project.type);
@@ -221,6 +223,12 @@ export function ProjectPropertiesInlineChips({
       (entry) => entry.value === (project.organizationId ?? ""),
     )?.label ?? "No organization";
 
+  const showOrganization =
+    organizationOptions.length > 0 || Boolean(onOrganizationChange);
+  const showSubArea = subAreasForParent.length > 0;
+  const showProvider = projectType === "domeinname";
+  const showCategory = projectType === "email";
+
   return (
     <div className="project-properties-inline" aria-label="Project properties">
       <div className="project-properties-inline__fields">
@@ -283,119 +291,137 @@ export function ProjectPropertiesInlineChips({
             triggerVariant="inlineChip"
           />
         </span>
-        {organizationOptions.length > 0 || onOrganizationChange ? (
-          <PropertyDropdown
-            value={project.organizationId ?? "__none__"}
-            options={orgOptions}
-            onChange={(next) =>
-              onOrganizationChange?.(next === "__none__" ? null : next)
-            }
-            disabled={!onOrganizationChange}
-            searchPlaceholder="Change organization…"
-            searchShortcutLabel="O"
-            ariaLabel="Organization"
-            taskPropertyDropdownId="organization"
-            fallbackIcon={<OrganizationIcon size={14} />}
-            fallbackLabel={organizationLabel}
-            mutedFallback={!project.organizationId}
-            triggerVariant="inlineChip"
-            panelAlign="start"
-            createFromQueryLabel={
-              onCreateOrganizationFromQuery
-                ? (query) =>
-                    getCreateEntityFromQueryLabel("organization", query)
-                : undefined
-            }
-            onCreateFromQuery={onCreateOrganizationFromQuery}
-          />
-        ) : null}
-        <PropertyDropdown
-          value={project.area ?? "__none__"}
-          options={areaOptions}
-          onChange={(next) => {
-            onAreaChange?.(
-              next === "__none__" ? null : (next as ProjectArea),
-            );
-            onAreaIdChange?.(null);
-          }}
-          disabled={!onAreaChange}
-          searchPlaceholder="Change area…"
-          searchShortcutLabel="⇧A"
-          ariaLabel="Area"
-          taskPropertyDropdownId="area"
-          fallbackIcon={null}
-          fallbackLabel={
-            project.area ? PROJECT_AREA_LABELS[project.area] : "No area"
+        <button
+          type="button"
+          className="project-detail__properties-more"
+          aria-label={
+            moreExpanded ? "Hide more properties" : "Show more properties"
           }
-          mutedFallback={!project.area}
-          triggerVariant="inlineChip"
-          panelAlign="start"
-        />
-        {subAreasForParent.length > 0 ? (
-          <PropertyDropdown
-            value={project.areaId ?? "__none__"}
-            options={subAreaOptions}
-            onChange={(next) =>
-              onAreaIdChange?.(next === "__none__" ? null : next)
-            }
-            disabled={!onAreaIdChange}
-            searchPlaceholder="Change sub-area…"
-            ariaLabel="Sub-area"
-            taskPropertyDropdownId="areaId"
-            fallbackIcon={null}
-            fallbackLabel={selectedSubArea?.name ?? "No sub-area"}
-            mutedFallback={!selectedSubArea}
-            triggerVariant="inlineChip"
-            panelAlign="start"
-          />
-        ) : null}
-        {projectType === "domeinname" ? (
-          <PropertyDropdown
-            value={projectProvider ?? "__none__"}
-            options={providerOptions}
-            onChange={(next) =>
-              onProviderChange?.(
-                next === "__none__" ? null : (next as ProjectProvider),
-              )
-            }
-            disabled={!onProviderChange}
-            searchPlaceholder="Change provider…"
-            ariaLabel="Provider"
-            fallbackIcon={
-              projectProvider === "transip" ? <TransipIcon size={14} /> : null
-            }
-            fallbackLabel={
-              projectProvider
-                ? getProjectProviderLabel(projectProvider)
-                : "No provider"
-            }
-            mutedFallback={!projectProvider}
-            triggerVariant="inlineChip"
-            panelAlign="start"
-          />
-        ) : null}
-        {projectType === "email" ? (
-          <PropertyDropdown
-            value={projectCategory ?? "__none__"}
-            options={categoryOptions}
-            onChange={(next) =>
-              onCategoryChange?.(
-                next === "__none__" ? null : (next as ProjectEmailCategory),
-              )
-            }
-            disabled={!onCategoryChange}
-            searchPlaceholder="Change category…"
-            ariaLabel="Category"
-            fallbackIcon={<MailIcon size={14} />}
-            fallbackLabel={
-              projectCategory
-                ? getProjectEmailCategoryLabel(projectCategory)
-                : "No category"
-            }
-            mutedFallback={!projectCategory}
-            triggerVariant="inlineChip"
-            panelAlign="start"
-          />
+          aria-expanded={moreExpanded}
+          title={moreExpanded ? "Show less" : "More properties"}
+          onClick={() => setMoreExpanded((open) => !open)}
+        >
+          <KebabHorizontalIcon size={14} />
+        </button>
+        {moreExpanded ? (
+          <>
+            {showOrganization ? (
+              <PropertyDropdown
+                value={project.organizationId ?? "__none__"}
+                options={orgOptions}
+                onChange={(next) =>
+                  onOrganizationChange?.(next === "__none__" ? null : next)
+                }
+                disabled={!onOrganizationChange}
+                searchPlaceholder="Change organization…"
+                searchShortcutLabel="O"
+                ariaLabel="Organization"
+                taskPropertyDropdownId="organization"
+                fallbackIcon={<OrganizationIcon size={14} />}
+                fallbackLabel={organizationLabel}
+                mutedFallback={!project.organizationId}
+                triggerVariant="inlineChip"
+                panelAlign="start"
+                createFromQueryLabel={
+                  onCreateOrganizationFromQuery
+                    ? (query) =>
+                        getCreateEntityFromQueryLabel("organization", query)
+                    : undefined
+                }
+                onCreateFromQuery={onCreateOrganizationFromQuery}
+              />
+            ) : null}
+            <PropertyDropdown
+              value={project.area ?? "__none__"}
+              options={areaOptions}
+              onChange={(next) => {
+                onAreaChange?.(
+                  next === "__none__" ? null : (next as ProjectArea),
+                );
+                onAreaIdChange?.(null);
+              }}
+              disabled={!onAreaChange}
+              searchPlaceholder="Change area…"
+              searchShortcutLabel="⇧A"
+              ariaLabel="Area"
+              taskPropertyDropdownId="area"
+              fallbackIcon={null}
+              fallbackLabel={
+                project.area ? PROJECT_AREA_LABELS[project.area] : "No area"
+              }
+              mutedFallback={!project.area}
+              triggerVariant="inlineChip"
+              panelAlign="start"
+            />
+            {showSubArea ? (
+              <PropertyDropdown
+                value={project.areaId ?? "__none__"}
+                options={subAreaOptions}
+                onChange={(next) =>
+                  onAreaIdChange?.(next === "__none__" ? null : next)
+                }
+                disabled={!onAreaIdChange}
+                searchPlaceholder="Change sub-area…"
+                ariaLabel="Sub-area"
+                taskPropertyDropdownId="areaId"
+                fallbackIcon={null}
+                fallbackLabel={selectedSubArea?.name ?? "No sub-area"}
+                mutedFallback={!selectedSubArea}
+                triggerVariant="inlineChip"
+                panelAlign="start"
+              />
+            ) : null}
+            {showProvider ? (
+              <PropertyDropdown
+                value={projectProvider ?? "__none__"}
+                options={providerOptions}
+                onChange={(next) =>
+                  onProviderChange?.(
+                    next === "__none__" ? null : (next as ProjectProvider),
+                  )
+                }
+                disabled={!onProviderChange}
+                searchPlaceholder="Change provider…"
+                ariaLabel="Provider"
+                fallbackIcon={
+                  projectProvider === "transip" ? (
+                    <TransipIcon size={14} />
+                  ) : null
+                }
+                fallbackLabel={
+                  projectProvider
+                    ? getProjectProviderLabel(projectProvider)
+                    : "No provider"
+                }
+                mutedFallback={!projectProvider}
+                triggerVariant="inlineChip"
+                panelAlign="start"
+              />
+            ) : null}
+            {showCategory ? (
+              <PropertyDropdown
+                value={projectCategory ?? "__none__"}
+                options={categoryOptions}
+                onChange={(next) =>
+                  onCategoryChange?.(
+                    next === "__none__" ? null : (next as ProjectEmailCategory),
+                  )
+                }
+                disabled={!onCategoryChange}
+                searchPlaceholder="Change category…"
+                ariaLabel="Category"
+                fallbackIcon={<MailIcon size={14} />}
+                fallbackLabel={
+                  projectCategory
+                    ? getProjectEmailCategoryLabel(projectCategory)
+                    : "No category"
+                }
+                mutedFallback={!projectCategory}
+                triggerVariant="inlineChip"
+                panelAlign="start"
+              />
+            ) : null}
+          </>
         ) : null}
       </div>
     </div>

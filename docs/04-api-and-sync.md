@@ -434,6 +434,79 @@ adds both persist (server-side dedupe).
 Remon: update the shared agent skill / CLI finish flow to use status+comment and
 `addLinkedCommitShas` instead of GET-then-replace.
 
+### Task agent factory runs (Brief → Build → Verify → Record)
+
+Desktop task factory for codebase projects: a **Grok conductor** owns Brief and
+phase decisions; the Mac desktop kicks a **local Cursor ACP** session for Build
+and Record git ops. State lives in Postgres (`task_agent_runs`,
+`task_agent_run_checks`) — not PowerSynced in v1 (REST from desktop).
+
+**Start a run** (cancels any other active run on the task by default; opens a DM
+thread with the conductor and posts a wake message with task + project + cwd +
+repo context):
+
+```http
+POST /api/v1/tasks/{taskId}/agent-runs
+Authorization: Bearer sk_live_…
+Content-Type: application/json
+
+{
+  "conductorAgentId": "agt_…",
+  "replaceActive": true,
+  "wakeConductor": true
+}
+```
+
+**Read / patch**
+
+```http
+GET  /api/v1/tasks/{taskId}/agent-runs/active
+GET  /api/v1/tasks/{taskId}/agent-runs/{runId}
+PATCH /api/v1/tasks/{taskId}/agent-runs/{runId}
+{
+  "phase": "build",
+  "buildPrompt": "Implement …"
+}
+```
+
+Phases: `brief` | `build` | `verify` | `record` | `ship` | `done` | `failed`.
+Statuses: `active` | `paused` | `completed` | `cancelled`.
+`recordIntent`: `pr` | `commit`. Setting `phase` back to `brief` without an
+explicit `cycle` increments `cycle`. Setting `builderSessionId` also mirrors
+onto `tasks.agentChatId`.
+
+**Verify checks**
+
+```http
+GET   /api/v1/tasks/{taskId}/agent-runs/{runId}/checks
+POST  /api/v1/tasks/{taskId}/agent-runs/{runId}/checks
+PATCH /api/v1/tasks/{taskId}/agent-runs/{runId}/checks/{checkId}
+```
+
+Check statuses: `pending` | `running` | `pass` | `fail` | `skipped`.
+`POST` upserts by `(runId, key)`.
+
+**Webhook context:** when the Brief thread receives a user message, the outbound
+`agent.chat.message` webhook includes structured run ids so Grok does not scrape
+prose:
+
+```json
+{
+  "taskAgentRun": {
+    "id": "run_…",
+    "taskId": "tsk_…",
+    "phase": "brief",
+    "cycle": 1,
+    "status": "active"
+  }
+}
+```
+
+**Grok playbook:** Brief until ready → `phase=build` + `buildPrompt` → desktop
+runs Cursor ACP → create checks + `phase=verify` → on results either
+`phase=brief` (loop) or `phase=record` + `recordIntent` → desktop prompts Cursor
+to commit/PR → `phase=done`.
+
 ### Agent-working marker (OS-96)
 
 Business agents (finance, comms, admin) that work tasks through the agents API —

@@ -313,12 +313,7 @@ function withPickedServerDirectory(
   };
 }
 
-const DEVELOPMENT_KIND_OPTIONS = [
-  { value: "local" as const, label: "Local" },
-  { value: "server" as const, label: "Server" },
-];
-
-function ProjectDevelopmentField({
+export function ProjectDevelopmentField({
   project,
   onProjectUpdated,
   requestJson,
@@ -329,16 +324,17 @@ function ProjectDevelopmentField({
 }) {
   const [saving, setSaving] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
+  /** Modal always opens on Local; Server connects when the in-modal toggle flips. */
+  const [pickerKind, setPickerKind] = useState<"local" | "server">("local");
   const [error, setError] = useState<string | null>(null);
   const development = projectDevelopment(project);
   const storedKind = development?.kind ?? "local";
-  const [kind, setKind] = useState<"local" | "server">(storedKind);
 
   useEffect(() => {
-    setKind(storedKind);
     setError(null);
     setPickerOpen(false);
-  }, [project.id, storedKind]);
+    setPickerKind("local");
+  }, [project.id]);
 
   const localPath = normalizeWorkingDirectory(
     (development?.kind === "local" ? development.path : null) ||
@@ -352,11 +348,15 @@ function ProjectDevelopmentField({
   const serverPath = normalizeWorkingDirectory(
     serverCandidate && serverCandidate !== localPath ? serverCandidate : null,
   );
-  const directory = kind === "server" ? serverPath : localPath;
-  const hasDirectory = Boolean(directory);
-  const basename = hasDirectory ? workingDirectoryLabel(directory!) : null;
+  const storedDirectory = storedKind === "server" ? serverPath : localPath;
+  const hasDirectory = Boolean(storedDirectory);
+  const basename = hasDirectory
+    ? workingDirectoryLabel(storedDirectory!)
+    : null;
   const label = basename ?? "Set folder…";
-  const target: LocationFsTarget = kind === "server" ? "development" : "local";
+  const pickerPath = pickerKind === "server" ? serverPath : localPath;
+  const pickerTarget: LocationFsTarget =
+    pickerKind === "server" ? "development" : "local";
 
   async function persistDevelopment(
     nextKind: "local" | "server",
@@ -414,36 +414,13 @@ function ProjectDevelopmentField({
     }
   }
 
-  async function switchKind(nextKind: "local" | "server") {
-    setKind(nextKind);
-    setError(null);
-    const nextPath = nextKind === "server" ? serverPath : localPath;
-    if (!nextPath) {
-      // Nothing stored for this side yet — open the folder browser.
-      setPickerOpen(true);
-      return;
-    }
-    if (nextKind === storedKind && development?.path === nextPath) return;
-    await persistDevelopment(nextKind, nextPath);
-  }
-
   return (
     <div className="project-development-field">
-      <SegmentedPillToggle
-        value={kind}
-        options={DEVELOPMENT_KIND_OPTIONS}
-        onChange={(next) => {
-          void switchKind(next);
-        }}
-        ariaLabel="Development location kind"
-        disabled={saving}
-      />
       <button
         type="button"
         {...{ [TASK_PROPERTY_DROPDOWN_ATTRIBUTE]: "workspace" }}
         className={[
           "property-dropdown-trigger",
-          "property-dropdown-trigger--inline-chip",
           "project-development-field__folder",
           hasDirectory ? null : "is-muted",
         ]
@@ -451,23 +428,22 @@ function ProjectDevelopmentField({
           .join(" ")}
         title={
           error ??
-          directory ??
-          (kind === "server"
-            ? "Choose a folder on the development server"
-            : "Choose a local Development folder")
+          storedDirectory ??
+          "Choose a Development folder"
         }
         aria-label={
           error
             ? error
             : hasDirectory
-              ? `${kind === "server" ? "Server" : "Local"} Development folder: ${directory}`
-              : kind === "server"
-                ? "Choose a folder on the development server"
-                : "Choose a local Development folder"
+              ? `${storedKind === "server" ? "Server" : "Local"} Development folder: ${storedDirectory}`
+              : "Choose a Development folder"
         }
         aria-invalid={error ? true : undefined}
         disabled={saving}
-        onClick={() => setPickerOpen(true)}
+        onClick={() => {
+          setPickerKind("local");
+          setPickerOpen(true);
+        }}
       >
         <span className="property-dropdown-trigger__icon" aria-hidden="true">
           <ComposeFolderIcon className="" />
@@ -481,25 +457,29 @@ function ProjectDevelopmentField({
       ) : null}
       <LocationFolderPicker
         open={pickerOpen}
-        target={target}
+        target={pickerTarget}
         title={
-          kind === "server"
+          pickerKind === "server"
             ? "Development server folder"
             : "Local Development folder"
         }
-        initialPath={directory}
-        projectId={target === "local" ? project.id : null}
+        initialPath={pickerPath}
+        projectId={pickerTarget === "local" ? project.id : null}
         requestJson={requestJson}
+        developmentKindToggle={{
+          value: pickerKind,
+          onChange: setPickerKind,
+        }}
         onClose={() => setPickerOpen(false)}
         onSelect={(path) => {
-          void persistDevelopment(kind, path.trim());
+          void persistDevelopment(pickerKind, path.trim());
         }}
       />
     </div>
   );
 }
 
-function ProjectProductionField({
+export function ProjectProductionField({
   project,
   onProjectUpdated,
   requestJson,
@@ -565,7 +545,6 @@ function ProjectProductionField({
         type="button"
         className={[
           "property-dropdown-trigger",
-          "property-dropdown-trigger--inline-chip",
           value ? null : "is-muted",
         ]
           .filter(Boolean)
@@ -600,7 +579,7 @@ function ProjectProductionField({
   );
 }
 
-function ProjectGithubRepositoryField({
+export function ProjectGithubRepositoryField({
   project,
   onProjectUpdated,
   requestJson,
@@ -724,22 +703,24 @@ function ProjectGithubRepositoryField({
     ? apiErrorMessage(repositoriesError)
     : null;
   const message = error ?? listError;
-  const showLoading =
+  // Keep the chip clickable while the GitHub list loads — options already
+  // include "No repository" plus the current value when set.
+  const listBusy =
     repositoriesLoading && !repositories && !getCachedRepositories();
 
   return (
-    <span title={message ?? undefined}>
+    <span title={message ?? (listBusy ? "Loading repositories…" : undefined)}>
       <PropertyDropdown
         ariaLabel="Repository"
         taskPropertyDropdownId="repository"
         value={project.githubRepository ?? NONE_REPO_VALUE}
         options={repositoryOptions}
-        disabled={saving || showLoading}
+        disabled={saving}
         searchPlaceholder="Search repositories…"
         searchShortcutLabel="R"
         panelWidth={320}
         panelAlign="start"
-        triggerVariant="inlineChip"
+        triggerVariant="default"
         fallbackIcon={
           project.githubRepository ? (
             <ProjectOcticon icon="mark-github" size={14} />

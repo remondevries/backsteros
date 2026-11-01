@@ -115,13 +115,20 @@ export function EntityOverviewSubgroup({
         <div className="entity-overview-subgroup__header">{headerInner}</div>
       )}
       {children != null ? (
-        <div
-          id={panelId}
-          className="entity-overview-subgroup__fields"
-          hidden={collapsible && collapsed}
-        >
-          {children}
-        </div>
+        collapsible && collapsed ? (
+          // Unmount when collapsed so fields cannot paint or steal hits when
+          // author CSS overrides `[hidden]` (panel identity `display: flex`).
+          <div
+            id={panelId}
+            className="entity-overview-subgroup__fields"
+            hidden
+            {...{ inert: true }}
+          />
+        ) : (
+          <div id={panelId} className="entity-overview-subgroup__fields">
+            {children}
+          </div>
+        )
       ) : null}
     </div>
   );

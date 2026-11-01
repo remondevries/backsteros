@@ -1,7 +1,6 @@
 "use client";
 
 import type { GithubCommit } from "@backsteros/contracts";
-import { XIcon } from "@primer/octicons-react";
 import {
   useCallback,
   useEffect,
@@ -13,7 +12,6 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 
-import { ProjectsSidePanelIcon } from "./projects-side-panel-icon.js";
 import { CommitDetailPane } from "./commit-detail-pane.js";
 import { apiErrorMessage } from "./api-error-message.js";
 import type { CodebaseRequestJson } from "./project-fs-types.js";
@@ -100,8 +98,6 @@ export type TaskLinkedCommitSectionProps = {
   /** Remove one linked commit. */
   onUnlinkCommit: (sha: string) => void | Promise<void>;
   linking?: boolean;
-  /** Collapse the Changes rail (same control the agent panel used). */
-  onHidePanel?: () => void;
   /**
    * Bump to open the repo commit picker (e.g. collapsed-strip + or chip +).
    * Ignored when already at the link cap.
@@ -131,9 +127,8 @@ export function TaskLinkedCommitSection({
   onActiveSurfaceChange,
   requestJson,
   onLinkCommit,
-  onUnlinkCommit,
+  onUnlinkCommit: _onUnlinkCommit,
   linking = false,
-  onHidePanel,
   openPickerRequest = 0,
   terminalPane = null,
   terminalTabVisible,
@@ -390,110 +385,19 @@ export function TaskLinkedCommitSection({
         entry.shortSha.toLowerCase() === shaFromQuery!.toLowerCase(),
     );
 
-  const panelHideButton = onHidePanel ? (
-    <button
-      type="button"
-      className="desktop-agent-surface-tab desktop-agent-surface-tab--icon task-linked-commit__hide"
-      onClick={onHidePanel}
-      title="Hide changes (])"
-      aria-label="Hide changes"
-    >
-      <ProjectsSidePanelIcon size={16} collapsed={false} rail="end" />
-    </button>
-  ) : null;
-
   const branchLabel = (defaultBranch?.trim() || resolvedBranch)?.trim() || null;
+
+  // Expanded Changes rail omits Terminal/commit chip tabs (codebase-only panel);
+  // surface switching stays on the collapsed strip. Unlink stays available to hosts.
+  void _onUnlinkCommit;
 
   return (
     <section
       className="task-linked-commit"
-      aria-label="Task changes"
+      aria-label={
+        terminalActive && showTerminalTab ? terminalTabLabel : "Task changes"
+      }
     >
-      <div className="task-linked-commit__toolbar">
-        {showTerminalTab || shas.length > 0 || canAddMore ? (
-          <div
-            className="task-linked-commit__sha-chips"
-            role="tablist"
-            aria-label="Terminal and linked commits"
-          >
-            {showTerminalTab ? (
-              <button
-                type="button"
-                role="tab"
-                aria-selected={terminalActive}
-                className={[
-                  "task-linked-commit__sha-chip",
-                  "task-linked-commit__sha-chip--terminal",
-                  terminalActive ? "is-selected" : null,
-                ]
-                  .filter(Boolean)
-                  .join(" ")}
-                title={terminalTabLabel}
-                onClick={() => setActiveSurface(TASK_SIDE_PANEL_TERMINAL_ID)}
-              >
-                {terminalTabLabel}
-              </button>
-            ) : null}
-            {shas.map((sha) => {
-              const selected =
-                activeSha != null &&
-                sha.toLowerCase() === activeSha.toLowerCase();
-              return (
-                <div
-                  key={sha}
-                  className={[
-                    "task-linked-commit__sha-chip",
-                    selected ? "is-selected" : null,
-                  ]
-                    .filter(Boolean)
-                    .join(" ")}
-                >
-                  <button
-                    type="button"
-                    className="task-linked-commit__sha-chip-remove"
-                    title={`Unlink ${shortSha(sha)}`}
-                    aria-label={`Unlink commit ${shortSha(sha)}`}
-                    disabled={linking}
-                    onClick={(event) => {
-                      event.preventDefault();
-                      event.stopPropagation();
-                      void onUnlinkCommit(sha);
-                    }}
-                  >
-                    <XIcon size={10} />
-                  </button>
-                  <button
-                    type="button"
-                    role="tab"
-                    aria-selected={selected}
-                    className="task-linked-commit__sha-chip-select"
-                    title={sha}
-                    onClick={() => setActiveSurface(sha)}
-                  >
-                    <code>{shortSha(sha)}</code>
-                  </button>
-                </div>
-              );
-            })}
-            {canAddMore ? (
-              <button
-                type="button"
-                className="task-linked-commit__sha-chip task-linked-commit__sha-chip--add"
-                title="Link another commit"
-                aria-label="Link another commit"
-                disabled={linking}
-                onClick={openPicker}
-              >
-                <span aria-hidden="true">+</span>
-              </button>
-            ) : null}
-          </div>
-        ) : null}
-        <div className="task-linked-commit__toolbar-actions">
-          {panelHideButton}
-        </div>
-      </div>
-
       {terminalActive && showTerminalTab ? (
         <div className="task-linked-commit__terminal">{terminalPane}</div>
       ) : null}

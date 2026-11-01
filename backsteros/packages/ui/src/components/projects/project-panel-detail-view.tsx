@@ -346,8 +346,8 @@ export function ProjectPanelDetailView({
       (entry) => entry.value === (project.organizationId ?? ""),
     )?.label ?? "No organization";
 
-  // Panel layout hosts its own chrome (no product section pills).
-  const propertyTriggerVariant = "inlineChip" as const;
+  // Flat until hover — same chrome as property-rail Status (default trigger).
+  const propertyTriggerVariant = "default" as const;
   const propertyPanelAlign = "start" as const;
 
   const statusControl = (

@@ -1,7 +1,13 @@
 "use client";
 
 import type { ProjectUpdate } from "@backsteros/contracts";
-import { useCallback, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 
 import type { ProjectArea } from "../../projects/project-areas.js";
 import {
@@ -33,6 +39,10 @@ import { OverviewNameEditor } from "../content/overview-name-editor.js";
 import { PillNav } from "../shared/pill-nav.js";
 import { SegmentedPillToggle } from "../list-nav/list-board-view-shell.js";
 import type { SearchableDropdownOption } from "../dropdowns/searchable-dropdown.js";
+import { useContentLayoutTransition } from "../shell/content-layout-transition-context.js";
+
+/** Below this width, properties render as inline chips; at/above as the right rail. */
+export const PROJECT_DETAIL_PROPERTIES_RAIL_BREAKPOINT = 720;
 
 export type ProjectDetailViewProject = {
   id: string;
@@ -196,6 +206,12 @@ export function ProjectDetailView({
   belowProperties = null,
   descriptionEmptyHint = "Add a project description…",
 }: ProjectDetailViewProps) {
+  const overviewRootRef = useRef<HTMLDivElement | null>(null);
+  const [usePropertiesRail, setUsePropertiesRail] = useState(true);
+  const { animating: layoutAnimating } = useContentLayoutTransition();
+  const layoutAnimatingRef = useRef(layoutAnimating);
+  layoutAnimatingRef.current = layoutAnimating;
+
   const [uncontrolledSection, setUncontrolledSection] =
     useState<ProjectSectionId>(initialSection);
   const section = controlledSection ?? uncontrolledSection;
@@ -205,6 +221,46 @@ export function ProjectDetailView({
       setUncontrolledSection(next);
     }
   };
+
+  useEffect(() => {
+    if (layoutAnimating) return;
+    const node = overviewRootRef.current;
+    if (!node) return;
+    const width = Math.round(node.getBoundingClientRect().width);
+    setUsePropertiesRail(width >= PROJECT_DETAIL_PROPERTIES_RAIL_BREAKPOINT);
+  }, [layoutAnimating]);
+
+  useEffect(() => {
+    const node = overviewRootRef.current;
+    if (!node || typeof ResizeObserver === "undefined") return;
+    let settledTimer: number | null = null;
+    let didCommitInitial = false;
+    const commit = (width: number) => {
+      if (layoutAnimatingRef.current) return;
+      setUsePropertiesRail(width >= PROJECT_DETAIL_PROPERTIES_RAIL_BREAKPOINT);
+    };
+    const update = () => {
+      if (layoutAnimatingRef.current) return;
+      const width = Math.round(node.getBoundingClientRect().width);
+      if (!didCommitInitial) {
+        didCommitInitial = true;
+        commit(width);
+        return;
+      }
+      if (settledTimer != null) window.clearTimeout(settledTimer);
+      settledTimer = window.setTimeout(() => {
+        settledTimer = null;
+        commit(width);
+      }, 140);
+    };
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(node);
+    return () => {
+      if (settledTimer != null) window.clearTimeout(settledTimer);
+      observer.disconnect();
+    };
+  }, []);
 
   const [name, setName] = useState(project.name);
   const [nameSource, setNameSource] = useState(project.name);
@@ -278,6 +334,192 @@ export function ProjectDetailView({
   const showSectionNav =
     !hideSectionNav && section !== "documents" && section !== "letters";
 
+  const showInlineProperties = !usePropertiesRail;
+
+  const overviewMain = (
+    <div
+      className={[
+        "project-detail__overview-main",
+        showInlineProperties ? "project-detail-stacked__scroll" : null,
+      ]
+        .filter(Boolean)
+        .join(" ")}
+    >
+      <div className="project-detail__overview-top">
+        <header className="project-detail__header">
+          <span className="project-detail__icon">
+            <ProjectOverviewIcon
+              icon={project.icon}
+              type={project.type}
+              name={project.name}
+              onIconChange={onIconChange}
+            />
+          </span>
+          <OverviewNameEditor
+            value={name}
+            entityLabel="Project"
+            resetKey={project.id}
+            renameFocusRequest={renameFocusRequest}
+            onSave={async (next) => {
+              if (!onSaveName) {
+                setName(next);
+                setNameSource(next);
+                return { ok: true };
+              }
+              const result = await onSaveName(next);
+              if (result.ok) {
+                // Keep source on the last confirmed remote until the
+                // patched project lands — bumping source early lets
+                // adoptRemoteField briefly revert the field.
+                setName(next);
+              }
+              return result;
+            }}
+          />
+          <input
+            type="text"
+            className="project-detail__summary"
+            value={summary}
+            placeholder="Add a short summary…"
+            aria-label="Project summary"
+            onChange={(event) => setSummary(event.target.value)}
+            onBlur={() => {
+              void onSaveSummary?.(summary.trim());
+            }}
+          />
+          {showInlineProperties ? (
+            <div className="project-detail__properties-row">
+              <span className="project-detail__properties-row-label">
+                Properties
+              </span>
+              <ProjectPropertiesInlineChips
+                project={project}
+                nestedAreas={nestedAreas}
+                onStatusChange={onStatusChange}
+                onPriorityChange={onPriorityChange}
+                onProviderChange={onProviderChange}
+                onCategoryChange={onCategoryChange}
+                onAreaChange={onAreaChange}
+                onAreaIdChange={onAreaIdChange}
+                onOrganizationChange={onOrganizationChange}
+                onStartDateChange={onStartDateChange}
+                onDueDateChange={onDueDateChange}
+                organizationOptions={organizationOptions}
+                onCreateOrganizationFromQuery={onCreateOrganizationFromQuery}
+              />
+            </div>
+          ) : null}
+        </header>
+
+        {latestUpdate ? (
+          <div className="project-detail__latest-update">
+            <ProjectLatestUpdateCard
+              update={latestUpdate}
+              onOpenUpdates={onOpenUpdates}
+            />
+          </div>
+        ) : null}
+      </div>
+
+      {overviewDescription ? (
+        <div className="project-detail__description project-detail__description--expanded">
+          <div className="project-detail__description-heading">
+            <span className="project-detail__description-label">
+              Description
+            </span>
+          </div>
+          <div className="project-detail__description-body">
+            {overviewDescription}
+          </div>
+        </div>
+      ) : (
+        <section
+          className={`project-detail__description${
+            descriptionExpanded
+              ? " project-detail__description--expanded"
+              : ""
+          }`}
+        >
+          <div className="project-detail__description-heading">
+            <button
+              type="button"
+              className="project-detail__description-toggle"
+              aria-expanded={descriptionExpanded}
+              onClick={() => setDescriptionExpanded((open) => !open)}
+            >
+              <span>Description</span>
+              <span
+                aria-hidden="true"
+                className={`project-detail__description-chevron${
+                  descriptionExpanded
+                    ? ""
+                    : " project-detail__description-chevron--collapsed"
+                }`}
+              >
+                ▾
+              </span>
+            </button>
+          </div>
+
+          {descriptionExpanded ? (
+            <div
+              className="project-detail__description-body"
+              data-content-view-mode={mode}
+            >
+              <ContentMarkdownViewLayout
+                mode={mode}
+                editorActivated={editorActivated}
+                onToggleMode={toggleViewMode}
+                editor={
+                  <DocumentMarkdownEditor
+                    value={value}
+                    onChange={handleChange}
+                    onBlur={handleBlurSave}
+                    focusRequest={editorFocusRequest}
+                    ariaLabel="Project description"
+                  />
+                }
+                preview={
+                  <ContentMarkdownPreviewColumn includeTopInset={false}>
+                    {value.trim() ? (
+                      <DocumentMarkdownPreview
+                        body={value}
+                        onChange={handleChange}
+                      />
+                    ) : (
+                      <p className="project-detail__description-empty">
+                        {descriptionEmptyHint}
+                      </p>
+                    )}
+                  </ContentMarkdownPreviewColumn>
+                }
+                toggle={
+                  <FloatingPillToggleDock>
+                    <SegmentedPillToggle
+                      value={mode}
+                      options={[
+                        { value: "edit", label: "Edit" },
+                        { value: "preview", label: "Preview" },
+                      ]}
+                      onChange={setViewMode}
+                      ariaLabel="Project description view mode"
+                    />
+                  </FloatingPillToggleDock>
+                }
+              />
+            </div>
+          ) : null}
+
+          {error ? (
+            <p className="project-detail__description-error" role="alert">
+              {error}
+            </p>
+          ) : null}
+        </section>
+      )}
+    </div>
+  );
+
   return (
     <div className="project-detail" data-content-detail>
       {showSectionNav ? (
@@ -304,216 +546,47 @@ export function ProjectDetailView({
         </div>
       ) : (
         <div
-          className="project-detail__overview project-detail-split"
-          data-detail-split=""
+          ref={overviewRootRef}
+          className={[
+            "project-detail__overview",
+            usePropertiesRail ? "project-detail-split" : "project-detail-stacked",
+          ].join(" ")}
+          data-detail-split={usePropertiesRail ? "" : undefined}
+          data-properties-presentation={usePropertiesRail ? "rail" : "chips"}
         >
-          <DetailWithPropertiesLayout
-            storageKey={PROJECT_PROPERTIES_PANEL_WIDTH_KEY}
-            main={
-              <div className="project-detail__overview-main">
-                <div className="project-detail__overview-top">
-                  <header className="project-detail__header">
-                    <span className="project-detail__icon">
-                      <ProjectOverviewIcon
-                        icon={project.icon}
-                        type={project.type}
-                        name={project.name}
-                        onIconChange={onIconChange}
-                      />
-                    </span>
-                    <OverviewNameEditor
-                      value={name}
-                      entityLabel="Project"
-                      resetKey={project.id}
-                      renameFocusRequest={renameFocusRequest}
-                      onSave={async (next) => {
-                        if (!onSaveName) {
-                          setName(next);
-                          setNameSource(next);
-                          return { ok: true };
-                        }
-                        const result = await onSaveName(next);
-                        if (result.ok) {
-                          // Keep source on the last confirmed remote until the
-                          // patched project lands — bumping source early lets
-                          // adoptRemoteField briefly revert the field.
-                          setName(next);
-                        }
-                        return result;
-                      }}
-                    />
-                    <input
-                      type="text"
-                      className="project-detail__summary"
-                      value={summary}
-                      placeholder="Add a short summary…"
-                      aria-label="Project summary"
-                      onChange={(event) => setSummary(event.target.value)}
-                      onBlur={() => {
-                        void onSaveSummary?.(summary.trim());
-                      }}
-                    />
-                    <div className="project-detail__properties-row">
-                      <span className="project-detail__properties-row-label">
-                        Properties
-                      </span>
-                      <ProjectPropertiesInlineChips
-                        project={project}
-                        nestedAreas={nestedAreas}
-                        onStatusChange={onStatusChange}
-                        onPriorityChange={onPriorityChange}
-                        onProviderChange={onProviderChange}
-                        onCategoryChange={onCategoryChange}
-                        onAreaChange={onAreaChange}
-                        onAreaIdChange={onAreaIdChange}
-                        onOrganizationChange={onOrganizationChange}
-                        onStartDateChange={onStartDateChange}
-                        onDueDateChange={onDueDateChange}
-                        organizationOptions={organizationOptions}
-                        onCreateOrganizationFromQuery={
-                          onCreateOrganizationFromQuery
-                        }
-                      />
-                    </div>
-                  </header>
-
-                  {latestUpdate ? (
-                    <div className="project-detail__latest-update">
-                      <ProjectLatestUpdateCard
-                        update={latestUpdate}
-                        onOpenUpdates={onOpenUpdates}
-                      />
-                    </div>
-                  ) : null}
-                </div>
-
-                {overviewDescription ? (
-                  <div className="project-detail__description project-detail__description--expanded">
-                    <div className="project-detail__description-heading">
-                      <span className="project-detail__description-label">
-                        Description
-                      </span>
-                    </div>
-                    <div className="project-detail__description-body">
-                      {overviewDescription}
-                    </div>
-                  </div>
-                ) : (
-                  <section
-                    className={`project-detail__description${
-                      descriptionExpanded
-                        ? " project-detail__description--expanded"
-                        : ""
-                    }`}
-                  >
-                    <div className="project-detail__description-heading">
-                      <button
-                        type="button"
-                        className="project-detail__description-toggle"
-                        aria-expanded={descriptionExpanded}
-                        onClick={() => setDescriptionExpanded((open) => !open)}
-                      >
-                        <span>Description</span>
-                        <span
-                          aria-hidden="true"
-                          className={`project-detail__description-chevron${
-                            descriptionExpanded
-                              ? ""
-                              : " project-detail__description-chevron--collapsed"
-                          }`}
-                        >
-                          ▾
-                        </span>
-                      </button>
-                    </div>
-
-                    {descriptionExpanded ? (
-                      <div
-                        className="project-detail__description-body"
-                        data-content-view-mode={mode}
-                      >
-                        <ContentMarkdownViewLayout
-                          mode={mode}
-                          editorActivated={editorActivated}
-                          onToggleMode={toggleViewMode}
-                          editor={
-                            <DocumentMarkdownEditor
-                              value={value}
-                              onChange={handleChange}
-                              onBlur={handleBlurSave}
-                              focusRequest={editorFocusRequest}
-                              ariaLabel="Project description"
-                            />
-                          }
-                          preview={
-                            <ContentMarkdownPreviewColumn includeTopInset={false}>
-                              {value.trim() ? (
-                                <DocumentMarkdownPreview
-                                  body={value}
-                                  onChange={handleChange}
-                                />
-                              ) : (
-                                <p className="project-detail__description-empty">
-                                  {descriptionEmptyHint}
-                                </p>
-                              )}
-                            </ContentMarkdownPreviewColumn>
-                          }
-                          toggle={
-                            <FloatingPillToggleDock>
-                              <SegmentedPillToggle
-                                value={mode}
-                                options={[
-                                  { value: "edit", label: "Edit" },
-                                  { value: "preview", label: "Preview" },
-                                ]}
-                                onChange={setViewMode}
-                                ariaLabel="Project description view mode"
-                              />
-                            </FloatingPillToggleDock>
-                          }
-                        />
-                      </div>
-                    ) : null}
-
-                    {error ? (
-                      <p
-                        className="project-detail__description-error"
-                        role="alert"
-                      >
-                        {error}
-                      </p>
-                    ) : null}
-                  </section>
-                )}
-              </div>
-            }
-            properties={
-              <ProjectPropertiesDisplay
-                project={project}
-                nestedAreas={nestedAreas}
-                onSaveKey={onSaveKey}
-                onStatusChange={onStatusChange}
-                onPriorityChange={onPriorityChange}
-                onProviderChange={onProviderChange}
-                onCategoryChange={onCategoryChange}
-                onHourlyRateChange={onHourlyRateChange}
-                onBudgetsChange={onBudgetsChange}
-                onAreaChange={onAreaChange}
-                onAreaIdChange={onAreaIdChange}
-                onOrganizationChange={onOrganizationChange}
-                onStartDateChange={onStartDateChange}
-                onDueDateChange={onDueDateChange}
-                organizationOptions={organizationOptions}
-                organizationNavigateHref={organizationNavigateHref}
-                onCreateOrganizationFromQuery={onCreateOrganizationFromQuery}
-                propertiesExtra={propertiesExtra}
-                agentsExtra={agentsExtra}
-                agentsHeaderEnd={agentsHeaderEnd}
-                belowProperties={belowProperties}
-              />
-            }
-          />
+          {usePropertiesRail ? (
+            <DetailWithPropertiesLayout
+              storageKey={PROJECT_PROPERTIES_PANEL_WIDTH_KEY}
+              main={overviewMain}
+              properties={
+                <ProjectPropertiesDisplay
+                  project={project}
+                  nestedAreas={nestedAreas}
+                  onSaveKey={onSaveKey}
+                  onStatusChange={onStatusChange}
+                  onPriorityChange={onPriorityChange}
+                  onProviderChange={onProviderChange}
+                  onCategoryChange={onCategoryChange}
+                  onHourlyRateChange={onHourlyRateChange}
+                  onBudgetsChange={onBudgetsChange}
+                  onAreaChange={onAreaChange}
+                  onAreaIdChange={onAreaIdChange}
+                  onOrganizationChange={onOrganizationChange}
+                  onStartDateChange={onStartDateChange}
+                  onDueDateChange={onDueDateChange}
+                  organizationOptions={organizationOptions}
+                  organizationNavigateHref={organizationNavigateHref}
+                  onCreateOrganizationFromQuery={onCreateOrganizationFromQuery}
+                  propertiesExtra={propertiesExtra}
+                  agentsExtra={agentsExtra}
+                  agentsHeaderEnd={agentsHeaderEnd}
+                  belowProperties={belowProperties}
+                />
+              }
+            />
+          ) : (
+            overviewMain
+          )}
         </div>
       )}
     </div>

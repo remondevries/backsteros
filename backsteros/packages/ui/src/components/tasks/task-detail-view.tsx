@@ -118,6 +118,11 @@ export type TaskDetailViewProps = {
    */
   showNarrowTimer?: boolean;
   /**
+   * Trailing control on the timer row (narrow id row or properties rail
+   * timer) — e.g. Changes side-panel toggle.
+   */
+  timerRowEnd?: ReactNode;
+  /**
    * Optional content rendered below the description (e.g. activity / comments).
    * Pass a render function to receive the current preview/edit mode.
    */
@@ -206,6 +211,7 @@ export function TaskDetailView({
   headerMeta,
   showDisplayId = true,
   showNarrowTimer = true,
+  timerRowEnd = null,
   belowDescription,
   afterAttachments,
   spellcheckHighlight = null,
@@ -452,27 +458,37 @@ export function TaskDetailView({
   // the properties panel. Hosts can move the pill into chrome via showNarrowTimer.
   const narrowTimerNode =
     showNarrowTimer && !propertiesRail && !task.support ? (
-      <div className="content-detail-display-id-row__timer">
-        <TrackedTimeField
-          variant="pill"
-          trackedDurationSeconds={task.trackedDurationSeconds ?? null}
-          trackedMinutes={task.trackedMinutes ?? null}
-          scheduleMinutes={trackedMinutesFromTaskSchedule(
-            toDate(task.dueDate),
-            toDate(task.dueEndDate),
-          )}
-          onTrackedDurationSecondsChange={onTrackedDurationSecondsChange}
-          onTimerSessionChange={onTimerSessionChange}
-          timerSession={timerSession}
-        />
-      </div>
+      <TrackedTimeField
+        variant="pill"
+        trackedDurationSeconds={task.trackedDurationSeconds ?? null}
+        trackedMinutes={task.trackedMinutes ?? null}
+        scheduleMinutes={trackedMinutesFromTaskSchedule(
+          toDate(task.dueDate),
+          toDate(task.dueEndDate),
+        )}
+        onTrackedDurationSecondsChange={onTrackedDurationSecondsChange}
+        onTimerSessionChange={onTimerSessionChange}
+        timerSession={timerSession}
+      />
     ) : null;
 
+  const narrowTimerRowEnd = !propertiesRail ? timerRowEnd : null;
+  const hasNarrowIdRowEnd = Boolean(narrowTimerNode || narrowTimerRowEnd);
+
   const titleMetaRow =
-    !usePropertiesRail && (displayIdNode || narrowTimerNode) ? (
+    !usePropertiesRail && (displayIdNode || hasNarrowIdRowEnd) ? (
       <div className="content-detail-display-id-row">
         {displayIdNode ?? <span />}
-        {narrowTimerNode}
+        {hasNarrowIdRowEnd ? (
+          <div className="content-detail-display-id-row__end">
+            {narrowTimerNode ? (
+              <div className="content-detail-display-id-row__timer">
+                {narrowTimerNode}
+              </div>
+            ) : null}
+            {narrowTimerRowEnd}
+          </div>
+        ) : null}
       </div>
     ) : (
       displayIdNode
@@ -695,6 +711,7 @@ export function TaskDetailView({
                 }
                 onTimerSessionChange={onTimerSessionChange}
                 timerSession={timerSession}
+                timerRowEnd={timerRowEnd}
               />
               {viewModeDock}
             </div>

@@ -4,6 +4,8 @@ import {
   buildTaskCommentRestPayload,
   commitRestEntityWrite,
   createTaskActivitySchema,
+  createTaskAgentRunCheckSchema,
+  createTaskAgentRunSchema,
   createTaskCommentSchema,
   db,
   forbidden,
@@ -23,12 +25,15 @@ import {
   subscribeAgentPresence,
   taskActivityService,
   taskAgentPresenceService,
+  taskAgentRunsService,
   taskCommentService,
   taskImageService,
   taskProjectService,
   toTaskActivity,
   toTaskComment,
   unauthorized,
+  updateTaskAgentRunCheckSchema,
+  updateTaskAgentRunSchema,
   updateTaskCommentSchema,
   updateTaskTimerSessionActorSchema,
   upsertTaskAgentPresenceSchema,
@@ -38,6 +43,28 @@ import {
   zValidator,
 } from "../route-deps.js";
 import type { Hono } from "../route-deps.js";
+
+function agentRunErrorStatus(error: unknown): 400 | 403 | 404 | 409 {
+  if (
+    error &&
+    typeof error === "object" &&
+    "status" in error &&
+    typeof (error as { status?: unknown }).status === "number"
+  ) {
+    const status = (error as { status: number }).status;
+    if (status === 404) return 404;
+    if (status === 403) return 403;
+    if (status === 409) return 409;
+  }
+  return 400;
+}
+
+function agentRunErrorCode(status: 400 | 403 | 404 | 409): string {
+  if (status === 404) return "not_found";
+  if (status === 403) return "forbidden";
+  if (status === 409) return "conflict";
+  return "bad_request";
+}
 
 /** Task comments, activity log and agent presence. */
 export function registerTaskCollaborationRoutes(app: Hono) {
@@ -745,4 +772,182 @@ export function registerTaskCollaborationRoutes(app: Hono) {
     }
     return c.body(null, 204);
   });
+
+  app.post(
+    "/api/v1/tasks/:id/agent-runs",
+    zValidator("json", createTaskAgentRunSchema),
+    async (c) => {
+      const auth = getAuth(c);
+      if (!requireScope("tasks:write")(auth)) {
+        return c.json(auth ? forbidden() : unauthorized(), auth ? 403 : 401);
+      }
+      const taskIdRaw = c.req.param("id");
+      const taskId = await routeTaskId(auth.workspaceId, taskIdRaw);
+      if (!taskId) return c.json(notFound("Task"), 404);
+      const body = c.req.valid("json");
+      try {
+        const run = await taskAgentRunsService.createTaskAgentRun(
+          auth.workspaceId,
+          taskId,
+          body,
+          {
+            apiKeyId: auth.apiKeyId,
+            authorContactId: auth.contactId,
+            authorName: null,
+          },
+        );
+        return c.json(run, 201);
+      } catch (error) {
+        const status = agentRunErrorStatus(error);
+        const message =
+          error instanceof Error ? error.message : "Could not start agent run";
+        return c.json(
+          { error: message, code: agentRunErrorCode(status) },
+          status,
+        );
+      }
+    },
+  );
+
+  app.get("/api/v1/tasks/:id/agent-runs/active", async (c) => {
+    const auth = getAuth(c);
+    if (!requireScope("tasks:read")(auth)) {
+      return c.json(auth ? forbidden() : unauthorized(), auth ? 403 : 401);
+    }
+    const taskIdRaw = c.req.param("id");
+    const taskId = await routeTaskId(auth.workspaceId, taskIdRaw);
+    if (!taskId) return c.json(notFound("Task"), 404);
+    const run = await taskAgentRunsService.getActiveTaskAgentRun(
+      auth.workspaceId,
+      taskId,
+      { includeChecks: true },
+    );
+    if (!run) return c.json(notFound("Agent run"), 404);
+    return c.json(run);
+  });
+
+  app.get("/api/v1/tasks/:id/agent-runs/:runId", async (c) => {
+    const auth = getAuth(c);
+    if (!requireScope("tasks:read")(auth)) {
+      return c.json(auth ? forbidden() : unauthorized(), auth ? 403 : 401);
+    }
+    const taskIdRaw = c.req.param("id");
+    const taskId = await routeTaskId(auth.workspaceId, taskIdRaw);
+    if (!taskId) return c.json(notFound("Task"), 404);
+    const run = await taskAgentRunsService.getTaskAgentRun(
+      auth.workspaceId,
+      c.req.param("runId"),
+      { includeChecks: true },
+    );
+    if (!run || run.taskId !== taskId) return c.json(notFound("Agent run"), 404);
+    return c.json(run);
+  });
+
+  app.patch(
+    "/api/v1/tasks/:id/agent-runs/:runId",
+    zValidator("json", updateTaskAgentRunSchema),
+    async (c) => {
+      const auth = getAuth(c);
+      if (!requireScope("tasks:write")(auth)) {
+        return c.json(auth ? forbidden() : unauthorized(), auth ? 403 : 401);
+      }
+      const taskIdRaw = c.req.param("id");
+      const taskId = await routeTaskId(auth.workspaceId, taskIdRaw);
+      if (!taskId) return c.json(notFound("Task"), 404);
+      const existing = await taskAgentRunsService.getTaskAgentRun(
+        auth.workspaceId,
+        c.req.param("runId"),
+      );
+      if (!existing || existing.taskId !== taskId) {
+        return c.json(notFound("Agent run"), 404);
+      }
+      const body = c.req.valid("json");
+      const run = await taskAgentRunsService.updateTaskAgentRun(
+        auth.workspaceId,
+        c.req.param("runId"),
+        body,
+      );
+      if (!run) return c.json(notFound("Agent run"), 404);
+      return c.json(run);
+    },
+  );
+
+  app.get("/api/v1/tasks/:id/agent-runs/:runId/checks", async (c) => {
+    const auth = getAuth(c);
+    if (!requireScope("tasks:read")(auth)) {
+      return c.json(auth ? forbidden() : unauthorized(), auth ? 403 : 401);
+    }
+    const taskIdRaw = c.req.param("id");
+    const taskId = await routeTaskId(auth.workspaceId, taskIdRaw);
+    if (!taskId) return c.json(notFound("Task"), 404);
+    const run = await taskAgentRunsService.getTaskAgentRun(
+      auth.workspaceId,
+      c.req.param("runId"),
+    );
+    if (!run || run.taskId !== taskId) return c.json(notFound("Agent run"), 404);
+    const checks = await taskAgentRunsService.listTaskAgentRunChecks(
+      auth.workspaceId,
+      run.id,
+    );
+    return c.json({ checks: checks ?? [] });
+  });
+
+  app.post(
+    "/api/v1/tasks/:id/agent-runs/:runId/checks",
+    zValidator("json", createTaskAgentRunCheckSchema),
+    async (c) => {
+      const auth = getAuth(c);
+      if (!requireScope("tasks:write")(auth)) {
+        return c.json(auth ? forbidden() : unauthorized(), auth ? 403 : 401);
+      }
+      const taskIdRaw = c.req.param("id");
+      const taskId = await routeTaskId(auth.workspaceId, taskIdRaw);
+      if (!taskId) return c.json(notFound("Task"), 404);
+      const run = await taskAgentRunsService.getTaskAgentRun(
+        auth.workspaceId,
+        c.req.param("runId"),
+      );
+      if (!run || run.taskId !== taskId) {
+        return c.json(notFound("Agent run"), 404);
+      }
+      const body = c.req.valid("json");
+      const check = await taskAgentRunsService.createTaskAgentRunCheck(
+        auth.workspaceId,
+        run.id,
+        body,
+      );
+      if (!check) return c.json(notFound("Agent run"), 404);
+      return c.json(check, 201);
+    },
+  );
+
+  app.patch(
+    "/api/v1/tasks/:id/agent-runs/:runId/checks/:checkId",
+    zValidator("json", updateTaskAgentRunCheckSchema),
+    async (c) => {
+      const auth = getAuth(c);
+      if (!requireScope("tasks:write")(auth)) {
+        return c.json(auth ? forbidden() : unauthorized(), auth ? 403 : 401);
+      }
+      const taskIdRaw = c.req.param("id");
+      const taskId = await routeTaskId(auth.workspaceId, taskIdRaw);
+      if (!taskId) return c.json(notFound("Task"), 404);
+      const run = await taskAgentRunsService.getTaskAgentRun(
+        auth.workspaceId,
+        c.req.param("runId"),
+      );
+      if (!run || run.taskId !== taskId) {
+        return c.json(notFound("Agent run"), 404);
+      }
+      const body = c.req.valid("json");
+      const check = await taskAgentRunsService.updateTaskAgentRunCheck(
+        auth.workspaceId,
+        run.id,
+        c.req.param("checkId"),
+        body,
+      );
+      if (!check) return c.json(notFound("Check"), 404);
+      return c.json(check);
+    },
+  );
 }

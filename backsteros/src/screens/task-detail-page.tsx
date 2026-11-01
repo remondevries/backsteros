@@ -42,6 +42,7 @@ import {
   type TaskSpellcheckAppliedPayload,
 } from "../components/desktop-task-activity-panel";
 import { DesktopTaskLayout } from "../components/desktop-task-layout";
+import { DesktopTaskSidePanelToggle } from "../components/desktop-task-side-panel-context";
 import { TaskShellWorkspace } from "../components/task-shell-workspace";
 import { resolveTaskShellCwd } from "../lib/task-shell-cwd";
 import { useTaskAgentCandidates } from "../lib/use-task-agent-candidates";
@@ -1104,10 +1105,8 @@ export function TaskDetailPage({
   const linkedCommitPanel =
     isCodebaseProject && project
       ? ({
-          hide,
           collapsed,
         }: {
-          hide: () => void;
           collapsed: boolean;
         }) => (
           <TaskLinkedCommitSection
@@ -1118,7 +1117,6 @@ export function TaskDetailPage({
             onActiveSurfaceChange={setActiveSideSurfaceId}
             openPickerRequest={openCommitPickerRequest}
             requestJson={requestJson}
-            onHidePanel={hide}
             canLinkCommits={canLinkCommit}
             terminalTabVisible
             terminalTabLabel={taskAgents.tabLabel}
@@ -1131,13 +1129,15 @@ export function TaskDetailPage({
                 }
                 taskId={task.id}
                 cwd={shellCwd ?? workingDirectory}
-                agentsPane={
+                assigneeName={task.assigneeName}
+                agentsPane={({ onSelectAgent }) => (
                   <TaskAgentsPanel
                     candidates={taskAgents.candidates}
                     loading={taskAgents.loading}
                     roomKnown={taskAgents.roomKnown}
+                    onSelectAgent={onSelectAgent}
                   />
-                }
+                )}
               />
             }
             onLinkCommit={async (sha) => {
@@ -1173,6 +1173,11 @@ export function TaskDetailPage({
         <TaskDetailView
           task={task}
           copyIdShortcutEnabled={detailVisible && keepAliveActive}
+          timerRowEnd={
+            isCodebaseProject && !overlayMode ? (
+              <DesktopTaskSidePanelToggle />
+            ) : null
+          }
           spellcheckHighlight={spellcheckHighlight}
           onSpellcheckHighlightClear={() => setSpellcheckHighlight(null)}
           onToggleSpellcheckTitleSegment={onToggleSpellcheckTitleSegment}

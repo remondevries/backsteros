@@ -198,13 +198,14 @@
   padding-right: 7px;
 }
 
+/* Flat until hover / open — outline + fill only when interacting. */
 .property-dropdown-trigger--inline-chip {
   gap: 5px;
   min-height: 0;
   padding: 5px 8px;
-  border: 0.5px solid color-mix(in srgb, var(--foreground) 12%, transparent);
+  border: 0.5px solid transparent;
   border-radius: 999px;
-  background: color-mix(in srgb, var(--foreground) 4%, transparent);
+  background: transparent;
 }
 
 .property-dropdown-trigger--inline-chip.property-dropdown-trigger--static {
@@ -217,13 +218,30 @@
 }
 
 .property-dropdown-trigger--inline-chip:hover:not(:disabled):not(.property-dropdown-trigger--static),
-.property-dropdown-trigger--inline-chip.is-open {
-  background: color-mix(in srgb, var(--foreground) 8%, transparent);
+.property-dropdown-trigger--inline-chip.is-open,
+.property-dropdown-trigger--inline-chip:focus-visible {
+  border-color: color-mix(in srgb, var(--foreground) 12%, transparent);
+  background: color-mix(in srgb, var(--foreground) 4%, transparent);
 }
 
 .property-dropdown-trigger--inline-chip .property-dropdown-trigger__icon {
   width: 14px;
   height: 14px;
+  border-radius: 9999px;
+}
+
+.property-dropdown-trigger--inline-chip .property-dropdown-trigger__icon img,
+.property-dropdown-trigger--inline-chip
+  .property-dropdown-trigger__icon
+  .entity-list-avatar,
+.property-dropdown-trigger--inline-chip
+  .property-dropdown-trigger__icon
+  .finance-account-dropdown-avatar-fallback {
+  width: 14px;
+  height: 14px;
+  min-width: 14px;
+  min-height: 14px;
+  border-radius: 9999px;
 }
 
 .property-dropdown-trigger--inline-chip .property-dropdown-trigger__label {
@@ -276,6 +294,7 @@
   align-items: center;
   justify-content: center;
   overflow: hidden;
+  border-radius: 9999px;
   color: color-mix(in srgb, var(--foreground) 55%, transparent);
   line-height: 0;
 }

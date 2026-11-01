@@ -1543,6 +1543,148 @@ export type UpsertTaskAgentPresenceInput = z.infer<
   typeof upsertTaskAgentPresenceSchema
 >;
 
+/** Factory phases for a task agent run (Grok conductor + local Cursor). */
+export const TASK_AGENT_RUN_PHASES = [
+  "brief",
+  "build",
+  "verify",
+  "record",
+  "ship",
+  "done",
+  "failed",
+] as const;
+
+export const taskAgentRunPhaseSchema = z.enum(TASK_AGENT_RUN_PHASES);
+
+export const TASK_AGENT_RUN_STATUSES = [
+  "active",
+  "paused",
+  "completed",
+  "cancelled",
+] as const;
+
+export const taskAgentRunStatusSchema = z.enum(TASK_AGENT_RUN_STATUSES);
+
+export const TASK_AGENT_RUN_RECORD_INTENTS = ["pr", "commit"] as const;
+
+export const taskAgentRunRecordIntentSchema = z.enum(
+  TASK_AGENT_RUN_RECORD_INTENTS,
+);
+
+export const TASK_AGENT_RUN_CHECK_STATUSES = [
+  "pending",
+  "running",
+  "pass",
+  "fail",
+  "skipped",
+] as const;
+
+export const taskAgentRunCheckStatusSchema = z.enum(
+  TASK_AGENT_RUN_CHECK_STATUSES,
+);
+
+export const taskAgentRunCheckSchema = z.object({
+  id: z.string(),
+  runId: z.string(),
+  key: z.string(),
+  label: z.string(),
+  status: taskAgentRunCheckStatusSchema,
+  detail: z.string().nullable(),
+  logText: z.string().nullable(),
+  sortOrder: z.number().int(),
+  startedAt: z.string().datetime().nullable(),
+  finishedAt: z.string().datetime().nullable(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+
+export const taskAgentRunSchema = z.object({
+  id: z.string(),
+  taskId: z.string(),
+  projectId: z.string().nullable(),
+  conductorAgentId: z.string(),
+  conductorContactId: z.string().nullable(),
+  phase: taskAgentRunPhaseSchema,
+  cycle: z.number().int().positive(),
+  status: taskAgentRunStatusSchema,
+  briefThreadId: z.string().nullable(),
+  builderSessionId: z.string().nullable(),
+  buildPrompt: z.string().nullable(),
+  recordIntent: taskAgentRunRecordIntentSchema.nullable(),
+  recordNotes: z.string().nullable(),
+  lastError: z.string().nullable(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+  checks: z.array(taskAgentRunCheckSchema).optional(),
+});
+
+export const createTaskAgentRunSchema = z.object({
+  conductorAgentId: z.string().min(1),
+  /** When true, cancel any other active run on this task first. Default true. */
+  replaceActive: z.boolean().optional(),
+  /**
+   * When true (default), open/ensure a chat thread with the conductor and post
+   * a wake message with task + project context.
+   */
+  wakeConductor: z.boolean().optional(),
+});
+
+export const updateTaskAgentRunSchema = z
+  .object({
+    phase: taskAgentRunPhaseSchema.optional(),
+    cycle: z.number().int().positive().optional(),
+    status: taskAgentRunStatusSchema.optional(),
+    briefThreadId: z.string().min(1).nullable().optional(),
+    builderSessionId: z.string().min(1).nullable().optional(),
+    buildPrompt: z.string().max(100_000).nullable().optional(),
+    recordIntent: taskAgentRunRecordIntentSchema.nullable().optional(),
+    recordNotes: z.string().max(20_000).nullable().optional(),
+    lastError: z.string().max(20_000).nullable().optional(),
+  })
+  .refine((value) => Object.keys(value).length > 0, {
+    message: "At least one field is required",
+  });
+
+export const createTaskAgentRunCheckSchema = z.object({
+  key: z.string().trim().min(1).max(128),
+  label: z.string().trim().min(1).max(256),
+  status: taskAgentRunCheckStatusSchema.optional(),
+  detail: z.string().max(10_000).nullable().optional(),
+  logText: z.string().max(500_000).nullable().optional(),
+  sortOrder: z.number().int().optional(),
+});
+
+export const updateTaskAgentRunCheckSchema = z
+  .object({
+    label: z.string().trim().min(1).max(256).optional(),
+    status: taskAgentRunCheckStatusSchema.optional(),
+    detail: z.string().max(10_000).nullable().optional(),
+    logText: z.string().max(500_000).nullable().optional(),
+    sortOrder: z.number().int().optional(),
+  })
+  .refine((value) => Object.keys(value).length > 0, {
+    message: "At least one field is required",
+  });
+
+export type TaskAgentRunPhase = z.infer<typeof taskAgentRunPhaseSchema>;
+export type TaskAgentRunStatus = z.infer<typeof taskAgentRunStatusSchema>;
+export type TaskAgentRunRecordIntent = z.infer<
+  typeof taskAgentRunRecordIntentSchema
+>;
+export type TaskAgentRunCheckStatus = z.infer<
+  typeof taskAgentRunCheckStatusSchema
+>;
+export type TaskAgentRunCheck = z.infer<typeof taskAgentRunCheckSchema>;
+export type TaskAgentRun = z.infer<typeof taskAgentRunSchema>;
+export type CreateTaskAgentRunInput = z.infer<typeof createTaskAgentRunSchema>;
+export type UpdateTaskAgentRunInput = z.infer<typeof updateTaskAgentRunSchema>;
+export type CreateTaskAgentRunCheckInput = z.infer<
+  typeof createTaskAgentRunCheckSchema
+>;
+export type UpdateTaskAgentRunCheckInput = z.infer<
+  typeof updateTaskAgentRunCheckSchema
+>;
+
 export type TaskActivityType = z.infer<typeof taskActivityTypeSchema>;
 
 export type CreateTaskActivityInput = z.infer<typeof createTaskActivitySchema>;

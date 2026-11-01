@@ -146,124 +146,6 @@
   overflow: hidden;
 }
 
-.desktop-task-layout__side-body .task-linked-commit__toolbar {
-  display: flex;
-  flex-shrink: 0;
-  align-items: center;
-  gap: 10px;
-  min-width: 0;
-  padding: 8px 10px 8px 14px;
-}
-
-.desktop-task-layout__side-body .task-linked-commit__toolbar-actions {
-  display: inline-flex;
-  flex-shrink: 0;
-  align-items: center;
-  gap: 6px;
-  margin-left: auto;
-}
-
-.desktop-task-layout__side-body .task-linked-commit__sha-chips {
-  display: flex;
-  flex: 1 1 auto;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-  padding: 0;
-}
-
-.desktop-task-layout__side-body .task-linked-commit__sha-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  appearance: none;
-  margin: 0;
-  padding: 2px 8px 2px 4px;
-  border: 0.5px solid color-mix(in srgb, var(--foreground) 14%, transparent);
-  border-radius: 6px;
-  background: color-mix(in srgb, var(--foreground) 5%, transparent);
-  color: color-mix(in srgb, var(--foreground) 78%, transparent);
-  font: inherit;
-  font-size: 12px;
-  line-height: 1.3;
-}
-
-.desktop-task-layout__side-body .task-linked-commit__sha-chip--terminal {
-  padding: 2px 10px;
-  cursor: pointer;
-}
-
-.desktop-task-layout__side-body .task-linked-commit__sha-chip:hover {
-  background: color-mix(in srgb, var(--foreground) 9%, transparent);
-  color: var(--foreground);
-}
-
-.desktop-task-layout__side-body .task-linked-commit__sha-chip.is-selected {
-  background: color-mix(in srgb, var(--foreground) 12%, transparent);
-  color: var(--foreground);
-  border-color: color-mix(in srgb, var(--foreground) 22%, transparent);
-}
-
-.desktop-task-layout__side-body .task-linked-commit__sha-chip-select {
-  appearance: none;
-  margin: 0;
-  padding: 1px 0;
-  border: 0;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  line-height: inherit;
-  cursor: pointer;
-}
-
-.desktop-task-layout__side-body .task-linked-commit__sha-chip-remove {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  appearance: none;
-  margin: 0;
-  padding: 0;
-  width: 18px;
-  height: 18px;
-  border: 0;
-  border-radius: 4px;
-  background: transparent;
-  color: color-mix(in srgb, var(--foreground) 48%, transparent);
-  cursor: pointer;
-}
-
-.desktop-task-layout__side-body .task-linked-commit__sha-chip-remove:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--foreground) 10%, transparent);
-  color: var(--foreground);
-}
-
-.desktop-task-layout__side-body .task-linked-commit__sha-chip-remove:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-
-.desktop-task-layout__side-body .task-linked-commit__sha-chip--add {
-  min-width: 28px;
-  justify-content: center;
-  padding-inline: 6px;
-  border-style: dashed;
-  font-size: 14px;
-  font-weight: 600;
-  line-height: 1;
-  color: color-mix(in srgb, var(--foreground) 55%, transparent);
-  cursor: pointer;
-}
-
-.desktop-task-layout__side-body .task-linked-commit__sha-chip--add:hover {
-  color: var(--foreground);
-}
-
-.desktop-task-layout__side-body .task-linked-commit__sha-chip code {
-  font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 12px;
-}
-
 .desktop-task-layout__side-body .task-linked-commit__link {
   appearance: none;
   margin: 0;
@@ -330,95 +212,929 @@
 }
 
 .desktop-task-layout__side-body .task-shell-workspace__pane--agents {
+  display: flex;
   overflow-y: auto;
-  /* Clear the bottom-right Agents / Terminal toggle. */
-  padding: 16px 16px 64px;
+  padding: 16px;
 }
 
-.task-agents-panel__header {
-  margin-bottom: 12px;
+.desktop-task-layout__side-body .task-shell-workspace__error,
+.desktop-task-layout__side-body .task-shell-workspace__status {
+  margin: 8px 12px 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: color-mix(in srgb, #e8e8e8 70%, transparent);
 }
 
-.task-agents-panel__title {
+.desktop-task-layout__side-body .task-shell-workspace__error {
+  color: #f87171;
+}
+
+.desktop-task-layout__side-body .task-shell-workspace__pane--run {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 0;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* —— Agent run accordion (Setup / Process / Review / Deployment) —— */
+
+.task-agent-run-accordion {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  flex: 1 1 0;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.task-agent-run-accordion__section {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  min-height: 0;
+  border-bottom: 0.5px solid color-mix(in srgb, #e8e8e8 12%, transparent);
+}
+
+.task-agent-run-accordion__section.is-open {
+  flex: 1 1 0;
+  min-height: 0;
+}
+
+.task-agent-run-accordion__header {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 12px 0 4px;
+  background: color-mix(in srgb, #e8e8e8 3%, transparent);
+}
+
+.task-agent-run-accordion__header-button {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 8px;
   margin: 0;
+  padding: 10px 8px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.task-agent-run-accordion__header-button:hover .task-agent-run-accordion__title {
+  color: #fff;
+}
+
+.task-agent-run-accordion__status {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+}
+
+.task-agent-run-accordion__status .task-status-working-pulse,
+.task-agent-run-accordion__status svg {
+  display: block;
+  overflow: visible;
+}
+
+.task-agent-run-accordion__title {
+  flex: 0 1 auto;
+  min-width: 0;
   font-size: 13px;
   font-weight: 600;
   color: #e8e8e8;
 }
 
-.task-agents-panel__subtitle,
-.task-agents-panel__empty {
-  margin: 2px 0 0;
-  font-size: 12px;
-  line-height: 1.45;
-  color: color-mix(in srgb, #e8e8e8 55%, transparent);
+.task-agent-run-accordion__title-end {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  margin-left: 2px;
 }
 
-.task-agents-panel__list {
+.task-agent-run-accordion__chevron {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  margin-left: auto;
+  border-right: 1.5px solid color-mix(in srgb, #e8e8e8 45%, transparent);
+  border-bottom: 1.5px solid color-mix(in srgb, #e8e8e8 45%, transparent);
+  transform: rotate(-45deg);
+  transition: transform 140ms ease;
+}
+
+.task-agent-run-accordion__section.is-open .task-agent-run-accordion__chevron {
+  transform: rotate(45deg);
+}
+
+.task-agent-run-accordion__header-end {
+  display: flex;
+  flex: none;
+  align-items: center;
+}
+
+.task-agent-run-accordion__body {
+  display: none;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.task-agent-run-accordion__section.is-open > .task-agent-run-accordion__body {
+  display: flex;
+  flex: 1 1 0;
+}
+
+.task-agent-run-accordion__body[hidden] {
+  display: none !important;
+}
+
+.task-agent-run-accordion__chat,
+.task-agent-run-accordion__terminal,
+.task-agent-run-accordion__process,
+.task-agent-run-accordion__process-body,
+.task-agent-run-accordion__process-ui {
+  display: flex;
+  min-height: 0;
+  min-width: 0;
+  flex: 1 1 0;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.task-agent-run-accordion__process-footer,
+.task-agent-run-accordion__review-footer {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 8px 12px 12px;
+}
+
+.task-agent-run-accordion__review,
+.task-agent-run-accordion__review-body {
+  display: flex;
+  min-height: 0;
+  min-width: 0;
+  flex: 1 1 0;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.task-agent-run-accordion__review-results {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 14px;
+  margin: 0;
+  padding: 10px 12px 8px;
+  overflow: auto;
+}
+
+.task-agent-run-accordion__review-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
-.task-agents-panel__row {
+.task-agent-run-accordion__review-subgroup-title {
+  margin: 0 0 8px;
+  padding: 0 2px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, #e8e8e8 45%, transparent);
+}
+
+.task-agent-run-accordion__review-row-button {
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.task-agent-run-accordion__review-row-button:hover
+  .task-agent-run-accordion__review-row {
+  background: color-mix(in srgb, #e8e8e8 5%, transparent);
+}
+
+.task-agent-run-accordion__changelog {
   display: flex;
+  min-height: 0;
+  flex: 1 1 0;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.task-agent-run-accordion__changelog-summary {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px 6px;
+  font-size: 12px;
+  color: color-mix(in srgb, #e8e8e8 55%, transparent);
+}
+
+.task-agent-run-accordion__changelog-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 4px 8px 12px;
+  list-style: none;
+  overflow: auto;
+}
+
+.task-agent-run-accordion__changelog-item {
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.task-agent-run-accordion__changelog-item.is-open {
+  background: color-mix(in srgb, #e8e8e8 3%, transparent);
+}
+
+.task-agent-run-accordion__changelog-row {
+  display: flex;
+  width: 100%;
   align-items: center;
   gap: 10px;
-  padding: 8px;
-  border-radius: 8px;
-}
-
-.task-agents-panel__row:hover {
-  background: color-mix(in srgb, #e8e8e8 6%, transparent);
-}
-
-.task-agents-panel__meta {
-  flex: 1 1 auto;
   min-width: 0;
+  margin: 0;
+  padding: 7px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
 }
 
-.task-agents-panel__name-line {
-  display: flex;
-  align-items: center;
-  gap: 6px;
+.task-agent-run-accordion__changelog-row:hover {
+  background: color-mix(in srgb, #e8e8e8 5%, transparent);
 }
 
-.task-agents-panel__name {
+.task-agent-run-accordion__changelog-chevron {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  margin-right: 2px;
+  border-right: 1.5px solid color-mix(in srgb, #e8e8e8 40%, transparent);
+  border-bottom: 1.5px solid color-mix(in srgb, #e8e8e8 40%, transparent);
+  transform: rotate(-45deg);
+  transition: transform 140ms ease;
+}
+
+.task-agent-run-accordion__changelog-item.is-open
+  .task-agent-run-accordion__changelog-chevron {
+  transform: rotate(45deg);
+}
+
+.task-agent-run-accordion__changelog-preview {
+  padding: 0 8px 8px;
+}
+
+.task-agent-run-accordion__changelog-preview[hidden] {
+  display: none !important;
+}
+
+.task-agent-run-accordion__changelog-diff {
+  margin: 0;
+  padding: 8px 10px;
+  overflow: auto;
+  border: 0.5px solid color-mix(in srgb, #e8e8e8 10%, transparent);
+  border-radius: 8px;
+  background: #0a0a0a;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  line-height: 1.45;
+  white-space: pre;
+}
+
+.task-agent-run-accordion__changelog-line {
+  display: block;
+}
+
+.task-agent-run-accordion__changelog-line.is-add {
+  background: color-mix(in srgb, #4ade80 12%, transparent);
+  color: #bbf7d0;
+}
+
+.task-agent-run-accordion__changelog-line.is-del {
+  background: color-mix(in srgb, #f87171 12%, transparent);
+  color: #fecaca;
+}
+
+.task-agent-run-accordion__changelog-line.is-hunk {
+  color: #60a5fa;
+}
+
+.task-agent-run-accordion__changelog-line.is-ctx {
+  color: color-mix(in srgb, #e8e8e8 62%, transparent);
+}
+
+.task-agent-run-accordion__changelog-kind {
+  flex: none;
+  width: 1.1rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  font-weight: 700;
+  text-align: center;
+  color: color-mix(in srgb, #e8e8e8 55%, transparent);
+}
+
+.task-agent-run-accordion__changelog-item.is-added
+  .task-agent-run-accordion__changelog-kind {
+  color: #4ade80;
+}
+
+.task-agent-run-accordion__changelog-item.is-deleted
+  .task-agent-run-accordion__changelog-kind {
+  color: #f87171;
+}
+
+.task-agent-run-accordion__changelog-item.is-modified
+  .task-agent-run-accordion__changelog-kind,
+.task-agent-run-accordion__changelog-item.is-renamed
+  .task-agent-run-accordion__changelog-kind {
+  color: #60a5fa;
+}
+
+.task-agent-run-accordion__changelog-path {
+  min-width: 0;
+  flex: 1 1 auto;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 13px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  color: color-mix(in srgb, #e8e8e8 82%, transparent);
+}
+
+.task-agent-run-accordion__changelog-stat {
+  display: inline-grid;
+  flex: none;
+  grid-template-columns: 4ch 4ch;
+  gap: 8px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.task-agent-run-accordion__changelog-stat .is-add {
+  color: #4ade80;
+}
+
+.task-agent-run-accordion__changelog-stat .is-del {
+  color: #f87171;
+}
+
+.task-agent-run-accordion__commit {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 0;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px 12px 16px;
+  overflow: auto;
+}
+
+.task-agent-run-accordion__commit > .task-agent-run-accordion__changelog {
+  flex: none;
+  overflow: visible;
+  margin: 0 -4px;
+}
+
+.task-agent-run-accordion__commit
+  > .task-agent-run-accordion__changelog
+  .task-agent-run-accordion__changelog-list {
+  overflow: visible;
+}
+
+.task-agent-run-accordion__record-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 8px;
+  border: 0.5px solid color-mix(in srgb, #e8e8e8 14%, transparent);
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  line-height: 1.2;
+  color: color-mix(in srgb, #e8e8e8 82%, transparent);
+  background: color-mix(in srgb, #0a0a0a 72%, rgb(255 255 255 / 0.08));
+  backdrop-filter: blur(10px);
+}
+
+.task-agent-run-accordion__record-badge.is-pr,
+.task-agent-run-accordion__record-badge.is-commit {
+  color: color-mix(in srgb, #e8e8e8 82%, transparent);
+  background: color-mix(in srgb, #0a0a0a 72%, rgb(255 255 255 / 0.08));
+  border-color: color-mix(in srgb, #e8e8e8 14%, transparent);
+}
+
+.task-agent-run-accordion__commit-card,
+.task-agent-run-accordion__commit-pr {
+  padding: 12px 14px;
+  border: 0.5px solid color-mix(in srgb, #e8e8e8 10%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, #e8e8e8 3%, transparent);
+}
+
+.task-agent-run-accordion__commit-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.task-agent-run-accordion__commit-sha {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  font-weight: 600;
+  color: oklch(0.72 0.12 274.4);
+}
+
+.task-agent-run-accordion__commit-branch {
+  font-size: 11px;
   font-weight: 500;
+  color: color-mix(in srgb, #e8e8e8 48%, transparent);
+}
+
+.task-agent-run-accordion__commit-subject {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.35;
+  color: #e8e8e8;
+}
+
+.task-agent-run-accordion__commit-body {
+  margin: 6px 0 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: color-mix(in srgb, #e8e8e8 55%, transparent);
+}
+
+.task-agent-run-accordion__commit-meta {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin: 12px 0 0;
+}
+
+.task-agent-run-accordion__commit-meta div {
+  min-width: 0;
+}
+
+.task-agent-run-accordion__commit-meta dt {
+  margin: 0 0 3px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, #e8e8e8 40%, transparent);
+}
+
+.task-agent-run-accordion__commit-meta dd {
+  margin: 0;
+  font-size: 12px;
+  color: color-mix(in srgb, #e8e8e8 78%, transparent);
+}
+
+.task-agent-run-accordion__commit-files {
+  margin-left: 6px;
+  color: color-mix(in srgb, #e8e8e8 45%, transparent);
+}
+
+.task-agent-run-accordion__commit-pr-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+
+.task-agent-run-accordion__commit-pr-id {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  font-weight: 600;
+  color: #e8e8e8;
+}
+
+.task-agent-run-accordion__commit-pr-state {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, #e8e8e8 45%, transparent);
+}
+
+.task-agent-run-accordion__commit-pr.is-open
+  .task-agent-run-accordion__commit-pr-state {
+  color: #4ade80;
+}
+
+.task-agent-run-accordion__commit-pr.is-merged
+  .task-agent-run-accordion__commit-pr-state {
+  color: oklch(0.72 0.12 274.4);
+}
+
+.task-agent-run-accordion__commit-pr.is-closed
+  .task-agent-run-accordion__commit-pr-state {
+  color: #f87171;
+}
+
+.task-agent-run-accordion__commit-pr-title {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.35;
+  color: color-mix(in srgb, #e8e8e8 82%, transparent);
+}
+
+.task-agent-run-accordion__commit-empty {
+  margin: 0;
+  padding: 12px 14px;
+  font-size: 12px;
+  color: color-mix(in srgb, #e8e8e8 45%, transparent);
+}
+
+.task-agent-run-accordion__review-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 0.5px solid color-mix(in srgb, #e8e8e8 10%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, #e8e8e8 3%, transparent);
+}
+
+.task-agent-run-accordion__review-mark {
+  display: inline-flex;
+  flex: none;
+  width: 18px;
+  height: 18px;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 999px;
+  background: color-mix(in srgb, #e8e8e8 12%, transparent);
+  color: #0a0a0a;
+  line-height: 0;
+}
+
+.task-agent-run-accordion__review-mark svg {
+  display: block;
+}
+
+.task-agent-run-accordion__review-row.is-pass
+  .task-agent-run-accordion__review-mark {
+  background: oklch(0.571 0.17 274.4);
+  color: #0a0a0a;
+}
+
+.task-agent-run-accordion__review-row.is-fail
+  .task-agent-run-accordion__review-mark {
+  background: #ef4444;
+  color: #0a0a0a;
+}
+
+.task-agent-run-accordion__review-row.is-running
+  .task-agent-run-accordion__review-mark,
+.task-agent-run-accordion__review-row.is-pending
+  .task-agent-run-accordion__review-mark {
+  background: transparent;
+  color: inherit;
+}
+
+.task-agent-run-accordion__review-mark.is-status-icon {
+  width: 16px;
+  height: 16px;
+  overflow: visible;
+}
+
+.task-agent-run-accordion__review-mark.is-status-icon
+  .task-status-working-pulse,
+.task-agent-run-accordion__review-mark.is-status-icon svg {
+  display: block;
+  overflow: visible;
+}
+
+.task-agent-run-accordion__review-title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.task-agent-run-accordion__review-label {
+  min-width: 0;
+  flex: 1 1 auto;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.2;
+  color: #e8e8e8;
+}
+
+.task-agent-run-accordion__review-status {
+  flex: none;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: color-mix(in srgb, #e8e8e8 45%, transparent);
+}
+
+.task-agent-run-accordion__review-status.is-duration {
+  font-variant-numeric: tabular-nums;
+  text-transform: none;
+  font-weight: 400;
+  color: color-mix(in srgb, #e8e8e8 38%, transparent);
+}
+
+.task-agent-run-accordion__review-row.is-fail
+  .task-agent-run-accordion__review-status:not(.is-duration) {
+  text-transform: uppercase;
+  font-weight: 600;
+  color: color-mix(in srgb, #f87171 85%, transparent);
+}
+
+.task-agent-run-accordion__review-row.is-running
+  .task-agent-run-accordion__review-status:not(.is-duration) {
+  text-transform: uppercase;
+  font-weight: 600;
+  color: color-mix(in srgb, #fbbf24 85%, transparent);
+}
+
+.task-agent-run-accordion__review-detail {
+  margin: 0;
+  padding-left: 28px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: color-mix(in srgb, #e8e8e8 55%, transparent);
+}
+
+.task-agent-run-accordion__process-ui {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.task-agent-run-accordion__process-ui .task-agent-run-accordion__chat {
+  flex: 1 1 0;
+  min-height: 0;
+}
+
+.task-agent-run-accordion__process-sync-error {
+  flex: none;
+  margin: 0;
+  padding: 6px 12px 0;
+  font-size: 11px;
+  line-height: 1.35;
+  color: color-mix(in srgb, #f87171 85%, transparent);
+}
+
+.task-agent-run-accordion__chat .chat-ui-thread {
+  min-height: 0;
+  flex: 1 1 0;
+}
+
+.task-agent-run-accordion__checklist {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 10px 12px 16px;
+  list-style: none;
+  overflow: auto;
+}
+
+.task-agent-run-accordion__check-row {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  padding: 8px 10px;
+  border: 0.5px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.task-agent-run-accordion__check-row:hover {
+  background: color-mix(in srgb, #e8e8e8 5%, transparent);
+}
+
+.task-agent-run-accordion__check {
+  display: inline-flex;
+  flex: none;
+  width: 18px;
+  height: 18px;
+  align-items: center;
+  justify-content: center;
+  border: 0.5px solid color-mix(in srgb, #e8e8e8 22%, transparent);
+  border-radius: 5px;
+  background: color-mix(in srgb, #e8e8e8 4%, transparent);
+  color: #4ade80;
+}
+
+.task-agent-run-accordion__check-row.is-done .task-agent-run-accordion__check {
+  border-color: color-mix(in srgb, #4ade80 45%, transparent);
+  background: color-mix(in srgb, #4ade80 14%, transparent);
+}
+
+.task-agent-run-accordion__check-label {
+  min-width: 0;
+  font-size: 13px;
+  line-height: 1.35;
+  color: color-mix(in srgb, #e8e8e8 82%, transparent);
+}
+
+.task-agent-run-accordion__check-row.is-done
+  .task-agent-run-accordion__check-label {
+  color: color-mix(in srgb, #e8e8e8 55%, transparent);
+  text-decoration: line-through;
+}
+
+.task-agents-panel {
+  display: flex;
+  width: 100%;
+  min-height: 100%;
+  flex: 1 1 auto;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+}
+
+.task-agents-panel__header {
+  margin: 0;
+  text-align: center;
+}
+
+.task-agents-panel__title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.35;
+  color: #e8e8e8;
+  text-align: center;
+}
+
+.task-agents-panel__empty {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: color-mix(in srgb, #e8e8e8 55%, transparent);
+  text-align: center;
+}
+
+.task-agents-panel__list {
+  display: grid;
+  width: 100%;
+  grid-template-columns: repeat(auto-fit, 148px);
+  justify-content: center;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.task-agents-panel__card {
+  display: flex;
+  box-sizing: border-box;
+  width: 148px;
+  min-width: 0;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  padding: 14px 12px 14px;
+  border: 0.5px solid color-mix(in srgb, #e8e8e8 12%, transparent);
+  border-radius: 12px;
+  background: color-mix(in srgb, #e8e8e8 3%, transparent);
+  color: inherit;
+  font: inherit;
+  text-align: center;
+  cursor: pointer;
+}
+
+.task-agents-panel__card:hover {
+  border-color: color-mix(in srgb, #e8e8e8 18%, transparent);
+  background: color-mix(in srgb, #e8e8e8 5%, transparent);
+}
+
+.task-agents-panel__card:focus-visible {
+  outline: 2px solid color-mix(in srgb, #e8e8e8 35%, transparent);
+  outline-offset: 2px;
+}
+
+.task-agents-panel__avatar {
+  position: relative;
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  /* Room for the Lead badge half-over the top without growing the card. */
+  margin-top: 8px;
+}
+
+.task-agents-panel__avatar .assignee-list-mark,
+.task-agents-panel__avatar .entity-avatar-icon,
+.task-agents-panel__avatar img {
+  overflow: hidden;
+  border-radius: 9999px;
+}
+
+.task-agents-panel__meta {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.task-agents-panel__name {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  max-width: 100%;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.3;
   color: #e8e8e8;
 }
 
 .task-agents-panel__badge {
-  flex: none;
-  padding: 1px 6px;
+  position: absolute;
+  top: 0;
+  left: 50%;
+  z-index: 1;
+  transform: translate(-50%, -50%);
+  padding: 1px 7px;
   border-radius: 999px;
   font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.02em;
   color: #f97316;
-  background: color-mix(in srgb, #f97316 16%, transparent);
-}
-
-.task-agents-panel__status {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  overflow: hidden;
-  white-space: nowrap;
-  font-size: 11px;
-  color: color-mix(in srgb, #e8e8e8 55%, transparent);
+  background: color-mix(in srgb, #141414 78%, #f97316 16%);
+  border: 0.5px solid color-mix(in srgb, #f97316 35%, transparent);
+  pointer-events: none;
 }
 
 .task-agents-panel__role {
+  display: -webkit-box;
   overflow: hidden;
-  text-overflow: ellipsis;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  max-width: 100%;
+  font-size: 12px;
+  line-height: 1.35;
+  color: color-mix(in srgb, #e8e8e8 58%, transparent);
+}
+
+.task-agents-panel__role.is-empty {
+  color: color-mix(in srgb, #e8e8e8 38%, transparent);
+}
+
+.task-agents-panel__status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 2px;
+  font-size: 11px;
+  line-height: 1.2;
+  color: color-mix(in srgb, #e8e8e8 48%, transparent);
 }
 
 .task-agents-panel__dot {
@@ -426,31 +1142,31 @@
   width: 6px;
   height: 6px;
   border-radius: 999px;
-}
-
-.task-agents-panel__dot.is-ready {
-  background: #4ade80;
-}
-
-.task-agents-panel__dot.is-unready {
   background: color-mix(in srgb, #e8e8e8 30%, transparent);
 }
 
-.task-agents-panel__start {
-  flex: none;
-  padding: 4px 10px;
-  border: 1px solid color-mix(in srgb, #e8e8e8 16%, transparent);
-  border-radius: 6px;
-  background: transparent;
-  font: inherit;
-  font-size: 12px;
-  color: #e8e8e8;
-  cursor: pointer;
+.task-agents-panel__status.is-ready .task-agents-panel__dot {
+  background: #4ade80;
 }
 
-.task-agents-panel__start:disabled {
-  opacity: 0.45;
-  cursor: default;
+.task-agents-panel__start {
+  display: flex;
+  flex: none;
+  width: 100%;
+  align-items: center;
+  justify-content: center;
+  margin-top: 2px;
+  padding: 6px 10px;
+  border: 0.5px solid color-mix(in srgb, #e8e8e8 16%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, #e8e8e8 6%, transparent);
+  font-size: 12px;
+  font-weight: 500;
+  color: #e8e8e8;
+}
+
+.task-agents-panel__card:hover .task-agents-panel__start {
+  background: color-mix(in srgb, #e8e8e8 10%, transparent);
 }
 
 .desktop-task-layout__side-body .task-shell-workspace__mode-toggle {
@@ -489,8 +1205,7 @@
   flex: 1 1 0;
   min-height: 0;
   min-width: 0;
-  /* Extra bottom inset so the last lines clear the Terminal/UI toggle. */
-  padding: 6px 8px 48px;
+  padding: 6px 8px 12px;
   overflow: hidden;
 }
 
@@ -1470,6 +2185,28 @@
 .desktop-agent-surface-tab.desktop-agent-surface-tab--vertical.is-ghost:hover {
   color: color-mix(in srgb, var(--foreground) 70%, transparent);
   background: color-mix(in srgb, var(--foreground) 5%, transparent);
+}
+
+/* Task detail timer-row control for the Changes rail. */
+.desktop-task-side-panel-toggle {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  color: color-mix(in srgb, #e8e8e8 72%, transparent);
+  background: transparent;
+  cursor: pointer;
+}
+
+.desktop-task-side-panel-toggle:hover {
+  color: #e8e8e8;
+  background: color-mix(in srgb, #e8e8e8 8%, transparent);
 }
 
 /* Icon-only tab (panel toggle) — same pill chrome as labeled tabs */

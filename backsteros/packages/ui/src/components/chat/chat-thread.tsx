@@ -771,22 +771,6 @@ function ChatThreadComposer({
         </div>
       ) : null}
       <div className="chat-ui-composer__row">
-        <label className="chat-ui-composer__attach" title="Attach file">
-          <span aria-hidden>+</span>
-          <input
-            type="file"
-            className="chat-ui-composer__attach-input"
-            multiple
-            disabled={disabled}
-            aria-label="Attach file"
-            onChange={(event) => {
-              const next = createPendingChatFilesFromList(event.target.files);
-              event.target.value = "";
-              if (next.length === 0) return;
-              onPendingImagesChange([...pendingImages, ...next]);
-            }}
-          />
-        </label>
         <div className="chat-ui-composer__input-wrap" ref={inputWrapRef}>
           <ChatComposerMentionInput
             value={value}
@@ -804,6 +788,24 @@ function ChatThreadComposer({
             onSubmit={menuOpen ? undefined : onComposerSubmit}
           />
         </div>
+      </div>
+      <div className="chat-ui-composer__tools">
+        <label className="chat-ui-composer__attach" title="Attach file">
+          <span aria-hidden>+</span>
+          <input
+            type="file"
+            className="chat-ui-composer__attach-input"
+            multiple
+            disabled={disabled}
+            aria-label="Attach file"
+            onChange={(event) => {
+              const next = createPendingChatFilesFromList(event.target.files);
+              event.target.value = "";
+              if (next.length === 0) return;
+              onPendingImagesChange([...pendingImages, ...next]);
+            }}
+          />
+        </label>
         {hasPendingImages && !value.trim() ? (
           <button
             type="button"

@@ -220,6 +220,19 @@ export type AgentChatWebhookProject = {
   channel: { uri: string; name?: string | null; members?: string[] } | null;
 };
 
+/**
+ * Present when this thread is the Brief thread for an active task agent factory
+ * run. Conductors should PATCH `/api/v1/tasks/{taskId}/agent-runs/{id}` using
+ * these ids — do not scrape prose for the run id.
+ */
+export type AgentChatWebhookTaskAgentRun = {
+  id: string;
+  taskId: string;
+  phase: string;
+  cycle: number;
+  status: string;
+};
+
 type AgentWebhookPayloadBase = {
   workspaceId: string;
   agentId: string;
@@ -237,6 +250,8 @@ type AgentWebhookPayloadBase = {
    * reply to the same `threadId` / `replyUrl` (not the Grok Bot DM room).
    */
   project?: AgentChatWebhookProject;
+  /** Active factory run when this DM/thread is the conductor Brief. */
+  taskAgentRun?: AgentChatWebhookTaskAgentRun;
 };
 
 export type AgentChatWebhookPayload = AgentWebhookPayloadBase & {

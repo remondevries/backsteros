@@ -27,6 +27,11 @@ export type TaskStatusWorkingPulseProps = {
    * so the pulse isn't clipped.
    */
   compact?: boolean;
+  /**
+   * Override paint color (e.g. Ready to Start white while still animating).
+   * Defaults to the in-progress status color.
+   */
+  color?: string;
   /** Accessible label when used as a standalone indicator. */
   "aria-label"?: string;
 };
@@ -40,6 +45,7 @@ export function TaskStatusWorkingPulse({
   className,
   size = 14,
   compact = false,
+  color: colorOverride,
   "aria-label": ariaLabel = "Working",
 }: TaskStatusWorkingPulseProps) {
   const colorScheme = useSyncExternalStore(
@@ -47,9 +53,11 @@ export function TaskStatusWorkingPulse({
     getPreferredColorSchemeSnapshot,
     () => "dark" as const,
   );
-  const color = resolveTaskStatusColor("in_progress", undefined, {
-    colorScheme,
-  });
+  const color =
+    colorOverride ??
+    resolveTaskStatusColor("in_progress", undefined, {
+      colorScheme,
+    });
 
   const haloRadius = compact ? 5.35 : 6;
   const haloStroke = compact ? 1 : 1.25;

@@ -20,7 +20,7 @@ export type TaskShellSession = {
   wsUrl: string;
 };
 
-function getPtyAuthToken(): string | null {
+export function getPtyAuthToken(): string | null {
   return (
     (import.meta.env.VITE_PTY_AUTH_TOKEN as string | undefined)?.trim() || null
   );

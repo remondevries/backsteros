@@ -108,7 +108,6 @@ export function ProjectHourlyRateEditor({
       <div
         className={[
           "property-dropdown-trigger",
-          "property-dropdown-trigger--inline-chip",
           "project-billing-value-chip",
           disabled ? "property-dropdown-trigger--static" : null,
           !draft.trim() ? "is-muted" : null,

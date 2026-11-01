@@ -102,6 +102,10 @@ export {
   updateVaultStorageSettingsSchema,
   upsertDevicePushTokenSchema,
   upsertTaskAgentPresenceSchema,
+  createTaskAgentRunSchema,
+  updateTaskAgentRunSchema,
+  createTaskAgentRunCheckSchema,
+  updateTaskAgentRunCheckSchema,
   workspaceCashflowQuerySchema,
 } from "@backsteros/contracts";
 export {
@@ -440,6 +444,7 @@ export {
 } from "../services/sync.js";
 export * as taskActivityService from "../services/task-activities.js";
 export * as taskAgentPresenceService from "../services/task-agent-presence.js";
+export * as taskAgentRunsService from "../services/task-agent-runs.js";
 export * as taskAttachmentService from "../services/task-attachments.js";
 export * as taskCommentService from "../services/task-comments.js";
 export {

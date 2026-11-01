@@ -15,6 +15,10 @@ import {
 
 import { DesktopTaskChangesCollapsedStrip } from "./desktop-task-changes-collapsed-strip";
 import type { DesktopTaskChangesSurface } from "./desktop-task-changes-collapsed-strip";
+import {
+  DesktopTaskSidePanelProvider,
+  type DesktopTaskSidePanelControls,
+} from "./desktop-task-side-panel-context";
 import { isAgentPanelToggleShortcut } from "../lib/agent/agent-panel-toggle-shortcut";
 import {
   resolveTaskDetailSidePanelCollapsed,
@@ -28,13 +32,7 @@ import { resolveTaskPanelResizeShortcut } from "../lib/task-panel-resize-shortcu
 
 const LAYOUT_COLLAPSE_DURATION_MS = 220;
 
-export type DesktopTaskSidePanelControls = {
-  /** Collapse the Changes / side column to the icon strip. */
-  hide: () => void;
-  /** True while the Changes / Terminal rail is collapsed to the strip. */
-  collapsed: boolean;
-};
-
+export type { DesktopTaskSidePanelControls } from "./desktop-task-side-panel-context";
 export type { DesktopTaskChangesSurface };
 
 export type DesktopTaskLayoutProps = {
@@ -42,7 +40,8 @@ export type DesktopTaskLayoutProps = {
   /**
    * Optional right rail (replaces the old Agent Chat column) — e.g. linked
    * commit Changes / diff for codebase tasks.
-   * Pass a render function to receive hide controls for the panel toggle icon.
+   * Pass a render function to receive collapse controls (also on context for
+   * the timer-row toggle).
    */
   sidePanel?:
     | ReactNode
@@ -286,70 +285,84 @@ export function DesktopTaskLayout({
     beginResize(event.clientX);
   };
 
+  const sidePanelControls: DesktopTaskSidePanelControls = {
+    hide: hideSidePanel,
+    show: showSidePanel,
+    toggle: toggleSidePanel,
+    collapsed: sideCollapsed,
+  };
+
   const sidePanelNode =
     typeof sidePanel === "function"
-      ? sidePanel({ hide: hideSidePanel, collapsed: sideCollapsed })
+      ? sidePanel({
+          hide: hideSidePanel,
+          show: showSidePanel,
+          toggle: toggleSidePanel,
+          collapsed: sideCollapsed,
+        })
       : sidePanel;
 
   return (
     <ContentLayoutTransitionProvider animating={collapseAnimating}>
-      <div
-        ref={setLayoutRef}
-        className={[
-          "desktop-task-layout",
-          "desktop-task-layout--with-side",
-          sideCollapsed ? "is-agent-collapsed" : null,
-          collapseAnimating ? "is-collapse-animating" : null,
-          isResizing ? "is-resizing" : null,
-        ]
-          .filter(Boolean)
-          .join(" ")}
-        data-content-detail
-        data-agent-panel="diff"
-        data-agent-collapsed={sideCollapsed ? "true" : "false"}
-      >
-        <div className="desktop-task-layout__detail">
-          {!sideCollapsed ? (
-            <div
-              className="desktop-task-layout-side-panel-resize"
-              role="separator"
-              aria-orientation="vertical"
-              aria-label="Resize task and changes panels"
-              title="Drag to resize · ⌥- / ⌥="
-              onPointerDown={onResizePointerDown}
-            />
-          ) : null}
-          <div className="desktop-task-layout__detail-body">{children}</div>
-        </div>
-        <aside
+      <DesktopTaskSidePanelProvider value={sidePanelControls}>
+        <div
+          ref={setLayoutRef}
           className={[
-            "desktop-task-layout__terminal",
-            "desktop-task-layout__side",
-            sideCollapsed ? "is-collapsed" : null,
+            "desktop-task-layout",
+            "desktop-task-layout--with-side",
+            sideCollapsed ? "is-agent-collapsed" : null,
+            collapseAnimating ? "is-collapse-animating" : null,
+            isResizing ? "is-resizing" : null,
           ]
             .filter(Boolean)
             .join(" ")}
-          aria-label="Task changes"
+          data-content-detail
+          data-agent-panel="diff"
+          data-agent-collapsed={sideCollapsed ? "true" : "false"}
         >
-          {sideCollapsed ? (
-            <DesktopTaskChangesCollapsedStrip
-              surfaces={sidePanelSurfaces}
-              activeId={sidePanelActiveSurfaceId}
-              canAddSurface={sidePanelCanAddSurface}
-              onExpand={showSidePanel}
-              onActivateSurface={onActivateSidePanelSurface}
-              onAddSurface={onAddSidePanelSurface}
-            />
-          ) : null}
-          <div
-            className="desktop-task-layout__side-body"
-            hidden={sideCollapsed}
-            aria-hidden={sideCollapsed || undefined}
-          >
-            {sidePanelNode}
+          <div className="desktop-task-layout__detail">
+            {!sideCollapsed ? (
+              <div
+                className="desktop-task-layout-side-panel-resize"
+                role="separator"
+                aria-orientation="vertical"
+                aria-label="Resize task and changes panels"
+                title="Drag to resize · ⌥- / ⌥="
+                onPointerDown={onResizePointerDown}
+              />
+            ) : null}
+            <div className="desktop-task-layout__detail-body">{children}</div>
           </div>
-        </aside>
-      </div>
+          <aside
+            className={[
+              "desktop-task-layout__terminal",
+              "desktop-task-layout__side",
+              sideCollapsed ? "is-collapsed" : null,
+            ]
+              .filter(Boolean)
+              .join(" ")}
+            aria-label="Task changes"
+          >
+            {sideCollapsed ? (
+              <DesktopTaskChangesCollapsedStrip
+                surfaces={sidePanelSurfaces}
+                activeId={sidePanelActiveSurfaceId}
+                canAddSurface={sidePanelCanAddSurface}
+                onExpand={showSidePanel}
+                onActivateSurface={onActivateSidePanelSurface}
+                onAddSurface={onAddSidePanelSurface}
+              />
+            ) : null}
+            <div
+              className="desktop-task-layout__side-body"
+              hidden={sideCollapsed}
+              aria-hidden={sideCollapsed || undefined}
+            >
+              {sidePanelNode}
+            </div>
+          </aside>
+        </div>
+      </DesktopTaskSidePanelProvider>
     </ContentLayoutTransitionProvider>
   );
 }

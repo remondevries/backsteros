@@ -30,6 +30,7 @@ import {
 
 import { DesktopTaskActivityPanel } from "../components/desktop-task-activity-panel";
 import { DesktopTaskLayout } from "../components/desktop-task-layout";
+import { DesktopTaskSidePanelToggle } from "../components/desktop-task-side-panel-context";
 import { TaskShellWorkspace } from "../components/task-shell-workspace";
 import { resolveTaskShellCwd } from "../lib/task-shell-cwd";
 import { useTaskAgentCandidates } from "../lib/use-task-agent-candidates";
@@ -662,10 +663,8 @@ function InboxPageBody() {
   const linkedCommitPanel =
     isCodebaseProject && project
       ? ({
-          hide,
           collapsed,
         }: {
-          hide: () => void;
           collapsed: boolean;
         }) => (
           <TaskLinkedCommitSection
@@ -676,7 +675,6 @@ function InboxPageBody() {
             onActiveSurfaceChange={setActiveSideSurfaceId}
             openPickerRequest={openCommitPickerRequest}
             requestJson={requestJson}
-            onHidePanel={hide}
             canLinkCommits={canLinkCommit}
             terminalTabVisible
             terminalTabLabel={taskAgents.tabLabel}
@@ -689,13 +687,15 @@ function InboxPageBody() {
                 }
                 taskId={selectedTask.id}
                 cwd={shellCwd ?? workingDirectory}
-                agentsPane={
+                assigneeName={assignee?.name ?? null}
+                agentsPane={({ onSelectAgent }) => (
                   <TaskAgentsPanel
                     candidates={taskAgents.candidates}
                     loading={taskAgents.loading}
                     roomKnown={taskAgents.roomKnown}
+                    onSelectAgent={onSelectAgent}
                   />
-                }
+                )}
               />
             }
             onLinkCommit={async (sha) => {
@@ -757,6 +757,9 @@ function InboxPageBody() {
       <TaskDetailView
         sectionLabel="Inbox"
         copyIdShortcutEnabled={keepAliveActive}
+        timerRowEnd={
+          isCodebaseProject ? <DesktopTaskSidePanelToggle /> : null
+        }
         headerMeta={
           movedNotice && projectTaskHref && !inList ? (
             <div className="inbox-moved-banner" role="status">

@@ -192,7 +192,6 @@ export function ProjectBudgetsEditor({
       <div
         className={[
           "property-dropdown-trigger",
-          "property-dropdown-trigger--inline-chip",
           "project-billing-value-chip",
           disabled ? "property-dropdown-trigger--static" : null,
           !row.amountText.trim() ? "is-muted" : null,

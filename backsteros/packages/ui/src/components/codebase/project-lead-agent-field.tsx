@@ -244,7 +244,7 @@ export function ProjectLeadAgentField({
         fallbackLabel={NO_LEAD_AGENT_LABEL}
         fallbackIcon={null}
         selectedDisplayLabel={selectedDisplayLabel}
-        triggerVariant="inlineChip"
+        triggerVariant="default"
         disabled={saving}
         mutedFallback
         panelWidth={280}

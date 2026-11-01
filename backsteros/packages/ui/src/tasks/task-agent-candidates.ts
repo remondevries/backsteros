@@ -21,7 +21,10 @@ export type TaskAgentCandidate = {
   agentId: string;
   contactId: string;
   name: string;
+  /** Agent settings role label (e.g. "Grok Bot agent") — not the contact job title. */
   role: string | null;
+  /** Contact job title for the picker card. */
+  jobTitle: string | null;
   avatarSrc: string | null;
   isLead: boolean;
   ready: boolean;
@@ -30,7 +33,10 @@ export type TaskAgentCandidate = {
 export function buildTaskAgentCandidates(input: {
   agents: readonly TaskAgentCandidateInput[];
   leadAgentContactId: string | null | undefined;
-  contactsById?: ReadonlyMap<string, { name: string; avatarSrc?: string | null }>;
+  contactsById?: ReadonlyMap<
+    string,
+    { name: string; avatarSrc?: string | null; title?: string | null }
+  >;
   /** Grok Bot agent ids in the project's room; empty/omitted = unknown. */
   roomMemberIds?: readonly string[];
 }): TaskAgentCandidate[] {
@@ -53,6 +59,7 @@ export function buildTaskAgentCandidates(input: {
       contactId,
       name: contact?.name?.trim() || agent.name,
       role: agent.role?.trim() || null,
+      jobTitle: contact?.title?.trim() || null,
       avatarSrc: contact?.avatarSrc ?? null,
       isLead,
       ready: agent.ready,
