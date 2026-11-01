@@ -7,6 +7,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { PropertyDropdown } from "../dropdowns/property-dropdown.js";
 import type { SearchableDropdownOption } from "../dropdowns/searchable-dropdown.js";
+import { Tooltip } from "../shared/tooltip.js";
 import { AssigneeListMark } from "../tasks/assignee-list-mark.js";
 import type { CodebaseRequestJson } from "./codebase-request-json.js";
 import {
@@ -131,31 +132,36 @@ export function ProjectTeamField({
     <div className="project-team-field">
       {members.length > 0 ? (
         <ul className="project-team-field__list">
-          {members.map((member) => (
-            <li
-              key={member.id}
-              className={[
-                "project-team-field__member",
-                member.known ? "" : "is-unknown",
-              ]
-                .filter(Boolean)
-                .join(" ")}
-              title={
-                member.known
-                  ? [member.name, member.jobTitle || member.role]
-                      .filter(Boolean)
-                      .join(" · ")
-                  : `No BacksterOS agent reported ${member.id}`
-              }
-            >
-              <AssigneeListMark
-                label={member.name}
-                avatarSrc={member.avatarSrc}
-                size={18}
-              />
-              <span className="project-team-field__name">{member.name}</span>
-            </li>
-          ))}
+          {members.map((member) => {
+            const tip = member.known
+              ? member.jobTitle?.trim() || member.role?.trim() || ""
+              : `No BacksterOS agent reported ${member.id}`;
+            return (
+              <Tooltip
+                key={member.id}
+                label={tip || member.name}
+                disabled={!tip}
+                side="top"
+                openDelay={200}
+              >
+                <li
+                  className={[
+                    "project-team-field__member",
+                    member.known ? "" : "is-unknown",
+                  ]
+                    .filter(Boolean)
+                    .join(" ")}
+                >
+                  <AssigneeListMark
+                    label={member.name}
+                    avatarSrc={member.avatarSrc}
+                    size={18}
+                  />
+                  <span className="project-team-field__name">{member.name}</span>
+                </li>
+              </Tooltip>
+            );
+          })}
         </ul>
       ) : (
         <span className="project-team-field__empty">
