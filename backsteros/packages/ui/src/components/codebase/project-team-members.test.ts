@@ -39,4 +39,17 @@ describe("resolveProjectTeamMembers", () => {
   it("returns nothing when the room has no members", () => {
     assert.deepEqual(resolveProjectTeamMembers([], agents), []);
   });
+
+  it("drops the lead agent — the Lead agent property already shows it", () => {
+    const members = resolveProjectTeamMembers(
+      ["g-niels", "g-eva", "g-ghost"],
+      agents,
+      undefined,
+      { excludeContactId: "c-niels" },
+    );
+    assert.deepEqual(
+      members.map((member) => member.id),
+      ["g-eva", "g-ghost"],
+    );
+  });
 });

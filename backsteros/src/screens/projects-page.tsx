@@ -2831,6 +2831,9 @@ function ProjectDetailScreen({
                 channel?: { uri: string; name?: string | null } | null;
               }
             ).channel ?? null,
+          leadAgentContactId:
+            (project as { leadAgentContactId?: string | null })
+              .leadAgentContactId ?? null,
         }}
         agents={teamAgents}
         avatarSrcById={contactAvatarSrc}
