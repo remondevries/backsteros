@@ -229,8 +229,20 @@ export function PropertyDropdown<T extends string>({
             aria-haspopup="listbox"
             aria-expanded={open}
             aria-label={ariaLabel}
+            onPointerDown={(event) => {
+              if (event.button !== 0) return;
+              event.stopPropagation();
+              onToggle();
+              // Suppress the following click so we don't immediately toggle shut.
+              event.currentTarget.dataset.dropdownPointerToggle = "1";
+            }}
             onClick={(event) => {
               event.stopPropagation();
+              if (event.currentTarget.dataset.dropdownPointerToggle === "1") {
+                delete event.currentTarget.dataset.dropdownPointerToggle;
+                return;
+              }
+              // Keyboard activation (no prior pointerdown).
               onToggle();
             }}
           >

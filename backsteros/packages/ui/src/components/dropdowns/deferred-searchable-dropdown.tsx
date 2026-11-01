@@ -1,6 +1,13 @@
 "use client";
 
-import { useId, useMemo, useRef, useState } from "react";
+import {
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
 
 import {
   consumeSearchableDropdownOpenPlacement,
@@ -75,6 +82,12 @@ export function DeferredSearchableDropdown<T extends string>(
       className={["searchable-dropdown-root", props.className]
         .filter(Boolean)
         .join(" ")}
+      // Capture so custom renderTrigger chips (onClick-only) still mount on
+      // the same gesture that closes another open menu.
+      onPointerDownCapture={(event: ReactPointerEvent<HTMLDivElement>) => {
+        if (disabled || event.button !== 0) return;
+        mount();
+      }}
     >
       {props.renderTrigger ? (
         props.renderTrigger({
@@ -95,7 +108,10 @@ export function DeferredSearchableDropdown<T extends string>(
           aria-haspopup="listbox"
           aria-expanded={false}
           aria-label={props.ariaLabel}
-          onClick={mount}
+          onClick={(event: ReactMouseEvent<HTMLButtonElement>) => {
+            event.stopPropagation();
+            mount();
+          }}
         >
           {selected?.label ?? props.emptySelectionLabel ?? "Select…"}
         </button>

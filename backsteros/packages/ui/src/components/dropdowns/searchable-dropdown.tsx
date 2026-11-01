@@ -502,7 +502,17 @@ export function SearchableDropdown<T extends string>({
       return;
     }
 
-    if (!root || !trigger) return;
+    if (!root || !trigger) {
+      // Never leave open===true with a permanently hidden panel (looks dead).
+      setPanelStyle((prev) => ({
+        ...prev,
+        top: `${VIEWPORT_PADDING}px`,
+        left: `${VIEWPORT_PADDING}px`,
+        width: `${width}px`,
+        visibility: "visible",
+      }));
+      return;
+    }
 
     const rect = trigger.getBoundingClientRect();
     const maxLeft = window.innerWidth - width - VIEWPORT_PADDING;
@@ -535,12 +545,9 @@ export function SearchableDropdown<T extends string>({
   useLayoutEffect(() => {
     if (!open) return;
     updatePanelPosition();
+    // One follow-up frame for flex/compose hosts — avoid a triple RAF storm.
     const frame = window.requestAnimationFrame(() => {
       updatePanelPosition();
-      // Compose / flex-centered hosts often settle one frame later.
-      window.requestAnimationFrame(() => {
-        updatePanelPosition();
-      });
     });
     return () => window.cancelAnimationFrame(frame);
   }, [open, filteredOptions.length, query, updatePanelPosition]);
@@ -548,8 +555,13 @@ export function SearchableDropdown<T extends string>({
   useEffect(() => {
     if (!open) return;
 
+    let scrollRaf = 0;
     function handleReposition() {
-      updatePanelPosition();
+      if (scrollRaf) return;
+      scrollRaf = window.requestAnimationFrame(() => {
+        scrollRaf = 0;
+        updatePanelPosition();
+      });
     }
 
     window.addEventListener("resize", handleReposition);
@@ -570,6 +582,7 @@ export function SearchableDropdown<T extends string>({
       window.removeEventListener("resize", handleReposition);
       window.removeEventListener("scroll", handleReposition, true);
       resizeObserver?.disconnect();
+      if (scrollRaf) window.cancelAnimationFrame(scrollRaf);
     };
   }, [open, triggerId, updatePanelPosition]);
 
@@ -609,7 +622,12 @@ export function SearchableDropdown<T extends string>({
   useEffect(() => {
     if (!open) return;
 
-    function handlePointerDown(event: MouseEvent) {
+    // Capture-phase pointerdown: close this menu before another trigger's
+    // pointerdown opens. (Bubble `click` never runs for other chips because
+    // triggers call stopPropagation.) Opening also uses pointerdown so the
+    // open isn't lost when a following click is dropped under load.
+    function handleOutsidePointerDown(event: PointerEvent) {
+      if (event.button !== 0) return;
       const target = event.target as Node;
       if (rootRef.current?.contains(target)) return;
       if (panelRef.current?.contains(target)) return;
@@ -622,8 +640,13 @@ export function SearchableDropdown<T extends string>({
       close();
     }
 
-    document.addEventListener("mousedown", handlePointerDown);
-    return () => document.removeEventListener("mousedown", handlePointerDown);
+    document.addEventListener("pointerdown", handleOutsidePointerDown, true);
+    return () =>
+      document.removeEventListener(
+        "pointerdown",
+        handleOutsidePointerDown,
+        true,
+      );
   }, [close, open]);
 
   const scrollActiveOptionIntoView = useCallback(() => {
@@ -856,8 +879,18 @@ export function SearchableDropdown<T extends string>({
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-label={ariaLabel}
+        onPointerDown={(event) => {
+          if (event.button !== 0) return;
+          event.stopPropagation();
+          toggleMenu();
+          event.currentTarget.dataset.dropdownPointerToggle = "1";
+        }}
         onClick={(event) => {
           event.stopPropagation();
+          if (event.currentTarget.dataset.dropdownPointerToggle === "1") {
+            delete event.currentTarget.dataset.dropdownPointerToggle;
+            return;
+          }
           toggleMenu();
         }}
       >
