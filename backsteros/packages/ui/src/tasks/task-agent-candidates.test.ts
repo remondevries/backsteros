@@ -57,6 +57,30 @@ describe("buildTaskAgentCandidates", () => {
     assert.equal(taskAgentTabLabel(candidates), "Agents");
   });
 
+  it("lists only room members (plus the lead) once the room is known", () => {
+    const agents = [
+      agent({ id: "judith", name: "Judith", grokbotAgentId: "g-judith" }),
+      agent({ id: "jaap", name: "Jaap", grokbotAgentId: "g-jaap" }),
+      agent({ id: "niels", name: "Niels", grokbotAgentId: "g-niels" }),
+      agent({ id: "eva", name: "Eva" }),
+    ];
+    const inRoom = buildTaskAgentCandidates({
+      agents,
+      leadAgentContactId: "c-niels",
+      roomMemberIds: ["g-jaap"],
+    });
+    assert.deepEqual(
+      inRoom.map((c) => c.name),
+      ["Niels", "Jaap"],
+    );
+    const unknownRoom = buildTaskAgentCandidates({
+      agents,
+      leadAgentContactId: "c-niels",
+      roomMemberIds: [],
+    });
+    assert.equal(unknownRoom.length, 4);
+  });
+
   it("prefers the contact name and avatar over the agent row", () => {
     const [only] = buildTaskAgentCandidates({
       agents: [agent({ id: "n", name: "niels-bot", role: " Lead dev " })],

@@ -693,6 +693,7 @@ function InboxPageBody() {
                   <TaskAgentsPanel
                     candidates={taskAgents.candidates}
                     loading={taskAgents.loading}
+                    roomKnown={taskAgents.roomKnown}
                   />
                 }
               />

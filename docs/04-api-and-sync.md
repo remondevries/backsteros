@@ -233,8 +233,13 @@ from notifications and Channel `needs_details`.
    project: `PATCH /api/v1/projects/:id` with
    `{ "channelStatus": "needs_details", "channelPendingLink": "backsteros://chat/<threadId>?message=<msgId>" }`.
 4. When the room exists: `PATCH` with
-   `{ "channel": { "uri": "grokbot://app/v1/agent?id=<uuid>", "name": "…" }, "channelStatus": "active" }`
+   `{ "channel": { "uri": "grokbot://app/v1/agent?id=<uuid>", "name": "…", "members": ["<grok bot agent id>", …] }, "channelStatus": "active" }`
    (setting `channel` alone also flips status to `active` and clears `channelStage`).
+   `members` = Grok Bot agent ids of every agent in the room (matched to
+   `agents.grokbotAgentId`); full list each time, `[]` clears, ≤100. A same-`uri`
+   `channel` write without `members` keeps the stored list. Re-PATCH `channel`
+   when agents join or leave. Desktop task Agents tab lists only these agents
+   (plus the lead) once set.
 5. To abort: `PATCH` `{ "channelStatus": "inactive", "channel": null }`.
 
 #### `GET /search` (agents)

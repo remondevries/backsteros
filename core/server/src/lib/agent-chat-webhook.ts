@@ -217,7 +217,7 @@ export type AgentChatWebhookProject = {
   key: string;
   name: string;
   /** Channel JSON from the project (`{ uri, name? }`), or null. */
-  channel: { uri: string; name?: string | null } | null;
+  channel: { uri: string; name?: string | null; members?: string[] } | null;
 };
 
 type AgentWebhookPayloadBase = {

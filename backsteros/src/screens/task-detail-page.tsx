@@ -1135,6 +1135,7 @@ export function TaskDetailPage({
                   <TaskAgentsPanel
                     candidates={taskAgents.candidates}
                     loading={taskAgents.loading}
+                    roomKnown={taskAgents.roomKnown}
                   />
                 }
               />

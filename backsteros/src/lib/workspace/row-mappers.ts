@@ -13,6 +13,7 @@ import {
   normalizeMeetingAttendeePortalEmails,
   normalizeOrganizationEmailsInput,
   normalizeOrganizationPhonesInput,
+  projectChannelMemberIds,
 } from "@backsteros/contracts";
 import type {
   ContactListItem,
@@ -235,6 +236,8 @@ export function mapProject(project: ApiProject): ProjectOverviewRowProject & {
   channel?: {
     uri: string;
     name?: string | null;
+    /** Grok Bot agent ids in the room. */
+    members?: string[];
   } | null;
   leadAgentContactId?: string | null;
   channelStatus?: "inactive" | "connecting" | "needs_details" | "active" | null;
@@ -402,24 +405,28 @@ export function mapProject(project: ApiProject): ProjectOverviewRowProject & {
     channel: (() => {
       const raw = (project as { channel?: unknown }).channel;
       if (raw == null) return null;
+      const fromObject = (obj: {
+        uri?: unknown;
+        name?: string | null;
+        members?: unknown;
+      }) => {
+        if (typeof obj?.uri !== "string") return null;
+        const members = projectChannelMemberIds(obj);
+        return {
+          uri: obj.uri,
+          name: obj.name ?? null,
+          ...(members.length > 0 ? { members } : {}),
+        };
+      };
       if (typeof raw === "string") {
         try {
-          const parsed = JSON.parse(raw) as {
-            uri?: string;
-            name?: string | null;
-          };
-          return typeof parsed?.uri === "string"
-            ? { uri: parsed.uri, name: parsed.name ?? null }
-            : null;
+          return fromObject(JSON.parse(raw));
         } catch {
           return raw.trim() ? { uri: raw.trim(), name: null } : null;
         }
       }
       if (typeof raw === "object" && !Array.isArray(raw)) {
-        const obj = raw as { uri?: string; name?: string | null };
-        return typeof obj.uri === "string"
-          ? { uri: obj.uri, name: obj.name ?? null }
-          : null;
+        return fromObject(raw);
       }
       return null;
     })(),

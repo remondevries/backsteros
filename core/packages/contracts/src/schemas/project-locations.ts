@@ -134,12 +134,58 @@ export const projectChannelUriSchema = z
  * Project chat-room Channel object.
  * Never render `uri` raw in UI — use {@link projectChannelDisplayName}.
  */
+/** Grok Bot agent id of a room member (same shape as `agents.grokbotAgentId`). */
+const CHANNEL_MEMBER_ID_RE = /^[A-Za-z0-9._:@-]{1,200}$/;
+export const PROJECT_CHANNEL_MEMBERS_MAX = 100;
+
+export const projectChannelMemberIdSchema = z
+  .string()
+  .trim()
+  .regex(CHANNEL_MEMBER_ID_RE, "Channel member ids use letters, digits and . _ : @ - only");
+
 export const projectChannelSchema = z.object({
   uri: projectChannelUriSchema,
   /** Optional room display name (e.g. "BacksterOS"). */
   name: z.string().trim().max(255).nullable().optional(),
+  /**
+   * Grok Bot agent ids of the agents in this room, reported by the lead agent
+   * on Channel Connect. Omit to keep the current list when the uri is unchanged.
+   */
+  members: z
+    .array(projectChannelMemberIdSchema)
+    .max(PROJECT_CHANNEL_MEMBERS_MAX)
+    .transform((ids) => [...new Set(ids)])
+    .optional(),
 });
 export type ProjectChannel = z.infer<typeof projectChannelSchema>;
+
+/** Room member ids (Grok Bot agent ids); empty when unknown. */
+export function projectChannelMemberIds(
+  channel: object | null | undefined,
+): string[] {
+  const raw = (channel as { members?: unknown } | null | undefined)?.members;
+  if (!Array.isArray(raw)) return [];
+  const ids: string[] = [];
+  for (const value of raw) {
+    if (typeof value !== "string") continue;
+    const id = value.trim();
+    if (CHANNEL_MEMBER_ID_RE.test(id) && !ids.includes(id)) ids.push(id);
+  }
+  return ids.slice(0, PROJECT_CHANNEL_MEMBERS_MAX);
+}
+
+/**
+ * Keep the stored member list when a write re-sends the same room without
+ * `members` (e.g. a rename), so it is not silently wiped.
+ */
+export function carryProjectChannelMembers<
+  T extends ProjectChannel | null | undefined,
+>(next: T, existing: ProjectChannel | null | undefined): T {
+  if (!next || next.members !== undefined) return next;
+  if (!existing || existing.uri !== next.uri) return next;
+  const members = projectChannelMemberIds(existing);
+  return members.length > 0 ? ({ ...next, members } as T) : next;
+}
 
 export const nullableProjectChannelSchema = projectChannelSchema.nullable();
 
@@ -328,7 +374,9 @@ export function normalizeProjectChannel(
   const uri = normalizeProjectChannelUri(value.uri);
   if (!uri) return null;
   const name = value.name?.trim() || null;
-  return { uri, name };
+  return Array.isArray(value.members)
+    ? { uri, name, members: projectChannelMemberIds(value) }
+    : { uri, name };
 }
 
 export function assertProjectChannel(
@@ -345,7 +393,7 @@ export function assertProjectChannel(
   if (typeof value !== "object" || Array.isArray(value)) {
     return { ok: false, message: "Channel must be { uri, name? }" };
   }
-  const record = value as { uri?: unknown; name?: unknown };
+  const record = value as { uri?: unknown; name?: unknown; members?: unknown };
   if (typeof record.uri !== "string") {
     return { ok: false, message: "Channel.uri is required" };
   }
@@ -363,7 +411,29 @@ export function assertProjectChannel(
   if (name != null && name.length > 255) {
     return { ok: false, message: "Channel.name is too long" };
   }
-  return { ok: true, value: { uri: uriResult.value, name } };
+  if (record.members === undefined) {
+    return { ok: true, value: { uri: uriResult.value, name } };
+  }
+  if (
+    !Array.isArray(record.members) ||
+    record.members.length > PROJECT_CHANNEL_MEMBERS_MAX ||
+    record.members.some(
+      (id) => typeof id !== "string" || !CHANNEL_MEMBER_ID_RE.test(id.trim()),
+    )
+  ) {
+    return {
+      ok: false,
+      message: `Channel.members must be up to ${PROJECT_CHANNEL_MEMBERS_MAX} Grok Bot agent ids`,
+    };
+  }
+  return {
+    ok: true,
+    value: {
+      uri: uriResult.value,
+      name,
+      members: projectChannelMemberIds(record),
+    },
+  };
 }
 
 /**

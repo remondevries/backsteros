@@ -901,6 +901,8 @@ export const projects = pgTable(
     channel: jsonb("channel").$type<{
       uri: string;
       name?: string | null;
+      /** Grok Bot agent ids in the room (reported on Channel Connect). */
+      members?: string[];
     } | null>(),
     /**
      * Self-service Channel connect: inactive | connecting | needs_details | active.

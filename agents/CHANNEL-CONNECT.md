@@ -37,10 +37,14 @@ PATCH /api/v1/projects/{projectId}
   "channelPendingLink": "backsteros://chat/<threadId>?message=<msgId>"
 }
 
-# Room ready
+# Room ready — include every agent in the room (Grok Bot agent ids)
 PATCH /api/v1/projects/{projectId}
 {
-  "channel": { "uri": "grokbot://app/v1/agent?id=<uuid>", "name": "…" },
+  "channel": {
+    "uri": "grokbot://app/v1/agent?id=<uuid>",
+    "name": "…",
+    "members": ["<grok bot agent id>", "…"]
+  },
   "channelStatus": "active"
 }
 
@@ -48,6 +52,19 @@ PATCH /api/v1/projects/{projectId}
 PATCH /api/v1/projects/{projectId}
 { "channelStatus": "inactive", "channel": null }
 ```
+
+## Room members
+
+`channel.members` lists the **Grok Bot agent ids** of every agent in the room
+(yourself included) — the same ids agents report via `PATCH /api/v1/agents/me`.
+BacksterOS uses it to show which agents can pick up the project's tasks.
+
+- Send the full list each time (it replaces the previous one; `[]` clears it).
+- When agents join or leave later, PATCH `channel` again with the same `uri`
+  and the new full `members` list.
+- A `channel` write that omits `members` with the same `uri` keeps the stored
+  list (e.g. renaming the room).
+- Up to 100 ids; letters, digits and `. _ : @ -` only.
 
 `channelStage` clears automatically on `active` / `inactive`. Do **not** set
 `channelStatus` to `connecting` and do **not** call

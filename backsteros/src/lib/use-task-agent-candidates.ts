@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { projectChannelMemberIds } from "@backsteros/contracts";
 import {
   buildTaskAgentCandidates,
   taskAgentTabLabel,
@@ -23,6 +24,7 @@ export function useTaskAgentCandidates(projectKey: string | null): {
   candidates: TaskAgentCandidate[];
   tabLabel: string;
   loading: boolean;
+  roomKnown: boolean;
 } {
   const roster = useShellAgentRoster();
   const { contacts } = useDesktopWorkspacePeople();
@@ -38,10 +40,12 @@ export function useTaskAgentCandidates(projectKey: string | null): {
   }, [contacts, roster.agents]);
   const avatarSrcById = useDesktopAvatarSrcMap("contact", agentContacts);
 
+  const project = projectKey
+    ? (projects.find((entry) => entry.key === projectKey) ?? null)
+    : null;
+  const roomMemberKey = projectChannelMemberIds(project?.channel).join(",");
+
   const candidates = useMemo(() => {
-    const project = projectKey
-      ? (projects.find((entry) => entry.key === projectKey) ?? null)
-      : null;
     return buildTaskAgentCandidates({
       agents: roster.agents.map((agent) => ({
         id: agent.id,
@@ -50,10 +54,10 @@ export function useTaskAgentCandidates(projectKey: string | null): {
         role: agent.role,
         enabled: agent.enabled,
         ready: agentReadyForChatRoster(agent),
+        grokbotAgentId: agent.grokbotAgentId ?? null,
       })),
-      leadAgentContactId:
-        (project as { leadAgentContactId?: string | null } | null)
-          ?.leadAgentContactId ?? null,
+      leadAgentContactId: project?.leadAgentContactId ?? null,
+      roomMemberIds: roomMemberKey ? roomMemberKey.split(",") : [],
       contactsById: new Map(
         agentContacts.map((contact) => [
           contact.id,
@@ -64,11 +68,18 @@ export function useTaskAgentCandidates(projectKey: string | null): {
         ]),
       ),
     });
-  }, [agentContacts, avatarSrcById, projectKey, projects, roster.agents]);
+  }, [
+    agentContacts,
+    avatarSrcById,
+    project?.leadAgentContactId,
+    roomMemberKey,
+    roster.agents,
+  ]);
 
   return {
     candidates,
     tabLabel: taskAgentTabLabel(candidates),
     loading: roster.loading,
+    roomKnown: roomMemberKey.length > 0,
   };
 }

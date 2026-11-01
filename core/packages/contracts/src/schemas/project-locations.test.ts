@@ -5,6 +5,7 @@ import {
   assertProjectChannel,
   assertProjectChannelPendingLink,
   assertProjectChannelUri,
+  carryProjectChannelMembers,
   developmentFromLegacyLocations,
   grokBotAgentIdFromChannel,
   isGrokBotChannelUri,
@@ -18,7 +19,9 @@ import {
   parseProjectChannelPendingLink,
   productionFromLegacyLocations,
   projectChannelDisplayName,
+  projectChannelMemberIds,
   projectChannelPendingLinkSchema,
+  projectChannelSchema,
   projectChannelScheme,
   projectChannelStageLabel,
   projectChannelStageSchema,
@@ -167,6 +170,53 @@ describe("project locations", () => {
       projectChannelDisplayName({ uri, name: "BacksterOS" }),
       "BacksterOS",
     );
+  });
+
+  it("keeps Channel room members as deduped Grok Bot agent ids", () => {
+    const uri = "grokbot://app/v1/agent?id=550e8400-e29b-41d4-a716-446655440000";
+    const ok = assertProjectChannel({
+      uri,
+      name: "Room",
+      members: ["a-1", "b-2", "a-1"],
+    });
+    assert.ok(ok.ok);
+    assert.deepEqual(ok.ok && ok.value.members, ["a-1", "b-2"]);
+    assert.equal(
+      assertProjectChannel({ uri, members: ["has space"] }).ok,
+      false,
+    );
+    assert.equal(assertProjectChannel({ uri, members: "a-1" }).ok, false);
+    const noMembers = assertProjectChannel({ uri });
+    assert.ok(noMembers.ok && !("members" in noMembers.value));
+    assert.deepEqual(
+      projectChannelSchema.parse({ uri, members: ["x", "x"] }).members,
+      ["x"],
+    );
+    assert.deepEqual(projectChannelMemberIds({ members: ["x", 3, "y"] }), [
+      "x",
+      "y",
+    ]);
+    assert.deepEqual(projectChannelMemberIds(null), []);
+  });
+
+  it("carries room members over a same-room write that omits them", () => {
+    const uri = "grokbot://app/v1/agent?id=550e8400-e29b-41d4-a716-446655440000";
+    const other = "grokbot://app/v1/agent?id=650e8400-e29b-41d4-a716-446655440000";
+    const existing = { uri, name: "Room", members: ["a-1"] };
+    assert.deepEqual(
+      carryProjectChannelMembers({ uri, name: "Renamed" }, existing)?.members,
+      ["a-1"],
+    );
+    assert.deepEqual(
+      carryProjectChannelMembers({ uri, members: [] }, existing)?.members,
+      [],
+    );
+    assert.equal(
+      carryProjectChannelMembers({ uri: other, name: "New" }, existing)?.members,
+      undefined,
+    );
+    assert.equal(carryProjectChannelMembers(null, existing), null);
+    assert.equal(carryProjectChannelMembers(undefined, existing), undefined);
   });
 
   it("accepts reserved Slack and unknown schemes", () => {

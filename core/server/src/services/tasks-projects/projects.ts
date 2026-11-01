@@ -10,6 +10,7 @@ import type {
 import {
   assertProjectChannel,
   assertProjectChannelPendingLink,
+  carryProjectChannelMembers,
   developmentFromLegacyLocations,
   mirrorProjectLocationCompat,
   normalizeProjectDevelopment,
@@ -802,7 +803,10 @@ export async function updateProject(
       : input.healthCheckDomain;
   const leavingCodebase =
     input.type !== undefined && input.type !== "codebase";
-  const nextChannel = resolveProjectChannel(input.channel);
+  const nextChannel = carryProjectChannelMembers(
+    resolveProjectChannel(input.channel),
+    existing.channel,
+  );
   const channelConnectPatch = resolveChannelConnectPatch({
     existing: {
       channel: existing.channel ?? null,

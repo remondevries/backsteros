@@ -141,7 +141,7 @@ type ProjectLeadContext = {
     id: string;
     key: string;
     name: string;
-    channel: { uri: string; name?: string | null } | null;
+    channel: { uri: string; name?: string | null; members?: string[] } | null;
     leadAgentContactId: string | null;
   };
   leadAgent: AgentAuthRow | null;

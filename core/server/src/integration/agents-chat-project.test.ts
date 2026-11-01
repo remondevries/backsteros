@@ -213,6 +213,53 @@ test("project chat room: routes to lead, auth, no-lead notice", async (context) 
     channelStatus: "active",
   });
 
+  // Channel Connect finish: the lead agent stores the room's members.
+  const roomUri =
+    "grokbot://app/v1/agent?id=550e8400-e29b-41d4-a716-446655440000";
+  const withMembers = await json(
+    app,
+    `/api/v1/projects/${projectId}`,
+    leadAgentSecret,
+    {
+      method: "PATCH",
+      body: JSON.stringify({
+        channel: { uri: roomUri, name: "BacksterOS", members: ["g-niels", "g-sander"] },
+        channelStatus: "active",
+      }),
+    },
+  );
+  assert.equal(withMembers.status, 200);
+  assert.deepEqual(
+    (withMembers.body?.channel as { members?: string[] }).members,
+    ["g-niels", "g-sander"],
+  );
+  const renamed = await json(
+    app,
+    `/api/v1/projects/${projectId}`,
+    leadAgentSecret,
+    {
+      method: "PATCH",
+      body: JSON.stringify({ channel: { uri: roomUri, name: "Renamed" } }),
+    },
+  );
+  assert.equal(renamed.status, 200);
+  assert.deepEqual(
+    (renamed.body?.channel as { name?: string; members?: string[] }),
+    { uri: roomUri, name: "Renamed", members: ["g-niels", "g-sander"] },
+  );
+  const badMembers = await json(
+    app,
+    `/api/v1/projects/${projectId}`,
+    leadAgentSecret,
+    {
+      method: "PATCH",
+      body: JSON.stringify({
+        channel: { uri: roomUri, members: ["not valid"] },
+      }),
+    },
+  );
+  assert.equal(badMembers.status, 400);
+
   const open = await json(app, "/api/v1/chat/threads", ownerSecret, {
     method: "POST",
     body: JSON.stringify({ projectId }),
@@ -264,10 +311,7 @@ test("project chat room: routes to lead, auth, no-lead notice", async (context) 
   assert.equal(payload.project?.id, projectId);
   assert.equal(payload.project?.key, "OS");
   assert.equal(payload.project?.name, "BacksterOS");
-  assert.equal(
-    payload.project?.channel?.uri,
-    "grokbot://app/v1/agent?id=proj",
-  );
+  assert.equal(payload.project?.channel?.uri, roomUri);
 
   const otherReply = await json(
     app,

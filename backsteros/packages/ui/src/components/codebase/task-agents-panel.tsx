@@ -4,6 +4,8 @@ import { AssigneeListMark } from "../tasks/assignee-list-mark.js";
 export type TaskAgentsPanelProps = {
   candidates: readonly TaskAgentCandidate[];
   loading?: boolean;
+  /** True when the list is the project's room members, not every agent. */
+  roomKnown?: boolean;
 };
 
 /**
@@ -13,13 +15,16 @@ export type TaskAgentsPanelProps = {
 export function TaskAgentsPanel({
   candidates,
   loading = false,
+  roomKnown = false,
 }: TaskAgentsPanelProps) {
   return (
     <section className="task-agents-panel" aria-label="Agents">
       <header className="task-agents-panel__header">
         <h3 className="task-agents-panel__title">Agents</h3>
         <p className="task-agents-panel__subtitle">
-          Who can start working on this task
+          {roomKnown
+            ? "In this project's room"
+            : "All agents. Room members show after Channel Connect"}
         </p>
       </header>
 
