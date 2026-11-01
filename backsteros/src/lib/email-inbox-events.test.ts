@@ -37,7 +37,13 @@ test("email and presence loops report disconnected after debounce and do not thr
       if (status === "disconnected") presenceAbort.abort();
     },
   });
-  await new Promise((resolve) => setTimeout(resolve, 80));
+  const deadline = Date.now() + 2_000;
+  while (
+    Date.now() < deadline &&
+    !(email.includes("disconnected") && presence.includes("disconnected"))
+  ) {
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
   assert.deepEqual(email, ["connecting", "disconnected"]);
   assert.deepEqual(presence, ["connecting", "disconnected"]);
 });

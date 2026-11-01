@@ -187,6 +187,24 @@ test("API keys: expiry, last-used, rotate, and audit log", async (context) => {
     "authenticated agent call should appear in request history",
   );
 
+  // The last-used touch is fire-and-forget, so poll until it lands.
+  const waitForLastUsedAddress = async (expected: string) => {
+    let address: string | null | undefined;
+    const deadline = Date.now() + 2_000;
+    while (Date.now() < deadline) {
+      const res = await app.request("/api/v1/api-keys", { headers: auth });
+      const body = (await res.json()) as {
+        apiKeys: Array<{ id: string; lastUsedAddress: string | null }>;
+      };
+      address = body.apiKeys.find(
+        (key) => key.id === createdBody.apiKey.id,
+      )?.lastUsedAddress;
+      if (address === expected) break;
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    return address;
+  };
+
   // Trusted peer: proxy headers are accepted (cf-connecting-ip wins).
   setSocketRemoteAddressOverrideForTests("127.0.0.1");
   resetApiKeyLastUsedThrottleForTests();
@@ -199,16 +217,7 @@ test("API keys: expiry, last-used, rotate, and audit log", async (context) => {
     },
   });
   assert.notEqual(trustedProbe.status, 401);
-  await new Promise((resolve) => setTimeout(resolve, 50));
-  const listedTrusted = await app.request("/api/v1/api-keys", { headers: auth });
-  const trustedBody = (await listedTrusted.json()) as {
-    apiKeys: Array<{ id: string; lastUsedAddress: string | null }>;
-  };
-  const accessTrusted = trustedBody.apiKeys.find(
-    (key) => key.id === createdBody.apiKey.id,
-  );
-  assert.ok(accessTrusted);
-  assert.equal(accessTrusted.lastUsedAddress, "198.51.100.20");
+  assert.equal(await waitForLastUsedAddress("198.51.100.20"), "198.51.100.20");
 
   // Docker-style IPv4-mapped peer against plain TRUSTED_PROXY_IPS must also trust
   // cf-connecting-ip (regression guard for ::ffff:172.20.0.1).
@@ -230,16 +239,7 @@ test("API keys: expiry, last-used, rotate, and audit log", async (context) => {
     },
   });
   assert.notEqual(mappedProbe.status, 401);
-  await new Promise((resolve) => setTimeout(resolve, 50));
-  const listedMapped = await app.request("/api/v1/api-keys", { headers: auth });
-  const mappedBody = (await listedMapped.json()) as {
-    apiKeys: Array<{ id: string; lastUsedAddress: string | null }>;
-  };
-  assert.equal(
-    mappedBody.apiKeys.find((key) => key.id === createdBody.apiKey.id)
-      ?.lastUsedAddress,
-    "198.51.100.50",
-  );
+  assert.equal(await waitForLastUsedAddress("198.51.100.50"), "198.51.100.50");
 
   // x-real-ip when cf-connecting-ip absent
   setSocketRemoteAddressOverrideForTests("127.0.0.1");
@@ -251,16 +251,7 @@ test("API keys: expiry, last-used, rotate, and audit log", async (context) => {
       "x-forwarded-for": "198.51.100.31",
     },
   });
-  await new Promise((resolve) => setTimeout(resolve, 50));
-  const listedRealIp = await app.request("/api/v1/api-keys", { headers: auth });
-  const realIpBody = (await listedRealIp.json()) as {
-    apiKeys: Array<{ id: string; lastUsedAddress: string | null }>;
-  };
-  assert.equal(
-    realIpBody.apiKeys.find((key) => key.id === createdBody.apiKey.id)
-      ?.lastUsedAddress,
-    "198.51.100.30",
-  );
+  assert.equal(await waitForLastUsedAddress("198.51.100.30"), "198.51.100.30");
 
   // x-forwarded-for first hop when only that header is present
   resetApiKeyLastUsedThrottleForTests();
@@ -270,16 +261,7 @@ test("API keys: expiry, last-used, rotate, and audit log", async (context) => {
       "x-forwarded-for": "198.51.100.40, 10.0.0.1",
     },
   });
-  await new Promise((resolve) => setTimeout(resolve, 50));
-  const listedXff = await app.request("/api/v1/api-keys", { headers: auth });
-  const xffBody = (await listedXff.json()) as {
-    apiKeys: Array<{ id: string; lastUsedAddress: string | null }>;
-  };
-  assert.equal(
-    xffBody.apiKeys.find((key) => key.id === createdBody.apiKey.id)
-      ?.lastUsedAddress,
-    "198.51.100.40",
-  );
+  assert.equal(await waitForLastUsedAddress("198.51.100.40"), "198.51.100.40");
   setSocketRemoteAddressOverrideForTests(undefined);
 
   // Expiry change writes expiry_updated audit (and can revive later)
