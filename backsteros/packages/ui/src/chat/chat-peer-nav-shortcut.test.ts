@@ -30,6 +30,39 @@ test("⌥J / ⌥K resolve left / right", () => {
   assert.equal(resolveChatPeerNavShortcut(keyEvent({ code: "KeyK" })), "right");
 });
 
+test("⌥← / ⌥→ resolve left / right outside text fields", () => {
+  assert.equal(
+    resolveChatPeerNavShortcut(keyEvent({ code: "ArrowLeft" })),
+    "left",
+  );
+  assert.equal(
+    resolveChatPeerNavShortcut(keyEvent({ code: "ArrowRight" })),
+    "right",
+  );
+});
+
+test("⌥← / ⌥→ stay word jumps in the composer; ⌥J / ⌥K still switch", () => {
+  const inEditable = { inEditable: true };
+  assert.equal(
+    resolveChatPeerNavShortcut(keyEvent({ code: "ArrowLeft" }), inEditable),
+    null,
+  );
+  assert.equal(
+    resolveChatPeerNavShortcut(keyEvent({ code: "ArrowRight" }), inEditable),
+    null,
+  );
+  assert.equal(
+    resolveChatPeerNavShortcut(keyEvent({ code: "KeyK" }), inEditable),
+    "right",
+  );
+  assert.equal(
+    resolveChatPeerNavShortcut(
+      keyEvent({ code: "ArrowLeft", altKey: false }),
+    ),
+    null,
+  );
+});
+
 test("rejects plain j/k and ⌘⌥ mixes", () => {
   assert.equal(
     resolveChatPeerNavShortcut(keyEvent({ altKey: false })),

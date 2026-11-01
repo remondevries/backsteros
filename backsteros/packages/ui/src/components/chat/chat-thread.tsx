@@ -45,6 +45,7 @@ import {
   type ChatProjectOption,
 } from "../../chat/chat-project-option.js";
 import {
+  isEditableKeyTarget,
   isShellChatPanelCollapsed,
   resolveAdjacentChatPeerId,
   resolveChatPeerNavShortcut,
@@ -1095,12 +1096,14 @@ export function ChatThread({
     };
   }, []);
 
-  // ⌥J / ⌥K — previous / next peer while focus is in this chat thread.
+  // ⌥J / ⌥K and ⌥← / ⌥→ — previous / next peer while focus is in this chat thread.
   useEffect(() => {
     if (!onPeerChange || resolvedPeers.length < 2) return;
 
     function handleKeyDown(event: globalThis.KeyboardEvent) {
-      const direction = resolveChatPeerNavShortcut(event);
+      const direction = resolveChatPeerNavShortcut(event, {
+        inEditable: isEditableKeyTarget(event.target),
+      });
       if (!direction) return;
       if (isBlockingModalOpen()) return;
       if (isShellChatPanelCollapsed()) return;

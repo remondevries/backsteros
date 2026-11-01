@@ -1,7 +1,9 @@
 /**
- * ⌥J / ⌥K — previous / next peer in the chat header strip.
+ * ⌥J / ⌥K and ⌥← / ⌥→ — previous / next peer in the chat header strip.
  * Match by `code`: with Option held, `key` is often a special character on macOS.
  * Plain j/k stay list navigation (those handlers reject altKey).
+ * ⌥← / ⌥→ are word jumps in text fields, so they only switch peers when focus
+ * is not in an editable element.
  */
 
 export type ChatPeerNavDirection = "left" | "right";
@@ -11,6 +13,7 @@ export function resolveChatPeerNavShortcut(
     KeyboardEvent,
     "altKey" | "metaKey" | "ctrlKey" | "shiftKey" | "code" | "repeat"
   >,
+  options: { inEditable?: boolean } = {},
 ): ChatPeerNavDirection | null {
   if (event.repeat) return null;
   if (!event.altKey || event.metaKey || event.ctrlKey || event.shiftKey) {
@@ -18,7 +21,25 @@ export function resolveChatPeerNavShortcut(
   }
   if (event.code === "KeyJ") return "left";
   if (event.code === "KeyK") return "right";
+  if (options.inEditable) return null;
+  if (event.code === "ArrowLeft") return "left";
+  if (event.code === "ArrowRight") return "right";
   return null;
+}
+
+/** Text inputs, textareas, and contenteditable hosts (composer). */
+export function isEditableKeyTarget(target: EventTarget | null): boolean {
+  if (typeof HTMLElement === "undefined" || !(target instanceof HTMLElement)) {
+    return false;
+  }
+  if (target.isContentEditable) return true;
+  const tag = target.tagName;
+  if (tag === "TEXTAREA" || tag === "SELECT") return true;
+  if (tag !== "INPUT") return false;
+  const type = (target as HTMLInputElement).type;
+  return !["button", "checkbox", "radio", "submit", "reset", "range"].includes(
+    type,
+  );
 }
 
 export function resolveAdjacentChatPeerId(
