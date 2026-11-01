@@ -2682,10 +2682,21 @@ function ProjectDetailScreen({
           leadAgentContactId:
             (project as { leadAgentContactId?: string | null })
               .leadAgentContactId ?? null,
+          channel:
+            (project as { channel?: { uri: string; name?: string | null } | null })
+              .channel ?? null,
         }}
         onProjectUpdated={(updated) => {
           patchSelected({
             leadAgentContactId: updated.leadAgentContactId ?? null,
+            channel:
+              (updated.channel as
+                | { uri: string; name?: string | null }
+                | null
+                | undefined) ??
+              (project as { channel?: { uri: string; name?: string | null } | null })
+                .channel ??
+              null,
           } as Parameters<typeof patchSelected>[0]);
         }}
         agentContacts={agentContactsForLead}

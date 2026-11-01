@@ -5482,6 +5482,8 @@ export {
 
 export { buildLeadAgentDropdownOptions } from "./components/codebase/lead-agent-dropdown-options.js";
 
+export { shouldRequestLeadAgentTransfer } from "./components/codebase/lead-agent-transfer.js";
+
 export {
   ProjectLeadAgentField,
   resolveLeadAgentChipLabel,

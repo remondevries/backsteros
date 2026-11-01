@@ -27,6 +27,12 @@ export const CHANNEL_CONNECT_WEBHOOK_EVENT = "project.channel.connect" as const;
 /** Owner asked the lead agent to re-report who is in the room. */
 export const CHANNEL_MEMBERS_SYNC_WEBHOOK_EVENT =
   "project.channel.members.sync" as const;
+/**
+ * Owner picked a new lead while a Channel is connected. Ask the *current*
+ * lead to ensure the candidate is in the room, then PATCH the new lead id.
+ */
+export const CHANNEL_LEAD_TRANSFER_WEBHOOK_EVENT =
+  "project.channel.lead.transfer" as const;
 export const CHANNEL_CONNECT_WEBHOOK_TIMEOUT_MS = 10_000;
 /** Same secret header as agent chat (Cursor automations accept Bearer too). */
 export const CHANNEL_CONNECT_WEBHOOK_SECRET_HEADER =
@@ -59,16 +65,40 @@ export type ChannelMembersSyncWebhookPayload = ChannelWebhookPayloadBase & {
   };
 };
 
+/**
+ * Ask the current lead to invite (if needed) and hand the project to
+ * `nextLead`. The agent answers by PATCHing `leadAgentContactId` (+ members).
+ */
+export type ChannelLeadTransferWebhookPayload = ChannelWebhookPayloadBase & {
+  event: typeof CHANNEL_LEAD_TRANSFER_WEBHOOK_EVENT;
+  channel: { uri: string; name?: string | null; members?: string[] } | null;
+  nextLead: {
+    contactId: string;
+    grokbotAgentId: string;
+    name: string | null;
+  };
+  report: {
+    reportUrl: string;
+    method: "PATCH";
+    body: {
+      leadAgentContactId: string;
+      channel: { uri: string; members: string[] };
+    };
+  };
+};
+
 export type ChannelOutboundWebhookPayload =
   | ChannelConnectWebhookPayload
-  | ChannelMembersSyncWebhookPayload;
+  | ChannelMembersSyncWebhookPayload
+  | ChannelLeadTransferWebhookPayload;
 
 export function isChannelOutboundWebhookEvent(
   event: unknown,
 ): event is ChannelOutboundWebhookPayload["event"] {
   return (
     event === CHANNEL_CONNECT_WEBHOOK_EVENT ||
-    event === CHANNEL_MEMBERS_SYNC_WEBHOOK_EVENT
+    event === CHANNEL_MEMBERS_SYNC_WEBHOOK_EVENT ||
+    event === CHANNEL_LEAD_TRANSFER_WEBHOOK_EVENT
   );
 }
 

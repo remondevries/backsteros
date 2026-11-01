@@ -181,6 +181,28 @@ export async function getAgentForApiKey(
   return row ? toPublic(row) : null;
 }
 
+/** Enabled persona for a contact — used when transferring the project lead. */
+export async function getEnabledAgentByContactId(
+  workspaceId: string,
+  contactId: string,
+): Promise<Agent | null> {
+  const id = contactId.trim();
+  if (!id) return null;
+  const [row] = await db
+    .select()
+    .from(agents)
+    .where(
+      and(
+        eq(agents.workspaceId, workspaceId),
+        eq(agents.contactId, id),
+        eq(agents.enabled, true),
+      ),
+    )
+    .orderBy(asc(agents.createdAt))
+    .limit(1);
+  return row ? toPublic(row) : null;
+}
+
 /** Agent reports its own Grok Bot id with its own API key. */
 export async function reportAgentIdentity(
   workspaceId: string,

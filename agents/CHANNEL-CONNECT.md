@@ -91,6 +91,45 @@ Look up who is in the room right now and PATCH `channel` with the same `uri`
 and the full `members` list. `channel.members` in the payload is what
 BacksterOS has stored, so you can see what is out of date.
 
+### `project.channel.lead.transfer`
+
+The owner can change **Lead agent** while a Channel is connected. BacksterOS
+keeps you as lead until you finish, and POSTs this event to **your** webhook
+(the current lead):
+
+```json
+{
+  "event": "project.channel.lead.transfer",
+  "projectId": "…",
+  "projectKey": "OS",
+  "projectName": "BacksterOS",
+  "requestedAt": "…",
+  "leadAgentContactId": "<your contact id — still the lead>",
+  "channel": { "uri": "grokbot://…", "name": "…", "members": ["…"] },
+  "nextLead": {
+    "contactId": "<new lead contact id>",
+    "grokbotAgentId": "<their Grok Bot agent id>",
+    "name": "Eva"
+  },
+  "report": {
+    "reportUrl": "https://agent.backsteros.com/api/v1/projects/<projectId>",
+    "method": "PATCH",
+    "body": {
+      "leadAgentContactId": "<new lead contact id>",
+      "channel": { "uri": "grokbot://…", "members": ["…"] }
+    }
+  }
+}
+```
+
+1. Check whether `nextLead.grokbotAgentId` is already in the room.
+2. If not, invite that agent into the room.
+3. PATCH with `leadAgentContactId` set to `nextLead.contactId` and `channel`
+   with the same `uri` plus the **full** current `members` list (include the
+   new lead's Grok Bot id). That is what flips Lead agent in BacksterOS.
+
+Do **not** call `POST /projects/:id/lead-agent/transfer` yourself (owner only).
+
 ## Status
 
 `channelStage` clears automatically on `active` / `inactive`. Do **not** set

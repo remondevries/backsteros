@@ -201,6 +201,15 @@ test("project chat room: routes to lead, auth, no-lead notice", async (context) 
     }),
   });
   assert.equal(otherAgent.status, 201);
+  const otherAgentId = String(otherAgent.body?.id);
+  await db
+    .update(agents)
+    .set({ grokbotAgentId: "g-niels" })
+    .where(eq(agents.id, leadAgentId));
+  await db
+    .update(agents)
+    .set({ grokbotAgentId: "g-sander" })
+    .where(eq(agents.id, otherAgentId));
 
   await db.insert(projects).values({
     id: projectId,
@@ -294,6 +303,60 @@ test("project chat room: routes to lead, auth, no-lead notice", async (context) 
     { method: "POST" },
   );
   assert.equal(agentSync.status, 403);
+
+  // Lead transfer: ask the current lead to hand the room to another agent.
+  webhookHit = null;
+  const transfer = await json(
+    app,
+    `/api/v1/projects/${projectId}/lead-agent/transfer`,
+    ownerSecret,
+    {
+      method: "POST",
+      body: JSON.stringify({ leadAgentContactId: otherContactId }),
+    },
+  );
+  assert.equal(transfer.status, 200);
+  assert.equal(transfer.body?.ok, true);
+  assert.equal(transfer.body?.pending, true);
+  assert.equal(transfer.body?.leadAgentContactId, leadContactId);
+  assert.equal(transfer.body?.nextLeadAgentContactId, otherContactId);
+  assert.ok(webhookHit);
+  const transferPayload = JSON.parse(webhookHit.body) as {
+    event: string;
+    leadAgentContactId: string;
+    nextLead: { contactId: string; grokbotAgentId: string; name: string | null };
+    report: {
+      method: string;
+      body: { leadAgentContactId: string; channel: { members: string[] } };
+    };
+  };
+  assert.equal(transferPayload.event, "project.channel.lead.transfer");
+  assert.equal(transferPayload.leadAgentContactId, leadContactId);
+  assert.equal(transferPayload.nextLead.contactId, otherContactId);
+  assert.equal(transferPayload.nextLead.grokbotAgentId, "g-sander");
+  assert.equal(transferPayload.report.method, "PATCH");
+  assert.equal(
+    transferPayload.report.body.leadAgentContactId,
+    otherContactId,
+  );
+  assert.ok(transferPayload.report.body.channel.members.includes("g-sander"));
+  // Lead is unchanged until the current lead PATCHes.
+  const stillLead = await json(
+    app,
+    `/api/v1/projects/${projectId}`,
+    ownerSecret,
+  );
+  assert.equal(stillLead.body?.leadAgentContactId, leadContactId);
+  const agentTransfer = await json(
+    app,
+    `/api/v1/projects/${projectId}/lead-agent/transfer`,
+    leadAgentSecret,
+    {
+      method: "POST",
+      body: JSON.stringify({ leadAgentContactId: otherContactId }),
+    },
+  );
+  assert.equal(agentTransfer.status, 403);
 
   const open = await json(app, "/api/v1/chat/threads", ownerSecret, {
     method: "POST",

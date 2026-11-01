@@ -33,10 +33,12 @@ import { projectChannelMemberIds } from "@backsteros/contracts";
 
 import {
   CHANNEL_CONNECT_WEBHOOK_EVENT,
+  CHANNEL_LEAD_TRANSFER_WEBHOOK_EVENT,
   CHANNEL_MEMBERS_SYNC_WEBHOOK_EVENT,
   postChannelConnectWebhook,
 } from "../../lib/channel-connect-webhook.js";
 import { resolveAgentsPublicBase } from "../../lib/agents-public-url.js";
+import * as agentsService from "../../services/agents.js";
 
 /** Projects CRUD, vault and relations. */
 export function registerProjectCoreRoutes(app: Hono) {
@@ -651,6 +653,197 @@ export function registerProjectCoreRoutes(app: Hono) {
       ok: webhook.ok,
       requestedAt,
       error: webhook.ok ? null : webhook.error,
+    });
+  });
+
+  /**
+   * Owner-only lead handoff. When a Channel is connected and there is already
+   * a lead, ask that lead to ensure the candidate is in the room, then PATCH
+   * `leadAgentContactId` (BacksterOS does not flip the lead until that lands).
+   * Clearing the lead, first assign, or no channel → set immediately.
+   */
+  app.post("/api/v1/projects/:id/lead-agent/transfer", async (c) => {
+    const auth = getAuth(c);
+    if (!requireScope("projects:write")(auth)) {
+      return c.json(auth ? forbidden() : unauthorized(), auth ? 403 : 401);
+    }
+    if (isAgentPersonaAuth(auth)) {
+      return c.json(
+        {
+          error: "Only the owner can transfer the Lead agent",
+          code: "lead_agent_transfer_owner_only",
+        },
+        403,
+      );
+    }
+
+    const projectIdRaw = c.req.param("id");
+    const projectId = await routeProjectId(auth.workspaceId, projectIdRaw);
+    if (!projectId) return c.json(notFound("Project"), 404);
+    const row = await taskProjectService.getProjectById(
+      auth.workspaceId,
+      projectId,
+    );
+    if (!row) return c.json(notFound("Project"), 404);
+
+    let body: { leadAgentContactId?: string | null };
+    try {
+      body = (await c.req.json()) as { leadAgentContactId?: string | null };
+    } catch {
+      return c.json(
+        {
+          error: "JSON body with leadAgentContactId is required",
+          code: "lead_agent_transfer_body_invalid",
+        },
+        400,
+      );
+    }
+    if (!("leadAgentContactId" in body)) {
+      return c.json(
+        {
+          error: "leadAgentContactId is required (string or null)",
+          code: "lead_agent_transfer_body_invalid",
+        },
+        400,
+      );
+    }
+
+    const nextRaw =
+      body.leadAgentContactId == null
+        ? null
+        : String(body.leadAgentContactId).trim() || null;
+    const currentLead = row.leadAgentContactId?.trim() || null;
+    const channelUri = row.channel?.uri?.trim() || "";
+    const needsRoomHandoff = Boolean(
+      nextRaw && currentLead && nextRaw !== currentLead && channelUri,
+    );
+
+    if (!needsRoomHandoff) {
+      try {
+        const updated = await taskProjectService.updateProject(
+          auth.workspaceId,
+          projectId,
+          { leadAgentContactId: nextRaw },
+        );
+        if (!updated) return c.json(notFound("Project"), 404);
+        try {
+          await recordProjectRestSyncEvent(auth.workspaceId, updated, "upsert");
+        } catch {
+          // Peer catches up on the next tick; lead write already landed.
+        }
+        publishProjectLive(auth, updated.id, "upsert");
+        return c.json({
+          ok: true,
+          pending: false,
+          leadAgentContactId: updated.leadAgentContactId ?? null,
+          nextLeadAgentContactId: updated.leadAgentContactId ?? null,
+          requestedAt: null,
+          error: null,
+          project: toProject(updated),
+        });
+      } catch (error) {
+        if (
+          error instanceof Error &&
+          error.message === "LEAD_AGENT_CONTACT_NOT_FOUND"
+        ) {
+          return c.json(
+            {
+              error: "Lead agent contact not found",
+              code: "lead_agent_contact_not_found",
+            },
+            400,
+          );
+        }
+        if (
+          error instanceof Error &&
+          error.message === "LEAD_AGENT_NOT_AGENT"
+        ) {
+          return c.json(
+            {
+              error:
+                "Lead agent must be a contact linked to an enabled agent persona",
+              code: "lead_agent_not_agent",
+            },
+            400,
+          );
+        }
+        throw error;
+      }
+    }
+
+    const nextAgent = await agentsService.getEnabledAgentByContactId(
+      auth.workspaceId,
+      nextRaw!,
+    );
+    if (!nextAgent) {
+      return c.json(
+        {
+          error:
+            "Lead agent must be a contact linked to an enabled agent persona",
+          code: "lead_agent_not_agent",
+        },
+        400,
+      );
+    }
+    const nextGrokbotId = nextAgent.grokbotAgentId?.trim() || "";
+    if (!nextGrokbotId) {
+      return c.json(
+        {
+          error:
+            "The new lead must report their Grok Bot agent id (PATCH /api/v1/agents/me) before they can take over a connected Channel",
+          code: "lead_agent_grokbot_id_required",
+        },
+        400,
+      );
+    }
+
+    const requestedAt = new Date().toISOString();
+    const members = projectChannelMemberIds(row.channel);
+    const reportMembers = members.includes(nextGrokbotId)
+      ? members
+      : [...members, nextGrokbotId];
+    const webhook = await postChannelConnectWebhook({
+      workspaceId: auth.workspaceId,
+      payload: {
+        event: CHANNEL_LEAD_TRANSFER_WEBHOOK_EVENT,
+        projectId: row.id,
+        projectKey: row.key,
+        projectName: row.name,
+        type: row.type,
+        requestedAt,
+        leadAgentContactId: currentLead,
+        channel: {
+          uri: channelUri,
+          name: row.channel?.name ?? null,
+          members,
+        },
+        nextLead: {
+          contactId: nextRaw!,
+          grokbotAgentId: nextGrokbotId,
+          name: nextAgent.name ?? null,
+        },
+        report: {
+          reportUrl: `${resolveAgentsPublicBase()}/api/v1/projects/${row.id}`,
+          method: "PATCH",
+          body: {
+            leadAgentContactId: nextRaw!,
+            channel: {
+              uri: channelUri,
+              members: reportMembers,
+            },
+          },
+        },
+      },
+    });
+
+    return c.json({
+      ok: webhook.ok,
+      pending: webhook.ok,
+      leadAgentContactId: currentLead,
+      nextLeadAgentContactId: nextRaw,
+      requestedAt,
+      error: webhook.ok ? null : webhook.error,
+      project: toProject(row),
     });
   });
 

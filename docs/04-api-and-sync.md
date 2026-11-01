@@ -240,13 +240,21 @@ from notifications and Channel `needs_details`.
    `channel` write without `members` keeps the stored list. Re-PATCH `channel`
    when agents join or leave. Desktop task Agents tab lists only these agents
    (plus the lead) once set.
-6. Team sync — owner-only `POST /api/v1/projects/:id/channel/members/sync`
+5. Team sync — owner-only `POST /api/v1/projects/:id/channel/members/sync`
    (403 for agent keys, 400 without a connected channel) POSTs
    `project.channel.members.sync` to the lead agent's webhook with the stored
    `channel` and a `report` block. The agent answers by PATCHing
    `channel.members`; the response is just `{ ok, requestedAt, error }`.
    Locations → Team shows the resolved members and hosts the Sync button.
-5. To abort: `PATCH` `{ "channelStatus": "inactive", "channel": null }`.
+6. Lead transfer — owner-only `POST /api/v1/projects/:id/lead-agent/transfer`
+   with `{ "leadAgentContactId": "<contact id or null>" }`. When a Channel is
+   connected and there is already a different lead, this POSTs
+   `project.channel.lead.transfer` to the **current** lead (lead id is not
+   flipped yet). The agent invites the candidate if needed, then PATCHes
+   `leadAgentContactId` + `channel.members`. Clearing the lead, first assign,
+   or no channel applies immediately (`pending: false`). New lead must have
+   reported `grokbotAgentId` (`400 lead_agent_grokbot_id_required` otherwise).
+7. To abort Channel Connect: `PATCH` `{ "channelStatus": "inactive", "channel": null }`.
 
 #### `GET /search` (agents)
 
