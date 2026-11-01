@@ -1,4 +1,13 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  createContext,
+  createElement,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
 import type {
   ChatThreadListItem,
   ChatThreadMessage,
@@ -33,7 +42,7 @@ const POLL_MS = 60_000;
 
 type ThreadPushListener = (payload: AgentShellChatMessagePayload) => void;
 
-/** One SSE loop for the whole shell (banner + always-on live host). */
+/** One SSE loop for the whole shell. */
 const shellChatLive = {
   readyAgentIds: new Set<string>(),
   abort: null as AbortController | null,
@@ -134,11 +143,14 @@ export type UseAgentDmNotificationsResult = {
   items: AgentMessageNotificationItem[];
 };
 
+const AgentDmNotificationsContext =
+  createContext<UseAgentDmNotificationsResult | null>(null);
+
 /**
- * Unseen assistant replies on cloud chat threads → sidebar DM cards.
- * Push via cloud SSE; 60s poll + reconnect refetch as fallback.
+ * Single owner of DM thread list + shell-chat SSE (poll / focus / push).
+ * Mount once at shell chrome so banner + chat column share one subscription.
  */
-export function useAgentDmNotifications(): UseAgentDmNotificationsResult {
+function useAgentDmNotificationsState(): UseAgentDmNotificationsResult {
   const { webhookReadyAgents } = useShellAgentChat();
   const { contacts } = useDesktopWorkspacePeople();
   const [threads, setThreads] = useState<ChatThreadListItem[]>([]);
@@ -306,4 +318,33 @@ export function useAgentDmNotifications(): UseAgentDmNotificationsResult {
   ]);
 
   return { items };
+}
+
+export function AgentDmNotificationsProvider({
+  children,
+}: {
+  children: ReactNode;
+}) {
+  const value = useAgentDmNotificationsState();
+  // createElement — keep this module `.ts` so Vite HMR does not stick on a
+  // renamed `.tsx` URL after the JSX transform failure.
+  return createElement(
+    AgentDmNotificationsContext.Provider,
+    { value },
+    children,
+  );
+}
+
+/**
+ * Unseen assistant replies on cloud chat threads → sidebar DM cards.
+ * Must be under {@link AgentDmNotificationsProvider}.
+ */
+export function useAgentDmNotifications(): UseAgentDmNotificationsResult {
+  const value = useContext(AgentDmNotificationsContext);
+  if (!value) {
+    throw new Error(
+      "useAgentDmNotifications requires AgentDmNotificationsProvider",
+    );
+  }
+  return value;
 }

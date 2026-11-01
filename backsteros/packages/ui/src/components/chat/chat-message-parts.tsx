@@ -1,6 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import {
+  memo,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
 import type {
   ChatUiCardPart,
   ChatUiMessage,
@@ -254,7 +260,7 @@ export type ChatUiMessageBodyProps = {
   onToggleSelect?: ((messageId: string) => void) | null;
 };
 
-export function ChatUiMessageBody({
+export const ChatUiMessageBody = memo(function ChatUiMessageBody({
   message,
   onDelete = null,
   selectMode = false,
@@ -461,4 +467,4 @@ export function ChatUiMessageBody({
       </div>
     </div>
   );
-}
+});

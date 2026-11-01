@@ -1,4 +1,4 @@
-import { useMemo, type ReactNode } from "react";
+import { memo, useDeferredValue, useMemo, type ReactNode } from "react";
 
 import {
   EMPTY_MENTION_CATALOG,
@@ -22,6 +22,19 @@ import {
 } from "../lib/workspace-data";
 
 export { needsMentionCatalog } from "../lib/needs-mention-catalog";
+
+/**
+ * Keep routed UI from re-rendering when only the mention catalog changes.
+ * Context consumers (editors / chat cards) still update; the rest of the shell
+ * keeps the previous children element.
+ */
+const MentionCatalogChildren = memo(function MentionCatalogChildren({
+  children,
+}: {
+  children: ReactNode;
+}) {
+  return children;
+});
 
 /**
  * Always the same component type around `children`. Switching between
@@ -113,12 +126,15 @@ function AppShellMentionCatalogTree({ children }: { children: ReactNode }) {
     projects,
   ]);
 
+  // Defer catalog pushes so typing / dropdown opens stay ahead of PowerSync churn.
+  const deferredCatalog = useDeferredValue(liveCatalog);
+
   // Always expose the live workspace catalog. Chat agent replies resolve
   // `[@task:…]` cards from it even on routes that do not open a markdown
   // editor (the old EMPTY gate left those mentions with no below-card).
   return (
-    <MentionCatalogProvider catalog={liveCatalog}>
-      {children}
+    <MentionCatalogProvider catalog={deferredCatalog}>
+      <MentionCatalogChildren>{children}</MentionCatalogChildren>
     </MentionCatalogProvider>
   );
 }

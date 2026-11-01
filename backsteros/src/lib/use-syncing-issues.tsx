@@ -5,6 +5,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -42,7 +43,79 @@ import {
 import { useLocalCoreVersionMismatch } from "./use-local-core-version-mismatch";
 
 const HEALTH_POLL_MS = 15_000;
-const CRUD_POLL_MS = 3_000;
+/** Idle upload-queue poll — was 3s and re-rendered the whole shell every tick. */
+const CRUD_POLL_IDLE_MS = 12_000;
+/** Faster while uploads are pending so stuck queues still surface quickly. */
+const CRUD_POLL_BUSY_MS = 4_000;
+
+const EMPTY_UPLOAD_ITEMS: SyncUploadQueueItem[] = [];
+const EMPTY_DEAD_LETTERS: ReplicationDeadLetter[] = [];
+const EMPTY_MISMATCHES: SyncReconcileMismatch[] = [];
+
+function uploadItemsEqual(
+  left: readonly SyncUploadQueueItem[],
+  right: readonly SyncUploadQueueItem[],
+): boolean {
+  if (left === right) return true;
+  if (left.length !== right.length) return false;
+  for (let index = 0; index < left.length; index += 1) {
+    const a = left[index]!;
+    const b = right[index]!;
+    if (
+      a.id !== b.id ||
+      a.op !== b.op ||
+      a.status !== b.status ||
+      a.label !== b.label
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function deadLettersEqual(
+  left: readonly ReplicationDeadLetter[],
+  right: readonly ReplicationDeadLetter[],
+): boolean {
+  if (left === right) return true;
+  if (left.length !== right.length) return false;
+  for (let index = 0; index < left.length; index += 1) {
+    const a = left[index]!;
+    const b = right[index]!;
+    if (
+      a.id !== b.id ||
+      a.attempts !== b.attempts ||
+      a.lastSeenAt !== b.lastSeenAt ||
+      a.errorMessage !== b.errorMessage
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function mismatchesEqual(
+  left: readonly SyncReconcileMismatch[],
+  right: readonly SyncReconcileMismatch[],
+): boolean {
+  if (left === right) return true;
+  if (left.length !== right.length) return false;
+  for (let index = 0; index < left.length; index += 1) {
+    const a = left[index]!;
+    const b = right[index]!;
+    if (
+      a.tableName !== b.tableName ||
+      a.localCount !== b.localCount ||
+      a.peerCount !== b.peerCount ||
+      a.missingLocally !== b.missingLocally ||
+      a.missingOnPeer !== b.missingOnPeer ||
+      a.checkedAt !== b.checkedAt
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
 
 export type SyncingIssuesState = {
   loading: boolean;
@@ -97,10 +170,10 @@ async function readUploadQueue(
   } | null,
   uploadErrorMessage: string | null,
 ): Promise<SyncUploadQueueItem[]> {
-  if (!database) return [];
+  if (!database) return EMPTY_UPLOAD_ITEMS;
   try {
     const batch = await database.getCrudBatch();
-    if (!batch?.crud?.length) return [];
+    if (!batch?.crud?.length) return EMPTY_UPLOAD_ITEMS;
     return batch.crud.slice(0, 20).map((entry, index) => ({
       id: String(entry.clientId ?? `${entry.table}:${entry.id}:${index}`),
       label: formatTableLabel(entry.table, entry.id),
@@ -109,7 +182,7 @@ async function readUploadQueue(
       status: uploadErrorMessage ? ("failed" as const) : ("pending" as const),
     }));
   } catch {
-    return [];
+    return EMPTY_UPLOAD_ITEMS;
   }
 }
 
@@ -131,6 +204,7 @@ function useSyncingIssuesState(): SyncingIssuesState {
   const [syncEventResync, setSyncEventResync] =
     useState<SyncEventResyncFacts>(IDLE_SYNC_EVENT_RESYNC);
   const [dismissedIds, setDismissedIds] = useState<SyncIssueLayoutId[]>([]);
+  const uploadCountRef = useRef(0);
 
   const uploadErrorMessage =
     powerSync.database?.currentStatus?.dataFlowStatus?.uploadError?.message ??
@@ -140,20 +214,34 @@ function useSyncingIssuesState(): SyncingIssuesState {
     try {
       const body = await client.requestJson<unknown>(OPS_SYNC_HEALTH_PATH);
       const parsed = parseOpsSyncHealthDeadLetters(body);
-      setDeadLetters(parsed.letters);
-      setDeadLetterCount(parsed.count);
-      setMismatches(parsed.mismatches);
+      setDeadLetters((prev) =>
+        deadLettersEqual(prev, parsed.letters)
+          ? prev
+          : parsed.letters.length === 0
+            ? EMPTY_DEAD_LETTERS
+            : parsed.letters,
+      );
+      setDeadLetterCount((prev) =>
+        prev === parsed.count ? prev : parsed.count,
+      );
+      setMismatches((prev) =>
+        mismatchesEqual(prev, parsed.mismatches)
+          ? prev
+          : parsed.mismatches.length === 0
+            ? EMPTY_MISMATCHES
+            : parsed.mismatches,
+      );
       setSyncEventResync(parseSyncEventResyncFacts(body));
-      setHealthFetchError(null);
-      setHealthAuthDenied(false);
+      setHealthFetchError((prev) => (prev == null ? prev : null));
+      setHealthAuthDenied((prev) => (prev ? false : prev));
     } catch (error) {
       if (error instanceof ApiClientError) {
         if (error.status === 401 || error.status === 403) {
-          setHealthAuthDenied(true);
-          setHealthFetchError(null);
-          setDeadLetters([]);
+          setHealthAuthDenied((prev) => (prev ? prev : true));
+          setHealthFetchError((prev) => (prev == null ? prev : null));
+          setDeadLetters(EMPTY_DEAD_LETTERS);
           setDeadLetterCount(0);
-          setMismatches([]);
+          setMismatches(EMPTY_MISMATCHES);
           setSyncEventResync(IDLE_SYNC_EVENT_RESYNC);
           return;
         }
@@ -163,15 +251,19 @@ function useSyncingIssuesState(): SyncingIssuesState {
           error instanceof Error ? error.message : "Could not load sync health.",
         );
       }
-      setHealthAuthDenied(false);
-      // Keep last known dead letters / mismatches / resync — a transient fetch
-      // blip must not flash Settings as Healthy while the sidebar still shows issues.
+      setHealthAuthDenied((prev) => (prev ? false : prev));
+      // Keep last known dead letters / mismatches — a transient fetch blip must
+      // not flash Settings as Healthy while the sidebar still shows twin-lag.
     }
   }, [client]);
 
   const loadUploads = useCallback(async () => {
     const items = await readUploadQueue(powerSync.database, uploadErrorMessage);
-    setUploadItems(items);
+    uploadCountRef.current = items.length;
+    setUploadItems((prev) => {
+      const next = items.length === 0 ? EMPTY_UPLOAD_ITEMS : items;
+      return uploadItemsEqual(prev, next) ? prev : next;
+    });
   }, [powerSync.database, uploadErrorMessage]);
 
   const refresh = useCallback(async () => {
@@ -200,12 +292,26 @@ function useSyncingIssuesState(): SyncingIssuesState {
   }, [loadHealth]);
 
   useEffect(() => {
-    void loadUploads();
-    const timer = window.setInterval(() => {
-      void loadUploads();
-    }, CRUD_POLL_MS);
-    return () => window.clearInterval(timer);
-  }, [loadUploads]);
+    let cancelled = false;
+    let timer = 0;
+    const scheduleNext = () => {
+      const busy =
+        uploadCountRef.current > 0 || Boolean(uploadErrorMessage);
+      timer = window.setTimeout(() => {
+        void (async () => {
+          await loadUploads();
+          if (!cancelled) scheduleNext();
+        })();
+      }, busy ? CRUD_POLL_BUSY_MS : CRUD_POLL_IDLE_MS);
+    };
+    void loadUploads().then(() => {
+      if (!cancelled) scheduleNext();
+    });
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [loadUploads, uploadErrorMessage]);
 
   const snapshot = useMemo<SyncingSnapshot>(
     () => ({
@@ -222,6 +328,11 @@ function useSyncingIssuesState(): SyncingIssuesState {
       mismatches,
       healthFetchError,
       healthAuthDenied,
+      syncEventResync: {
+        needed: syncEventResync.needed,
+        status: syncEventResync.status,
+        message: syncEventResync.message,
+      },
       versionDrift:
         versionMismatch &&
         !isVersionMismatchDismissed(
@@ -233,11 +344,6 @@ function useSyncingIssuesState(): SyncingIssuesState {
               updateHint: LOCAL_CORE_UPDATE_BUILD_HINT,
             }
           : null,
-      syncEventResync: {
-        needed: syncEventResync.needed,
-        status: syncEventResync.status,
-        message: syncEventResync.message,
-      },
     }),
     [
       deadLetterCount,
@@ -333,23 +439,41 @@ function useSyncingIssuesState(): SyncingIssuesState {
     [issues],
   );
 
-  return {
-    loading,
-    issues,
-    liveIssues,
-    health,
-    snapshot,
-    dismissedIds,
-    dismissIssue,
-    refresh,
-    retryPowerSync,
-    flushUploads,
-    forceSync,
-    retryDeadLetter,
-    acknowledgeDeadLetter,
-    topIssue: actionableIssues[0] ?? null,
-    hasIssues: actionableIssues.length > 0,
-  };
+  return useMemo(
+    (): SyncingIssuesState => ({
+      loading,
+      issues,
+      liveIssues,
+      health,
+      snapshot,
+      dismissedIds,
+      dismissIssue,
+      refresh,
+      retryPowerSync,
+      flushUploads,
+      forceSync,
+      retryDeadLetter,
+      acknowledgeDeadLetter,
+      topIssue: actionableIssues[0] ?? null,
+      hasIssues: actionableIssues.length > 0,
+    }),
+    [
+      acknowledgeDeadLetter,
+      actionableIssues,
+      dismissIssue,
+      dismissedIds,
+      flushUploads,
+      forceSync,
+      health,
+      issues,
+      liveIssues,
+      loading,
+      refresh,
+      retryDeadLetter,
+      retryPowerSync,
+      snapshot,
+    ],
+  );
 }
 
 export function SyncingIssuesProvider({ children }: { children: ReactNode }) {

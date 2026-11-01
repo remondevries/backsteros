@@ -142,6 +142,23 @@ function byCreatedAt(a: ChatUiMessage, b: ChatUiMessage): number {
   return isoMs(a.createdAt) - isoMs(b.createdAt);
 }
 
+function sameMessageParts(
+  a: ChatUiMessage["parts"],
+  b: ChatUiMessage["parts"],
+): boolean {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  for (let index = 0; index < a.length; index += 1) {
+    const left = a[index];
+    const right = b[index];
+    if (left === right) continue;
+    // Per-part stringify — cheaper than serializing the whole message list
+    // on every thinking poll when only one card changed.
+    if (JSON.stringify(left) !== JSON.stringify(right)) return false;
+  }
+  return true;
+}
+
 function sameMessage(a: ChatUiMessage, b: ChatUiMessage): boolean {
   if (a === b) return true;
   return (
@@ -149,7 +166,7 @@ function sameMessage(a: ChatUiMessage, b: ChatUiMessage): boolean {
     a.status === b.status &&
     a.role === b.role &&
     a.createdAt === b.createdAt &&
-    JSON.stringify(a.parts) === JSON.stringify(b.parts)
+    sameMessageParts(a.parts, b.parts)
   );
 }
 

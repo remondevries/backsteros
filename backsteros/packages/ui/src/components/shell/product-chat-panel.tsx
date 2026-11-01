@@ -83,10 +83,13 @@ export function ProductChatPanel({
         handle.removeEventListener("pointermove", move);
         handle.removeEventListener("pointerup", finish);
         handle.removeEventListener("pointercancel", finish);
+        window.removeEventListener("blur", finish);
       };
       handle.addEventListener("pointermove", move);
       handle.addEventListener("pointerup", finish);
       handle.addEventListener("pointercancel", finish);
+      // Lost capture / app blur used to leave body.is-resizing (user-select:none).
+      window.addEventListener("blur", finish);
     },
     [collapsed, onWidthChange],
   );

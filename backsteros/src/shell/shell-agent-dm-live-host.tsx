@@ -1,11 +1,7 @@
-import { useAgentDmNotifications } from "./use-agent-dm-notifications";
-
 /**
- * Always-mounted host for cloud shell-chat SSE → window events.
- * The sidebar banner also uses {@link useAgentDmNotifications}, but it is
- * omitted on settings pages — this host keeps the open chat thread live.
+ * @deprecated Prefer {@link AgentDmNotificationsProvider} at shell chrome —
+ * it owns the single SSE / poll loop. Kept as a no-op so older imports compile.
  */
 export function ShellAgentDmLiveHost() {
-  useAgentDmNotifications();
   return null;
 }

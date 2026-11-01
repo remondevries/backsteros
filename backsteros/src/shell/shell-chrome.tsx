@@ -22,8 +22,8 @@ import { navigateToHref } from "../router/navigate-href";
 import { RouterLink } from "./app-shell-links";
 import { renderAppShellTabIcon } from "./app-shell-tab-icon";
 import { ShellAgentDmBanner } from "./shell-agent-dm-banner";
-import { ShellAgentDmLiveHost } from "./shell-agent-dm-live-host";
 import { ShellChatPanelSlot } from "./shell-chat-panel-slot";
+import { AgentDmNotificationsProvider } from "./use-agent-dm-notifications";
 import type { useShellTabs } from "./use-shell-tabs";
 import type { resolveInboxSidebarIndicatorTone } from "@backsteros/ui/inbox";
 
@@ -130,9 +130,8 @@ function ShellChromeInner({
   );
 
   return (
-    <>
-      {/* Keep cloud chat SSE alive even when the sidebar banner unmounts (settings). */}
-      <ShellAgentDmLiveHost />
+    // Provider stays mounted on settings (banner unmounts) so SSE/poll continue.
+    <AgentDmNotificationsProvider>
       <DevTrafficLights hidden={windowFullscreen} />
       <ProductAppShell
         className={windowFullscreen ? "is-window-fullscreen" : undefined}
@@ -198,7 +197,7 @@ function ShellChromeInner({
       >
         {children}
       </ProductAppShell>
-    </>
+    </AgentDmNotificationsProvider>
   );
 }
 

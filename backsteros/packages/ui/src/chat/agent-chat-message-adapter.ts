@@ -267,6 +267,19 @@ export function chatThreadMessageToUi(
   };
 }
 
+/** For each index: whether any later message has role === "user" (O(n)). */
+function laterUserFlags(
+  messages: ReadonlyArray<{ role: string }>,
+): boolean[] {
+  const flags = new Array<boolean>(messages.length);
+  let seenUser = false;
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    flags[index] = seenUser;
+    if (messages[index]?.role === "user") seenUser = true;
+  }
+  return flags;
+}
+
 /**
  * Map a thread snapshot, marking unanswered choice / approval cards dismissed
  * when a later user message exists (typed reply without answering).
@@ -274,29 +287,27 @@ export function chatThreadMessageToUi(
 export function chatThreadMessagesToUi(
   messages: readonly ChatThreadMessage[],
 ): ChatUiMessage[] {
+  const laterUser = laterUserFlags(messages);
   return messages.map((message, index) => {
-    const laterUser = messages
-      .slice(index + 1)
-      .some((later) => later.role === "user");
+    const hasLaterUser = laterUser[index] === true;
     return chatThreadMessageToUi(message, {
       dismissedChoices:
-        Boolean(message.choices) && !message.choicesAnswer && laterUser,
+        Boolean(message.choices) && !message.choicesAnswer && hasLaterUser,
       dismissedApproval:
-        Boolean(message.approval) && !message.approvalAnswer && laterUser,
+        Boolean(message.approval) && !message.approvalAnswer && hasLaterUser,
       dismissedForm:
-        Boolean(message.form) && !message.formAnswer && laterUser,
+        Boolean(message.form) && !message.formAnswer && hasLaterUser,
       dismissedEmailDraft:
         Boolean(message.emailDraft) &&
         !message.emailDraftResult &&
-        laterUser,
+        hasLaterUser,
     });
   });
 }
 
 function withCardDismissedState(
   message: ChatUiMessage,
-  index: number,
-  messages: readonly ChatUiMessage[],
+  laterUser: boolean,
   cardType: "choices" | "approval" | "form" | "email-draft",
 ): ChatUiMessage {
   const partIndex = message.parts.findIndex(
@@ -319,14 +330,11 @@ function withCardDismissedState(
     };
     return { ...message, parts: nextParts };
   }
-  const dismissed = messages
-    .slice(index + 1)
-    .some((later) => later.role === "user");
-  if (Boolean(data.dismissed) === dismissed) return message;
+  if (Boolean(data.dismissed) === laterUser) return message;
   const nextParts = [...message.parts];
   nextParts[partIndex] = {
     ...part,
-    data: { ...data, dismissed },
+    data: { ...data, dismissed: laterUser },
   };
   return { ...message, parts: nextParts };
 }
@@ -337,11 +345,13 @@ function withCardDismissedState(
 export function withChoicesDismissedStates(
   messages: readonly ChatUiMessage[],
 ): ChatUiMessage[] {
+  const laterUser = laterUserFlags(messages);
   return messages.map((message, index) => {
-    let next = withCardDismissedState(message, index, messages, "choices");
-    next = withCardDismissedState(next, index, messages, "approval");
-    next = withCardDismissedState(next, index, messages, "form");
-    next = withCardDismissedState(next, index, messages, "email-draft");
+    const hasLaterUser = laterUser[index] === true;
+    let next = withCardDismissedState(message, hasLaterUser, "choices");
+    next = withCardDismissedState(next, hasLaterUser, "approval");
+    next = withCardDismissedState(next, hasLaterUser, "form");
+    next = withCardDismissedState(next, hasLaterUser, "email-draft");
     return next;
   });
 }
