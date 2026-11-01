@@ -2271,7 +2271,29 @@ function ProjectDetailScreen({
             areaId: project.areaId ?? null,
             localWorkingDirectory: project.localWorkingDirectory ?? null,
             developmentLocation: project.developmentLocation ?? null,
+            development:
+              (
+                project as {
+                  development?: {
+                    kind: "local" | "server";
+                    path: string;
+                    host?: string | null;
+                  } | null;
+                }
+              ).development ?? null,
             productionLocation: project.productionLocation ?? null,
+            production:
+              (
+                project as {
+                  production?: {
+                    path?: string | null;
+                    server?: string | null;
+                    url?: string | null;
+                    deployMethod?: string | null;
+                    branch?: string | null;
+                  } | null;
+                }
+              ).production ?? null,
             localLocation: project.localLocation ?? null,
             developmentSetupStatus: project.developmentSetupStatus ?? null,
             developmentSetupError: project.developmentSetupError ?? null,

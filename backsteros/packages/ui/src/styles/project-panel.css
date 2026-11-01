@@ -356,6 +356,20 @@
   line-height: 16px;
 }
 
+.project-development-field {
+  display: flex;
+  min-width: 0;
+  max-width: 100%;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.project-development-field__folder {
+  min-width: 0;
+  max-width: 100%;
+}
+
 .project-channel-field {
   display: inline-flex;
   min-width: 0;

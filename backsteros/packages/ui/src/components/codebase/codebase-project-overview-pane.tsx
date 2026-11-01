@@ -284,19 +284,39 @@ function workingDirectoryLabel(path: string): string {
   return parts[parts.length - 1] ?? trimmed;
 }
 
-function withPickedWorkingDirectory(
+function withPickedLocalDirectory(
   project: ApiProject,
   directory: string,
 ): ApiProject {
-  const development = { kind: "local" as const, path: directory };
   return {
     ...project,
     localWorkingDirectory: directory,
-    developmentLocation: directory,
-    development,
+    development: { kind: "local", path: directory },
     updatedAt: new Date().toISOString(),
   };
 }
+
+function withPickedServerDirectory(
+  project: ApiProject,
+  directory: string,
+  host?: string | null,
+): ApiProject {
+  return {
+    ...project,
+    developmentLocation: directory,
+    development: {
+      kind: "server",
+      path: directory,
+      host: host?.trim() || null,
+    },
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+const DEVELOPMENT_KIND_OPTIONS = [
+  { value: "local" as const, label: "Local" },
+  { value: "server" as const, label: "Server" },
+];
 
 function ProjectDevelopmentField({
   project,
@@ -311,46 +331,62 @@ function ProjectDevelopmentField({
   const [pickerOpen, setPickerOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const development = projectDevelopment(project);
-  const kind = development?.kind ?? "local";
-  const directory = normalizeWorkingDirectory(
-    development?.path ?? project.localWorkingDirectory,
+  const storedKind = development?.kind ?? "local";
+  const [kind, setKind] = useState<"local" | "server">(storedKind);
+
+  useEffect(() => {
+    setKind(storedKind);
+    setError(null);
+    setPickerOpen(false);
+  }, [project.id, storedKind]);
+
+  const localPath = normalizeWorkingDirectory(
+    (development?.kind === "local" ? development.path : null) ||
+      project.localWorkingDirectory,
   );
+  const serverCandidate =
+    (development?.kind === "server" ? development.path : null) ||
+    project.developmentLocation?.trim() ||
+    null;
+  // Old saves mirrored local into developmentLocation — ignore that twin.
+  const serverPath = normalizeWorkingDirectory(
+    serverCandidate && serverCandidate !== localPath ? serverCandidate : null,
+  );
+  const directory = kind === "server" ? serverPath : localPath;
   const hasDirectory = Boolean(directory);
   const basename = hasDirectory ? workingDirectoryLabel(directory!) : null;
-  const label = basename
-    ? kind === "server"
-      ? `Server: ${basename}`
-      : basename
-    : "Set folder…";
+  const label = basename ?? "Set folder…";
   const target: LocationFsTarget = kind === "server" ? "development" : "local";
 
-  async function saveLocation(next: string | null) {
-    if (!next) return;
+  async function persistDevelopment(
+    nextKind: "local" | "server",
+    nextPath: string,
+  ) {
     setSaving(true);
     setError(null);
     const previous = project;
     const body =
-      kind === "server"
+      nextKind === "server"
         ? {
             development: {
               kind: "server" as const,
-              path: next,
+              path: nextPath,
               host: development?.host ?? null,
             },
           }
         : {
-            development: { kind: "local" as const, path: next },
+            development: { kind: "local" as const, path: nextPath },
+            localWorkingDirectory: nextPath,
           };
     try {
       onProjectUpdated(
-        kind === "local"
-          ? withPickedWorkingDirectory(project, next)
-          : {
-              ...project,
-              development: body.development,
-              developmentLocation: next,
-              updatedAt: new Date().toISOString(),
-            },
+        nextKind === "local"
+          ? withPickedLocalDirectory(project, nextPath)
+          : withPickedServerDirectory(
+              project,
+              nextPath,
+              development?.host ?? null,
+            ),
       );
       const updated = await requestJson<ApiProject>(
         `/api/v1/projects/${encodeURIComponent(project.id)}`,
@@ -361,13 +397,13 @@ function ProjectDevelopmentField({
         },
       );
       onProjectUpdated(
-        kind === "local"
-          ? withPickedWorkingDirectory(updated, next)
-          : {
-              ...updated,
-              development: body.development,
-              developmentLocation: next,
-            },
+        nextKind === "local"
+          ? withPickedLocalDirectory(updated, nextPath)
+          : withPickedServerDirectory(
+              updated,
+              nextPath,
+              development?.host ?? null,
+            ),
       );
       setPickerOpen(false);
     } catch (err) {
@@ -378,14 +414,37 @@ function ProjectDevelopmentField({
     }
   }
 
+  async function switchKind(nextKind: "local" | "server") {
+    setKind(nextKind);
+    setError(null);
+    const nextPath = nextKind === "server" ? serverPath : localPath;
+    if (!nextPath) {
+      // Nothing stored for this side yet — open the folder browser.
+      setPickerOpen(true);
+      return;
+    }
+    if (nextKind === storedKind && development?.path === nextPath) return;
+    await persistDevelopment(nextKind, nextPath);
+  }
+
   return (
-    <>
+    <div className="project-development-field">
+      <SegmentedPillToggle
+        value={kind}
+        options={DEVELOPMENT_KIND_OPTIONS}
+        onChange={(next) => {
+          void switchKind(next);
+        }}
+        ariaLabel="Development location kind"
+        disabled={saving}
+      />
       <button
         type="button"
         {...{ [TASK_PROPERTY_DROPDOWN_ATTRIBUTE]: "workspace" }}
         className={[
           "property-dropdown-trigger",
           "property-dropdown-trigger--inline-chip",
+          "project-development-field__folder",
           hasDirectory ? null : "is-muted",
         ]
           .filter(Boolean)
@@ -393,14 +452,18 @@ function ProjectDevelopmentField({
         title={
           error ??
           directory ??
-          "Development location (required before starting an agent)"
+          (kind === "server"
+            ? "Choose a folder on the development server"
+            : "Choose a local Development folder")
         }
         aria-label={
           error
             ? error
             : hasDirectory
-              ? `Development location: ${directory}`
-              : "Choose Development location (required before starting an agent)"
+              ? `${kind === "server" ? "Server" : "Local"} Development folder: ${directory}`
+              : kind === "server"
+                ? "Choose a folder on the development server"
+                : "Choose a local Development folder"
         }
         aria-invalid={error ? true : undefined}
         disabled={saving}
@@ -411,19 +474,28 @@ function ProjectDevelopmentField({
         </span>
         <span className="property-dropdown-trigger__label">{label}</span>
       </button>
+      {error ? (
+        <span className="project-channel-field__error" role="alert">
+          {error}
+        </span>
+      ) : null}
       <LocationFolderPicker
         open={pickerOpen}
         target={target}
-        title="Development location"
+        title={
+          kind === "server"
+            ? "Development server folder"
+            : "Local Development folder"
+        }
         initialPath={directory}
         projectId={target === "local" ? project.id : null}
         requestJson={requestJson}
         onClose={() => setPickerOpen(false)}
         onSelect={(path) => {
-          void saveLocation(path.trim() || null);
+          void persistDevelopment(kind, path.trim());
         }}
       />
-    </>
+    </div>
   );
 }
 
@@ -1446,7 +1518,7 @@ export function ProjectCommitHistory({
               message="Files are unavailable until a working directory is defined for this project."
               onSelectDirectory={async (directory) => {
                 onProjectUpdated(
-                  withPickedWorkingDirectory(project, directory),
+                  withPickedLocalDirectory(project, directory),
                 );
                 try {
                   const updated = await requestJson<ApiProject>(
@@ -1460,7 +1532,7 @@ export function ProjectCommitHistory({
                     },
                   );
                   onProjectUpdated(
-                    withPickedWorkingDirectory(updated, directory),
+                    withPickedLocalDirectory(updated, directory),
                   );
                 } catch (err) {
                   onProjectUpdated(project);

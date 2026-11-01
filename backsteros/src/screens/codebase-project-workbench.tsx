@@ -67,7 +67,9 @@ export type CodebaseWorkbenchProject = {
   organizationId?: string | null;
   localWorkingDirectory?: string | null;
   developmentLocation?: string | null;
+  development?: ApiProject["development"];
   productionLocation?: string | null;
+  production?: ApiProject["production"];
   localLocation?: string | null;
   developmentSetupStatus?: "pending" | "ready" | "failed" | null;
   developmentSetupError?: string | null;
@@ -157,11 +159,8 @@ function toApiProject(project: CodebaseWorkbenchProject): ApiProject {
     localWorkingDirectory: project.localWorkingDirectory ?? null,
     developmentLocation: project.developmentLocation ?? null,
     productionLocation: project.productionLocation ?? null,
-    development:
-      (project as { development?: ApiProject["development"] }).development ??
-      null,
-    production:
-      (project as { production?: ApiProject["production"] }).production ?? null,
+    development: project.development ?? null,
+    production: project.production ?? null,
     leadAgentContactId:
       (project as { leadAgentContactId?: string | null }).leadAgentContactId ??
       null,
