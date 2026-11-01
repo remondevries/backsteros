@@ -5497,6 +5497,7 @@ export {
   type ProjectTeamFieldProject,
 } from "./components/codebase/project-team-field.js";
 export {
+  listAddableProjectTeamAgents,
   resolveProjectTeamMembers,
   type ProjectTeamAgent,
   type ProjectTeamMember,

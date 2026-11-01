@@ -53,3 +53,31 @@ export function resolveProjectTeamMembers(
   }
   return members;
 }
+
+/**
+ * Agents that could join the room: reported a Grok Bot id, not already in
+ * `memberIds`, and not the lead (Lead agent is shown above Team).
+ */
+export function listAddableProjectTeamAgents(
+  memberIds: readonly string[],
+  agents: readonly ProjectTeamAgent[],
+  options?: { excludeContactId?: string | null },
+): ProjectTeamAgent[] {
+  const inRoom = new Set(
+    memberIds.map((id) => id.trim()).filter((id) => id.length > 0),
+  );
+  const excluded = options?.excludeContactId?.trim() || "";
+  const seen = new Set<string>();
+  const addable: ProjectTeamAgent[] = [];
+  for (const agent of agents) {
+    const grokbotId = agent.grokbotAgentId?.trim() || "";
+    if (!grokbotId || inRoom.has(grokbotId)) continue;
+    const contactId = agent.contactId?.trim() || "";
+    if (excluded && contactId === excluded) continue;
+    const key = contactId || grokbotId;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    addable.push(agent);
+  }
+  return addable;
+}

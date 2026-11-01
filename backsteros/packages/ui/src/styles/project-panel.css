@@ -414,7 +414,13 @@
   color: color-mix(in srgb, var(--foreground) 55%, transparent);
 }
 
-.project-team-field__sync {
+.project-team-field__actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.project-team-field__icon-btn {
   display: inline-flex;
   width: 22px;
   height: 22px;
@@ -428,20 +434,54 @@
   cursor: pointer;
 }
 
-.project-team-field__sync:hover:not(:disabled) {
+.project-team-field__icon-btn:hover:not(:disabled) {
   background: color-mix(in srgb, var(--foreground) 8%, transparent);
 }
 
-.project-team-field__sync:disabled {
+.project-team-field__icon-btn:disabled {
   cursor: default;
 }
 
-.project-team-field__sync:disabled:not(.is-syncing) {
+.project-team-field__icon-btn:disabled:not(.is-syncing) {
   opacity: 0.6;
 }
 
-.project-team-field__sync.is-syncing svg {
+.project-team-field__icon-btn.is-syncing svg {
   animation: project-channel-icon-spin 0.9s linear infinite;
+}
+
+.project-team-field__add {
+  display: inline-flex;
+}
+
+.project-team-field__add .property-dropdown-trigger,
+.project-team-field__add .property-dropdown-fallback {
+  display: inline-flex;
+  width: 22px;
+  height: 22px;
+  box-sizing: border-box;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0.5px solid color-mix(in srgb, var(--foreground) 12%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--foreground) 4%, transparent);
+  color: color-mix(in srgb, var(--foreground) 70%, transparent);
+}
+
+.project-team-field__add .property-dropdown-trigger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--foreground) 8%, transparent);
+}
+
+.project-team-field__add .property-dropdown-trigger:disabled,
+.project-team-field__add .property-dropdown-fallback {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.project-team-field__add .property-dropdown-trigger__icon {
+  display: inline-flex;
+  margin: 0;
 }
 
 .project-channel-field__error {

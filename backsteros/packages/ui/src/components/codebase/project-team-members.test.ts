@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { resolveProjectTeamMembers } from "./project-team-members.ts";
+import {
+  listAddableProjectTeamAgents,
+  resolveProjectTeamMembers,
+} from "./project-team-members.ts";
 
 const agents = [
   {
@@ -50,6 +53,41 @@ describe("resolveProjectTeamMembers", () => {
     assert.deepEqual(
       members.map((member) => member.id),
       ["g-eva", "g-ghost"],
+    );
+  });
+});
+
+describe("listAddableProjectTeamAgents", () => {
+  it("lists agents with a Grok Bot id who are not in the room or lead", () => {
+    // Niels is lead, Eva is in the room, Never reported has no id → empty.
+    assert.deepEqual(
+      listAddableProjectTeamAgents(["g-eva"], agents, {
+        excludeContactId: "c-niels",
+      }),
+      [],
+    );
+    const withMarcus = [
+      ...agents,
+      {
+        contactId: "c-marcus",
+        name: "Marcus",
+        grokbotAgentId: "g-marcus",
+      },
+    ];
+    assert.deepEqual(
+      listAddableProjectTeamAgents(["g-eva"], withMarcus, {
+        excludeContactId: "c-niels",
+      }).map((agent) => agent.name),
+      ["Marcus"],
+    );
+  });
+
+  it("returns every reported agent when the room is empty", () => {
+    assert.deepEqual(
+      listAddableProjectTeamAgents([], agents).map(
+        (agent) => agent.grokbotAgentId,
+      ),
+      ["g-niels", "g-eva"],
     );
   });
 });
