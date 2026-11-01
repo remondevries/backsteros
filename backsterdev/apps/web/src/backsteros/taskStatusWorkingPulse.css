@@ -5,16 +5,25 @@
   display: block;
   flex-shrink: 0;
   overflow: visible;
+  transform: translateZ(0);
 }
 
 .bos-task-status-working-pulse__halo {
   transform-box: fill-box;
   transform-origin: center;
-  animation: bos-task-status-working-halo 1.85s ease-out infinite;
+  /* linear — ease-out + end hold made the ripple freeze before restarting */
+  animation: bos-task-status-working-halo 1.85s linear infinite;
 }
 
 .bos-task-status-working-pulse--compact .bos-task-status-working-pulse__halo {
   animation-name: bos-task-status-working-halo-compact;
+}
+
+.bos-task-status-working-pulse__wedge-group {
+  transform-box: view-box;
+  transform-origin: center;
+  /* 360deg / 130deg/s — matches the old JS rotation rate */
+  animation: bos-task-status-working-spin 2.769230769s linear infinite;
 }
 
 .bos-task-status-working-pulse__wedge {
@@ -25,14 +34,16 @@
   animation: bos-task-status-working-ring 1.85s ease-in-out infinite;
 }
 
+@keyframes bos-task-status-working-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 @keyframes bos-task-status-working-halo {
   0% {
     opacity: 0.5;
     transform: scale(0.92);
-  }
-  65% {
-    opacity: 0;
-    transform: scale(1.45);
   }
   100% {
     opacity: 0;
@@ -45,10 +56,6 @@
   0% {
     opacity: 0.45;
     transform: scale(0.94);
-  }
-  65% {
-    opacity: 0;
-    transform: scale(1.22);
   }
   100% {
     opacity: 0;

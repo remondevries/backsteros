@@ -14,6 +14,7 @@ import {
 import { XIcon } from "@primer/octicons-react";
 import { useEffect, useRef, useState } from "react";
 
+import { AlertCircleExclamationIcon } from "../icons/alert-circle-exclamation-icon.js";
 import { XaiMarkIcon } from "../icons/xai-mark-icon.js";
 import { ProjectOcticon } from "../projects/project-octicon.js";
 import { TaskStatusWorkingPulse } from "../tasks/task-status-working-pulse.js";
@@ -284,10 +285,13 @@ export function ProjectChannelField({
           onClick={() => openPendingLink()}
         >
           <span
-            className="project-channel-badge__icon project-channel-badge__icon--amber"
+            className="project-channel-badge__icon project-channel-badge__icon--amber project-channel-badge__icon--attention"
             aria-hidden="true"
           >
-            <XaiMarkIcon size={14} className="project-channel-badge__mark" />
+            <AlertCircleExclamationIcon
+              size={14}
+              className="project-channel-badge__mark"
+            />
           </span>
           <span className="project-channel-badge__label">Needs details</span>
         </button>

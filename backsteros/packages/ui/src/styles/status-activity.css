@@ -6,21 +6,32 @@
   color: color-mix(in oklab, CanvasText 60%, transparent);
 }
 
-/* Animated twin of the in-progress status ring (agent working affordance) */
+/* Animated twin of the in-progress status ring (agent working affordance).
+   CSS-only — no per-frame JS path writes (those stalled the UI with many pulses). */
 .task-status-working-pulse {
   display: block;
   flex-shrink: 0;
   overflow: visible;
+  /* Own layer so WKWebView keeps spinning while React is busy. */
+  transform: translateZ(0);
 }
 
 .task-status-working-pulse__halo {
   transform-box: fill-box;
   transform-origin: center;
-  animation: task-status-working-halo 1.85s ease-out infinite;
+  /* linear — ease-out + end hold made the ripple freeze before restarting */
+  animation: task-status-working-halo 1.85s linear infinite;
 }
 
 .task-status-working-pulse--compact .task-status-working-pulse__halo {
   animation-name: task-status-working-halo-compact;
+}
+
+.task-status-working-pulse__wedge-group {
+  transform-box: view-box;
+  transform-origin: center;
+  /* 360deg / 130deg/s — matches the old JS rotation rate */
+  animation: task-status-working-spin 2.769230769s linear infinite;
 }
 
 .task-status-working-pulse__wedge {
@@ -36,16 +47,23 @@
   display: block;
   flex-shrink: 0;
   overflow: visible;
+  transform: translateZ(0);
 }
 
 .project-status-working-pulse__halo {
   transform-box: fill-box;
   transform-origin: center;
-  animation: task-status-working-halo 1.85s ease-out infinite;
+  animation: task-status-working-halo 1.85s linear infinite;
 }
 
 .project-status-working-pulse--compact .project-status-working-pulse__halo {
   animation-name: task-status-working-halo-compact;
+}
+
+.project-status-working-pulse__wedge-group {
+  transform-box: view-box;
+  transform-origin: center;
+  animation: task-status-working-spin 2.769230769s linear infinite;
 }
 
 .project-status-working-pulse__wedge {
@@ -56,14 +74,16 @@
   animation: task-status-working-ring 1.85s ease-in-out infinite;
 }
 
+@keyframes task-status-working-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 @keyframes task-status-working-halo {
   0% {
     opacity: 0.5;
     transform: scale(0.92);
-  }
-  65% {
-    opacity: 0;
-    transform: scale(1.45);
   }
   100% {
     opacity: 0;
@@ -76,10 +96,6 @@
   0% {
     opacity: 0.45;
     transform: scale(0.94);
-  }
-  65% {
-    opacity: 0;
-    transform: scale(1.22);
   }
   100% {
     opacity: 0;

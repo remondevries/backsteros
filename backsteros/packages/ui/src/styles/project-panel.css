@@ -489,6 +489,11 @@
   color: #fbbf24;
 }
 
+.project-channel-badge__icon--attention {
+  /* Same fade as Active — Remon: ignore prefers-reduced-motion. */
+  animation: project-channel-icon-pulse 1.6s ease-in-out infinite;
+}
+
 .project-channel-badge__icon--spin {
   color: color-mix(in srgb, var(--foreground) 55%, transparent);
   animation: project-channel-icon-spin 0.9s linear infinite;
@@ -518,7 +523,8 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .project-channel-badge__icon--live {
+  .project-channel-badge__icon--live,
+  .project-channel-badge__icon--attention {
     animation: project-channel-icon-pulse 1.6s ease-in-out infinite !important;
   }
 }
