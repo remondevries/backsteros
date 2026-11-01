@@ -128,6 +128,8 @@ export type ProjectPanelDetailViewProps = {
    * after Financials (or after Codebase when billing is hidden).
    */
   agentsExtra?: ReactNode;
+  /** Trailing control on the Agents rule (title · line · end), e.g. Team Sync. */
+  agentsHeaderEnd?: ReactNode;
   /** Rendered inside the Activities subgroup. */
   belowDescription?: ReactNode;
   /**
@@ -177,6 +179,7 @@ export function ProjectPanelDetailView({
   renderSection,
   propertiesExtra,
   agentsExtra,
+  agentsHeaderEnd = null,
   belowDescription,
   repositoriesSection,
   copyIdShortcutEnabled = true,
@@ -695,7 +698,11 @@ export function ProjectPanelDetailView({
             ) : null}
 
             {showAgents ? (
-              <EntityOverviewSubgroup title="Agents" collapsible={false}>
+              <EntityOverviewSubgroup
+                title="Agents"
+                collapsible={false}
+                headerEnd={agentsHeaderEnd}
+              >
                 {agentsExtra}
               </EntityOverviewSubgroup>
             ) : null}

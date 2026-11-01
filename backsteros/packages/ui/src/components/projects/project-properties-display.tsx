@@ -104,6 +104,8 @@ export type ProjectPropertiesDisplayProps = {
    * inside the Properties card.
    */
   agentsExtra?: ReactNode;
+  /** Trailing control on the Agents rule (title · line · end), e.g. Team Sync. */
+  agentsHeaderEnd?: ReactNode;
   /** Recent activity / registrar extras below Progress. */
   belowProperties?: ReactNode;
   /** When false, hide the Progress card (host shows progress elsewhere). */
@@ -133,6 +135,7 @@ export function ProjectPropertiesDisplay({
   onCreateOrganizationFromQuery,
   propertiesExtra = null,
   agentsExtra = null,
+  agentsHeaderEnd = null,
   belowProperties = null,
   showProgress = true,
 }: ProjectPropertiesDisplayProps) {
@@ -531,7 +534,11 @@ export function ProjectPropertiesDisplay({
             </EntityOverviewSubgroup>
           ) : null}
           {agentsExtra ? (
-            <EntityOverviewSubgroup title="Agents" collapsible={false}>
+            <EntityOverviewSubgroup
+              title="Agents"
+              collapsible={false}
+              headerEnd={agentsHeaderEnd}
+            >
               {agentsExtra}
             </EntityOverviewSubgroup>
           ) : null}

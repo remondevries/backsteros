@@ -38,6 +38,8 @@ import {
   ProjectLeadAgentField,
   ProjectOcticon,
   ProjectTeamField,
+  ProjectTeamSyncButton,
+  projectTeamMemberIdsForField,
   PillNav,
   RegisterEntityDeleteAction,
   RegisterEntityDuplicateAction,
@@ -1387,6 +1389,21 @@ function ProjectDetailScreen({
     workingDirectory: selected?.localWorkingDirectory ?? null,
     fs: projectFs,
   });
+  const [teamMemberIdsOverride, setTeamMemberIdsOverride] = useState<
+    string[] | null
+  >(null);
+  const [teamSyncError, setTeamSyncError] = useState<string | null>(null);
+  const selectedTeamMemberKey = selected
+    ? projectTeamMemberIdsForField({
+        id: selected.id,
+        channel:
+          (selected as { channel?: { uri: string } | null }).channel ?? null,
+      }).join(",")
+    : "";
+  useEffect(() => {
+    setTeamMemberIdsOverride(null);
+    setTeamSyncError(null);
+  }, [selectedId, selectedTeamMemberKey]);
 
   if (!selected) {
     return (
@@ -2831,26 +2848,44 @@ function ProjectDetailScreen({
     </EntityPropertiesSection>
   ) : null;
 
+  const teamProject = {
+    id: project.id,
+    channel:
+      (
+        project as {
+          channel?: { uri: string; name?: string | null } | null;
+        }
+      ).channel ?? null,
+    leadAgentContactId:
+      (project as { leadAgentContactId?: string | null })
+        .leadAgentContactId ?? null,
+  };
+  const teamMemberIds = projectTeamMemberIdsForField(
+    teamProject,
+    teamMemberIdsOverride,
+  );
+
   const teamField = (
     <PropertyFieldGroup label="Team">
       <ProjectTeamField
-        project={{
-          id: project.id,
-          channel:
-            (
-              project as {
-                channel?: { uri: string; name?: string | null } | null;
-              }
-            ).channel ?? null,
-          leadAgentContactId:
-            (project as { leadAgentContactId?: string | null })
-              .leadAgentContactId ?? null,
-        }}
+        project={teamProject}
         agents={teamAgents}
         avatarSrcById={contactAvatarSrc}
         requestJson={(path, init) => desktopApiClient.requestJson(path, init)}
+        memberIdsOverride={teamMemberIdsOverride}
+        syncError={teamSyncError}
       />
     </PropertyFieldGroup>
+  );
+
+  const agentsHeaderEnd = (
+    <ProjectTeamSyncButton
+      project={teamProject}
+      requestJson={(path, init) => desktopApiClient.requestJson(path, init)}
+      memberIds={teamMemberIds}
+      onMembersChange={setTeamMemberIdsOverride}
+      onError={setTeamSyncError}
+    />
   );
 
   const agentsExtra = (
@@ -2979,6 +3014,7 @@ function ProjectDetailScreen({
         onOpenUpdates={() => handleSectionChange("updates")}
         propertiesExtra={locationsExtra}
         agentsExtra={agentsExtra}
+        agentsHeaderEnd={agentsHeaderEnd}
         belowProperties={domainBelowProperties}
         descriptionEmptyHint={
           isCodebaseProject

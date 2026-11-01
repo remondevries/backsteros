@@ -146,6 +146,8 @@ export type ProjectDetailViewProps = {
   propertiesExtra?: ReactNode;
   /** Lead agent + Channel — Agents subgroup under Financials. */
   agentsExtra?: ReactNode;
+  /** Trailing control on the Agents rule (title · line · end), e.g. Team Sync. */
+  agentsHeaderEnd?: ReactNode;
   /** Sections below Progress (Activity, domain registrar, …). */
   belowProperties?: ReactNode;
   /** Empty-state copy for the default description editor. */
@@ -190,6 +192,7 @@ export function ProjectDetailView({
   overviewDescription,
   propertiesExtra = null,
   agentsExtra = null,
+  agentsHeaderEnd = null,
   belowProperties = null,
   descriptionEmptyHint = "Add a project description…",
 }: ProjectDetailViewProps) {
@@ -506,6 +509,7 @@ export function ProjectDetailView({
                 onCreateOrganizationFromQuery={onCreateOrganizationFromQuery}
                 propertiesExtra={propertiesExtra}
                 agentsExtra={agentsExtra}
+                agentsHeaderEnd={agentsHeaderEnd}
                 belowProperties={belowProperties}
               />
             }

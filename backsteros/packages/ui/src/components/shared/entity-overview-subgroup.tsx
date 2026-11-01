@@ -12,6 +12,11 @@ export type EntityOverviewSubgroupProps = {
   defaultCollapsed?: boolean;
   /** Persist open/closed in localStorage (defaults to the title). */
   storageKey?: string;
+  /**
+   * Trailing control after the rule (title · line · end).
+   * e.g. Team Sync on the Agents subgroup.
+   */
+  headerEnd?: ReactNode;
 };
 
 function storageKeyFor(key: string): string {
@@ -49,6 +54,7 @@ export function EntityOverviewSubgroup({
   collapsible = true,
   defaultCollapsed = false,
   storageKey,
+  headerEnd = null,
 }: EntityOverviewSubgroupProps) {
   const panelId = useId();
   const persistKey = storageKey ?? title;
@@ -74,6 +80,9 @@ export function EntityOverviewSubgroup({
     <>
       <span className="entity-overview-subgroup__label">{title}</span>
       <span className="entity-overview-subgroup__rule" aria-hidden="true" />
+      {headerEnd ? (
+        <span className="entity-overview-subgroup__header-end">{headerEnd}</span>
+      ) : null}
       {collapsible ? (
         <span className="entity-overview-subgroup__chevron" aria-hidden="true">
           <ChevronDownIcon size={12} />

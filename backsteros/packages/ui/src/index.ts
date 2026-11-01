@@ -5493,9 +5493,15 @@ export {
 
 export {
   ProjectTeamField,
+  projectTeamMemberIdsForField,
   type ProjectTeamFieldProps,
   type ProjectTeamFieldProject,
 } from "./components/codebase/project-team-field.js";
+export {
+  ProjectTeamSyncButton,
+  type ProjectTeamSyncButtonProps,
+  type ProjectTeamSyncButtonProject,
+} from "./components/codebase/project-team-sync-button.js";
 export {
   listAddableProjectTeamAgents,
   resolveProjectTeamMembers,

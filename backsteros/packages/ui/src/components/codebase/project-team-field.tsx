@@ -2,23 +2,18 @@
 
 import type { ProjectChannel } from "@backsteros/contracts";
 import { normalizeProjectChannel, projectChannelMemberIds } from "@backsteros/contracts";
-import { PlusIcon, SyncIcon } from "@primer/octicons-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { PlusIcon } from "@primer/octicons-react";
+import { useEffect, useMemo, useState } from "react";
 
 import { PropertyDropdown } from "../dropdowns/property-dropdown.js";
 import type { SearchableDropdownOption } from "../dropdowns/searchable-dropdown.js";
 import { AssigneeListMark } from "../tasks/assignee-list-mark.js";
-import { apiErrorMessage } from "./api-error-message.js";
 import type { CodebaseRequestJson } from "./codebase-request-json.js";
 import {
   listAddableProjectTeamAgents,
   resolveProjectTeamMembers,
   type ProjectTeamAgent,
 } from "./project-team-members.js";
-
-/** The agent answers out of band — watch the project until the room lands. */
-const MEMBERS_POLL_INTERVAL_MS = 2_000;
-const MEMBERS_POLL_TIMEOUT_MS = 90_000;
 
 export type ProjectTeamFieldProject = {
   id: string;
@@ -33,6 +28,13 @@ export type ProjectTeamFieldProps = {
   agents: readonly ProjectTeamAgent[];
   avatarSrcById?: Readonly<Record<string, string | null | undefined>>;
   requestJson: CodebaseRequestJson;
+  /**
+   * Member ids from a header Sync that landed before workspace refresh.
+   * `null` / omit → use `project.channel.members`.
+   */
+  memberIdsOverride?: readonly string[] | null;
+  /** Sync failures from {@link ProjectTeamSyncButton} in the Agents header. */
+  syncError?: string | null;
 };
 
 function parseChannel(
@@ -76,34 +78,36 @@ function buildAddMemberOptions(
 }
 
 /**
- * Locations → Team. The agents in the project's chat room, plus Sync and Add.
- * Sync asks the lead to re-report members. Add is UI-only for now (invite
- * wiring comes next) — it lists agents who are not already on the team.
+ * Locations → Team. Room members plus Add. Sync lives on the Agents subgroup
+ * header (title · line · sync) via {@link ProjectTeamSyncButton}.
  */
 export function ProjectTeamField({
   project,
   agents,
   avatarSrcById,
-  requestJson,
+  requestJson: _requestJson,
+  memberIdsOverride = null,
+  syncError = null,
 }: ProjectTeamFieldProps) {
-  const [waiting, setWaiting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  /** Members read straight from the project while waiting for an answer. */
-  const [polledMemberIds, setPolledMemberIds] = useState<string[] | null>(null);
-
+  void _requestJson;
   const channel = parseChannel(project.channel);
   const channelMemberIds = projectChannelMemberIds(channel);
   const channelMemberKey = channelMemberIds.join(",");
   const projectId = project.id;
   const leadContactId = project.leadAgentContactId ?? null;
 
-  // Once the workspace row catches up, drop the poll result and follow it.
+  const [polledMemberIds, setPolledMemberIds] = useState<string[] | null>(null);
+
+  // Workspace catch-up clears a sync override; parent override wins while set.
   useEffect(() => {
     setPolledMemberIds(null);
   }, [channelMemberKey, projectId]);
 
-  const cancelPollRef = useRef<(() => void) | null>(null);
-  useEffect(() => () => cancelPollRef.current?.(), []);
+  useEffect(() => {
+    if (memberIdsOverride) {
+      setPolledMemberIds([...memberIdsOverride]);
+    }
+  }, [memberIdsOverride]);
 
   const memberIds = polledMemberIds ?? channelMemberIds;
   const members = resolveProjectTeamMembers(memberIds, agents, avatarSrcById, {
@@ -122,58 +126,6 @@ export function ProjectTeamField({
     () => buildAddMemberOptions(addableAgents, avatarSrcById),
     [addableAgents, avatarSrcById],
   );
-
-  async function syncTeam() {
-    cancelPollRef.current?.();
-    setWaiting(true);
-    setError(null);
-    try {
-      const result = await requestJson<{ ok?: boolean; error?: string | null }>(
-        `/api/v1/projects/${encodeURIComponent(projectId)}/channel/members/sync`,
-        { method: "POST" },
-      );
-      if (result?.ok === false) {
-        setWaiting(false);
-        setError(result.error?.trim() || "Could not reach the lead agent.");
-        return;
-      }
-    } catch (err) {
-      setWaiting(false);
-      setError(apiErrorMessage(err) || "Could not request a Team sync.");
-      return;
-    }
-    void pollForMembers(memberIds.join(","));
-  }
-
-  async function pollForMembers(before: string) {
-    let cancelled = false;
-    cancelPollRef.current = () => {
-      cancelled = true;
-    };
-    const deadline = Date.now() + MEMBERS_POLL_TIMEOUT_MS;
-    while (!cancelled && Date.now() < deadline) {
-      await new Promise((resolve) =>
-        setTimeout(resolve, MEMBERS_POLL_INTERVAL_MS),
-      );
-      if (cancelled) return;
-      try {
-        const row = await requestJson<{ channel?: ProjectChannel | null }>(
-          `/api/v1/projects/${encodeURIComponent(projectId)}`,
-          { cache: "no-store" },
-        );
-        if (cancelled) return;
-        const next = projectChannelMemberIds(parseChannel(row?.channel));
-        if (next.join(",") !== before) {
-          setPolledMemberIds(next);
-          setWaiting(false);
-          return;
-        }
-      } catch {
-        // Keep waiting — a dropped poll should not end the sync.
-      }
-    }
-    if (!cancelled) setWaiting(false);
-  }
 
   return (
     <div className="project-team-field">
@@ -210,28 +162,6 @@ export function ProjectTeamField({
       )}
 
       <div className="project-team-field__actions">
-        <button
-          type="button"
-          className={[
-            "project-team-field__icon-btn",
-            waiting ? "is-syncing" : "",
-          ]
-            .filter(Boolean)
-            .join(" ")}
-          disabled={waiting || !connected}
-          title={
-            connected
-              ? "Ask the lead agent who is in the room"
-              : "Connect a Channel first"
-          }
-          aria-label="Sync Team from the chat room"
-          onClick={() => {
-            void syncTeam();
-          }}
-        >
-          <SyncIcon size={12} />
-        </button>
-
         <div className="project-team-field__add">
           <PropertyDropdown
             value={null}
@@ -244,7 +174,7 @@ export function ProjectTeamField({
             fallbackLabel="Add"
             fallbackIcon={<PlusIcon size={12} />}
             hideTriggerLabel
-            disabled={!connected || waiting || addOptions.length === 0}
+            disabled={!connected || addOptions.length === 0}
             panelWidth={280}
             panelAlign="end"
             mutedFallback
@@ -252,11 +182,20 @@ export function ProjectTeamField({
         </div>
       </div>
 
-      {error ? (
+      {syncError ? (
         <span className="project-channel-field__error" role="alert">
-          {error}
+          {syncError}
         </span>
       ) : null}
     </div>
   );
+}
+
+/** Member ids currently shown for this project (channel or sync override). */
+export function projectTeamMemberIdsForField(
+  project: ProjectTeamFieldProject,
+  memberIdsOverride?: readonly string[] | null,
+): string[] {
+  if (memberIdsOverride != null) return [...memberIdsOverride];
+  return projectChannelMemberIds(parseChannel(project.channel));
 }

@@ -2304,6 +2304,16 @@ button.entity-overview-subgroup__header:focus-visible {
   border-top: 0.5px solid color-mix(in srgb, var(--foreground) 10%, transparent);
 }
 
+.entity-overview-subgroup__header-end {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+}
+
+.entity-overview-subgroup__header-action {
+  flex-shrink: 0;
+}
+
 .entity-overview-subgroup__fields {
   display: flex;
   flex-direction: column;

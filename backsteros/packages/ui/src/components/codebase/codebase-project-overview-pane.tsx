@@ -71,8 +71,12 @@ import { GithubPullRequestIcon } from "./github-pull-request-icon.js";
 import { LocationFolderPicker } from "./location-folder-picker.js";
 import { ProjectChannelField } from "./project-channel-field.js";
 import { ProjectLeadAgentField } from "./project-lead-agent-field.js";
-import { ProjectTeamField } from "./project-team-field.js";
+import {
+  ProjectTeamField,
+  projectTeamMemberIdsForField,
+} from "./project-team-field.js";
 import type { ProjectTeamAgent } from "./project-team-members.js";
+import { ProjectTeamSyncButton } from "./project-team-sync-button.js";
 import type { AssigneeDropdownContact } from "../dropdowns/dropdown-options.js";
 import { normalizeWorkingDirectory } from "./normalize-working-directory.js";
 import type { ProjectFsClient } from "./project-fs-types.js";
@@ -1819,6 +1823,20 @@ export function CodebaseProjectOverviewPane({
   teamAgents = null,
   avatarSrcById,
 }: CodebaseProjectOverviewPaneProps) {
+  const [teamMemberIdsOverride, setTeamMemberIdsOverride] = useState<
+    string[] | null
+  >(null);
+  const [teamSyncError, setTeamSyncError] = useState<string | null>(null);
+  const projectTeamMemberKey = projectTeamMemberIdsForField(project).join(",");
+  useEffect(() => {
+    setTeamMemberIdsOverride(null);
+    setTeamSyncError(null);
+  }, [project.id, projectTeamMemberKey]);
+  const teamMemberIds = projectTeamMemberIdsForField(
+    project,
+    teamMemberIdsOverride,
+  );
+
   const tasksPanelToggle =
     showHeader !== false && onToggleTasksPanel != null ? (
       <button
@@ -2139,6 +2157,15 @@ export function CodebaseProjectOverviewPane({
                     </div>
                   </>
                 }
+                agentsHeaderEnd={
+                  <ProjectTeamSyncButton
+                    project={project}
+                    requestJson={requestJson}
+                    memberIds={teamMemberIds}
+                    onMembersChange={setTeamMemberIdsOverride}
+                    onError={setTeamSyncError}
+                  />
+                }
                 agentsExtra={
                   <div className="entity-overview-field-pair">
                     <EntityOverviewField label="Lead agent" layout="stacked">
@@ -2193,6 +2220,8 @@ export function CodebaseProjectOverviewPane({
                         agents={teamAgents ?? []}
                         avatarSrcById={avatarSrcById}
                         requestJson={requestJson}
+                        memberIdsOverride={teamMemberIdsOverride}
+                        syncError={teamSyncError}
                       />
                     </EntityOverviewField>
                   </div>
