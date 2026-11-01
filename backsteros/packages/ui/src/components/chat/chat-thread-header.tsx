@@ -135,8 +135,8 @@ export type ChatThreadHeaderProps = {
   activePeerId: string | null;
   onSelectPeer?: (peerId: string) => void;
   /**
-   * When set, hovering the active peer avatar reveals a gear that opens
-   * “Delete messages” (multi-select mode).
+   * When set, the active peer avatar gets a top-right gear dot (visible on
+   * hover of the dot) that opens “Delete messages” (multi-select mode).
    */
   onEnterSelectMode?: (() => void) | null;
 };
@@ -218,7 +218,7 @@ function ActivePeerGear({
           setOpen((value) => !value);
         }}
       >
-        <SidebarSettingsIcon size={14} />
+        <SidebarSettingsIcon size={12} />
       </button>
       {mounted && open
         ? createPortal(

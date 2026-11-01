@@ -538,30 +538,31 @@
   justify-content: center;
 }
 
+/* Top-right corner dot — invisible until the pointer is on the dot itself
+   (not the whole avatar), keyboard focus lands on it, or its menu is open. */
 .chat-ui-thread__peer-gear-wrap {
   position: absolute;
-  inset: 0;
+  top: -4px;
+  right: -4px;
   z-index: 2;
   display: flex;
-  align-items: center;
-  justify-content: center;
   opacity: 0;
-  pointer-events: none;
   transition: opacity 140ms ease;
 }
 
-.chat-ui-thread__peer.has-gear:hover .chat-ui-thread__peer-gear-wrap,
-.chat-ui-thread__peer.has-gear:focus-within .chat-ui-thread__peer-gear-wrap {
+.chat-ui-thread__peer-gear-wrap:hover,
+.chat-ui-thread__peer-gear-wrap:focus-within,
+.chat-ui-thread__peer-gear-wrap:has(.chat-ui-thread__peer-gear[aria-expanded="true"]) {
   opacity: 1;
-  pointer-events: auto;
 }
 
 .chat-ui-thread__peer-gear {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
+  width: 20px;
+  height: 20px;
+  padding: 0;
   border: 0;
   border-radius: 999px;
   background: color-mix(in oklab, var(--background, #0a0a0a) 72%, transparent);
