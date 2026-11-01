@@ -53,6 +53,7 @@ export function writeAgentApiKeySortOrderIds(apiKeyIds: readonly string[]): void
 
 type OrderableAgent = {
   id: string;
+  apiKeyId?: string | null;
   sortOrder?: number | null;
   name?: string | null;
 };
@@ -65,14 +66,42 @@ function compareBySortOrderThenName(a: OrderableAgent, b: OrderableAgent): numbe
 
 /**
  * Sort agents for the Settings table and chat strip.
- * Prefer localStorage order whenever it mentions any of these agents so a
- * webhook/API-key edit cannot bump a row to the top via sortOrder 0.
+ *
+ * The Settings → API → Agent table order (API key ids) wins, so the chat strip
+ * matches it even when an agent row was recreated for the same key. Agents
+ * without a ranked key follow the agent-id order, then server `sortOrder`.
  */
 export function sortAgentsForDisplay<T extends OrderableAgent>(
   agents: readonly T[],
   preferredIds: readonly string[] | null = null,
+  apiKeyOrderIds: readonly string[] | null = null,
 ): T[] {
   if (agents.length <= 1) return [...agents];
+  const byAgentIds = sortByAgentIds(agents, preferredIds);
+  const keyOrder = apiKeyOrderIds ?? readAgentApiKeySortOrderIds();
+  if (keyOrder.length === 0) return byAgentIds;
+  const keyIndex = new Map(keyOrder.map((id, i) => [id, i]));
+  const keyRank = (agent: T): number => {
+    const apiKeyId = agent.apiKeyId?.trim();
+    return apiKeyId && keyIndex.has(apiKeyId)
+      ? keyIndex.get(apiKeyId)!
+      : Number.MAX_SAFE_INTEGER;
+  };
+  if (!agents.some((agent) => keyRank(agent) !== Number.MAX_SAFE_INTEGER)) {
+    return byAgentIds;
+  }
+  const fallbackIndex = new Map(byAgentIds.map((agent, i) => [agent.id, i]));
+  return [...agents].sort(
+    (a, b) =>
+      keyRank(a) - keyRank(b) ||
+      fallbackIndex.get(a.id)! - fallbackIndex.get(b.id)!,
+  );
+}
+
+function sortByAgentIds<T extends OrderableAgent>(
+  agents: readonly T[],
+  preferredIds: readonly string[] | null,
+): T[] {
   const local = preferredIds ?? readAgentSortOrderIds();
   if (local.length > 0) {
     const index = new Map(local.map((id, i) => [id, i]));

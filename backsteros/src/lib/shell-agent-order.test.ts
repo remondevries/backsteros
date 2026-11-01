@@ -64,6 +64,39 @@ describe("shell agent order", () => {
     );
   });
 
+  it("follows the Settings API key order over stale agent ids (recreated Judith)", () => {
+    // Agent-id order still lists an old Judith row; the live one is unranked.
+    const sorted = sortAgentsForDisplay(
+      [
+        { id: "jaap", apiKeyId: "k-jaap", name: "Jaap", sortOrder: 1 },
+        { id: "judith-new", apiKeyId: "k-judith", name: "Judith", sortOrder: 9 },
+        { id: "niels", apiKeyId: "k-niels", name: "Niels", sortOrder: 2 },
+      ],
+      ["judith-old", "jaap", "niels"],
+      ["k-judith", "k-jaap", "k-niels"],
+    );
+    assert.deepEqual(
+      sorted.map((agent) => agent.id),
+      ["judith-new", "jaap", "niels"],
+    );
+  });
+
+  it("puts agents without a ranked API key after ranked ones, in agent-id order", () => {
+    const sorted = sortAgentsForDisplay(
+      [
+        { id: "x", apiKeyId: null, name: "X", sortOrder: 0 },
+        { id: "y", apiKeyId: "k-y", name: "Y", sortOrder: 5 },
+        { id: "z", apiKeyId: "k-unranked", name: "Z", sortOrder: 1 },
+      ],
+      ["z", "x"],
+      ["k-y"],
+    );
+    assert.deepEqual(
+      sorted.map((agent) => agent.id),
+      ["y", "z", "x"],
+    );
+  });
+
   it("moveIdInOrder swaps neighbors", () => {
     assert.deepEqual(moveIdInOrder(["a", "b", "c"], "b", -1), ["b", "a", "c"]);
     assert.deepEqual(moveIdInOrder(["a", "b", "c"], "b", 1), ["a", "c", "b"]);
