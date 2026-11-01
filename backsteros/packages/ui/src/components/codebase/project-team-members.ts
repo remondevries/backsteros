@@ -7,6 +7,8 @@ export type ProjectTeamAgent = {
   contactId: string | null;
   name: string;
   role?: string | null;
+  /** Contact job title — shown on Team chip hover. */
+  jobTitle?: string | null;
   /** Reported by the agent via `PATCH /api/v1/agents/me`. */
   grokbotAgentId?: string | null;
 };
@@ -16,6 +18,8 @@ export type ProjectTeamMember = {
   id: string;
   name: string;
   role: string | null;
+  /** Contact job title for the hover tooltip. */
+  jobTitle: string | null;
   avatarSrc: string | null;
   /** False when no registered agent reported this Grok Bot id. */
   known: boolean;
@@ -47,6 +51,7 @@ export function resolveProjectTeamMembers(
       id: memberId,
       name: agent?.name?.trim() || "Unknown agent",
       role: agent?.role?.trim() || null,
+      jobTitle: agent?.jobTitle?.trim() || null,
       avatarSrc: (contactId ? avatarSrcById?.[contactId] : null) ?? null,
       known: Boolean(agent),
     });

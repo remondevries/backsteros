@@ -142,7 +142,9 @@ export function ProjectTeamField({
                 .join(" ")}
               title={
                 member.known
-                  ? [member.name, member.role].filter(Boolean).join(" · ")
+                  ? [member.name, member.jobTitle || member.role]
+                      .filter(Boolean)
+                      .join(" · ")
                   : `No BacksterOS agent reported ${member.id}`
               }
             >

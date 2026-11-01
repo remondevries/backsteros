@@ -372,10 +372,12 @@ function ProjectDetailScreen({
     const byId = new Map(contacts.map((contact) => [contact.id, contact]));
     return shellAgents.map((agent) => {
       const contactId = agent.contactId?.trim() || null;
+      const contact = contactId ? byId.get(contactId) : null;
       return {
         contactId,
-        name: (contactId ? byId.get(contactId)?.name : null) || agent.name,
+        name: contact?.name || agent.name,
         role: agent.role ?? null,
+        jobTitle: contact?.title?.trim() || null,
         grokbotAgentId: agent.grokbotAgentId ?? null,
       };
     });
