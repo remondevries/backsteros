@@ -298,6 +298,30 @@ test("getInboxHrefAfterRemovingItem returns previous href or undefined when empt
   assert.equal(getInboxHrefAfterRemovingItem([items[0]!], "t1"), undefined);
 });
 
+test("getInboxHrefAfterRemovingItem resolves email messageId to the list row", () => {
+  const emailA = buildInboxEmailListItem({
+    inboxId: "box",
+    messageId: "msg-a",
+    title: "A",
+  });
+  const emailB = buildInboxEmailListItem({
+    inboxId: "box",
+    messageId: "msg-b",
+    title: "B",
+  });
+  const items = [emailA, emailB];
+  const remaining = [emailA];
+  assert.equal(
+    getInboxHrefAfterRemovingItem(items, "msg-b"),
+    getInboxItemHref(emailA, remaining),
+  );
+  assert.equal(
+    getInboxHrefAfterRemovingItem(items, emailB.id),
+    getInboxItemHref(emailA, remaining),
+  );
+  assert.equal(getInboxHrefAfterRemovingItem([emailA], "msg-a"), undefined);
+});
+
 test("getInboxAttentionGroupKey puts pending agent tasks in agents before overdue", () => {
   const past = new Date(2026, 6, 10).getTime();
   assert.equal(

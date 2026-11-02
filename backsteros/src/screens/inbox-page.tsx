@@ -432,8 +432,14 @@ function InboxPageBody() {
       return { ok: false as const, error: "Task is required." };
     }
     try {
+      const nextHref = getInboxHrefAfterRemovingItem(
+        modeInboxItems,
+        selectedTask.id,
+      );
+      unpinInboxListItem(selectedTask.id);
+      rememberSectionEntryHrefs({ inbox: nextHref ?? null });
       await workspace.softDeleteTask(selectedTask.id);
-      navigateToHref(navigate, "/inbox", { replace: true });
+      navigateToHref(navigate, nextHref ?? "/inbox", { replace: true });
       return { ok: true as const };
     } catch (error) {
       return {
@@ -441,7 +447,13 @@ function InboxPageBody() {
         error: error instanceof Error ? error.message : "Failed to delete task.",
       };
     }
-  }, [navigate, selectedTask, workspace]);
+  }, [
+    modeInboxItems,
+    navigate,
+    selectedTask,
+    unpinInboxListItem,
+    workspace,
+  ]);
 
   const handleDuplicateTask = useCallback(async () => {
     if (!selectedTask) {

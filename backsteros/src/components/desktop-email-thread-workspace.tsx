@@ -14,6 +14,7 @@ import {
   buildProjectDropdownOptions,
   emailListItemPartyEmail,
   emailListItemPartyName,
+  getInboxHrefAfterRemovingItem,
   resolveCommunicationEmailParty,
   type CommunicationEmailActiveParty,
   type EmailMessagePartyLink,
@@ -30,6 +31,9 @@ import { useAgentMail } from "../lib/agentmail-context";
 import { useDesktopApi } from "../lib/api-context";
 import { useDesktopAvatarSrcMap, withOrganizationAvatarSrc } from "../lib/avatar-src";
 import { normalizeContactEmails } from "../lib/contact-row-normalizers";
+import { useInboxListSessionPin } from "../lib/inbox/inbox-list-session-context";
+import { useInboxModeModel } from "../lib/inbox/inbox-mode-model";
+import { rememberSectionEntryHrefs } from "../lib/section-entry-store";
 import { useDesktopWorkspaceData } from "../lib/workspace-data";
 import {
   EMPTY_COMPOSE_EMAIL_META,
@@ -56,6 +60,10 @@ export function DesktopEmailThreadWorkspace({
   const { client } = useDesktopApi();
   const agentMail = useAgentMail();
   const workspace = useDesktopWorkspaceData();
+  const { modeItems } = useInboxModeModel();
+  const { unpinInboxListItem } = useInboxListSessionPin();
+  const modeItemsRef = useRef(modeItems);
+  modeItemsRef.current = modeItems;
   const contactAvatarSrc = useDesktopAvatarSrcMap(
     "contact",
     workspace.contacts,
@@ -158,6 +166,11 @@ export function DesktopEmailThreadWorkspace({
         unread: listEntry.unread === true,
       });
     }
+    // After optimistic delete the row is gone — do not fabricate a placeholder
+    // that keeps the deleted thread on screen while navigation catches up.
+    if (!agentMail.loading) {
+      return null;
+    }
     return buildInboxEmailListItem({
       inboxId,
       messageId,
@@ -165,6 +178,7 @@ export function DesktopEmailThreadWorkspace({
       status: "triage",
     });
   }, [
+    agentMail.loading,
     agentMail.messages,
     contactAvatarSrc,
     inboxId,
@@ -360,8 +374,30 @@ export function DesktopEmailThreadWorkspace({
   ]);
 
   const resolveRemovalHref = useCallback(
-    (_removedId: string) => listReturnHref,
-    [listReturnHref],
+    (removedId: string) => {
+      // Communication owns its own neighbor resolver; Tasks has no inbox list.
+      if (listReturnHref !== "/inbox") {
+        return listReturnHref;
+      }
+      const items = modeItemsRef.current;
+      const nextHref = getInboxHrefAfterRemovingItem(items, removedId);
+      const removedRow =
+        items.find((item) => item.id === removedId) ??
+        items.find(
+          (item) =>
+            item.kind === "email" &&
+            (item.messageId === removedId ||
+              item.draftId?.trim() === removedId),
+        );
+      if (removedRow) {
+        unpinInboxListItem(removedRow.id);
+      }
+      // Seed must move with the selection — bare `/inbox` otherwise expands
+      // back onto the deleted (or previous) email via resolveAppHref.
+      rememberSectionEntryHrefs({ inbox: nextHref ?? null });
+      return nextHref ?? "/inbox";
+    },
+    [listReturnHref, unpinInboxListItem],
   );
 
   const hideContactPanel = useCallback(() => setContactCollapsed(true), []);

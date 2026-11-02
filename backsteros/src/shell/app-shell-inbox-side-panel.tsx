@@ -15,6 +15,7 @@ import {
   InboxSidePanelView,
   RegisterEntityDeleteAction,
   getInboxAttentionKeyboardItemIds,
+  getInboxHrefAfterRemovingItem,
   getInboxItemHref,
   inboxListModeLabel,
   isInboxEmailShellPath,
@@ -40,7 +41,9 @@ import {
   prefetchEmailDraftDetail,
   prefetchEmailMessageDetail,
 } from "../lib/email-message-detail-cache";
+import { useInboxListSessionPin } from "../lib/inbox/inbox-list-session-context";
 import { useInboxModeModel } from "../lib/inbox/inbox-mode-model";
+import { rememberSectionEntryHrefs } from "../lib/section-entry-store";
 import {
   useKeepAliveActive,
   useShellLocation,
@@ -255,6 +258,9 @@ export function DesktopInboxSidePanel({
   ]);
 
   const { client } = useDesktopApi();
+  const { unpinInboxListItem } = useInboxListSessionPin();
+  const itemsRef = useRef(items);
+  itemsRef.current = items;
   useEffect(() => {
     const item = highlightedId ? itemById.get(highlightedId) : undefined;
     if (item?.kind !== "email") return;
@@ -278,6 +284,26 @@ export function DesktopInboxSidePanel({
     if (!item || item.kind !== "email" || item.draftId?.trim()) return null;
     return item;
   })();
+
+  const handleHighlightedEmailDelete = useCallback(async () => {
+    if (!highlightedEmailItem) {
+      return { ok: false as const, error: "Email is required." };
+    }
+    const nextHref = getInboxHrefAfterRemovingItem(
+      itemsRef.current,
+      highlightedEmailItem.id,
+    );
+    unpinInboxListItem(highlightedEmailItem.id);
+    rememberSectionEntryHrefs({ inbox: nextHref ?? null });
+    const result = await deleteEmailMessage(client, {
+      inboxId: highlightedEmailItem.inboxId,
+      messageId: highlightedEmailItem.messageId,
+      threadId: highlightedEmailItem.threadId,
+    });
+    if (!result.ok) return result;
+    onNavigate(nextHref ?? "/inbox");
+    return { ok: true as const };
+  }, [client, highlightedEmailItem, onNavigate, unpinInboxListItem]);
 
   const resolveEmailAvatarSrc = useCallback(
     (item: InboxEmailListItem) => {
@@ -346,13 +372,7 @@ export function DesktopInboxSidePanel({
           entityLabel={emailDeleteEntityLabel(highlightedEmailItem.title)}
           confirmLabel="Delete email"
           actionVerb="Delete"
-          onDelete={() =>
-            deleteEmailMessage(client, {
-              inboxId: highlightedEmailItem.inboxId,
-              messageId: highlightedEmailItem.messageId,
-              threadId: highlightedEmailItem.threadId,
-            })
-          }
+          onDelete={handleHighlightedEmailDelete}
         />
       ) : null}
       <InboxSidePanelView

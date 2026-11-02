@@ -266,7 +266,8 @@ function DesktopCommunicationEmailThreadView({
   const messageId = draftId ? undefined : item.messageId;
 
   const resolveListReturnHref = useCallback(
-    () => resolveRemovalHref?.(item.id) ?? "/communication",
+    (removedId: string) =>
+      resolveRemovalHref?.(removedId.trim() || item.id) ?? "/communication",
     [item.id, resolveRemovalHref],
   );
 

@@ -814,18 +814,27 @@ export function pickIdAfterRemoving(
 
 /**
  * Href for the inbox selection after removing `removedId` from the current list.
+ * `removedId` may be the list row id, or an email `messageId` / `draftId`
+ * (same flexibility as Communication delete/spam).
  * `undefined` means the inbox is empty — navigate to the inbox root.
  */
 export function getInboxHrefAfterRemovingItem(
   items: readonly InboxListItem[],
   removedId: string,
 ): string | undefined {
-  const nextId = pickIdAfterRemoving(
-    items.map((item) => item.id),
-    removedId,
-  );
+  const needle = removedId.trim();
+  if (!needle) return undefined;
+  const orderedIds = items.map((item) => item.id);
+  const removedRowId = orderedIds.includes(needle)
+    ? needle
+    : (items.find(
+        (item) =>
+          item.kind === "email" &&
+          (item.messageId === needle || item.draftId?.trim() === needle),
+      )?.id ?? needle);
+  const nextId = pickIdAfterRemoving(orderedIds, removedRowId);
   if (!nextId) return undefined;
-  const remaining = items.filter((item) => item.id !== removedId);
+  const remaining = items.filter((item) => item.id !== removedRowId);
   const nextItem = remaining.find((item) => item.id === nextId);
   return nextItem ? getInboxItemHref(nextItem, remaining) : undefined;
 }
