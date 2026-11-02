@@ -622,6 +622,81 @@
   overflow: auto;
 }
 
+.task-agent-run-accordion__record-choice {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 28rem;
+}
+
+.task-agent-run-accordion__record-choice-prompt {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.4;
+  color: color-mix(in srgb, #e8e8e8 78%, transparent);
+}
+
+.task-agent-run-accordion__record-choice-options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.task-agent-run-accordion__record-choice-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, #e8e8e8 14%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, #e8e8e8 4%, transparent);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.task-agent-run-accordion__record-choice-option:hover:not(:disabled) {
+  border-color: color-mix(in srgb, #e8e8e8 28%, transparent);
+  background: color-mix(in srgb, #e8e8e8 7%, transparent);
+}
+
+.task-agent-run-accordion__record-choice-option.is-primary {
+  border-color: color-mix(in srgb, #93c5fd 35%, transparent);
+}
+
+.task-agent-run-accordion__record-choice-option:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.task-agent-run-accordion__record-choice-mark {
+  display: inline-flex;
+  flex: none;
+  margin-top: 1px;
+}
+
+.task-agent-run-accordion__record-choice-copy {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.task-agent-run-accordion__record-choice-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: color-mix(in srgb, #e8e8e8 92%, transparent);
+}
+
+.task-agent-run-accordion__record-choice-detail {
+  font-size: 12px;
+  line-height: 1.35;
+  color: color-mix(in srgb, #e8e8e8 55%, transparent);
+}
+
 .task-agent-run-accordion__commit > .task-agent-run-accordion__changelog {
   flex: none;
   overflow: visible;

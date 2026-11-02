@@ -173,7 +173,7 @@ function buildWakeMessage(input: {
   const lines = [
     "You are the conductor for a BacksterOS task agent factory run.",
     "Reply in this Brief thread. When ready to code, PATCH the run to phase=build with buildPrompt.",
-    "After build, create Verify checks and advance phase=verify. On results, either loop (phase=brief, cycle++) or phase=record with recordIntent=pr|commit.",
+    "After build, create Verify checks and advance phase=verify. Desktop runs checks and, when they pass, opens Record so Remon picks Commit vs PR in the UI (do not ask that in Brief).",
     "",
     `taskAgentRun: id=${input.runId} phase=brief cycle=${input.cycle}`,
     `task: id=${input.task.id} number=${input.task.number ?? "—"} status=${input.task.status}`,

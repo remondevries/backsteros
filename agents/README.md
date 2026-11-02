@@ -147,9 +147,10 @@ Also: `GET …/agent-runs/active`, `GET …/agent-runs/{runId}`, and
 `GET|POST|PATCH …/agent-runs/{runId}/checks`. Reply to Brief only via the
 webhook `replyUrl` / same `threadId`. Playbook: Brief → `build` + `buildPrompt`
 → desktop ACP → Brief “Build turn finished…” → you POST checks + `phase=verify`
-→ desktop ACP executes checks and PATCHes statuses → Brief notify → you choose
-`brief` (cycle++) or `record` + `recordIntent` → desktop ACP → Brief → `done`.
-Details: `docs/04-api-and-sync.md` (Task agent factory runs).
+→ desktop ACP executes checks and PATCHes statuses → on pass, desktop opens
+Record and Remon picks Commit vs PR in the UI (do not ask that in Brief) →
+desktop ACP records → Brief notify → `done`. On failed checks, loop `brief`
+(cycle++) from Verify. Details: `docs/04-api-and-sync.md` (Task agent factory runs).
 
 ## Channel Connect (project Locations → Channel)
 

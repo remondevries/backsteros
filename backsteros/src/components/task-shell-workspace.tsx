@@ -43,6 +43,7 @@ export function TaskShellWorkspace({
     error,
     starting,
     startRun,
+    updateRun,
     sendBriefMessage,
     answerBriefChoices,
     answerBriefApproval,
@@ -144,6 +145,12 @@ export function TaskShellWorkspace({
             onAnswerBriefEmailDraft={(messageId, emailAction, edits) =>
               answerBriefEmailDraft(messageId, emailAction, edits)
             }
+            onChooseRecordIntent={async (intent) => {
+              await updateRun({
+                phase: "record",
+                recordIntent: intent,
+              });
+            }}
             orchestratorError={combinedError}
             recordHeadSha={recordHeadSha}
           />

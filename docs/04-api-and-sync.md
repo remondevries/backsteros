@@ -520,14 +520,18 @@ room thread:
 runs Cursor ACP → desktop posts a **Brief user message** (“Build turn
 finished…”) so the conductor webhook fires → create checks + `phase=verify` →
 **desktop** runs Cursor ACP again to execute pending checks (typecheck/lint
-locally, code-review checks by inspection), PATCHes check statuses, Brief
-notifies → conductor chooses `phase=brief` (loop) or `phase=record` +
-`recordIntent` → desktop prompts Cursor to commit/PR → Brief notify again →
-`phase=done`.
+locally, code-review checks by inspection), PATCHes check statuses → when all
+pass, desktop advances to `phase=record` **without** `recordIntent` and shows
+Remon a Commit vs Pull request choice in the Record section (not a Brief
+question to Grok) → after Remon picks, desktop prompts Cursor to commit/PR →
+Brief notify → conductor may `phase=done` / ship.
 
-Split of responsibility: Grok owns Brief + phase + which checks exist; the Mac
-desktop / Cursor ACP executes Build, Verify, and Record. Task comments alone do
-**not** wake the conductor; handoffs must be Brief messages.
+If checks fail, stay on Verify / loop `phase=brief` via the conductor.
+
+Split of responsibility: Grok owns Brief + which checks exist; Remon picks
+Commit vs PR on desktop; the Mac / Cursor ACP executes Build, Verify, and
+Record. Task comments alone do **not** wake the conductor; handoffs must be
+Brief messages.
 
 ### Agent-working marker (OS-96)
 

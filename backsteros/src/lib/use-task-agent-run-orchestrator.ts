@@ -401,10 +401,13 @@ export function useTaskAgentRunOrchestrator(options: {
         `GET  /api/v1/tasks/${taskId}/agent-runs/${run.id}`,
       ];
 
+      let allResolved = false;
+      let anyFailed = false;
       if (parsed && parsed.length > 0) {
         for (const check of pending) {
           const result = byKey.get(check.key);
           if (!result) continue;
+          if (result.status === "fail") anyFailed = true;
           await patchTaskAgentRunCheck(
             requestJson,
             taskId,
@@ -419,15 +422,11 @@ export function useTaskAgentRunOrchestrator(options: {
           lines.push(`- ${check.key}: ${result.status}${result.detail ? ` — ${result.detail}` : ""}`);
         }
         const missing = pending.filter((check) => !byKey.has(check.key));
-        if (missing.length > 0) {
+        allResolved = missing.length === 0;
+        if (!allResolved) {
           lines.push(
             "",
             `Unchecked keys still pending: ${missing.map((check) => check.key).join(", ")}. Please PATCH those checks or re-run verify.`,
-          );
-        } else {
-          lines.push(
-            "",
-            'All pending checks updated. If satisfied, PATCH {"phase":"record","recordIntent":"commit"|"pr"} or phase=brief to loop; otherwise keep phase=verify.',
           );
         }
       } else {
@@ -438,6 +437,24 @@ export function useTaskAgentRunOrchestrator(options: {
         if (summary) {
           lines.push("", "Builder summary:", truncateForBrief(summary));
         }
+      }
+
+      // Commit vs PR is a desktop prompt — do not ask Grok. Advance to Record
+      // without recordIntent when every check passed.
+      if (allResolved && !anyFailed) {
+        await patchTaskAgentRun(requestJson, taskId, run.id, {
+          phase: "record",
+          recordIntent: null,
+        }).catch(() => undefined);
+        lines.push(
+          "",
+          "All checks passed. Advanced to Record — Remon will choose Commit or Pull request in the desktop Record section (not a Brief question).",
+        );
+      } else if (allResolved && anyFailed) {
+        lines.push(
+          "",
+          "One or more checks failed. Stay on Verify or PATCH phase=brief to loop; desktop will not open Record until checks pass.",
+        );
       }
 
       try {

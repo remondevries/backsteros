@@ -65,6 +65,8 @@ export type TaskAgentRunAccordionProps = {
   orchestratorError?: string | null;
   /** Hydrated git HEAD after a Record turn (from desktop orchestrator). */
   recordHeadSha?: string | null;
+  /** Remon picks Commit vs PR in Record (skips asking Grok). */
+  onChooseRecordIntent?: (intent: "commit" | "pr") => void | Promise<void>;
 };
 
 /** Build surfaces: agent live view, console log, or file diff. */
@@ -609,6 +611,7 @@ export function TaskAgentRunAccordion({
   onAnswerBriefEmailDraft,
   orchestratorError = null,
   recordHeadSha = null,
+  onChooseRecordIntent,
 }: TaskAgentRunAccordionProps) {
   const logAgentLabel = agentName?.trim() || "agent";
   const logUserLabel = assigneeName?.trim() || "you";
@@ -621,6 +624,7 @@ export function TaskAgentRunAccordion({
     useState<TaskAgentRunSectionId>("brief");
   const [buildMode, setBuildMode] = useState<BuildMode>("live");
   const [verifyMode, setVerifyMode] = useState<VerifyMode>("results");
+  const [recordIntentSubmitting, setRecordIntentSubmitting] = useState(false);
   const [briefMessagesLocal, setBriefMessagesLocal] = useState<ChatUiMessage[]>(
     [],
   );
@@ -643,14 +647,16 @@ export function TaskAgentRunAccordion({
     null,
   );
   const changelogFiles: readonly ChangelogFileItem[] = [];
+  const awaitingRecordIntent =
+    run?.phase === "record" &&
+    run.recordIntent !== "commit" &&
+    run.recordIntent !== "pr";
+
   const displayCommitRecord: CommitRecord | null = useMemo(() => {
     if (!run) return null;
+    if (awaitingRecordIntent) return null;
     const intent: RecordKind =
-      run.recordIntent === "commit"
-        ? "commit"
-        : run.recordIntent === "pr"
-          ? "pr"
-          : "pr";
+      run.recordIntent === "commit" ? "commit" : "pr";
     const sha = recordHeadSha?.trim() || "";
     if (!sha) {
       return {
@@ -659,11 +665,9 @@ export function TaskAgentRunAccordion({
         sha: "",
         subject:
           run.phase === "record"
-            ? run.recordIntent === "commit"
+            ? intent === "commit"
               ? "Waiting for Cursor to commit…"
-              : run.recordIntent === "pr"
-                ? "Waiting for Cursor to open the pull request…"
-                : "Waiting for record intent from the conductor…"
+              : "Waiting for Cursor to open the pull request…"
             : "Record not started yet",
         body: run.recordNotes?.trim() || "",
         authorName: "—",
@@ -691,7 +695,17 @@ export function TaskAgentRunAccordion({
       filesChanged: 0,
       pullRequest: null,
     };
-  }, [recordHeadSha, run]);
+  }, [awaitingRecordIntent, recordHeadSha, run]);
+
+  const chooseRecordIntent = async (intent: "commit" | "pr") => {
+    if (!onChooseRecordIntent || recordIntentSubmitting) return;
+    setRecordIntentSubmitting(true);
+    try {
+      await onChooseRecordIntent(intent);
+    } finally {
+      setRecordIntentSubmitting(false);
+    }
+  };
 
   const hasRunningReviewCheck = reviewChecks.some(
     (item) => item.status === "running",
@@ -888,9 +902,61 @@ export function TaskAgentRunAccordion({
 
             {section.id === "record" ? (
               <div className="task-agent-run-accordion__commit">
-                {!displayCommitRecord ? (
+                {awaitingRecordIntent ? (
+                  <div className="task-agent-run-accordion__record-choice">
+                    <p className="task-agent-run-accordion__record-choice-prompt">
+                      How should this work be recorded?
+                    </p>
+                    <div
+                      className="task-agent-run-accordion__record-choice-options"
+                      role="group"
+                      aria-label="Commit or pull request"
+                    >
+                      <button
+                        type="button"
+                        className="task-agent-run-accordion__record-choice-option"
+                        disabled={recordIntentSubmitting || !onChooseRecordIntent}
+                        onClick={() => {
+                          void chooseRecordIntent("commit");
+                        }}
+                      >
+                        <span className="task-agent-run-accordion__record-choice-mark" aria-hidden="true">
+                          <TaskStatusIcon status="backlog" size={14} />
+                        </span>
+                        <span className="task-agent-run-accordion__record-choice-copy">
+                          <span className="task-agent-run-accordion__record-choice-label">
+                            Commit
+                          </span>
+                          <span className="task-agent-run-accordion__record-choice-detail">
+                            Commit and push on the current branch
+                          </span>
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        className="task-agent-run-accordion__record-choice-option is-primary"
+                        disabled={recordIntentSubmitting || !onChooseRecordIntent}
+                        onClick={() => {
+                          void chooseRecordIntent("pr");
+                        }}
+                      >
+                        <span className="task-agent-run-accordion__record-choice-mark" aria-hidden="true">
+                          <TaskStatusIcon status="ready_to_start" size={14} />
+                        </span>
+                        <span className="task-agent-run-accordion__record-choice-copy">
+                          <span className="task-agent-run-accordion__record-choice-label">
+                            Pull request
+                          </span>
+                          <span className="task-agent-run-accordion__record-choice-detail">
+                            Commit, push, and open a PR for review
+                          </span>
+                        </span>
+                      </button>
+                    </div>
+                  </div>
+                ) : !displayCommitRecord ? (
                   <p className="task-agent-run-accordion__commit-empty">
-                    Waiting for the conductor to enter Record…
+                    Waiting for Verify to finish before Record…
                   </p>
                 ) : (
                   <>
