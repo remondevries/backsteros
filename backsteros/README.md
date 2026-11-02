@@ -78,17 +78,21 @@ Desktop no longer embeds Agent Chat / ACP. Use:
 
 Task list / status-bar presence still reflects Research and shared `agent-presence` (including T3). `agentChatId` remains on tasks for **mobile** Chat bindings.
 
-### PTY sidecar (mobile Agent Chat)
+### PTY sidecar (task Terminal / ACP / mobile Agent Chat)
 
-Hub Start still runs the desktop package PTY sidecar (`ws` / HTTP on port 3101) for mobile Chat. Desktop itself does not start PTY or Expo. Desktop Settings → Cursor → Agents can list and kill sessions.
+Opening the desktop app starts the PTY sidecar on `127.0.0.1:3101` when it is not already healthy (see `src-tauri/src/pty_sidecar.rs`). Logs: `~/.config/backsteros/desktop/pty-sidecar.log`. Opt out with `BACKSTEROS_SKIP_PTY=1`. Manual start is still available:
 
-- Default bind is loopback. For **iPad over Tailscale**:
+```bash
+pnpm --filter @backsteros/desktop pty
+```
+
+- Default bind from the app is loopback. For **iPad over Tailscale**, start (or restart) with a LAN bind before or instead of relying on app auto-start:
 
 ```bash
 PTY_HOST=0.0.0.0 PTY_AUTH_TOKEN=your-secret pnpm --filter @backsteros/desktop pty
 ```
 
-  Set the same token on core (`AGENT_PTY_AUTH_TOKEN`) and `AGENT_PTY_PUBLIC_URL` to the Tailscale-reachable origin (e.g. `http://macbook.tailnet.ts.net:3101`). Desktop can set `VITE_PTY_AUTH_TOKEN` to match when auth is enabled.
+  Set the same token on core (`AGENT_PTY_AUTH_TOKEN`) and `AGENT_PTY_PUBLIC_URL` to the Tailscale-reachable origin (e.g. `http://macbook.tailnet.ts.net:3101`). Desktop `VITE_PTY_AUTH_TOKEN` must match.
 
 ### Cursor spellcheck
 

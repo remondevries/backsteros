@@ -21,6 +21,11 @@ export type TaskShellWorkspaceProps = {
   cwd: string | null;
   /** Task assignee — shown on user lines in Build/Verify Log. */
   assigneeName?: string | null;
+  /**
+   * Linked git SHAs on the task — used to rehydrate Record/Ship after a
+   * relaunch (orchestrator only keeps head SHA in memory).
+   */
+  linkedCommitShas?: readonly string[] | null;
   /** Agents picker; receives kickoff helpers for the card click. */
   agentsPane: (api: TaskShellWorkspaceAgentsApi) => ReactNode;
 };
@@ -35,6 +40,7 @@ export function TaskShellWorkspace({
   taskId,
   cwd,
   assigneeName = null,
+  linkedCommitShas = null,
   agentsPane,
 }: TaskShellWorkspaceProps) {
   const {
@@ -57,6 +63,13 @@ export function TaskShellWorkspace({
   const [localError, setLocalError] = useState<string | null>(null);
   const [recordHeadSha, setRecordHeadSha] = useState<string | null>(null);
 
+  const linkedFallbackSha = (() => {
+    const list = (linkedCommitShas ?? [])
+      .map((sha) => sha.trim())
+      .filter(Boolean);
+    return list.length > 0 ? list[list.length - 1]! : null;
+  })();
+
   useTaskAgentRunOrchestrator({
     active,
     taskId,
@@ -78,6 +91,28 @@ export function TaskShellWorkspace({
   useEffect(() => {
     setRecordHeadSha(null);
   }, [run?.id, run?.cycle]);
+
+  // After relaunch / when phase is already past Record, rehydrate from the
+  // task's linked commit (orchestrator only stores HEAD in component state).
+  useEffect(() => {
+    if (recordHeadSha?.trim()) return;
+    if (!linkedFallbackSha) return;
+    const phase = run?.phase;
+    if (
+      phase === "record" ||
+      phase === "ship" ||
+      phase === "done" ||
+      run?.recordIntent === "commit" ||
+      run?.recordIntent === "pr"
+    ) {
+      setRecordHeadSha(linkedFallbackSha);
+    }
+  }, [
+    linkedFallbackSha,
+    recordHeadSha,
+    run?.phase,
+    run?.recordIntent,
+  ]);
 
   const agentStarted = Boolean(run && run.status === "active");
   const combinedError = localError || error;

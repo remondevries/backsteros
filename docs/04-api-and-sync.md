@@ -225,10 +225,15 @@ from notifications and Channel `needs_details`.
 
 **Agent routine sketch (Niels / Grok Bot)**
 
-1. Receive `project.channel.connect` webhook.
+1. Receive `project.channel.connect` webhook (includes `owner`: workspace
+   human — `userId`, `name`, `email`, optional `contactId` / `xUserId` /
+   `xHandle`).
 2. Report stages while working (each is a `PATCH`):
    `{ "channelStage": "looking_for_room" }` → then
    `joining_room` **or** `creating_room` → `adding_users` → `finishing`.
+   During `adding_users`, **always invite `owner` into the Grok Bot room**
+   (prefer `xUserId` / `xHandle`, else email/name). Do not put the human in
+   `channel.members` — that list is agent ids only.
 3. If you need owner input: ask in shell chat; store a deep link on the
    project: `PATCH /api/v1/projects/:id` with
    `{ "channelStatus": "needs_details", "channelPendingLink": "backsteros://chat/<threadId>?message=<msgId>" }`.
@@ -243,10 +248,20 @@ from notifications and Channel `needs_details`.
 5. Team sync — owner-only `POST /api/v1/projects/:id/channel/members/sync`
    (403 for agent keys, 400 without a connected channel) POSTs
    `project.channel.members.sync` to the lead agent's webhook with the stored
-   `channel` and a `report` block. The agent answers by PATCHing
+   `channel`, the same `owner` block as Connect, and a `report` block. The
+   agent re-checks that the human owner is in the room, then PATCHes
    `channel.members`; the response is just `{ ok, requestedAt, error }`.
-   Locations → Team shows the resolved members and hosts the Sync button.
-6. Lead transfer — owner-only `POST /api/v1/projects/:id/lead-agent/transfer`
+   Locations → Team shows the resolved members; Sync lives on the Agents
+   subgroup header.
+6. Team invite — owner-only `POST /api/v1/projects/:id/channel/members/invite`
+   with `{ "contactId" }` and/or `{ "grokbotAgentId" }` (403 for agent keys,
+   400 without a channel / unknown or disabled invitee / missing
+   `grokbotAgentId`). POSTs `project.channel.members.invite` to the lead with
+   `invitee` + a `report` body whose `channel.members` already includes the
+   invitee. Agent invites in Grok Bot, then PATCHes that full list. Already in
+   the room → `{ ok, alreadyMember: true, members }` with no webhook. Desktop
+   Locations → Team → Add uses this and polls until `members` change.
+7. Lead transfer — owner-only `POST /api/v1/projects/:id/lead-agent/transfer`
    with `{ "leadAgentContactId": "<contact id or null>" }`. When a Channel is
    connected and there is already a different lead, this POSTs
    `project.channel.lead.transfer` to the **current** lead (lead id is not
@@ -254,7 +269,7 @@ from notifications and Channel `needs_details`.
    `leadAgentContactId` + `channel.members`. Clearing the lead, first assign,
    or no channel applies immediately (`pending: false`). New lead must have
    reported `grokbotAgentId` (`400 lead_agent_grokbot_id_required` otherwise).
-7. To abort Channel Connect: `PATCH` `{ "channelStatus": "inactive", "channel": null }`.
+8. To abort Channel Connect: `PATCH` `{ "channelStatus": "inactive", "channel": null }`.
 
 #### `GET /search` (agents)
 
@@ -517,21 +532,42 @@ room thread:
 ```
 
 **Grok playbook:** Brief until ready → `phase=build` + `buildPrompt` → desktop
-runs Cursor ACP → desktop posts a **Brief user message** (“Build turn
-finished…”) so the conductor webhook fires → create checks + `phase=verify` →
-**desktop** runs Cursor ACP again to execute pending checks (typecheck/lint
-locally, code-review checks by inspection), PATCHes check statuses → when all
-pass, desktop advances to `phase=record` **without** `recordIntent` and shows
-Remon a Commit vs Pull request choice in the Record section (not a Brief
-question to Grok) → after Remon picks, desktop prompts Cursor to commit/PR →
-Brief notify → conductor may `phase=done` / ship.
+starts a **fresh builder** Cursor ACP session → desktop posts a **Brief user
+message** (“Build turn finished…”) so the conductor webhook fires → create
+checks + `phase=verify` → **desktop** starts a **separate reviewer** Cursor ACP
+session (`forceNew`; does **not** overwrite `builderSessionId`) to execute
+pending checks (typecheck/lint locally, code-review by inspection), PATCHes
+check statuses → when all pass, desktop advances to `phase=record` **without**
+`recordIntent` and shows Remon a Commit vs Pull request choice in the Record
+section (not a Brief question to Grok) → after Remon picks, desktop **resumes
+the original builder** Cursor session to commit/PR → links HEAD → Brief notify
+→ desktop PATCHes `phase=done` (Grok is informed; not required to close the
+loop).
 
 If checks fail, stay on Verify / loop `phase=brief` via the conductor.
 
 Split of responsibility: Grok owns Brief + which checks exist; Remon picks
-Commit vs PR on desktop; the Mac / Cursor ACP executes Build, Verify, and
-Record. Task comments alone do **not** wake the conductor; handoffs must be
-Brief messages.
+Commit vs PR on desktop; the Mac hosts two Cursor ACP roles — **builder**
+(Build + Record) and **reviewer** (Verify only). Task comments alone do **not**
+wake the conductor; handoffs must be Brief messages.
+
+**Cursor session rules (desktop orchestrator):**
+
+| Phase | ACP session |
+| --- | --- |
+| Build | `forceNew` → stored as `builderSessionId` |
+| Verify | `forceNew` reviewer session (ephemeral; builder id preserved) |
+| Record | Resume `builderSessionId` so the coder finishes git |
+
+**Task status mirror:** creating a run (or advancing phase) also updates the
+task board status and OS-96 working badge for the selected conductor — unless
+the task is already `completed` / `canceled` / `duplicated`:
+
+| Factory phase | Task status | Agent-working flag |
+| --- | --- | --- |
+| `brief`, `build` | `in_progress` | Conductor contact, kind `working` |
+| `verify`, `record`, `ship`, `done` | `in_review` | Cleared (hand-off) |
+| `failed` / run cancelled | unchanged | Cleared for that conductor |
 
 ### Agent-working marker (OS-96)
 

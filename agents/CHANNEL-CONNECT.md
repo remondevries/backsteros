@@ -24,8 +24,36 @@ Order:
 
 1. `looking_for_room`
 2. `joining_room` **or** `creating_room` (pick one path)
-3. `adding_users`
+3. `adding_users` — **always invite the workspace owner** (see `owner` below)
 4. `finishing`
+
+## Owner (human) — always in the room
+
+Every Channel webhook includes an `owner` block for the workspace human:
+
+```json
+{
+  "owner": {
+    "userId": "…",
+    "contactId": "… or null",
+    "name": "Remon",
+    "email": "email@example.com",
+    "xUserId": "1234567890 or null",
+    "xHandle": "handle or null"
+  }
+}
+```
+
+During `adding_users` (Connect), and again on Sync, **invite this human into
+the Grok Bot room** if they are not already a participant. Prefer `xUserId` /
+`xHandle` when present; otherwise use `email` / `name` the way Grok Bot
+accepts human invites.
+
+Do **not** put the owner in `channel.members` — that list is Grok Bot **agent**
+ids only. The owner is a human participant, not an agent.
+
+If `owner` is null or has no usable invite identity, ask in shell chat
+(`needs_details`) rather than finishing a bot-only room.
 
 ## Finish / abort
 
@@ -87,9 +115,10 @@ event to the lead agent's webhook:
 }
 ```
 
-Look up who is in the room right now and PATCH `channel` with the same `uri`
-and the full `members` list. `channel.members` in the payload is what
-BacksterOS has stored, so you can see what is out of date.
+Look up who is in the room right now. Ensure `owner` is still a human
+participant (invite again if missing). Then PATCH `channel` with the same
+`uri` and the full agent `members` list. `channel.members` in the payload is
+what BacksterOS has stored, so you can see what is out of date.
 
 ### `project.channel.lead.transfer`
 

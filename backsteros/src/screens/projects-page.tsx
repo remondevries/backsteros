@@ -2918,6 +2918,7 @@ function ProjectDetailScreen({
         requestJson={(path, init) => desktopApiClient.requestJson(path, init)}
         memberIdsOverride={teamMemberIdsOverride}
         syncError={teamSyncError}
+        onMembersChange={setTeamMemberIdsOverride}
       />
     </PropertyFieldGroup>
   );

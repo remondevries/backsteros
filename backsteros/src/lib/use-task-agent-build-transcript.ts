@@ -8,7 +8,7 @@ const POLL_MS = 2_000;
 
 /**
  * Build Live/Log source: prefer ACP chat transcript for `builderSessionId`,
- * fall back to Cursor IDE agent-transcripts jsonl.
+ * fall back to Cursor IDE agent-transcripts jsonl when ACP is empty or offline.
  */
 export function useTaskAgentBuildTranscript(options: {
   active: boolean;
@@ -20,17 +20,23 @@ export function useTaskAgentBuildTranscript(options: {
   source: "acp" | "cursor-ide" | null;
 } {
   const builderSessionId = options.builderSessionId?.trim() || null;
-  const cursorFallback = useCursorAgentTranscript({
-    active: options.active && !builderSessionId,
-    cwd: options.cwd,
-  });
   const [acpMessages, setAcpMessages] = useState<ChatUiMessage[]>([]);
   const [acpError, setAcpError] = useState<string | null>(null);
+  const [acpReady, setAcpReady] = useState(false);
+
+  const preferCursorFallback =
+    !builderSessionId || (acpReady && acpMessages.length === 0);
+
+  const cursorFallback = useCursorAgentTranscript({
+    active: options.active && preferCursorFallback,
+    cwd: options.cwd,
+  });
 
   useEffect(() => {
     if (!options.active || !builderSessionId) {
       setAcpMessages([]);
       setAcpError(null);
+      setAcpReady(false);
       return;
     }
     let cancelled = false;
@@ -39,6 +45,7 @@ export function useTaskAgentBuildTranscript(options: {
     const tick = async () => {
       const result = await fetchAcpChatTranscript(builderSessionId);
       if (cancelled) return;
+      setAcpReady(true);
       if (!result.ok) {
         setAcpError(result.error);
         return;
@@ -58,19 +65,36 @@ export function useTaskAgentBuildTranscript(options: {
     };
   }, [options.active, builderSessionId]);
 
-  if (builderSessionId) {
+  if (builderSessionId && acpMessages.length > 0) {
     return {
       messages: acpMessages,
-      error: acpError,
+      error: null,
       source: "acp",
+    };
+  }
+
+  if (cursorFallback.messages.length > 0) {
+    return {
+      messages: cursorFallback.messages,
+      error: null,
+      source: "cursor-ide",
+    };
+  }
+
+  if (builderSessionId) {
+    return {
+      messages: [],
+      error: acpError || cursorFallback.error,
+      source: acpError ? "acp" : cursorFallback.error ? "cursor-ide" : "acp",
     };
   }
 
   return {
     messages: cursorFallback.messages,
     error: cursorFallback.error,
-    source: cursorFallback.messages.length > 0 || cursorFallback.error
-      ? "cursor-ide"
-      : null,
+    source:
+      cursorFallback.messages.length > 0 || cursorFallback.error
+        ? "cursor-ide"
+        : null,
   };
 }

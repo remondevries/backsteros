@@ -34,9 +34,11 @@ import { projectChannelMemberIds } from "@backsteros/contracts";
 import {
   CHANNEL_CONNECT_WEBHOOK_EVENT,
   CHANNEL_LEAD_TRANSFER_WEBHOOK_EVENT,
+  CHANNEL_MEMBERS_INVITE_WEBHOOK_EVENT,
   CHANNEL_MEMBERS_SYNC_WEBHOOK_EVENT,
   postChannelConnectWebhook,
 } from "../../lib/channel-connect-webhook.js";
+import { resolveChannelRoomOwner } from "../../lib/channel-room-owner.js";
 import { resolveAgentsPublicBase } from "../../lib/agents-public-url.js";
 import * as agentsService from "../../services/agents.js";
 
@@ -538,6 +540,7 @@ export function registerProjectCoreRoutes(app: Hono) {
 
     const requestedAt =
       row.channelRequestedAt?.toISOString() ?? new Date().toISOString();
+    const owner = await resolveChannelRoomOwner(auth.workspaceId);
     const webhook = await postChannelConnectWebhook({
       workspaceId: auth.workspaceId,
       payload: {
@@ -548,6 +551,7 @@ export function registerProjectCoreRoutes(app: Hono) {
         type: row.type,
         requestedAt,
         leadAgentContactId: row.leadAgentContactId ?? null,
+        owner,
       },
     });
 
@@ -621,6 +625,7 @@ export function registerProjectCoreRoutes(app: Hono) {
     }
 
     const requestedAt = new Date().toISOString();
+    const owner = await resolveChannelRoomOwner(auth.workspaceId);
     const webhook = await postChannelConnectWebhook({
       workspaceId: auth.workspaceId,
       payload: {
@@ -631,6 +636,7 @@ export function registerProjectCoreRoutes(app: Hono) {
         type: row.type,
         requestedAt,
         leadAgentContactId: row.leadAgentContactId ?? null,
+        owner,
         channel: {
           uri: channel.uri,
           name: channel.name ?? null,
@@ -653,6 +659,187 @@ export function registerProjectCoreRoutes(app: Hono) {
       ok: webhook.ok,
       requestedAt,
       error: webhook.ok ? null : webhook.error,
+    });
+  });
+
+  /**
+   * Owner-only: ask the lead agent to invite another agent into the room.
+   * Body: `{ contactId }` and/or `{ grokbotAgentId }` (at least one). The lead
+   * answers asynchronously by PATCHing `channel.members`.
+   */
+  app.post("/api/v1/projects/:id/channel/members/invite", async (c) => {
+    const auth = getAuth(c);
+    if (!requireScope("projects:write")(auth)) {
+      return c.json(auth ? forbidden() : unauthorized(), auth ? 403 : 401);
+    }
+    if (isAgentPersonaAuth(auth)) {
+      return c.json(
+        {
+          error: "Only the owner can invite Team members",
+          code: "channel_members_invite_owner_only",
+        },
+        403,
+      );
+    }
+
+    const projectIdRaw = c.req.param("id");
+    const projectId = await routeProjectId(auth.workspaceId, projectIdRaw);
+    if (!projectId) return c.json(notFound("Project"), 404);
+    const row = await taskProjectService.getProjectById(
+      auth.workspaceId,
+      projectId,
+    );
+    if (!row) return c.json(notFound("Project"), 404);
+    const channel = row.channel ?? null;
+    const channelUri = channel?.uri?.trim() || "";
+    if (!channelUri) {
+      return c.json(
+        {
+          error: "Connect a Channel before inviting Team members",
+          code: "channel_not_connected",
+        },
+        400,
+      );
+    }
+
+    let body: { contactId?: string | null; grokbotAgentId?: string | null };
+    try {
+      body = (await c.req.json()) as {
+        contactId?: string | null;
+        grokbotAgentId?: string | null;
+      };
+    } catch {
+      return c.json(
+        {
+          error: "JSON body with contactId or grokbotAgentId is required",
+          code: "channel_members_invite_body_invalid",
+        },
+        400,
+      );
+    }
+
+    const contactId =
+      typeof body.contactId === "string" && body.contactId.trim()
+        ? body.contactId.trim()
+        : null;
+    const grokbotFromBody =
+      typeof body.grokbotAgentId === "string" && body.grokbotAgentId.trim()
+        ? body.grokbotAgentId.trim()
+        : null;
+    if (!contactId && !grokbotFromBody) {
+      return c.json(
+        {
+          error: "contactId or grokbotAgentId is required",
+          code: "channel_members_invite_body_invalid",
+        },
+        400,
+      );
+    }
+
+    let inviteAgent = contactId
+      ? await agentsService.getEnabledAgentByContactId(
+          auth.workspaceId,
+          contactId,
+        )
+      : null;
+    if (!inviteAgent && grokbotFromBody) {
+      const all = await agentsService.listAgents(auth.workspaceId);
+      inviteAgent =
+        all.find(
+          (agent) =>
+            agent.enabled &&
+            agent.grokbotAgentId?.trim() === grokbotFromBody,
+        ) ?? null;
+    }
+    if (!inviteAgent) {
+      return c.json(
+        {
+          error:
+            "Invitee must be an enabled agent persona (with a contact when using contactId)",
+          code: "channel_members_invite_agent_not_found",
+        },
+        400,
+      );
+    }
+    const inviteGrokbotId =
+      inviteAgent.grokbotAgentId?.trim() || grokbotFromBody || "";
+    if (!inviteGrokbotId) {
+      return c.json(
+        {
+          error:
+            "The invitee must report their Grok Bot agent id (PATCH /api/v1/agents/me) before joining a Channel room",
+          code: "channel_members_invite_grokbot_id_required",
+        },
+        400,
+      );
+    }
+
+    const members = projectChannelMemberIds(channel);
+    if (members.includes(inviteGrokbotId)) {
+      return c.json({
+        ok: true,
+        pending: false,
+        alreadyMember: true,
+        requestedAt: null,
+        error: null,
+        invitee: {
+          contactId: inviteAgent.contactId ?? null,
+          grokbotAgentId: inviteGrokbotId,
+          name: inviteAgent.name ?? null,
+        },
+        members,
+      });
+    }
+
+    const reportMembers = [...members, inviteGrokbotId];
+    const requestedAt = new Date().toISOString();
+    const owner = await resolveChannelRoomOwner(auth.workspaceId);
+    const webhook = await postChannelConnectWebhook({
+      workspaceId: auth.workspaceId,
+      payload: {
+        event: CHANNEL_MEMBERS_INVITE_WEBHOOK_EVENT,
+        projectId: row.id,
+        projectKey: row.key,
+        projectName: row.name,
+        type: row.type,
+        requestedAt,
+        leadAgentContactId: row.leadAgentContactId ?? null,
+        owner,
+        channel: {
+          uri: channelUri,
+          name: channel?.name ?? null,
+          members,
+        },
+        invitee: {
+          contactId: inviteAgent.contactId ?? null,
+          grokbotAgentId: inviteGrokbotId,
+          name: inviteAgent.name ?? null,
+        },
+        report: {
+          reportUrl: `${resolveAgentsPublicBase()}/api/v1/projects/${row.id}`,
+          method: "PATCH",
+          body: {
+            channel: {
+              uri: channelUri,
+              members: reportMembers,
+            },
+          },
+        },
+      },
+    });
+
+    return c.json({
+      ok: webhook.ok,
+      pending: webhook.ok,
+      alreadyMember: false,
+      requestedAt,
+      error: webhook.ok ? null : webhook.error,
+      invitee: {
+        contactId: inviteAgent.contactId ?? null,
+        grokbotAgentId: inviteGrokbotId,
+        name: inviteAgent.name ?? null,
+      },
+      members,
     });
   });
 
@@ -802,6 +989,7 @@ export function registerProjectCoreRoutes(app: Hono) {
     const reportMembers = members.includes(nextGrokbotId)
       ? members
       : [...members, nextGrokbotId];
+    const owner = await resolveChannelRoomOwner(auth.workspaceId);
     const webhook = await postChannelConnectWebhook({
       workspaceId: auth.workspaceId,
       payload: {
@@ -812,6 +1000,7 @@ export function registerProjectCoreRoutes(app: Hono) {
         type: row.type,
         requestedAt,
         leadAgentContactId: currentLead,
+        owner,
         channel: {
           uri: channelUri,
           name: row.channel?.name ?? null,

@@ -33,10 +33,29 @@ export const CHANNEL_MEMBERS_SYNC_WEBHOOK_EVENT =
  */
 export const CHANNEL_LEAD_TRANSFER_WEBHOOK_EVENT =
   "project.channel.lead.transfer" as const;
+/**
+ * Owner asked the lead to invite another agent into the room (Team → Add).
+ * The agent answers by PATCHing `channel.members` with the full list.
+ */
+export const CHANNEL_MEMBERS_INVITE_WEBHOOK_EVENT =
+  "project.channel.members.invite" as const;
 export const CHANNEL_CONNECT_WEBHOOK_TIMEOUT_MS = 10_000;
 /** Same secret header as agent chat (Cursor automations accept Bearer too). */
 export const CHANNEL_CONNECT_WEBHOOK_SECRET_HEADER =
   AGENT_CHAT_WEBHOOK_SECRET_HEADER;
+
+/**
+ * Human workspace owner — invite into the Grok Bot room (not listed in
+ * `channel.members`, which is agent ids only).
+ */
+export type ChannelRoomOwnerPayload = {
+  userId: string;
+  contactId: string | null;
+  name: string | null;
+  email: string | null;
+  xUserId: string | null;
+  xHandle: string | null;
+};
 
 type ChannelWebhookPayloadBase = {
   projectId: string;
@@ -45,6 +64,11 @@ type ChannelWebhookPayloadBase = {
   type: string;
   requestedAt: string;
   leadAgentContactId: string | null;
+  /**
+   * Workspace human owner. Connect + Sync always send this so the lead can
+   * invite them into the Grok Bot room (not listed in `channel.members`).
+   */
+  owner?: ChannelRoomOwnerPayload | null;
 };
 
 export type ChannelConnectWebhookPayload = ChannelWebhookPayloadBase & {
@@ -87,10 +111,32 @@ export type ChannelLeadTransferWebhookPayload = ChannelWebhookPayloadBase & {
   };
 };
 
+/**
+ * Ask the lead to invite `invitee` into the room. Agent answers by PATCHing
+ * `channel.members` (full list including the invitee).
+ */
+export type ChannelMembersInviteWebhookPayload = ChannelWebhookPayloadBase & {
+  event: typeof CHANNEL_MEMBERS_INVITE_WEBHOOK_EVENT;
+  channel: { uri: string; name?: string | null; members?: string[] } | null;
+  invitee: {
+    contactId: string | null;
+    grokbotAgentId: string;
+    name: string | null;
+  };
+  report: {
+    reportUrl: string;
+    method: "PATCH";
+    body: {
+      channel: { uri: string; members: string[] };
+    };
+  };
+};
+
 export type ChannelOutboundWebhookPayload =
   | ChannelConnectWebhookPayload
   | ChannelMembersSyncWebhookPayload
-  | ChannelLeadTransferWebhookPayload;
+  | ChannelLeadTransferWebhookPayload
+  | ChannelMembersInviteWebhookPayload;
 
 export function isChannelOutboundWebhookEvent(
   event: unknown,
@@ -98,7 +144,8 @@ export function isChannelOutboundWebhookEvent(
   return (
     event === CHANNEL_CONNECT_WEBHOOK_EVENT ||
     event === CHANNEL_MEMBERS_SYNC_WEBHOOK_EVENT ||
-    event === CHANNEL_LEAD_TRANSFER_WEBHOOK_EVENT
+    event === CHANNEL_LEAD_TRANSFER_WEBHOOK_EVENT ||
+    event === CHANNEL_MEMBERS_INVITE_WEBHOOK_EVENT
   );
 }
 

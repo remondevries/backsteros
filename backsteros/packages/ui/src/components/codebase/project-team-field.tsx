@@ -3,18 +3,22 @@
 import type { ProjectChannel } from "@backsteros/contracts";
 import { normalizeProjectChannel, projectChannelMemberIds } from "@backsteros/contracts";
 import { PlusIcon } from "@primer/octicons-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { PropertyDropdown } from "../dropdowns/property-dropdown.js";
 import type { SearchableDropdownOption } from "../dropdowns/searchable-dropdown.js";
 import { Tooltip } from "../shared/tooltip.js";
 import { AssigneeListMark } from "../tasks/assignee-list-mark.js";
+import { apiErrorMessage } from "./api-error-message.js";
 import type { CodebaseRequestJson } from "./codebase-request-json.js";
 import {
   listAddableProjectTeamAgents,
   resolveProjectTeamMembers,
   type ProjectTeamAgent,
 } from "./project-team-members.js";
+
+const MEMBERS_POLL_INTERVAL_MS = 2_000;
+const MEMBERS_POLL_TIMEOUT_MS = 90_000;
 
 export type ProjectTeamFieldProject = {
   id: string;
@@ -36,6 +40,8 @@ export type ProjectTeamFieldProps = {
   memberIdsOverride?: readonly string[] | null;
   /** Sync failures from {@link ProjectTeamSyncButton} in the Agents header. */
   syncError?: string | null;
+  /** Fired when invite/sync lands a new room list (same as Sync button). */
+  onMembersChange?: (memberIds: string[]) => void;
 };
 
 function parseChannel(
@@ -86,11 +92,11 @@ export function ProjectTeamField({
   project,
   agents,
   avatarSrcById,
-  requestJson: _requestJson,
+  requestJson,
   memberIdsOverride = null,
   syncError = null,
+  onMembersChange,
 }: ProjectTeamFieldProps) {
-  void _requestJson;
   const channel = parseChannel(project.channel);
   const channelMemberIds = projectChannelMemberIds(channel);
   const channelMemberKey = channelMemberIds.join(",");
@@ -98,6 +104,9 @@ export function ProjectTeamField({
   const leadContactId = project.leadAgentContactId ?? null;
 
   const [polledMemberIds, setPolledMemberIds] = useState<string[] | null>(null);
+  const [inviting, setInviting] = useState(false);
+  const [inviteError, setInviteError] = useState<string | null>(null);
+  const cancelPollRef = useRef<(() => void) | null>(null);
 
   // Workspace catch-up clears a sync override; parent override wins while set.
   useEffect(() => {
@@ -109,6 +118,8 @@ export function ProjectTeamField({
       setPolledMemberIds([...memberIdsOverride]);
     }
   }, [memberIdsOverride]);
+
+  useEffect(() => () => cancelPollRef.current?.(), []);
 
   const memberIds = polledMemberIds ?? channelMemberIds;
   const members = resolveProjectTeamMembers(memberIds, agents, avatarSrcById, {
@@ -127,6 +138,99 @@ export function ProjectTeamField({
     () => buildAddMemberOptions(addableAgents, avatarSrcById),
     [addableAgents, avatarSrcById],
   );
+
+  async function pollForMembers(before: string) {
+    let cancelled = false;
+    cancelPollRef.current = () => {
+      cancelled = true;
+    };
+    const deadline = Date.now() + MEMBERS_POLL_TIMEOUT_MS;
+    while (!cancelled && Date.now() < deadline) {
+      await new Promise((resolve) =>
+        setTimeout(resolve, MEMBERS_POLL_INTERVAL_MS),
+      );
+      if (cancelled) return;
+      try {
+        const row = await requestJson<{ channel?: ProjectChannel | null }>(
+          `/api/v1/projects/${encodeURIComponent(projectId)}`,
+          { cache: "no-store" },
+        );
+        if (cancelled) return;
+        const next = projectChannelMemberIds(parseChannel(row?.channel));
+        if (next.join(",") !== before) {
+          setPolledMemberIds(next);
+          onMembersChange?.(next);
+          setInviting(false);
+          return;
+        }
+      } catch {
+        // Keep waiting — a dropped poll should not end the invite.
+      }
+    }
+    if (!cancelled) {
+      setInviting(false);
+      setInviteError(
+        "Invite sent, but the room list did not update yet. Try Sync, or wait for the lead agent.",
+      );
+    }
+  }
+
+  async function inviteAgent(optionValue: string) {
+    const trimmed = optionValue.trim();
+    if (!trimmed || inviting || !connected) return;
+    const agent = addableAgents.find((entry) => {
+      const contactId = entry.contactId?.trim() || "";
+      const grokbotId = entry.grokbotAgentId?.trim() || "";
+      return contactId === trimmed || grokbotId === trimmed;
+    });
+    if (!agent) {
+      setInviteError("That agent is not available to invite.");
+      return;
+    }
+
+    cancelPollRef.current?.();
+    setInviting(true);
+    setInviteError(null);
+    const before = memberIds.join(",");
+    try {
+      const result = await requestJson<{
+        ok?: boolean;
+        pending?: boolean;
+        alreadyMember?: boolean;
+        error?: string | null;
+        members?: string[];
+      }>(
+        `/api/v1/projects/${encodeURIComponent(projectId)}/channel/members/invite`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            contactId: agent.contactId?.trim() || null,
+            grokbotAgentId: agent.grokbotAgentId?.trim() || null,
+          }),
+        },
+      );
+      if (result?.ok === false) {
+        setInviting(false);
+        setInviteError(result.error?.trim() || "Could not reach the lead agent.");
+        return;
+      }
+      if (result?.alreadyMember && Array.isArray(result.members)) {
+        setPolledMemberIds(result.members);
+        onMembersChange?.(result.members);
+        setInviting(false);
+        return;
+      }
+      void pollForMembers(before);
+    } catch (err) {
+      setInviting(false);
+      setInviteError(apiErrorMessage(err) || "Could not invite that agent.");
+    }
+  }
+
+  const combinedError = inviteError || syncError;
+  const addDisabled =
+    !connected || addOptions.length === 0 || inviting;
 
   return (
     <div className="project-team-field">
@@ -165,34 +269,58 @@ export function ProjectTeamField({
         </ul>
       ) : (
         <span className="project-team-field__empty">
-          {connected ? "No team yet" : "No channel"}
+          {connected
+            ? inviting
+              ? "Inviting…"
+              : "No team yet"
+            : "No channel"}
         </span>
       )}
 
       <div className="project-team-field__actions">
         <div className="project-team-field__add">
-          <PropertyDropdown
-            value={null}
-            options={addOptions}
-            onChange={() => {
-              // UI only — invite / report wiring comes next.
-            }}
-            searchPlaceholder="Add agent…"
-            ariaLabel="Add agent to Team"
-            fallbackLabel="Add"
-            fallbackIcon={<PlusIcon size={12} />}
-            hideTriggerLabel
-            disabled={!connected || addOptions.length === 0}
-            panelWidth={280}
-            panelAlign="end"
-            mutedFallback
-          />
+          <Tooltip
+            label={
+              !connected
+                ? "Connect a Channel first"
+                : inviting
+                  ? "Waiting for the lead agent to update the room"
+                  : addOptions.length === 0
+                    ? "No other agents with a Grok Bot id to invite"
+                    : "Invite an agent into the room"
+            }
+            side="top"
+            openDelay={200}
+          >
+            <span className="project-team-field__add-wrap">
+              <PropertyDropdown
+                value={null}
+                options={addOptions}
+                onChange={(value) => {
+                  if (typeof value === "string" && value.trim()) {
+                    void inviteAgent(value);
+                  }
+                }}
+                searchPlaceholder={
+                  inviting ? "Inviting…" : "Add agent…"
+                }
+                ariaLabel="Add agent to Team"
+                fallbackLabel="Add"
+                fallbackIcon={<PlusIcon size={12} />}
+                hideTriggerLabel
+                disabled={addDisabled}
+                panelWidth={280}
+                panelAlign="end"
+                mutedFallback
+              />
+            </span>
+          </Tooltip>
         </div>
       </div>
 
-      {syncError ? (
+      {combinedError ? (
         <span className="project-channel-field__error" role="alert">
-          {syncError}
+          {combinedError}
         </span>
       ) : null}
     </div>

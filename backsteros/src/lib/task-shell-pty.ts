@@ -67,11 +67,11 @@ function unreachableMessage(error: unknown): string {
       message === "NetworkError when attempting to fetch resource." ||
       error.name === "NetworkError"
     ) {
-      return "Could not reach local PTY server. Run `pnpm --filter @backsteros/desktop pty`.";
+      return "Could not reach local PTY server. Quit and reopen BacksterOS (it starts the PTY sidecar on launch), or check ~/.config/backsteros/desktop/pty-sidecar.log.";
     }
     if (message) return message;
   }
-  return "Could not reach local PTY server. Run `pnpm --filter @backsteros/desktop pty`.";
+  return "Could not reach local PTY server. Quit and reopen BacksterOS (it starts the PTY sidecar on launch), or check ~/.config/backsteros/desktop/pty-sidecar.log.";
 }
 
 export async function mintTaskShellSession(options: {

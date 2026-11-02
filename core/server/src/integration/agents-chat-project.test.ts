@@ -285,6 +285,7 @@ test("project chat room: routes to lead, auth, no-lead notice", async (context) 
     projectId: string;
     channel: { uri: string; members: string[] } | null;
     report: { reportUrl: string; method: string };
+    owner: { userId: string; email: string | null; name: string | null } | null;
   };
   assert.equal(syncPayload.event, "project.channel.members.sync");
   assert.equal(syncPayload.projectId, projectId);
@@ -295,6 +296,9 @@ test("project chat room: routes to lead, auth, no-lead notice", async (context) 
     syncPayload.report.reportUrl,
     `https://agent.backsteros.com/api/v1/projects/${projectId}`,
   );
+  // Sync includes the workspace human owner so the lead can keep them in the room.
+  assert.ok(syncPayload.owner?.userId);
+  assert.equal(syncPayload.owner?.userId, userId);
   // Agents cannot trigger it; a project without a room cannot either.
   const agentSync = await json(
     app,
@@ -303,6 +307,99 @@ test("project chat room: routes to lead, auth, no-lead notice", async (context) 
     { method: "POST" },
   );
   assert.equal(agentSync.status, 403);
+
+  // Team invite: already in the room → no webhook.
+  webhookHit = null;
+  const alreadyInvite = await json(
+    app,
+    `/api/v1/projects/${projectId}/channel/members/invite`,
+    ownerSecret,
+    {
+      method: "POST",
+      body: JSON.stringify({ contactId: otherContactId }),
+    },
+  );
+  assert.equal(alreadyInvite.status, 200);
+  assert.equal(alreadyInvite.body?.ok, true);
+  assert.equal(alreadyInvite.body?.alreadyMember, true);
+  assert.deepEqual(alreadyInvite.body?.members, ["g-niels", "g-sander"]);
+  assert.equal(webhookHit, null);
+
+  // Drop Sander from the room, then invite again → webhook with invitee.
+  const onlyLead = await json(
+    app,
+    `/api/v1/projects/${projectId}`,
+    leadAgentSecret,
+    {
+      method: "PATCH",
+      body: JSON.stringify({
+        channel: { uri: roomUri, members: ["g-niels"] },
+      }),
+    },
+  );
+  assert.equal(onlyLead.status, 200);
+  webhookHit = null;
+  const teamInvite = await json(
+    app,
+    `/api/v1/projects/${projectId}/channel/members/invite`,
+    ownerSecret,
+    {
+      method: "POST",
+      body: JSON.stringify({ contactId: otherContactId }),
+    },
+  );
+  assert.equal(teamInvite.status, 200);
+  assert.equal(teamInvite.body?.ok, true);
+  assert.equal(teamInvite.body?.pending, true);
+  assert.equal(teamInvite.body?.alreadyMember, false);
+  assert.ok(webhookHit);
+  const invitePayload = JSON.parse(webhookHit.body) as {
+    event: string;
+    projectId: string;
+    invitee: {
+      contactId: string;
+      grokbotAgentId: string;
+      name: string | null;
+    };
+    channel: { uri: string; members: string[] };
+    report: {
+      method: string;
+      body: { channel: { uri: string; members: string[] } };
+    };
+  };
+  assert.equal(invitePayload.event, "project.channel.members.invite");
+  assert.equal(invitePayload.projectId, projectId);
+  assert.equal(invitePayload.invitee.contactId, otherContactId);
+  assert.equal(invitePayload.invitee.grokbotAgentId, "g-sander");
+  assert.deepEqual(invitePayload.channel.members, ["g-niels"]);
+  assert.equal(invitePayload.report.method, "PATCH");
+  assert.deepEqual(invitePayload.report.body.channel.members, [
+    "g-niels",
+    "g-sander",
+  ]);
+  const agentInvite = await json(
+    app,
+    `/api/v1/projects/${projectId}/channel/members/invite`,
+    leadAgentSecret,
+    {
+      method: "POST",
+      body: JSON.stringify({ contactId: otherContactId }),
+    },
+  );
+  assert.equal(agentInvite.status, 403);
+  // Restore both members so lead-transfer expectations below stay valid.
+  const restoreMembers = await json(
+    app,
+    `/api/v1/projects/${projectId}`,
+    leadAgentSecret,
+    {
+      method: "PATCH",
+      body: JSON.stringify({
+        channel: { uri: roomUri, members: ["g-niels", "g-sander"] },
+      }),
+    },
+  );
+  assert.equal(restoreMembers.status, 200);
 
   // Lead transfer: ask the current lead to hand the room to another agent.
   webhookHit = null;

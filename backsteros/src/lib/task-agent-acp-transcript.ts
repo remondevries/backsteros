@@ -92,12 +92,18 @@ export async function fetchAcpChatTranscript(
     }
     return { ok: true, error: null, messages };
   } catch (error) {
+    const message = error instanceof Error ? error.message.trim() : "";
+    const offline =
+      !message ||
+      message === "Failed to fetch" ||
+      message === "Load failed" ||
+      message === "NetworkError when attempting to fetch resource." ||
+      (error instanceof Error && error.name === "NetworkError");
     return {
       ok: false,
-      error:
-        error instanceof Error
-          ? error.message
-          : "Could not reach local PTY for ACP transcript",
+      error: offline
+        ? "Could not reach local PTY server. Quit and reopen BacksterOS (it starts the PTY sidecar on launch)."
+        : message || "Could not reach local PTY for ACP transcript",
       messages: [],
     };
   }
@@ -147,6 +153,82 @@ export async function fetchGitHead(cwd: string | null): Promise<GitHeadResult> {
           ? error.message
           : "Could not reach local PTY for git HEAD",
       headSha: null,
+    };
+  }
+}
+
+export type GitCommitShowResult = {
+  ok: boolean;
+  error: string | null;
+  payload: import("./git-commit-changelog").GitCommitShowPayload | null;
+};
+
+export async function fetchGitCommitShow(
+  cwd: string | null,
+  sha: string,
+): Promise<GitCommitShowResult> {
+  const commitSha = sha.trim();
+  if (!commitSha) {
+    return { ok: false, error: "commit sha is required", payload: null };
+  }
+  const origin = getAcpHttpOrigin();
+  if (!origin.ok) {
+    return { ok: false, error: origin.error, payload: null };
+  }
+  try {
+    const response = await fetch(`${origin.origin}/agent/git/commit`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...ptyAuthHeaders(),
+      },
+      body: JSON.stringify({
+        cwd: cwd?.trim() || undefined,
+        sha: commitSha,
+      }),
+    });
+    const body = (await response.json().catch(() => ({}))) as {
+      error?: string;
+      sha?: string;
+      subject?: string;
+      body?: string;
+      authorName?: string;
+      authoredAt?: string;
+      nameStatus?: string;
+      numstat?: string;
+      patch?: string;
+    };
+    if (!response.ok) {
+      return {
+        ok: false,
+        error: body.error?.trim() || `git commit failed (${response.status})`,
+        payload: null,
+      };
+    }
+    return {
+      ok: true,
+      error: null,
+      payload: {
+        sha: typeof body.sha === "string" ? body.sha : commitSha,
+        subject: typeof body.subject === "string" ? body.subject : "",
+        body: typeof body.body === "string" ? body.body : "",
+        authorName: typeof body.authorName === "string" ? body.authorName : "",
+        authoredAt:
+          typeof body.authoredAt === "string" ? body.authoredAt : "",
+        nameStatus:
+          typeof body.nameStatus === "string" ? body.nameStatus : "",
+        numstat: typeof body.numstat === "string" ? body.numstat : "",
+        patch: typeof body.patch === "string" ? body.patch : "",
+      },
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      error:
+        error instanceof Error
+          ? error.message
+          : "Could not reach local PTY for git commit",
+      payload: null,
     };
   }
 }

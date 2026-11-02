@@ -2,8 +2,8 @@
  * Local PTY sidecar helpers for Settings → Cursor → Agents.
  *
  * Desktop Agent Chat / ACP client calls were removed (BOD-49). The sidecar
- * (`pnpm pty`) still runs for **mobile** Agent Chat over Tailscale — Hub Start
- * keeps it up. This module only lists/kills sessions for ops.
+ * Desktop app startup ensures the sidecar is listening on `:3101` (see
+ * `src-tauri/src/pty_sidecar.rs`). This module only lists/kills sessions for ops.
  */
 
 export const DEFAULT_PTY_HTTP_ORIGIN = "http://127.0.0.1:3101";
@@ -49,11 +49,11 @@ function ptyUnreachableMessage(error: unknown): string {
       message === "NetworkError when attempting to fetch resource." ||
       error.name === "NetworkError"
     ) {
-      return "Could not reach local PTY server. Run `pnpm --filter @backsteros/desktop pty`.";
+      return "Could not reach local PTY server. Quit and reopen BacksterOS (it starts the PTY sidecar on launch), or check ~/.config/backsteros/desktop/pty-sidecar.log.";
     }
     if (message) return message;
   }
-  return "Could not reach local PTY server. Run `pnpm --filter @backsteros/desktop pty`.";
+  return "Could not reach local PTY server. Quit and reopen BacksterOS (it starts the PTY sidecar on launch), or check ~/.config/backsteros/desktop/pty-sidecar.log.";
 }
 
 export async function listPtySessions(options?: {
@@ -89,7 +89,7 @@ export async function listPtySessions(options?: {
       error:
         error instanceof Error
           ? error.message
-          : "Could not reach local PTY server. Run `pnpm --filter @backsteros/desktop pty`.",
+          : "Could not reach local PTY server. Quit and reopen BacksterOS (it starts the PTY sidecar on launch).",
     };
   }
 }

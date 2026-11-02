@@ -21,9 +21,14 @@ import {
 } from "../db/schema.js";
 import { newId } from "../lib/crypto.js";
 import {
+  shouldApplyFactoryTaskStatus,
+  taskSyncForAgentRunPhase,
+} from "../lib/task-agent-run-task-status.js";
+import {
   getOrCreateTaskBriefThread,
   postChatThreadMessage,
 } from "./agent-chat.js";
+import { updateTask } from "./tasks-projects/task-writes.js";
 
 function badRequest(message: string): Error {
   return Object.assign(new Error(message), {
@@ -112,6 +117,105 @@ async function getRunRow(
     )
     .limit(1);
   return row ?? null;
+}
+
+/**
+ * Keep the task board status + OS-96 working badge in sync with factory phase.
+ * Best-effort — never fails the run PATCH/create.
+ */
+async function syncTaskForAgentRunPhase(input: {
+  workspaceId: string;
+  taskId: string;
+  phase: string;
+  conductorContactId: string | null;
+  conductorName: string | null;
+}): Promise<void> {
+  const sync = taskSyncForAgentRunPhase(input.phase);
+  if (!sync.status && !sync.claimWorking && !sync.clearWorking) {
+    return;
+  }
+
+  const [task] = await db
+    .select({
+      id: tasks.id,
+      status: tasks.status,
+      agentWorkingContactId: tasks.agentWorkingContactId,
+    })
+    .from(tasks)
+    .where(
+      and(
+        eq(tasks.workspaceId, input.workspaceId),
+        eq(tasks.id, input.taskId),
+        isNull(tasks.deletedAt),
+      ),
+    )
+    .limit(1);
+  if (!task) return;
+
+  const patch: {
+    status?: "in_progress" | "in_review";
+    agentWorkingContactId?: string | null;
+    agentWorkingKind?: "working" | "reviewing" | null;
+    agentWorkingLabel?: string | null;
+  } = {};
+
+  if (shouldApplyFactoryTaskStatus(task.status, sync.status)) {
+    patch.status = sync.status;
+  }
+
+  const contactId = input.conductorContactId?.trim() || null;
+  if (sync.claimWorking && contactId) {
+    const labelBase = input.conductorName?.trim() || "Agent";
+    patch.agentWorkingContactId = contactId;
+    patch.agentWorkingKind = "working";
+    patch.agentWorkingLabel = `${labelBase} · factory`;
+  } else if (sync.clearWorking) {
+    // Only clear when we (or nobody) own the marker — don't steal another agent.
+    if (
+      !task.agentWorkingContactId ||
+      (contactId && task.agentWorkingContactId === contactId)
+    ) {
+      patch.agentWorkingContactId = null;
+    }
+  }
+
+  if (Object.keys(patch).length === 0) return;
+
+  try {
+    await updateTask(
+      input.workspaceId,
+      input.taskId,
+      patch,
+      db,
+      {
+        userId: null,
+        contactId,
+        kind: "agent",
+      },
+    );
+  } catch (error) {
+    console.warn(
+      `[task-agent-runs] sync task status for phase=${input.phase} failed:`,
+      error instanceof Error ? error.message : error,
+    );
+  }
+}
+
+async function loadConductorName(
+  workspaceId: string,
+  conductorAgentId: string,
+): Promise<string | null> {
+  const [agent] = await db
+    .select({ name: agents.name })
+    .from(agents)
+    .where(
+      and(
+        eq(agents.workspaceId, workspaceId),
+        eq(agents.id, conductorAgentId),
+      ),
+    )
+    .limit(1);
+  return agent?.name?.trim() || null;
 }
 
 export async function getTaskAgentRun(
@@ -354,6 +458,14 @@ export async function createTaskAgentRun(
     })
     .returning();
 
+  await syncTaskForAgentRunPhase({
+    workspaceId,
+    taskId,
+    phase: "brief",
+    conductorContactId: agent.contactId ?? null,
+    conductorName: agent.name ?? null,
+  });
+
   return toRun(created!, []);
 }
 
@@ -422,6 +534,24 @@ export async function updateTaskAgentRun(
           isNull(tasks.deletedAt),
         ),
       );
+  }
+
+  const phaseChanged =
+    input.phase !== undefined && input.phase !== existing.phase;
+  const runCancelled =
+    input.status === "cancelled" && existing.status !== "cancelled";
+  if (phaseChanged || runCancelled) {
+    const conductorName = await loadConductorName(
+      workspaceId,
+      updated.conductorAgentId,
+    );
+    await syncTaskForAgentRunPhase({
+      workspaceId,
+      taskId: updated.taskId,
+      phase: runCancelled && !phaseChanged ? "failed" : updated.phase,
+      conductorContactId: updated.conductorContactId ?? null,
+      conductorName,
+    });
   }
 
   const checks = await loadChecks(workspaceId, runId);

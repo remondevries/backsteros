@@ -688,6 +688,7 @@ function InboxPageBody() {
                 taskId={selectedTask.id}
                 cwd={shellCwd ?? workingDirectory}
                 assigneeName={assignee?.name ?? null}
+                linkedCommitShas={linkedCommitShas}
                 agentsPane={({ onSelectAgent }) => (
                   <TaskAgentsPanel
                     candidates={taskAgents.candidates}

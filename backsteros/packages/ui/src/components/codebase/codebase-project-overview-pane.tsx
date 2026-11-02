@@ -2275,6 +2275,7 @@ export function CodebaseProjectOverviewPane({
                         requestJson={requestJson}
                         memberIdsOverride={teamMemberIdsOverride}
                         syncError={teamSyncError}
+                        onMembersChange={setTeamMemberIdsOverride}
                       />
                     </EntityOverviewField>
                   </div>

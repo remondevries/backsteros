@@ -1130,6 +1130,7 @@ export function TaskDetailPage({
                 taskId={task.id}
                 cwd={shellCwd ?? workingDirectory}
                 assigneeName={task.assigneeName}
+                linkedCommitShas={linkedCommitShas}
                 agentsPane={({ onSelectAgent }) => (
                   <TaskAgentsPanel
                     candidates={taskAgents.candidates}

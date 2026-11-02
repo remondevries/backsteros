@@ -1791,6 +1791,115 @@ const httpServer = createServer(async (req, res) => {
     }
   }
 
+  if (req.method === "POST" && url.pathname === "/agent/git/commit") {
+    if (!isAuthorized(req, url)) {
+      rejectUnauthorized(res);
+      return;
+    }
+    try {
+      const bodyText = await readRequestBody(req);
+      let body = {};
+      try {
+        body = JSON.parse(bodyText || "{}");
+      } catch {
+        body = {};
+      }
+      const cwd =
+        typeof body.cwd === "string" && body.cwd.trim()
+          ? body.cwd.trim()
+          : DEFAULT_CWD;
+      const sha =
+        typeof body.sha === "string" && body.sha.trim() ? body.sha.trim() : "";
+      if (!sha) {
+        res.writeHead(400, { "Content-Type": "application/json; charset=utf-8" });
+        res.end(JSON.stringify({ error: "sha is required" }));
+        return;
+      }
+      const { execFile } = await import("node:child_process");
+      const { promisify } = await import("node:util");
+      const execFileAsync = promisify(execFile);
+      const gitOpts = {
+        cwd,
+        timeout: 30_000,
+        maxBuffer: 12 * 1024 * 1024,
+      };
+      try {
+        const [metaResult, nameStatusResult, numstatResult, patchResult] =
+          await Promise.all([
+            execFileAsync(
+              "git",
+              [
+                "show",
+                "-s",
+                "--format=%H%x00%s%x00%b%x00%an%x00%aI",
+                "--no-patch",
+                sha,
+              ],
+              gitOpts,
+            ),
+            execFileAsync(
+              "git",
+              ["show", "--pretty=format:", "--name-status", sha],
+              gitOpts,
+            ),
+            execFileAsync(
+              "git",
+              ["show", "--pretty=format:", "--numstat", sha],
+              gitOpts,
+            ),
+            execFileAsync(
+              "git",
+              [
+                "show",
+                "--pretty=format:",
+                "--unified=3",
+                "--no-color",
+                sha,
+              ],
+              gitOpts,
+            ),
+          ]);
+        const metaParts = String(metaResult.stdout || "").split("\0");
+        res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
+        res.end(
+          JSON.stringify({
+            ok: true,
+            sha: (metaParts[0] || sha).trim(),
+            subject: (metaParts[1] || "").trim(),
+            body: (metaParts[2] || "").trim(),
+            authorName: (metaParts[3] || "").trim(),
+            authoredAt: (metaParts[4] || "").trim(),
+            nameStatus: String(nameStatusResult.stdout || ""),
+            numstat: String(numstatResult.stdout || ""),
+            patch: String(patchResult.stdout || ""),
+          }),
+        );
+      } catch (error) {
+        res.writeHead(404, { "Content-Type": "application/json; charset=utf-8" });
+        res.end(
+          JSON.stringify({
+            error:
+              error instanceof Error
+                ? error.message
+                : "Failed to read git commit.",
+          }),
+        );
+      }
+      return;
+    } catch (error) {
+      res.writeHead(500, { "Content-Type": "application/json; charset=utf-8" });
+      res.end(
+        JSON.stringify({
+          error:
+            error instanceof Error
+              ? error.message
+              : "Failed to read git commit.",
+        }),
+      );
+      return;
+    }
+  }
+
   if (req.method === "POST" && url.pathname === "/agent/git/revert") {
     if (!isAuthorized(req, url)) {
       rejectUnauthorized(res);

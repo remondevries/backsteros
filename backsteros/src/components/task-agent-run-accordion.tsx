@@ -14,6 +14,12 @@ import {
 } from "@backsteros/ui";
 import { Check } from "lucide-react";
 
+import {
+  parseGitCommitShow,
+  type ChangelogFileKind,
+  type ParsedGitCommitChangelog,
+} from "../lib/git-commit-changelog";
+import { fetchGitCommitShow } from "../lib/task-agent-acp-transcript";
 import { useTaskAgentBuildTranscript } from "../lib/use-task-agent-build-transcript";
 import { TaskShellTerminal } from "./task-shell-terminal";
 
@@ -87,24 +93,6 @@ type ReviewCheckItem = {
   startedAtMs?: number | null;
 };
 
-/** Agent turn file changes — same shape as T3 DiffStatLabel rows. */
-type ChangelogFileKind = "added" | "modified" | "deleted" | "renamed";
-
-type ChangelogDiffLine = {
-  type: "add" | "del" | "ctx" | "hunk";
-  text: string;
-};
-
-type ChangelogFileItem = {
-  id: string;
-  path: string;
-  kind: ChangelogFileKind;
-  additions: number;
-  deletions: number;
-  /** Scaffolded unified-diff preview lines for the nested accordion body. */
-  preview: readonly ChangelogDiffLine[];
-};
-
 const SECTION_ORDER: readonly TaskAgentRunSectionId[] = [
   "brief",
   "build",
@@ -127,7 +115,13 @@ function phaseToSectionId(phase: TaskAgentRunPhase): TaskAgentRunSectionId {
   return "brief";
 }
 
-function sectionsForPhase(phase: TaskAgentRunPhase | null): readonly {
+function sectionsForPhase(
+  phase: TaskAgentRunPhase | null,
+  opts?: {
+    recordIntent?: "commit" | "pr" | null;
+    recordDone?: boolean;
+  },
+): readonly {
   id: TaskAgentRunSectionId;
   title: string;
   status: TaskStatus;
@@ -142,6 +136,8 @@ function sectionsForPhase(phase: TaskAgentRunPhase | null): readonly {
     record: "Record",
     ship: "Ship",
   };
+  const recordIntent = opts?.recordIntent ?? null;
+  const recordDone = Boolean(opts?.recordDone);
   return SECTION_ORDER.map((id, index) => {
     if (index < activeIndex) {
       return { id, title: titles[id], status: "completed" as const };
@@ -162,6 +158,17 @@ function sectionsForPhase(phase: TaskAgentRunPhase | null): readonly {
         return { id, title: titles[id], status: "in_review" as const };
       }
       if (id === "record") {
+        if (recordDone) {
+          return { id, title: titles[id], status: "completed" as const };
+        }
+        if (recordIntent === "commit" || recordIntent === "pr") {
+          return {
+            id,
+            title: titles[id],
+            status: "in_progress" as const,
+            working: true,
+          };
+        }
         return { id, title: titles[id], status: "waiting" as const };
       }
       return { id, title: titles[id], status: "completed" as const };
@@ -256,14 +263,31 @@ function formatCompactDiffCount(value: number): string {
   return `${k < 10 ? k.toFixed(1).replace(/\.0$/, "") : Math.round(k)}k`;
 }
 
+function formatAuthoredAtLabel(iso: string): string {
+  const trimmed = iso.trim();
+  if (!trimmed) return "Just now";
+  const ms = Date.parse(trimmed);
+  if (Number.isNaN(ms)) return trimmed;
+  try {
+    return new Intl.DateTimeFormat(undefined, {
+      dateStyle: "medium",
+      timeStyle: "short",
+    }).format(new Date(ms));
+  } catch {
+    return trimmed;
+  }
+}
+
 function ChangelogDiffPanel({
   files,
   openFileId,
   onOpenFileIdChange,
+  emptyLabel = "No file diff for this run yet.",
 }: {
-  files: readonly ChangelogFileItem[];
+  files: ParsedGitCommitChangelog["files"];
   openFileId: string | null;
   onOpenFileIdChange: (id: string | null) => void;
+  emptyLabel?: string;
 }) {
   const totalAdditions = files.reduce((n, f) => n + f.additions, 0);
   const totalDeletions = files.reduce((n, f) => n + f.deletions, 0);
@@ -271,7 +295,7 @@ function ChangelogDiffPanel({
   if (files.length === 0) {
     return (
       <p className="task-agent-run-accordion__commit-empty" role="status">
-        No file diff for this run yet.
+        {emptyLabel}
       </p>
     );
   }
@@ -615,9 +639,17 @@ export function TaskAgentRunAccordion({
 }: TaskAgentRunAccordionProps) {
   const logAgentLabel = agentName?.trim() || "agent";
   const logUserLabel = assigneeName?.trim() || "you";
+  const recordDone = Boolean(recordHeadSha?.trim());
   const sections = useMemo(
-    () => sectionsForPhase(run?.phase ?? null),
-    [run?.phase],
+    () =>
+      sectionsForPhase(run?.phase ?? null, {
+        recordIntent:
+          run?.recordIntent === "commit" || run?.recordIntent === "pr"
+            ? run.recordIntent
+            : null,
+        recordDone,
+      }),
+    [recordDone, run?.phase, run?.recordIntent],
   );
   const phaseSection = run ? phaseToSectionId(run.phase) : "brief";
   const [openSection, setOpenSection] =
@@ -646,19 +678,63 @@ export function TaskAgentRunAccordion({
   const [openChangelogFileId, setOpenChangelogFileId] = useState<string | null>(
     null,
   );
-  const changelogFiles: readonly ChangelogFileItem[] = [];
+  const [commitChangelog, setCommitChangelog] =
+    useState<ParsedGitCommitChangelog | null>(null);
+  const [commitChangelogLoading, setCommitChangelogLoading] = useState(false);
+  const [commitChangelogError, setCommitChangelogError] = useState<
+    string | null
+  >(null);
+
   const awaitingRecordIntent =
     run?.phase === "record" &&
     run.recordIntent !== "commit" &&
     run.recordIntent !== "pr";
 
+  useEffect(() => {
+    const sha = recordHeadSha?.trim() || "";
+    if (!active || !sha || !cwd?.trim()) {
+      setCommitChangelog(null);
+      setCommitChangelogError(null);
+      setCommitChangelogLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setCommitChangelogLoading(true);
+    setCommitChangelogError(null);
+    void fetchGitCommitShow(cwd, sha).then((result) => {
+      if (cancelled) return;
+      setCommitChangelogLoading(false);
+      if (!result.ok || !result.payload) {
+        setCommitChangelog(null);
+        setCommitChangelogError(
+          result.error || "Could not load commit file diff",
+        );
+        return;
+      }
+      setCommitChangelog(parseGitCommitShow(result.payload));
+      setCommitChangelogError(null);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [active, cwd, recordHeadSha]);
+
+  const changelogFiles = commitChangelog?.files ?? [];
+
   const displayCommitRecord: CommitRecord | null = useMemo(() => {
     if (!run) return null;
     if (awaitingRecordIntent) return null;
     const intent: RecordKind =
-      run.recordIntent === "commit" ? "commit" : "pr";
+      run.recordIntent === "commit"
+        ? "commit"
+        : run.recordIntent === "pr"
+          ? "pr"
+          : "commit";
     const sha = recordHeadSha?.trim() || "";
     if (!sha) {
+      if (run.phase === "done" || run.phase === "ship") {
+        return null;
+      }
       return {
         kind: intent,
         shortSha: "—",
@@ -681,21 +757,33 @@ export function TaskAgentRunAccordion({
     }
     return {
       kind: intent,
-      shortSha: sha.slice(0, 7),
-      sha,
+      shortSha: (commitChangelog?.sha || sha).slice(0, 7),
+      sha: commitChangelog?.sha || sha,
       subject:
+        commitChangelog?.subject?.trim() ||
         run.recordNotes?.trim() ||
         (intent === "pr" ? "Pull request recorded" : "Commit recorded"),
-      body: "",
-      authorName: "cursor-agent",
-      authoredAtLabel: "Just now",
+      body: commitChangelog?.body?.trim() || "",
+      authorName: commitChangelog?.authorName?.trim() || "cursor-agent",
+      authoredAtLabel: formatAuthoredAtLabel(
+        commitChangelog?.authoredAt ?? "",
+      ),
       branch: "—",
-      additions: 0,
-      deletions: 0,
-      filesChanged: 0,
+      additions: commitChangelog?.additions ?? 0,
+      deletions: commitChangelog?.deletions ?? 0,
+      filesChanged: commitChangelog?.files.length ?? 0,
       pullRequest: null,
     };
-  }, [awaitingRecordIntent, recordHeadSha, run]);
+  }, [awaitingRecordIntent, commitChangelog, recordHeadSha, run]);
+
+  const changelogEmptyLabel = recordHeadSha?.trim()
+    ? commitChangelogLoading
+      ? "Loading commit file diff…"
+      : commitChangelogError || "No file changes in this commit."
+    : run?.phase === "record" &&
+        (run.recordIntent === "commit" || run.recordIntent === "pr")
+      ? "Waiting for the commit so we can show its files…"
+      : "No file diff for this run yet.";
 
   const chooseRecordIntent = async (intent: "commit" | "pr") => {
     if (!onChooseRecordIntent || recordIntentSubmitting) return;
@@ -827,6 +915,7 @@ export function TaskAgentRunAccordion({
                       files={changelogFiles}
                       openFileId={openChangelogFileId}
                       onOpenFileIdChange={setOpenChangelogFileId}
+                      emptyLabel={changelogEmptyLabel}
                     />
                   ) : null}
                 </div>
@@ -903,60 +992,121 @@ export function TaskAgentRunAccordion({
             {section.id === "record" ? (
               <div className="task-agent-run-accordion__commit">
                 {awaitingRecordIntent ? (
-                  <div className="task-agent-run-accordion__record-choice">
-                    <p className="task-agent-run-accordion__record-choice-prompt">
-                      How should this work be recorded?
-                    </p>
-                    <div
-                      className="task-agent-run-accordion__record-choice-options"
-                      role="group"
-                      aria-label="Commit or pull request"
-                    >
-                      <button
-                        type="button"
-                        className="task-agent-run-accordion__record-choice-option"
-                        disabled={recordIntentSubmitting || !onChooseRecordIntent}
-                        onClick={() => {
-                          void chooseRecordIntent("commit");
-                        }}
-                      >
-                        <span className="task-agent-run-accordion__record-choice-mark" aria-hidden="true">
-                          <TaskStatusIcon status="backlog" size={14} />
-                        </span>
-                        <span className="task-agent-run-accordion__record-choice-copy">
-                          <span className="task-agent-run-accordion__record-choice-label">
-                            Commit
+                  <div
+                    className="task-agents-panel task-agent-run-accordion__record-choice"
+                    role="group"
+                    aria-label="Commit or pull request"
+                  >
+                    <header className="task-agents-panel__header">
+                      <h3 className="task-agents-panel__title">
+                        How should this work be recorded?
+                      </h3>
+                    </header>
+                    <ul className="task-agents-panel__list">
+                      <li>
+                        <button
+                          type="button"
+                          className="task-agents-panel__card"
+                          aria-label="Commit and push on the current branch"
+                          disabled={
+                            recordIntentSubmitting || !onChooseRecordIntent
+                          }
+                          onClick={() => {
+                            void chooseRecordIntent("commit");
+                          }}
+                        >
+                          <div className="task-agents-panel__avatar">
+                            <span
+                              className="task-agent-run-accordion__record-choice-icon"
+                              aria-hidden="true"
+                            >
+                              <svg
+                                width="24"
+                                height="24"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="1.5"
+                                viewBox="0 0 24 24"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                              >
+                                <path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6m-9-3h6m6 0h6" />
+                              </svg>
+                            </span>
+                          </div>
+                          <div className="task-agents-panel__meta">
+                            <span className="task-agents-panel__name">
+                              Commit
+                            </span>
+                            <span className="task-agents-panel__role">
+                              Commit and push on the current branch
+                            </span>
+                          </div>
+                          <span
+                            className="task-agents-panel__start"
+                            aria-hidden="true"
+                          >
+                            Continue
                           </span>
-                          <span className="task-agent-run-accordion__record-choice-detail">
-                            Commit and push on the current branch
+                        </button>
+                      </li>
+                      <li>
+                        <button
+                          type="button"
+                          className="task-agents-panel__card"
+                          aria-label="Commit, push, and open a pull request"
+                          disabled={
+                            recordIntentSubmitting || !onChooseRecordIntent
+                          }
+                          onClick={() => {
+                            void chooseRecordIntent("pr");
+                          }}
+                        >
+                          <div className="task-agents-panel__avatar">
+                            <span
+                              className="task-agent-run-accordion__record-choice-icon"
+                              aria-hidden="true"
+                            >
+                              <svg
+                                width="24"
+                                height="24"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="1.5"
+                                viewBox="0 0 24 24"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                              >
+                                <path d="M6 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6m12 12a3 3 0 1 0 0-6 3 3 0 0 0 0 6M6 9v12m12-6V7.5a2 2 0 0 0-2-2h-2.5" />
+                                <path d="M14.5 8 12 5.5 14.5 3" />
+                              </svg>
+                            </span>
+                          </div>
+                          <div className="task-agents-panel__meta">
+                            <span className="task-agents-panel__name">
+                              Pull request
+                            </span>
+                            <span className="task-agents-panel__role">
+                              Commit, push, and open a PR for review
+                            </span>
+                          </div>
+                          <span
+                            className="task-agents-panel__start"
+                            aria-hidden="true"
+                          >
+                            Continue
                           </span>
-                        </span>
-                      </button>
-                      <button
-                        type="button"
-                        className="task-agent-run-accordion__record-choice-option is-primary"
-                        disabled={recordIntentSubmitting || !onChooseRecordIntent}
-                        onClick={() => {
-                          void chooseRecordIntent("pr");
-                        }}
-                      >
-                        <span className="task-agent-run-accordion__record-choice-mark" aria-hidden="true">
-                          <TaskStatusIcon status="ready_to_start" size={14} />
-                        </span>
-                        <span className="task-agent-run-accordion__record-choice-copy">
-                          <span className="task-agent-run-accordion__record-choice-label">
-                            Pull request
-                          </span>
-                          <span className="task-agent-run-accordion__record-choice-detail">
-                            Commit, push, and open a PR for review
-                          </span>
-                        </span>
-                      </button>
-                    </div>
+                        </button>
+                      </li>
+                    </ul>
                   </div>
                 ) : !displayCommitRecord ? (
                   <p className="task-agent-run-accordion__commit-empty">
-                    Waiting for Verify to finish before Record…
+                    {run?.phase === "done" || run?.phase === "ship"
+                      ? commitChangelogLoading
+                        ? "Loading recorded commit…"
+                        : "No recorded commit found for this run yet."
+                      : "Waiting for Verify to finish before Record…"}
                   </p>
                 ) : (
                   <>
@@ -1000,6 +1150,16 @@ export function TaskAgentRunAccordion({
                             <dt>When</dt>
                             <dd>{displayCommitRecord.authoredAtLabel}</dd>
                           </div>
+                          {displayCommitRecord.filesChanged > 0 ? (
+                            <div>
+                              <dt>Files</dt>
+                              <dd>
+                                {displayCommitRecord.filesChanged} · +
+                                {displayCommitRecord.additions} −
+                                {displayCommitRecord.deletions}
+                              </dd>
+                            </div>
+                          ) : null}
                         </dl>
                       ) : null}
                     </article>
@@ -1007,6 +1167,7 @@ export function TaskAgentRunAccordion({
                       files={changelogFiles}
                       openFileId={openChangelogFileId}
                       onOpenFileIdChange={setOpenChangelogFileId}
+                      emptyLabel={changelogEmptyLabel}
                     />
                   </>
                 )}
@@ -1014,21 +1175,63 @@ export function TaskAgentRunAccordion({
             ) : null}
 
             {section.id === "ship" ? (
-              <div className="task-agent-run-accordion__review">
-                <div className="task-agent-run-accordion__review-body">
-                  <p
-                    className="task-agent-run-accordion__process-sync-error"
-                    role="status"
-                  >
-                    {run?.phase === "done"
-                      ? "Run completed."
-                      : run?.phase === "ship"
-                        ? "Ship is waiting — deploy automation is not wired yet."
-                        : run?.phase === "failed"
-                          ? run.lastError?.trim() || "Run failed."
-                          : "Ship starts after Record completes."}
-                  </p>
-                </div>
+              <div className="task-agent-run-accordion__commit">
+                <p
+                  className="task-agent-run-accordion__commit-empty"
+                  role="status"
+                >
+                  {run?.phase === "done"
+                    ? "Run completed."
+                    : run?.phase === "ship"
+                      ? "Ship is waiting — deploy automation is not wired yet."
+                      : run?.phase === "failed"
+                        ? run.lastError?.trim() || "Run failed."
+                        : "Ship starts after Record completes."}
+                </p>
+                {displayCommitRecord?.sha ? (
+                  <>
+                    <article className="task-agent-run-accordion__commit-card">
+                      <header className="task-agent-run-accordion__commit-header">
+                        <code
+                          className="task-agent-run-accordion__commit-sha"
+                          title={displayCommitRecord.sha}
+                        >
+                          {displayCommitRecord.shortSha}
+                        </code>
+                        <RecordKindBadge kind={displayCommitRecord.kind} />
+                      </header>
+                      <h3 className="task-agent-run-accordion__commit-subject">
+                        {displayCommitRecord.subject}
+                      </h3>
+                      <dl className="task-agent-run-accordion__commit-meta">
+                        <div>
+                          <dt>Author</dt>
+                          <dd>{displayCommitRecord.authorName}</dd>
+                        </div>
+                        <div>
+                          <dt>When</dt>
+                          <dd>{displayCommitRecord.authoredAtLabel}</dd>
+                        </div>
+                        {displayCommitRecord.filesChanged > 0 ? (
+                          <div>
+                            <dt>Files</dt>
+                            <dd>
+                              {displayCommitRecord.filesChanged} · +
+                              {displayCommitRecord.additions} −
+                              {displayCommitRecord.deletions}
+                            </dd>
+                          </div>
+                        ) : null}
+                      </dl>
+                    </article>
+                    <ChangelogDiffPanel
+                      files={changelogFiles}
+                      openFileId={openChangelogFileId}
+                      onOpenFileIdChange={setOpenChangelogFileId}
+                      emptyLabel={changelogEmptyLabel}
+                    />
+                  </>
+                ) : null}
               </div>
             ) : null}
           </TaskAgentRunSection>

@@ -152,7 +152,7 @@ export async function fetchCursorAgentTranscript(options: {
       return {
         ok: false,
         error:
-          "PTY sidecar returned a non-JSON response for /cursor/agent-transcript. Restart `pnpm --filter @backsteros/desktop pty` so it picks up the new route.",
+          "PTY sidecar returned a non-JSON response for /cursor/agent-transcript. Quit and reopen BacksterOS so it restarts the PTY sidecar with the latest routes.",
         conversationId: null,
         mtimeMs: 0,
         messages: [],
@@ -211,7 +211,7 @@ export async function fetchCursorAgentTranscript(options: {
     return {
       ok: false,
       error: offline
-        ? "Could not reach local PTY server. Run `pnpm --filter @backsteros/desktop pty`."
+        ? "Could not reach local PTY server. Quit and reopen BacksterOS (it starts the PTY sidecar on launch)."
         : message || "Could not reach local PTY server for Cursor transcript.",
       conversationId: null,
       mtimeMs: 0,

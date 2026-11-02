@@ -1,6 +1,7 @@
 mod cursor_usage;
 mod local_core;
 mod overlay;
+mod pty_sidecar;
 mod system_stats;
 mod whoop;
 
@@ -399,6 +400,7 @@ pub fn run() {
 
             start_external_open_href_watcher(app.handle().clone());
             local_core::spawn_ensure_local_core(app.handle().clone());
+            pty_sidecar::spawn_ensure_pty(app.handle().clone());
 
             Ok(())
         })
