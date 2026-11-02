@@ -2,13 +2,17 @@ import assert from "node:assert/strict";
 import { afterEach, describe, it } from "node:test";
 
 import {
+  agentIdsForApiKeyOrder,
   moveIdInOrder,
+  reconcileAgentApiKeyOrderIds,
+  resetAgentOrderMemoryForTests,
   sortAgentsForDisplay,
+  writeAgentApiKeySortOrderIds,
   writeAgentSortOrderIds,
 } from "./shell-agent-order.ts";
 
 afterEach(() => {
-  // no-op without window
+  resetAgentOrderMemoryForTests();
 });
 
 describe("shell agent order", () => {
@@ -105,5 +109,48 @@ describe("shell agent order", () => {
 
   it("writeAgentSortOrderIds is a no-op without window", () => {
     writeAgentSortOrderIds(["a", "b"]);
+  });
+
+  it("session memory keeps api key order without window localStorage", () => {
+    writeAgentApiKeySortOrderIds(["k-b", "k-a"]);
+    const sorted = sortAgentsForDisplay(
+      [
+        { id: "a", apiKeyId: "k-a", name: "A", sortOrder: 0 },
+        { id: "b", apiKeyId: "k-b", name: "B", sortOrder: 1 },
+      ],
+      [],
+    );
+    assert.deepEqual(
+      sorted.map((agent) => agent.id),
+      ["b", "a"],
+    );
+  });
+
+  it("reconcileAgentApiKeyOrderIds drops revoked keys and appends new ones", () => {
+    assert.deepEqual(
+      reconcileAgentApiKeyOrderIds(["k-a", "k-c", "k-d"], ["k-b", "k-a", "k-c"]),
+      ["k-a", "k-c", "k-d"],
+    );
+    assert.deepEqual(
+      reconcileAgentApiKeyOrderIds(["k-a", "k-b"], []),
+      [],
+    );
+  });
+
+  it("agentIdsForApiKeyOrder follows key order and falls back to contactId", () => {
+    const ids = agentIdsForApiKeyOrder(
+      [
+        { id: "agent-a", apiKeyId: null, contactId: "c-a", enabled: true },
+        { id: "agent-b", apiKeyId: "k-b", contactId: "c-b", enabled: true },
+        { id: "agent-c", apiKeyId: "k-c", contactId: "c-c", enabled: true },
+      ],
+      ["k-a", "k-c", "k-b"],
+      [
+        { id: "k-a", contactId: "c-a" },
+        { id: "k-b", contactId: "c-b" },
+        { id: "k-c", contactId: "c-c" },
+      ],
+    );
+    assert.deepEqual(ids, ["agent-a", "agent-c", "agent-b"]);
   });
 });

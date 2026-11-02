@@ -8,6 +8,7 @@ import {
 
 import { useDesktopApi } from "../lib/api-context";
 import { useDesktopAvatarSrcMap } from "../lib/avatar-src";
+import { readAgentApiKeySortOrderIds } from "../lib/shell-agent-order";
 import { useDesktopWorkspacePeople } from "../lib/workspace-data";
 
 function findNamedContact(
@@ -42,7 +43,9 @@ function contactToPeer(
 export function useShellChatPeers(): readonly ChatThreadPeer[] {
   const { client } = useDesktopApi();
   const { contacts } = useDesktopWorkspacePeople();
-  const [agentContactIds, setAgentContactIds] = useState<string[]>([]);
+  const [agentKeys, setAgentKeys] = useState<
+    { id: string; contactId: string }[]
+  >([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -52,18 +55,18 @@ export function useShellChatPeers(): readonly ChatThreadPeer[] {
           "/api/v1/api-keys",
         );
         if (cancelled) return;
-        const ids: string[] = [];
+        const keys: { id: string; contactId: string }[] = [];
         const seen = new Set<string>();
         for (const key of body.apiKeys) {
           if (classifyApiKeyType(key) !== "agent") continue;
           const contactId = key.contactId?.trim();
           if (!contactId || seen.has(contactId)) continue;
           seen.add(contactId);
-          ids.push(contactId);
+          keys.push({ id: key.id, contactId });
         }
-        setAgentContactIds(ids);
+        setAgentKeys(keys);
       } catch {
-        if (!cancelled) setAgentContactIds([]);
+        if (!cancelled) setAgentKeys([]);
       }
     })();
     return () => {
@@ -93,11 +96,20 @@ export function useShellChatPeers(): readonly ChatThreadPeer[] {
       seen.add(preferred.id);
     }
 
-    const agentContacts = agentContactIds
-      .map((id) => byId.get(id))
+    const keyOrder = readAgentApiKeySortOrderIds();
+    const keyIndex = new Map(keyOrder.map((id, index) => [id, index]));
+    const agentContacts = [...agentKeys]
+      .sort((a, b) => {
+        const ai = keyIndex.has(a.id) ? keyIndex.get(a.id)! : Number.MAX_SAFE_INTEGER;
+        const bi = keyIndex.has(b.id) ? keyIndex.get(b.id)! : Number.MAX_SAFE_INTEGER;
+        if (ai !== bi) return ai - bi;
+        const ac = byId.get(a.contactId);
+        const bc = byId.get(b.contactId);
+        return (ac?.name ?? a.contactId).localeCompare(bc?.name ?? b.contactId);
+      })
+      .map((key) => byId.get(key.contactId))
       .filter((contact): contact is ContactListItem => Boolean(contact))
-      .filter((contact) => !seen.has(contact.id))
-      .sort((a, b) => a.name.localeCompare(b.name));
+      .filter((contact) => !seen.has(contact.id));
 
     for (const contact of agentContacts) {
       ordered.push(contact);
@@ -105,7 +117,7 @@ export function useShellChatPeers(): readonly ChatThreadPeer[] {
     }
 
     return ordered;
-  }, [contacts, agentContactIds, judith, niels]);
+  }, [contacts, agentKeys, judith, niels]);
 
   const contactAvatarSrc = useDesktopAvatarSrcMap("contact", peerContacts);
 

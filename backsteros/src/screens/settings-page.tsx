@@ -22,6 +22,7 @@ import {
   IntegrationConnectionSettingsView,
   SettingsContentHeader,
   SettingsDetailLayout,
+  classifyApiKeyType,
   getSettingsTabMeta,
   isApiKeyTypeTab,
   isApiKeysSettingsPanel,
@@ -42,7 +43,9 @@ import {
   isCloudCoreApiError,
 } from "../lib/cloud-core-api";
 import {
+  agentIdsForApiKeyOrder,
   readAgentApiKeySortOrderIds,
+  reconcileAgentApiKeyOrderIds,
   sortAgentsForDisplay,
   writeAgentApiKeySortOrderIds,
   writeAgentSortOrderIds,
@@ -52,6 +55,7 @@ import {
   preferAgentForApiKey,
 } from "../lib/prefer-agent-for-api-key";
 import { notifyShellAgentRosterChanged } from "../lib/shell-agent-roster";
+import { applyShellAgentRosterOrder } from "../lib/shell-agent-roster-store";
 import {
   clearAgentWebhookVerified,
   markAgentWebhookVerified,
@@ -249,10 +253,23 @@ function SettingsApiTab({
           ),
           client.requestJson<{ agents: Agent[] }>("/api/v1/agents"),
         ]);
-      setApiKeys(keysBody.apiKeys.map(toSettingsApiKey));
+      const nextKeys = keysBody.apiKeys.map(toSettingsApiKey);
+      setApiKeys(nextKeys);
       setAuditLogs(auditBody.auditLogs.map(toSettingsAuditLog));
       setRequestLogs(requestBody.requestLogs.map(toSettingsRequestLog));
-      const localOrdered = sortAgentsForDisplay(localAgentsBody.agents);
+      const agentKeyIds = nextKeys
+        .filter((key) => classifyApiKeyType(key) === "agent")
+        .map((key) => key.id);
+      const reconciledKeyOrder = reconcileAgentApiKeyOrderIds(agentKeyIds);
+      if (reconciledKeyOrder.length > 0) {
+        writeAgentApiKeySortOrderIds(reconciledKeyOrder);
+        setAgentKeyOrderIds(reconciledKeyOrder);
+      }
+      const localOrdered = sortAgentsForDisplay(
+        localAgentsBody.agents,
+        null,
+        reconciledKeyOrder,
+      );
       setAgents(localOrdered);
       writeAgentSortOrderIds(localOrdered.map((agent) => agent.id));
     } catch (error) {
@@ -278,7 +295,8 @@ function SettingsApiTab({
           }, 8_000);
         }),
       ]);
-      const ordered = sortAgentsForDisplay(agentsBody.agents);
+      const keyOrder = readAgentApiKeySortOrderIds();
+      const ordered = sortAgentsForDisplay(agentsBody.agents, null, keyOrder);
       setAgents(ordered);
       writeAgentSortOrderIds(ordered.map((agent) => agent.id));
       notifyShellAgentRosterChanged();
@@ -521,56 +539,64 @@ function SettingsApiTab({
   }
 
   async function reorderAgentKeys(orderedApiKeyIds: string[]): Promise<void> {
-    // Commit table order locally first so the drag preview can clear without
-    // snapping back (many Agent-tab keys have no cloud agent row yet).
+    // Commit table + chat order locally first so the drag preview can clear
+    // without snapping back (many Agent-tab keys have no cloud agent row yet).
     writeAgentApiKeySortOrderIds(orderedApiKeyIds);
     setAgentKeyOrderIds(orderedApiKeyIds);
 
-    const agentIds: string[] = [];
-    const seen = new Set<string>();
-    for (const apiKeyId of orderedApiKeyIds) {
-      const linked = preferAgentForApiKey(agents, apiKeyId);
-      if (!linked || seen.has(linked.id)) continue;
-      seen.add(linked.id);
-      agentIds.push(linked.id);
-    }
-    for (const agent of agents) {
-      if (seen.has(agent.id)) continue;
-      seen.add(agent.id);
-      agentIds.push(agent.id);
-    }
-
-    if (agentIds.length > 0) {
-      writeAgentSortOrderIds(agentIds);
-      setAgents((current) =>
-        sortAgentsForDisplay(
-          current.map((agent) => {
-            const index = agentIds.indexOf(agent.id);
-            return index >= 0 ? { ...agent, sortOrder: index } : agent;
-          }),
-          agentIds,
-        ),
-      );
-      notifyShellAgentRosterChanged();
-    }
-
+    const agentIds = agentIdsForApiKeyOrder(agents, orderedApiKeyIds, apiKeys);
     if (agentIds.length === 0) return;
 
-    // Cloud sync in the background — do not block the table on the door.
-    void cloudCoreRequestJson<{ agents: Agent[] }>("/api/v1/agents/reorder", {
-      method: "PUT",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ agentIds }),
-    })
-      .then((body) => {
-        const ordered = sortAgentsForDisplay(body.agents);
-        setAgents(ordered);
-        writeAgentSortOrderIds(ordered.map((agent) => agent.id));
-        notifyShellAgentRosterChanged();
+    writeAgentSortOrderIds(agentIds);
+    setAgents((current) =>
+      sortAgentsForDisplay(
+        current.map((agent) => {
+          const index = agentIds.indexOf(agent.id);
+          return index >= 0 ? { ...agent, sortOrder: index } : agent;
+        }),
+        agentIds,
+        orderedApiKeyIds,
+      ),
+    );
+    // Paint chat strip immediately — do not wait on cloud/local refetch.
+    applyShellAgentRosterOrder(agentIds);
+
+    const body = JSON.stringify({ agentIds });
+    const headers = { "content-type": "application/json" };
+
+    // Persist to cloud (chat write leader) and local-core (instant twin).
+    // localStorage already holds order if either call fails.
+    const cloudReorder = cloudCoreRequestJson<{ agents: Agent[] }>(
+      "/api/v1/agents/reorder",
+      { method: "PUT", headers, body },
+    ).then((response) => {
+      const ordered = sortAgentsForDisplay(
+        response.agents,
+        agentIds,
+        orderedApiKeyIds,
+      );
+      setAgents(ordered);
+      writeAgentSortOrderIds(ordered.map((agent) => agent.id));
+      applyShellAgentRosterOrder(ordered.map((agent) => agent.id));
+    });
+
+    const localReorder = client
+      .requestJson<{ agents: Agent[] }>("/api/v1/agents/reorder", {
+        method: "PUT",
+        headers,
+        body,
       })
-      .catch(() => {
-        // localStorage + optimistic state keep order until cloud migrates.
-      });
+      .catch(() => null);
+
+    try {
+      await Promise.all([cloudReorder, localReorder]);
+    } catch (error) {
+      setErrorMessage(
+        cloudSettingsErrorMessage(error, "Could not save agent order to cloud"),
+      );
+    } finally {
+      notifyShellAgentRosterChanged();
+    }
   }
 
   return (

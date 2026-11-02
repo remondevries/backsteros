@@ -61,6 +61,23 @@ export function mergeAgentRosters(
   );
 }
 
+/**
+ * Paint a dragged order onto the live chat roster immediately so the strip
+ * does not wait on a cloud/local refetch (and cannot snap back if that refetch
+ * still has the old sortOrder).
+ */
+export function applyShellAgentRosterOrder(agentIds: readonly string[]): void {
+  if (agentIds.length === 0 || snapshot.agents.length === 0) return;
+  const ordered = sortAgentsForDisplay(
+    snapshot.agents.map((agent) => {
+      const index = agentIds.indexOf(agent.id);
+      return index >= 0 ? { ...agent, sortOrder: index } : agent;
+    }),
+    agentIds,
+  );
+  setSnapshot({ agents: ordered, error: null });
+}
+
 function cloudLoadErrorMessage(error: unknown): string {
   if (isCloudCoreApiError(error) && error.status === 401) {
     return "Cloud chat needs an owner API key (Tauri reads ~/.config/backsteros/cli.env; Vite serve loads it automatically). Restart the dev server after updating the key.";

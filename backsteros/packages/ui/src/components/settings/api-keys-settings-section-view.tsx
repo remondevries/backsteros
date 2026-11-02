@@ -1228,6 +1228,20 @@ export function ApiKeysSettingsSectionView({
     slotMids: number[];
   } | null>(null);
 
+  // Drop the drag preview only after the parent has committed the same order.
+  // Clearing in saveAgentOrder's finally raced setAgentKeyOrderIds and snapped
+  // the Agent table back to the previous sortOrder.
+  useEffect(() => {
+    if (!dragOrderIds || draggingId) return;
+    if (!agentKeyOrderIds || agentKeyOrderIds.length === 0) return;
+    if (
+      dragOrderIds.length === agentKeyOrderIds.length &&
+      dragOrderIds.every((id, index) => id === agentKeyOrderIds[index])
+    ) {
+      setDragOrderIds(null);
+    }
+  }, [agentKeyOrderIds, dragOrderIds, draggingId]);
+
   const contactOptions = useMemo(
     () => buildContactDropdownOptions(contacts),
     [contacts],
@@ -1286,11 +1300,16 @@ export function ApiKeysSettingsSectionView({
 
   async function saveAgentOrder(orderedIds: string[]) {
     const reorder = onReorderAgentKeysRef.current;
-    if (!reorder || reorderingRef.current || tab !== "agent") return;
+    if (!reorder || reorderingRef.current || tab !== "agent") {
+      setDragOrderIds(null);
+      return;
+    }
     reorderingRef.current = true;
     setReordering(true);
     try {
       await reorder(orderedIds);
+    } catch {
+      setDragOrderIds(null);
     } finally {
       reorderingRef.current = false;
       setReordering(false);
@@ -1406,14 +1425,8 @@ export function ApiKeysSettingsSectionView({
         return;
       }
       const orderedIds = session.orderIds;
-      // Keep preview order until parent commits agentKeyOrderIds, then clear.
-      void (async () => {
-        try {
-          await saveAgentOrder(orderedIds);
-        } finally {
-          setDragOrderIds(null);
-        }
-      })();
+      // Keep preview order until parent commits agentKeyOrderIds (see effect).
+      void saveAgentOrder(orderedIds);
     };
 
     handle.addEventListener("pointermove", onMove);
