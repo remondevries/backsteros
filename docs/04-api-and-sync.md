@@ -445,8 +445,9 @@ on cloud (owner `sk_live_…`); they are not PowerSynced in v1. Local-core alone
 is not enough — agents never call the Mac.
 
 **Start a run** (from desktop against **cloud** / the agents door; cancels any
-other active run on the task by default; opens a DM thread with the conductor
-and posts a wake message with task + project + cwd + repo context):
+other active run on the task by default; opens a **task-scoped Brief thread**
+(`chat_threads.task_id` — separate from the shell DM with the same agent) and
+posts a wake message with task + project + cwd + repo context):
 
 ```http
 POST https://agent.backsteros.com/api/v1/tasks/{taskId}/agent-runs
@@ -1149,6 +1150,12 @@ messages route to the project's **current** lead agent
 and not the Grok Bot DM room). If the lead changes, the new lead takes over
 for new messages. Missing lead / webhook → a clear **system** notice in the
 thread (not a silent drop).
+
+**Task Brief threads** are one conversation per task (`chat_threads.task_id`).
+They are created by the task agent factory wake path, never by
+`POST /api/v1/chat/threads` with `agentId` alone. Brief threads are excluded
+from the shell DM list (`GET /api/v1/chat/threads`) and from left-rail SSE
+notifications so conductor confirmations stay inside the task Brief pane.
 
 **Human message** (`event` must be matched exactly):
 

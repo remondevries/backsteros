@@ -30,12 +30,13 @@ describe("project chat thread contracts", () => {
     );
   });
 
-  it("requires nullable projectId on chatThreadSchema", () => {
+  it("requires nullable projectId and taskId on chatThreadSchema", () => {
     const parsed = chatThreadSchema.safeParse({
       id: "th_1",
       workspaceId: "ws_1",
       agentId: "ag_1",
       projectId: null,
+      taskId: null,
       pendingReplyAt: null,
       createdAt: "2026-10-31T12:00:00.000Z",
       updatedAt: "2026-10-31T12:00:00.000Z",
@@ -46,16 +47,40 @@ describe("project chat thread contracts", () => {
       workspaceId: "ws_1",
       agentId: "ag_1",
       projectId: "proj_1",
+      taskId: null,
       pendingReplyAt: null,
       createdAt: "2026-10-31T12:00:00.000Z",
       updatedAt: "2026-10-31T12:00:00.000Z",
     });
     assert.equal(withProject.success, true);
+    const withTaskBrief = chatThreadSchema.safeParse({
+      id: "th_1",
+      workspaceId: "ws_1",
+      agentId: "ag_1",
+      projectId: null,
+      taskId: "tsk_1",
+      pendingReplyAt: null,
+      createdAt: "2026-10-31T12:00:00.000Z",
+      updatedAt: "2026-10-31T12:00:00.000Z",
+    });
+    assert.equal(withTaskBrief.success, true);
     assert.equal(
       chatThreadSchema.safeParse({
         id: "th_1",
         workspaceId: "ws_1",
         agentId: "ag_1",
+        pendingReplyAt: null,
+        createdAt: "2026-10-31T12:00:00.000Z",
+        updatedAt: "2026-10-31T12:00:00.000Z",
+      }).success,
+      false,
+    );
+    assert.equal(
+      chatThreadSchema.safeParse({
+        id: "th_1",
+        workspaceId: "ws_1",
+        agentId: "ag_1",
+        projectId: null,
         pendingReplyAt: null,
         createdAt: "2026-10-31T12:00:00.000Z",
         updatedAt: "2026-10-31T12:00:00.000Z",

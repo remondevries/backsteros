@@ -771,9 +771,15 @@ export const chatThreadSchema = z.object({
   agentId: z.string(),
   /**
    * Project chat room id when this thread is a project channel (one per
-   * project). Null for direct agent DMs.
+   * project). Null for direct agent DMs and task Brief threads.
    */
   projectId: z.string().nullable(),
+  /**
+   * Task id when this thread is a factory Brief conversation (one per task).
+   * Null for shell DMs and project rooms. Brief threads are excluded from the
+   * left-rail DM list.
+   */
+  taskId: z.string().nullable(),
   /** ISO timestamp while waiting for an agent reply; null otherwise. */
   pendingReplyAt: z.string().datetime().nullable(),
   createdAt: z.string().datetime(),

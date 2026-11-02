@@ -35,7 +35,7 @@ function preferAccessOwnerKey(
   fallbackAccess: string | null,
 ): string | null {
   if (fallbackAccess?.startsWith("sk_access_")) {
-    if (!primary || primary.starts_with("sk_live_")) {
+    if (!primary || primary.startsWith("sk_live_")) {
       return fallbackAccess;
     }
   }

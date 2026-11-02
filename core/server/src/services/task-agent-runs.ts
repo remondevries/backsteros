@@ -21,7 +21,7 @@ import {
 } from "../db/schema.js";
 import { newId } from "../lib/crypto.js";
 import {
-  getOrCreateChatThread,
+  getOrCreateTaskBriefThread,
   postChatThreadMessage,
 } from "./agent-chat.js";
 
@@ -300,7 +300,9 @@ export async function createTaskAgentRun(
 
   const wakeConductor = input.wakeConductor !== false;
   if (wakeConductor) {
-    const thread = await getOrCreateChatThread(workspaceId, {
+    // Dedicated per-task Brief thread — never the shell DM with this agent.
+    const thread = await getOrCreateTaskBriefThread(workspaceId, {
+      taskId,
       agentId: conductorAgentId,
     });
     briefThreadId = thread.id;

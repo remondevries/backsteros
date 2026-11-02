@@ -44,6 +44,10 @@ export function TaskShellWorkspace({
     starting,
     startRun,
     sendBriefMessage,
+    answerBriefChoices,
+    answerBriefApproval,
+    answerBriefForm,
+    answerBriefEmailDraft,
     requestJson,
   } = useTaskAgentRun({ active, taskId });
   const [selectedAgent, setSelectedAgent] = useState<TaskAgentCandidate | null>(
@@ -128,6 +132,18 @@ export function TaskShellWorkspace({
             onSendBriefMessage={(text) => {
               void sendBriefMessage(text);
             }}
+            onAnswerBriefChoices={(messageId, values) =>
+              answerBriefChoices(messageId, values)
+            }
+            onAnswerBriefApproval={(messageId, decision, note) =>
+              answerBriefApproval(messageId, decision, note)
+            }
+            onAnswerBriefForm={(messageId, values) =>
+              answerBriefForm(messageId, values)
+            }
+            onAnswerBriefEmailDraft={(messageId, emailAction, edits) =>
+              answerBriefEmailDraft(messageId, emailAction, edits)
+            }
             orchestratorError={combinedError}
             recordHeadSha={recordHeadSha}
           />

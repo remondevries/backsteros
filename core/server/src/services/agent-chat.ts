@@ -306,6 +306,7 @@ async function insertSystemNotice(
   agentId: string,
   body: string,
   now: Date,
+  taskId?: string | null,
 ): Promise<ChatThreadMessage> {
   const [messageRow] = await db
     .insert(chatThreadMessages)
@@ -328,6 +329,7 @@ async function insertSystemNotice(
     threadId,
     agentId,
     message,
+    taskId,
   });
   return message;
 }
@@ -340,6 +342,8 @@ function publishStatusEvent(input: {
   at: Date;
   pendingReplyAt: Date | null;
   label?: string | null;
+  /** Task Brief threads stay out of the left-rail DM SSE feed. */
+  taskId?: string | null;
 }): ChatThreadAgentStatus {
   const label =
     input.state === "working" ? (input.label?.trim() || null) : null;
@@ -351,10 +355,12 @@ function publishStatusEvent(input: {
     pendingReplyAt: input.pendingReplyAt?.toISOString() ?? null,
     label,
   };
-  publishAgentShellChatStatus({
-    workspaceId: input.workspaceId,
-    ...payload,
-  });
+  if (!input.taskId) {
+    publishAgentShellChatStatus({
+      workspaceId: input.workspaceId,
+      ...payload,
+    });
+  }
   return payload;
 }
 
@@ -363,6 +369,7 @@ function toThread(row: {
   workspaceId: string;
   agentId: string;
   projectId?: string | null;
+  taskId?: string | null;
   pendingReplyAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
@@ -372,6 +379,7 @@ function toThread(row: {
     workspaceId: row.workspaceId,
     agentId: row.agentId,
     projectId: row.projectId ?? null,
+    taskId: row.taskId ?? null,
     pendingReplyAt: row.pendingReplyAt?.toISOString() ?? null,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
@@ -682,7 +690,10 @@ function publishShellMessageEvent(input: {
   threadId: string;
   agentId: string;
   message: ChatThreadMessage;
+  /** Task Brief threads stay out of the left-rail DM SSE feed. */
+  taskId?: string | null;
 }): void {
+  if (input.taskId) return;
   const attachmentPreview =
     input.message.attachments && input.message.attachments.length > 0
       ? input.message.attachments
@@ -744,10 +755,11 @@ export async function listChatThreads(
   workspaceId: string,
   agentId?: string,
 ): Promise<{ threads: ChatThreadListItem[]; hasMore: boolean }> {
-  // DM notification list — project rooms are opened via projectId, not here.
+  // DM notification list — project rooms and task Briefs are opened elsewhere.
   const conditions = [
     eq(chatThreads.workspaceId, workspaceId),
     isNull(chatThreads.projectId),
+    isNull(chatThreads.taskId),
   ];
   if (agentId) conditions.push(eq(chatThreads.agentId, agentId));
   const rows = await db
@@ -904,6 +916,7 @@ export async function getOrCreateChatThread(
           workspaceId,
           agentId: lead.id,
           projectId,
+          taskId: null,
           pendingReplyAt: null,
           createdAt: now,
           updatedAt: now,
@@ -946,6 +959,7 @@ export async function getOrCreateChatThread(
         eq(chatThreads.workspaceId, workspaceId),
         eq(chatThreads.agentId, agentId),
         isNull(chatThreads.projectId),
+        isNull(chatThreads.taskId),
       ),
     )
     .limit(1);
@@ -960,12 +974,81 @@ export async function getOrCreateChatThread(
         workspaceId,
         agentId,
         projectId: null,
+        taskId: null,
         pendingReplyAt: null,
         createdAt: now,
         updatedAt: now,
       })
       .returning();
     thread = created!;
+  }
+
+  const freshThread = await clearStalePendingReplyAt(thread);
+  const loaded = await loadMessages(workspaceId, freshThread.id);
+  return {
+    ...toThread(freshThread),
+    agentName: agent.name,
+    messages: loaded.messages,
+    hasMore: loaded.hasMore,
+  };
+}
+
+/**
+ * Task factory Brief conversation — one thread per task, separate from the
+ * shell DM with the same agent and from project rooms.
+ */
+export async function getOrCreateTaskBriefThread(
+  workspaceId: string,
+  input: { taskId: string; agentId: string },
+): Promise<ChatThreadWithMessages> {
+  const taskId = input.taskId.trim();
+  const agentId = input.agentId.trim();
+  if (!taskId) throw badRequest("taskId is required");
+  if (!agentId) throw badRequest("agentId is required");
+
+  const [agent] = await db
+    .select()
+    .from(agents)
+    .where(and(eq(agents.workspaceId, workspaceId), eq(agents.id, agentId)))
+    .limit(1);
+  if (!agent) throw notFound("Agent");
+  if (!agent.enabled) throw badRequest("Agent is disabled");
+
+  const [existing] = await db
+    .select()
+    .from(chatThreads)
+    .where(
+      and(
+        eq(chatThreads.workspaceId, workspaceId),
+        eq(chatThreads.taskId, taskId),
+      ),
+    )
+    .limit(1);
+
+  let thread = existing;
+  const now = new Date();
+  if (!thread) {
+    const [created] = await db
+      .insert(chatThreads)
+      .values({
+        id: newId(),
+        workspaceId,
+        agentId,
+        projectId: null,
+        taskId,
+        pendingReplyAt: null,
+        createdAt: now,
+        updatedAt: now,
+      })
+      .returning();
+    thread = created!;
+  } else if (thread.agentId !== agentId) {
+    const [updated] = await db
+      .update(chatThreads)
+      .set({ agentId, updatedAt: now })
+      .where(eq(chatThreads.id, thread.id))
+      .returning();
+    thread = updated ?? { ...thread, agentId, updatedAt: now };
   }
 
   const freshThread = await clearStalePendingReplyAt(thread);
@@ -1358,6 +1441,7 @@ export async function postChatThreadMessage(
       threadId,
       agentId: agent.id,
       message,
+      taskId: thread.taskId,
     });
     // Posting a reply implicitly marks the agent idle (clears step label).
     publishStatusEvent({
@@ -1368,6 +1452,7 @@ export async function postChatThreadMessage(
       at: now,
       pendingReplyAt: null,
       label: null,
+      taskId: thread.taskId,
     });
 
     return {
@@ -1677,6 +1762,7 @@ export async function updateChatThreadMessage(
     threadId,
     agentId: agent.id,
     message,
+    taskId: thread.taskId,
   });
 
   return { message };
@@ -1767,7 +1853,7 @@ export async function answerChatThreadMessageChoices(
 
   const answeredMessage = toMessage(updatedRow);
   const [threadRow] = await db
-    .select({ agentId: chatThreads.agentId })
+    .select({ agentId: chatThreads.agentId, taskId: chatThreads.taskId })
     .from(chatThreads)
     .where(
       and(
@@ -1782,6 +1868,7 @@ export async function answerChatThreadMessageChoices(
       threadId,
       agentId: threadRow.agentId,
       message: answeredMessage,
+      taskId: threadRow.taskId,
     });
   }
 
@@ -1866,7 +1953,7 @@ export async function answerChatThreadMessageApproval(
 
   const answeredMessage = toMessage(updatedRow);
   const [threadRow] = await db
-    .select({ agentId: chatThreads.agentId })
+    .select({ agentId: chatThreads.agentId, taskId: chatThreads.taskId })
     .from(chatThreads)
     .where(
       and(
@@ -1881,6 +1968,7 @@ export async function answerChatThreadMessageApproval(
       threadId,
       agentId: threadRow.agentId,
       message: answeredMessage,
+      taskId: threadRow.taskId,
     });
   }
 
@@ -1968,7 +2056,7 @@ export async function answerChatThreadMessageForm(
 
   const answeredMessage = toMessage(updatedRow);
   const [threadRow] = await db
-    .select({ agentId: chatThreads.agentId })
+    .select({ agentId: chatThreads.agentId, taskId: chatThreads.taskId })
     .from(chatThreads)
     .where(
       and(
@@ -1983,6 +2071,7 @@ export async function answerChatThreadMessageForm(
       threadId,
       agentId: threadRow.agentId,
       message: answeredMessage,
+      taskId: threadRow.taskId,
     });
   }
 
@@ -2090,7 +2179,7 @@ export async function answerChatThreadMessageEmailDraft(
 
   const answeredMessage = toMessage(updatedRow);
   const [threadRow] = await db
-    .select({ agentId: chatThreads.agentId })
+    .select({ agentId: chatThreads.agentId, taskId: chatThreads.taskId })
     .from(chatThreads)
     .where(
       and(
@@ -2105,6 +2194,7 @@ export async function answerChatThreadMessageEmailDraft(
       threadId,
       agentId: threadRow.agentId,
       message: answeredMessage,
+      taskId: threadRow.taskId,
     });
   }
 
@@ -2183,6 +2273,7 @@ export async function setChatThreadAgentStatus(
     at: now,
     pendingReplyAt: updated?.pendingReplyAt ?? pendingReplyAt,
     label: state === "working" ? label : null,
+    taskId: thread.taskId,
   });
 }
 

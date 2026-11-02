@@ -125,10 +125,10 @@ Full shapes: `docs/04-api-and-sync.md` (Shell agent chat webhooks).
 
 ## Task agent factory (Brief → Build → Verify → Record)
 
-Desktop starts a run on **cloud-core** (this door). The Brief DM thread and
-`task_agent_runs` row live here — not on the Mac — so conductor replies and
-phase PATCHes work. Desktop watches the run and runs local Cursor ACP for Build
-/ Record.
+Desktop starts a run on **cloud-core** (this door). The Brief thread
+(`chat_threads.task_id` — separate from the shell DM) and `task_agent_runs` row
+live here — not on the Mac — so conductor replies and phase PATCHes work.
+Desktop watches the run and runs local Cursor ACP for Build / Record.
 
 When the wake webhook includes `taskAgentRun`, use those ids (do not scrape
 prose):

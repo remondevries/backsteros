@@ -3303,9 +3303,17 @@ export const chatThreads = pgTable(
       .references(() => agents.id, { onDelete: "cascade" }),
     /**
      * When set, this is a project chat room (one per project). Null = DM with
-     * the agent. Lead agent for routing is resolved from projects.lead_agent_contact_id.
+     * the agent (or a task Brief when taskId is set). Lead agent for routing is
+     * resolved from projects.lead_agent_contact_id.
      */
     projectId: text("project_id").references(() => projects.id, {
+      onDelete: "cascade",
+    }),
+    /**
+     * When set, this is a task factory Brief thread (one per task). Separate
+     * from shell DMs (`project_id` and `task_id` both null) and project rooms.
+     */
+    taskId: text("task_id").references(() => tasks.id, {
       onDelete: "cascade",
     }),
     /**
@@ -3323,13 +3331,17 @@ export const chatThreads = pgTable(
   (table) => [
     uniqueIndex("chat_threads_workspace_agent_dm_uidx")
       .on(table.workspaceId, table.agentId)
-      .where(sql`${table.projectId} is null`),
+      .where(sql`${table.projectId} is null and ${table.taskId} is null`),
     uniqueIndex("chat_threads_workspace_project_uidx")
       .on(table.workspaceId, table.projectId)
       .where(sql`${table.projectId} is not null`),
+    uniqueIndex("chat_threads_workspace_task_brief_uidx")
+      .on(table.workspaceId, table.taskId)
+      .where(sql`${table.taskId} is not null`),
     index("chat_threads_workspace_id_idx").on(table.workspaceId),
     index("chat_threads_agent_id_idx").on(table.agentId),
     index("chat_threads_project_id_idx").on(table.projectId),
+    index("chat_threads_task_id_idx").on(table.taskId),
   ],
 );
 

@@ -37,6 +37,31 @@ export type TaskAgentRunAccordionProps = {
   /** Brief thread messages (Grok conductor chat). */
   briefMessages?: ChatUiMessage[];
   onSendBriefMessage?: (text: string) => void;
+  onAnswerBriefChoices?: (
+    messageId: string,
+    values: readonly string[],
+  ) => void | Promise<void>;
+  onAnswerBriefApproval?: (
+    messageId: string,
+    decision: "approved" | "rejected",
+    note?: string,
+  ) => void | Promise<void>;
+  onAnswerBriefForm?: (
+    messageId: string,
+    values: Record<string, string | number | boolean>,
+  ) => void | Promise<void>;
+  onAnswerBriefEmailDraft?: (
+    messageId: string,
+    emailAction: "send" | "discard",
+    edits?: {
+      to?: string[];
+      cc?: string[];
+      bcc?: string[];
+      subject?: string;
+      body?: string;
+      from?: string;
+    },
+  ) => void | Promise<void>;
   orchestratorError?: string | null;
   /** Hydrated git HEAD after a Record turn (from desktop orchestrator). */
   recordHeadSha?: string | null;
@@ -564,6 +589,10 @@ export function TaskAgentRunAccordion({
   run = null,
   briefMessages: briefMessagesProp,
   onSendBriefMessage,
+  onAnswerBriefChoices,
+  onAnswerBriefApproval,
+  onAnswerBriefForm,
+  onAnswerBriefEmailDraft,
   orchestratorError = null,
   recordHeadSha = null,
 }: TaskAgentRunAccordionProps) {
@@ -713,6 +742,10 @@ export function TaskAgentRunAccordion({
                       newLocalMessage("user", trimmed),
                     ]);
                   }}
+                  onAnswerChoices={onAnswerBriefChoices ?? null}
+                  onAnswerApproval={onAnswerBriefApproval ?? null}
+                  onAnswerForm={onAnswerBriefForm ?? null}
+                  onAnswerEmailDraft={onAnswerBriefEmailDraft ?? null}
                 />
               </div>
             ) : null}

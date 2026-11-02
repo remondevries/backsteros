@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type {
+  AnswerChatThreadMessageResult,
   ChatThreadMessage,
   ChatUiMessage,
   CreateTaskAgentRunInput,
   TaskAgentRun,
 } from "@backsteros/contracts";
+import { chatThreadMessagesToUi } from "@backsteros/ui";
 
 import {
   cloudCoreRequestJson,
@@ -17,21 +19,6 @@ import {
 } from "./task-agent-runs-api";
 
 const POLL_MS = 2_500;
-
-function chatThreadMessageToUi(message: ChatThreadMessage): ChatUiMessage {
-  return {
-    id: message.id,
-    role:
-      message.role === "assistant"
-        ? "assistant"
-        : message.role === "system"
-          ? "system"
-          : "user",
-    parts: [{ type: "text", text: message.body ?? "" }],
-    status: "done",
-    createdAt: message.createdAt,
-  };
-}
 
 function cloudErrorMessage(err: unknown, fallback: string): string {
   if (isCloudCoreApiError(err)) {
@@ -59,6 +46,9 @@ function cloudErrorMessage(err: unknown, fallback: string): string {
 /**
  * Factory run + Brief live on **cloud-core** so Grok can reply and PATCH phases
  * via agent.backsteros.com. Desktop only executes local Cursor ACP.
+ *
+ * Brief is a task-scoped chat thread (`chat_threads.task_id`) — separate from
+ * the left-rail shell DM with the same agent.
  */
 export function useTaskAgentRun(options: {
   active: boolean;
@@ -104,13 +94,7 @@ export function useTaskAgentRun(options: {
         const body = await requestJson<{ messages: ChatThreadMessage[] }>(
           `/api/v1/chat/threads/${encodeURIComponent(id)}/messages`,
         );
-        setBriefMessages(
-          (body.messages ?? []).map(chatThreadMessageToUi).filter((m) =>
-            m.parts.some(
-              (p) => p.type === "text" && p.text.trim().length > 0,
-            ),
-          ),
-        );
+        setBriefMessages(chatThreadMessagesToUi(body.messages ?? []));
       } catch {
         /* keep last brief snapshot */
       }
@@ -200,6 +184,76 @@ export function useTaskAgentRun(options: {
     [refreshBrief, refreshRun, requestJson, run?.briefThreadId],
   );
 
+  const answerBriefMessage = useCallback(
+    async (messageId: string, body: unknown) => {
+      const threadId = run?.briefThreadId?.trim();
+      if (!threadId) throw new Error("Brief thread is not ready");
+      await requestJson<AnswerChatThreadMessageResult>(
+        `/api/v1/chat/threads/${encodeURIComponent(threadId)}/messages/${encodeURIComponent(messageId)}/answer`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        },
+      );
+      await refreshBrief(threadId);
+      await refreshRun();
+    },
+    [refreshBrief, refreshRun, requestJson, run?.briefThreadId],
+  );
+
+  const answerBriefChoices = useCallback(
+    async (messageId: string, values: readonly string[]) => {
+      await answerBriefMessage(messageId, { values: [...values] });
+    },
+    [answerBriefMessage],
+  );
+
+  const answerBriefApproval = useCallback(
+    async (
+      messageId: string,
+      decision: "approved" | "rejected",
+      note?: string,
+    ) => {
+      await answerBriefMessage(messageId, {
+        decision,
+        ...(note?.trim() ? { note: note.trim() } : {}),
+      });
+    },
+    [answerBriefMessage],
+  );
+
+  const answerBriefForm = useCallback(
+    async (
+      messageId: string,
+      values: Record<string, string | number | boolean>,
+    ) => {
+      await answerBriefMessage(messageId, { values });
+    },
+    [answerBriefMessage],
+  );
+
+  const answerBriefEmailDraft = useCallback(
+    async (
+      messageId: string,
+      emailAction: "send" | "discard",
+      edits?: {
+        to?: string[];
+        cc?: string[];
+        bcc?: string[];
+        subject?: string;
+        body?: string;
+        from?: string;
+      },
+    ) => {
+      await answerBriefMessage(messageId, {
+        emailAction,
+        ...(edits ? { edits } : {}),
+      });
+    },
+    [answerBriefMessage],
+  );
+
   return {
     run,
     briefMessages,
@@ -209,6 +263,10 @@ export function useTaskAgentRun(options: {
     updateRun,
     refreshRun,
     sendBriefMessage,
+    answerBriefChoices,
+    answerBriefApproval,
+    answerBriefForm,
+    answerBriefEmailDraft,
     requestJson,
   };
 }
