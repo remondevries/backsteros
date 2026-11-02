@@ -519,11 +519,15 @@ room thread:
 **Grok playbook:** Brief until ready → `phase=build` + `buildPrompt` → desktop
 runs Cursor ACP → desktop posts a **Brief user message** (“Build turn
 finished…”) so the conductor webhook fires → create checks + `phase=verify` →
-on results either `phase=brief` (loop) or `phase=record` + `recordIntent` →
-desktop prompts Cursor to commit/PR → Brief notify again → `phase=done`.
+**desktop** runs Cursor ACP again to execute pending checks (typecheck/lint
+locally, code-review checks by inspection), PATCHes check statuses, Brief
+notifies → conductor chooses `phase=brief` (loop) or `phase=record` +
+`recordIntent` → desktop prompts Cursor to commit/PR → Brief notify again →
+`phase=done`.
 
-Task comments alone do **not** wake the conductor; handoffs must be Brief
-messages (or an explicit agent poll).
+Split of responsibility: Grok owns Brief + phase + which checks exist; the Mac
+desktop / Cursor ACP executes Build, Verify, and Record. Task comments alone do
+**not** wake the conductor; handoffs must be Brief messages.
 
 ### Agent-working marker (OS-96)
 

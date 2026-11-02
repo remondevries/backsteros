@@ -3,14 +3,19 @@ import type { ChatUiMessage, TaskAgentRun } from "@backsteros/contracts";
 
 import {
   buildRecordGitPrompt,
+  buildVerifyPrompt,
   ensureTaskAcpSession,
+  parseVerifyCheckResults,
   promptTaskAcpSession,
 } from "./task-agent-acp";
 import {
   fetchAcpChatTranscript,
   fetchGitHead,
 } from "./task-agent-acp-transcript";
-import { patchTaskAgentRun } from "./task-agent-runs-api";
+import {
+  patchTaskAgentRun,
+  patchTaskAgentRunCheck,
+} from "./task-agent-runs-api";
 
 const BRIEF_SUMMARY_MAX = 2_500;
 
@@ -41,7 +46,7 @@ function truncateForBrief(text: string, max = BRIEF_SUMMARY_MAX): string {
 
 /**
  * Watches the active task agent run and executes local Cursor ACP actions when
- * Grok advances phase to build or record. Grok never calls localhost.
+ * Grok advances phase to build, verify, or record. Grok never calls localhost.
  *
  * After ACP finishes, posts a **Brief thread** user message so the conductor
  * webhook fires (task comments alone do not wake Grok).
@@ -68,10 +73,12 @@ export function useTaskAgentRunOrchestrator(options: {
     onRecordHydrated,
   } = options;
   const lastBuildKeyRef = useRef<string | null>(null);
+  const lastVerifyKeyRef = useRef<string | null>(null);
   const lastRecordKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
     lastBuildKeyRef.current = null;
+    lastVerifyKeyRef.current = null;
     lastRecordKeyRef.current = null;
   }, [taskId]);
 
@@ -298,7 +305,136 @@ export function useTaskAgentRunOrchestrator(options: {
       await postActivity(briefBody);
     };
 
+    const kickVerify = async () => {
+      if (run.phase !== "verify") return;
+      const pending = (run.checks ?? []).filter(
+        (check) => check.status === "pending" || check.status === "running",
+      );
+      if (pending.length === 0) return;
+      const key = `${run.id}:${run.cycle}:verify:${pending
+        .map((check) => check.key)
+        .sort()
+        .join(",")}`;
+      if (lastVerifyKeyRef.current === key) return;
+      lastVerifyKeyRef.current = key;
+
+      for (const check of pending) {
+        if (check.status === "running") continue;
+        await patchTaskAgentRunCheck(
+          requestJson,
+          taskId,
+          run.id,
+          check.id,
+          { status: "running" },
+        ).catch(() => undefined);
+      }
+
+      const ensured = await ensureTaskAcpSession({
+        taskId,
+        cwd,
+        chatId: run.builderSessionId,
+      });
+      if (!ensured.ok || !ensured.sessionId) {
+        onError?.(ensured.error || "ACP ensure failed for verify");
+        await patchTaskAgentRun(requestJson, taskId, run.id, {
+          lastError: ensured.error || "ACP ensure failed for verify",
+        }).catch(() => undefined);
+        return;
+      }
+      if (ensured.sessionId !== run.builderSessionId) {
+        await patchTaskAgentRun(requestJson, taskId, run.id, {
+          builderSessionId: ensured.sessionId,
+        }).catch(() => undefined);
+      }
+
+      const prompted = await promptTaskAcpSession({
+        taskId,
+        cwd,
+        chatId: ensured.sessionId,
+        prompt: buildVerifyPrompt(
+          pending.map((check) => ({
+            key: check.key,
+            label: check.label,
+            detail: check.detail,
+          })),
+        ),
+      });
+      if (!prompted.ok) {
+        onError?.(prompted.error || "ACP verify prompt failed");
+        await patchTaskAgentRun(requestJson, taskId, run.id, {
+          lastError: prompted.error || "ACP verify prompt failed",
+        }).catch(() => undefined);
+        return;
+      }
+
+      const transcript = await fetchAcpChatTranscript(ensured.sessionId);
+      const summary = lastAssistantTranscriptText(transcript.messages);
+      const parsed = summary ? parseVerifyCheckResults(summary) : null;
+      const byKey = new Map(
+        (parsed ?? []).map((result) => [result.key, result] as const),
+      );
+
+      const lines = [
+        `Verify turn finished (cycle ${run.cycle}).`,
+        `PATCH /api/v1/tasks/${taskId}/agent-runs/${run.id}`,
+        `GET  /api/v1/tasks/${taskId}/agent-runs/${run.id}`,
+      ];
+
+      if (parsed && parsed.length > 0) {
+        for (const check of pending) {
+          const result = byKey.get(check.key);
+          if (!result) continue;
+          await patchTaskAgentRunCheck(
+            requestJson,
+            taskId,
+            run.id,
+            check.id,
+            {
+              status: result.status,
+              ...(result.detail ? { detail: result.detail } : {}),
+              ...(result.logText ? { logText: result.logText } : {}),
+            },
+          ).catch(() => undefined);
+          lines.push(`- ${check.key}: ${result.status}${result.detail ? ` — ${result.detail}` : ""}`);
+        }
+        const missing = pending.filter((check) => !byKey.has(check.key));
+        if (missing.length > 0) {
+          lines.push(
+            "",
+            `Unchecked keys still pending: ${missing.map((check) => check.key).join(", ")}. Please PATCH those checks or re-run verify.`,
+          );
+        } else {
+          lines.push(
+            "",
+            'All pending checks updated. If satisfied, PATCH {"phase":"record","recordIntent":"commit"|"pr"} or phase=brief to loop; otherwise keep phase=verify.',
+          );
+        }
+      } else {
+        lines.push(
+          "",
+          "Could not parse a ```checks``` result block from the builder. Summary follows — please PATCH check statuses, then advance phase.",
+        );
+        if (summary) {
+          lines.push("", "Builder summary:", truncateForBrief(summary));
+        }
+      }
+
+      try {
+        await notifyBrief(lines.join("\n"));
+      } catch (error) {
+        onError?.(
+          error instanceof Error
+            ? error.message
+            : "Failed to notify Brief that verify finished",
+        );
+      }
+      await postActivity(
+        `Verify turn finished (cycle ${run.cycle}). Conductor notified via Brief.`,
+      );
+    };
+
     void kickBuild();
+    void kickVerify();
     void kickRecord();
   }, [
     active,

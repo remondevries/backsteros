@@ -164,3 +164,96 @@ export function buildRecordGitPrompt(intent: "pr" | "commit", notes?: string | n
     .filter(Boolean)
     .join("\n\n");
 }
+
+export type VerifyCheckSpec = {
+  key: string;
+  label: string;
+  detail?: string | null;
+};
+
+export type ParsedVerifyCheckResult = {
+  key: string;
+  status: "pass" | "fail" | "skipped";
+  detail?: string;
+  logText?: string;
+};
+
+/** Prompt Cursor ACP to execute pending factory Verify checks locally. */
+export function buildVerifyPrompt(checks: readonly VerifyCheckSpec[]): string {
+  const list = checks
+    .map((check, index) => {
+      const detail = check.detail?.trim();
+      return `${index + 1}. key=${check.key} — ${check.label}${detail ? ` (${detail})` : ""}`;
+    })
+    .join("\n");
+  return [
+    "You are verifying a BacksterOS task agent factory Build on this machine.",
+    "Execute every pending check below. For typecheck/lint keys, run the real commands from the repo root (pnpm typecheck / pnpm lint, scoped to touched packages when appropriate).",
+    "For UI/code-review checks, inspect the code and decide pass or fail with a short reason.",
+    "",
+    "Pending checks:",
+    list || "(none)",
+    "",
+    "When finished, end your reply with exactly one fenced block in this form (no extra commentary inside the fence):",
+    "```checks",
+    '[{"key":"typecheck","status":"pass","detail":"ok","logText":"..."},{"key":"lint","status":"fail","detail":"...","logText":"..."}]',
+    "```",
+    'status must be one of: "pass", "fail", "skipped". Include every pending key once.',
+  ].join("\n");
+}
+
+/**
+ * Parse the trailing ```checks … ``` JSON array from an ACP assistant reply.
+ */
+export function parseVerifyCheckResults(
+  transcriptText: string,
+): ParsedVerifyCheckResult[] | null {
+  const text = transcriptText.trim();
+  if (!text) return null;
+  const fenced =
+    /```checks\s*([\s\S]*?)```/i.exec(text) ??
+    /```json\s*([\s\S]*?)```/i.exec(text);
+  const raw = (fenced?.[1] ?? "").trim() || extractTrailingJsonArray(text);
+  if (!raw) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (!Array.isArray(parsed)) return null;
+  const out: ParsedVerifyCheckResult[] = [];
+  for (const entry of parsed) {
+    if (!entry || typeof entry !== "object") continue;
+    const record = entry as Record<string, unknown>;
+    const key = typeof record.key === "string" ? record.key.trim() : "";
+    const statusRaw =
+      typeof record.status === "string" ? record.status.trim().toLowerCase() : "";
+    if (!key) continue;
+    if (statusRaw !== "pass" && statusRaw !== "fail" && statusRaw !== "skipped") {
+      continue;
+    }
+    const detail =
+      typeof record.detail === "string" ? record.detail.trim() : undefined;
+    const logText =
+      typeof record.logText === "string"
+        ? record.logText
+        : typeof record.log === "string"
+          ? record.log
+          : undefined;
+    out.push({
+      key,
+      status: statusRaw,
+      ...(detail ? { detail } : {}),
+      ...(logText ? { logText } : {}),
+    });
+  }
+  return out.length > 0 ? out : null;
+}
+
+function extractTrailingJsonArray(text: string): string | null {
+  const start = text.lastIndexOf("[");
+  const end = text.lastIndexOf("]");
+  if (start < 0 || end <= start) return null;
+  return text.slice(start, end + 1).trim();
+}
