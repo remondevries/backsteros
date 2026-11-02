@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { formatMaskedApiKey } from "./api-keys-settings-section-view.js";
+import {
+  agentDragTargetIndex,
+  formatMaskedApiKey,
+  reorderAgentKeysForDrag,
+} from "./api-keys-settings-section-view.js";
 import {
   AGENT_API_KEY_SCOPES,
   AGENT_KEY_SCOPES,
@@ -11,6 +15,58 @@ import {
   classifyApiKeyType,
   scopesForApiKeyTab,
 } from "./api-key-type.js";
+
+test("agent drag: down past a midpoint lands after that neighbor (not one past)", () => {
+  // Row mids at 50, 150, 250, 350 — drag A (index 0) just below B's mid.
+  const slotMids = [50, 150, 250, 350];
+  assert.equal(
+    agentDragTargetIndex({ clientY: 160, slotMids, fromIndex: 0 }),
+    1,
+  );
+  assert.deepEqual(
+    reorderAgentKeysForDrag({
+      orderIds: ["a", "b", "c", "d"],
+      draggingId: "a",
+      clientY: 160,
+      slotMids,
+    }),
+    ["b", "a", "c", "d"],
+  );
+});
+
+test("agent drag: up past a midpoint lands before that neighbor", () => {
+  const slotMids = [50, 150, 250, 350];
+  assert.equal(
+    agentDragTargetIndex({ clientY: 140, slotMids, fromIndex: 3 }),
+    1,
+  );
+  assert.deepEqual(
+    reorderAgentKeysForDrag({
+      orderIds: ["a", "b", "c", "d"],
+      draggingId: "d",
+      clientY: 140,
+      slotMids,
+    }),
+    ["a", "d", "b", "c"],
+  );
+});
+
+test("agent drag: staying in own slot below the midpoint does not swap", () => {
+  const slotMids = [50, 150, 250, 350];
+  assert.equal(
+    agentDragTargetIndex({ clientY: 80, slotMids, fromIndex: 0 }),
+    0,
+  );
+  assert.deepEqual(
+    reorderAgentKeysForDrag({
+      orderIds: ["a", "b", "c", "d"],
+      draggingId: "a",
+      clientY: 80,
+      slotMids,
+    }),
+    ["a", "b", "c", "d"],
+  );
+});
 
 test("classifyApiKeyType maps exclusive Applications, TV, and CardDAV scopes", () => {
   assert.equal(

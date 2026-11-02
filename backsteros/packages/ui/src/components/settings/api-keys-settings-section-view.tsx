@@ -197,6 +197,48 @@ function moveIdToIndex(ids: string[], id: string, toIndex: number): string[] {
   return next;
 }
 
+/**
+ * Map pointer Y onto a frozen start-of-drag slot list, then adjust for
+ * splice-based moves. Without the down-drag adjustment, crossing a row's
+ * midpoint jumps one slot too far (row fights the pointer / skips neighbors).
+ */
+export function agentDragTargetIndex(input: {
+  clientY: number;
+  slotMids: readonly number[];
+  fromIndex: number;
+}): number {
+  const { clientY, slotMids, fromIndex } = input;
+  if (slotMids.length === 0 || fromIndex < 0) return fromIndex;
+  let raw = slotMids.length - 1;
+  for (let i = 0; i < slotMids.length; i += 1) {
+    if (clientY < slotMids[i]!) {
+      raw = i;
+      break;
+    }
+  }
+  // After removing `fromIndex`, indices above it shift down by one.
+  if (fromIndex < raw) return Math.max(0, raw - 1);
+  return raw;
+}
+
+/** Preview / commit order while dragging an agent API key row. */
+export function reorderAgentKeysForDrag(input: {
+  orderIds: readonly string[];
+  draggingId: string;
+  clientY: number;
+  slotMids: readonly number[];
+}): string[] {
+  const ids = [...input.orderIds];
+  const fromIndex = ids.indexOf(input.draggingId);
+  if (fromIndex < 0) return ids;
+  const toIndex = agentDragTargetIndex({
+    clientY: input.clientY,
+    slotMids: input.slotMids,
+    fromIndex,
+  });
+  return moveIdToIndex(ids, input.draggingId, toIndex);
+}
+
 function ApiKeyEditIcon({ size = 14 }: { size?: number }) {
   return (
     <svg
@@ -1322,18 +1364,14 @@ export function ApiKeysSettingsSectionView({
       if (!session || session.id !== apiKeyId) return;
       if (!session.moved && Math.abs(ev.clientY - session.startY) < 4) return;
       session.moved = true;
-      const mids = session.slotMids;
-      if (mids.length === 0) return;
-      let toIndex = mids.length - 1;
-      for (let i = 0; i < mids.length; i += 1) {
-        if (ev.clientY < mids[i]!) {
-          toIndex = i;
-          break;
-        }
-      }
       // Always map onto the frozen start order — measuring live DOM after a
       // reorder made the row fight the pointer and snap back.
-      const next = moveIdToIndex(session.initialOrderIds, session.id, toIndex);
+      const next = reorderAgentKeysForDrag({
+        orderIds: session.initialOrderIds,
+        draggingId: session.id,
+        clientY: ev.clientY,
+        slotMids: session.slotMids,
+      });
       if (
         next.length === session.orderIds.length &&
         next.every((id, index) => id === session.orderIds[index])
