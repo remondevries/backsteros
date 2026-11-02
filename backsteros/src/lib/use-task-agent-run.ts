@@ -35,6 +35,9 @@ function chatThreadMessageToUi(message: ChatThreadMessage): ChatUiMessage {
 
 function cloudErrorMessage(err: unknown, fallback: string): string {
   if (isCloudCoreApiError(err)) {
+    if (err.status === 401) {
+      return "Cloud-core rejected the owner API key. Update BACKSTEROS_API_KEY in ~/.config/backsteros/cli.env (sk_access_…), then restart BacksterOS.";
+    }
     const match = err.message.match(/^\d+\s+(\{[\s\S]*\})$/);
     if (match?.[1]) {
       try {
@@ -43,6 +46,9 @@ function cloudErrorMessage(err: unknown, fallback: string): string {
       } catch {
         /* keep raw */
       }
+    }
+    if (err.status === 401 || /unauthorized/i.test(err.message)) {
+      return "Cloud-core rejected the owner API key. Update BACKSTEROS_API_KEY in ~/.config/backsteros/cli.env (sk_access_…), then restart BacksterOS.";
     }
     return err.message || fallback;
   }

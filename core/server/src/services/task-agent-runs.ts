@@ -319,10 +319,13 @@ export async function createTaskAgentRun(
       },
       project,
     });
+    // Wake as a *user* message so the conductor webhook fires. Passing the
+    // owner's apiKeyId would be treated as an agent reply and 403 (owner key
+    // ≠ conductor agent key).
     await postChatThreadMessage(workspaceId, thread.id, wakeBody, {
-      apiKeyId: auth.apiKeyId ?? null,
+      apiKeyId: null,
       authorContactId: auth.authorContactId ?? null,
-      authorName: auth.authorName ?? null,
+      authorName: auth.authorName?.trim() || "Remon",
     });
   }
 

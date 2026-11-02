@@ -749,14 +749,7 @@ fn chrono_less_stamp() -> String {
 }
 
 
-/// Owner credential for cloud-core. Reads `~/.config/backsteros/cli.env`.
-/// Does not log the secret.
-#[tauri::command]
-pub fn owner_api_key() -> Result<String, String> {
-    let home = std::env::var("HOME").map_err(|_| "HOME is not set".to_string())?;
-    let path = PathBuf::from(home).join(".config/backsteros/cli.env");
-    let text = fs::read_to_string(&path)
-        .map_err(|err| format!("could not read {}: {err}", path.display()))?;
+fn owner_key_from_cli_env(text: &str) -> Option<String> {
     for raw in text.lines() {
         let line = raw.trim();
         if line.is_empty() || line.starts_with('#') {
@@ -769,16 +762,63 @@ pub fn owner_api_key() -> Result<String, String> {
             continue;
         }
         let value = value.trim().trim_matches('"').trim_matches('\'');
-        // Accept typed Access secrets and legacy sk_live_ until rotated.
-        if !(value.starts_with("sk_access_") || value.starts_with("sk_live_")) {
-            return Err(
-                "BACKSTEROS_API_KEY must be an sk_access_ or legacy sk_live_ owner key"
-                    .into(),
-            );
+        // Prefer typed Access secrets; accept legacy sk_live_ until rotated.
+        if value.starts_with("sk_access_") || value.starts_with("sk_live_") {
+            return Some(value.to_string());
         }
-        return Ok(value.to_string());
     }
-    Err("BACKSTEROS_API_KEY is missing from ~/.config/backsteros/cli.env".into())
+    None
+}
+
+fn owner_key_from_access_file(text: &str) -> Option<String> {
+    for raw in text.lines() {
+        let value = raw.trim();
+        if value.is_empty() || value.starts_with('#') {
+            continue;
+        }
+        if value.starts_with("sk_access_") || value.starts_with("sk_live_") {
+            return Some(value.to_string());
+        }
+    }
+    None
+}
+
+/// Owner credential for cloud-core.
+/// Prefers `~/.config/backsteros/cli.env`, then `backsterdev-access.key`.
+/// Does not log the secret.
+#[tauri::command]
+pub fn owner_api_key() -> Result<String, String> {
+    let home = std::env::var("HOME").map_err(|_| "HOME is not set".to_string())?;
+    let home = PathBuf::from(home);
+    let cli_path = home.join(".config/backsteros/cli.env");
+    if let Ok(text) = fs::read_to_string(&cli_path) {
+        if let Some(key) = owner_key_from_cli_env(&text) {
+            // Prefer sk_access_ from cli when present; if cli only has a legacy
+            // sk_live_ that may be revoked, still try the Access sidecar next.
+            if key.starts_with("sk_access_") {
+                return Ok(key);
+            }
+            let access_path = home.join(".config/backsteros/backsterdev-access.key");
+            if let Ok(access_text) = fs::read_to_string(&access_path) {
+                if let Some(access) = owner_key_from_access_file(&access_text) {
+                    if access.starts_with("sk_access_") {
+                        return Ok(access);
+                    }
+                }
+            }
+            return Ok(key);
+        }
+    }
+    let access_path = home.join(".config/backsteros/backsterdev-access.key");
+    if let Ok(text) = fs::read_to_string(&access_path) {
+        if let Some(key) = owner_key_from_access_file(&text) {
+            return Ok(key);
+        }
+    }
+    Err(
+        "Owner API key missing: set BACKSTEROS_API_KEY (sk_access_…) in ~/.config/backsteros/cli.env"
+            .into(),
+    )
 }
 
 #[cfg(test)]

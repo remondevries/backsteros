@@ -29,6 +29,19 @@ function envOwnerKey(): string | null {
   return null;
 }
 
+/** Prefer Access keys when Tauri returns a legacy live key + Access sidecar. */
+function preferAccessOwnerKey(
+  primary: string | null,
+  fallbackAccess: string | null,
+): string | null {
+  if (fallbackAccess?.startsWith("sk_access_")) {
+    if (!primary || primary.starts_with("sk_live_")) {
+      return fallbackAccess;
+    }
+  }
+  return primary ?? fallbackAccess;
+}
+
 function localShellBearerToken(): string {
   try {
     const fromEnv = import.meta.env?.VITE_LOCAL_SHELL_TOKEN?.trim();
@@ -45,15 +58,20 @@ function localShellBearerToken(): string {
  */
 export async function loadDesktopOwnerToken(): Promise<string | null> {
   const fromEnv = envOwnerKey();
-  if (fromEnv) return fromEnv;
-  if (!isTauriRuntime()) return null;
+  // Vite injects cli.env into VITE_OWNER_API_KEY in serve only. Prefer Access
+  // when the env value is a legacy live key that may already be revoked.
+  if (fromEnv?.startsWith("sk_access_")) return fromEnv;
+  if (!isTauriRuntime()) {
+    return fromEnv && isOwnerApiKeySecretFormat(fromEnv) ? fromEnv : null;
+  }
   try {
     const { invoke } = await import("@tauri-apps/api/core");
     const key = (await invoke<string>("owner_api_key")).trim();
-    return isOwnerApiKeySecretFormat(key) ? key : null;
+    const valid = isOwnerApiKeySecretFormat(key) ? key : null;
+    return preferAccessOwnerKey(fromEnv, valid) ?? valid ?? fromEnv;
   } catch (error) {
     console.warn("[desktop] owner API key unavailable", error);
-    return null;
+    return fromEnv && isOwnerApiKeySecretFormat(fromEnv) ? fromEnv : null;
   }
 }
 
