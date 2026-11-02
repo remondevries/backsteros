@@ -2304,28 +2304,6 @@ function ProjectDetailScreen({
             summary: workspace.projectSummaries[project.id] ?? "",
             description: workspace.projectDescriptions[project.id] ?? "",
           }}
-          projects={projectList.map((entry) => ({
-            ...entry,
-            status: entry.status as ProjectStatus,
-            organizationId: entry.organizationId ?? null,
-            type: entry.type ?? "general",
-            localWorkingDirectory: entry.localWorkingDirectory ?? null,
-            developmentLocation: entry.developmentLocation ?? null,
-            productionLocation: entry.productionLocation ?? null,
-            localLocation: entry.localLocation ?? null,
-            developmentSetupStatus: entry.developmentSetupStatus ?? null,
-            developmentSetupError: entry.developmentSetupError ?? null,
-            githubRepository: entry.githubRepository ?? null,
-            healthCheckMode: entry.healthCheckMode ?? null,
-            healthCheckDomain: entry.healthCheckDomain ?? null,
-          }))}
-          organizations={Object.values(workspace.organizationDetails)}
-          nestedAreas={mapWorkspaceNestedAreas(workspace.areas)}
-          agentContacts={agentContactsForLead}
-          teamAgents={teamAgents}
-          contactAvatarSrcById={contactAvatarSrc}
-          tasks={[]}
-          taskProgress={taskProgress}
           routeScope={routeScope}
           pathname={location.pathname}
           hideTabBar
@@ -2618,16 +2596,6 @@ function ProjectDetailScreen({
               }
             />
           }
-          onCreateOrganizationFromQuery={(query) => {
-            void workspace
-              .createOrganization({ name: query })
-              .then((created) => {
-                patchSelected({ organizationId: created.id });
-                void workspace.patchProject(project.id, {
-                  organizationId: created.id,
-                });
-              });
-          }}
           onProjectPatched={(patch: Record<string, unknown>) => {
             const localPatch: Partial<WorkspaceProject> = {};
             if (typeof patch.name === "string") localPatch.name = patch.name;

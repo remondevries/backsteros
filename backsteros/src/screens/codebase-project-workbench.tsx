@@ -3,12 +3,9 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import type {
   GithubCommit,
   GithubPullRequest,
-  Organization as ApiOrganization,
   Project as ApiProject,
-  Task as ApiTask,
 } from "@backsteros/contracts";
 import {
-  CodebaseProjectOverviewPane,
   CODEBASE_LIST_TAB_OPTIONS,
   CommitDetailPane,
   FileDetailPane,
@@ -22,16 +19,13 @@ import {
   parseCodebaseWorkbenchPath,
   isCodebaseDetailEditorFocused,
   isBlockingModalOpen,
-  isContentSidePanelToggleShortcut,
   requestCodebaseDetailEnterFocus,
   requestCodebaseDetailLeaveFocus,
   shouldHandleGlobalShortcut,
   useListKeyboardNavigationZone,
   type CodebaseGithubListTab,
-  type ProjectDetailNestedArea,
   type ProjectFsClient,
   type ProjectRouteScope,
-  type ProjectTeamAgent,
   type SelectProjectFileHandler,
 } from "@backsteros/ui";
 
@@ -39,20 +33,15 @@ import { useDesktopApi } from "../lib/api-context";
 import { useKeepAliveActive } from "../lib/shell-route-keep-alive";
 import { diffProjectPatch } from "../lib/project-patch-diff";
 import {
-  CODEBASE_SIDE_PANEL_MIN_WIDTH,
-  CODEBASE_SIDE_PANEL_NUDGE_STEP,
   CODEBASE_TAB_LIST_MIN_WIDTH,
-  useCodebaseSidePanelWidth,
   useCodebaseTabListWidth,
 } from "../lib/codebase-side-panel-layout";
-import { resolvePanelResizeShortcut } from "../lib/task-panel-resize-shortcut";
 import { fetchGithubConnectionStatus } from "../lib/github-oauth";
 import { projectFs } from "../lib/project-fs";
 import { useCodebaseProjectReadme } from "../lib/codebase-project-readme";
 import { createRestProjectFs } from "../lib/project-fs-rest";
 import { isTauriRuntime } from "../lib/tauri-runtime";
 import { navigateToHref } from "../router/navigate-href";
-import { CodebaseProjectActivityPanel } from "../components/codebase-project-activity-panel";
 
 export type CodebaseWorkbenchProject = {
   id: string;
@@ -91,27 +80,9 @@ export type CodebaseWorkbenchProject = {
 
 type Props = {
   project: CodebaseWorkbenchProject;
-  projects: CodebaseWorkbenchProject[];
-  organizations: ApiOrganization[];
-  nestedAreas?: ProjectDetailNestedArea[];
-  agentContacts?: Array<{
-    id: string;
-    name: string;
-    firstName?: string | null;
-    lastName?: string | null;
-    title?: string | null;
-    email?: string | null;
-    avatarSrc?: string | null;
-  }>;
-  teamAgents?: readonly ProjectTeamAgent[];
-  contactAvatarSrcById?: Readonly<Record<string, string | null | undefined>>;
-  tasks: ApiTask[];
-  taskProgress: { total: number; completed: number };
   routeScope?: ProjectRouteScope | null;
   pathname: string;
   onProjectPatched: (patch: Record<string, unknown>) => void;
-  /** Create org from no-match search and assign to the project. */
-  onCreateOrganizationFromQuery?: (query: string) => void;
   /** Project task list shown in the main pane on the Tasks tab. */
   tasksPanel?: ReactNode;
   /** Project documents tree shown in the list pane on the Docs tab. */
@@ -196,18 +167,9 @@ function toApiProject(project: CodebaseWorkbenchProject): ApiProject {
 
 export function CodebaseProjectWorkbench({
   project,
-  projects,
-  organizations,
-  nestedAreas = [],
-  agentContacts = [],
-  teamAgents = [],
-  contactAvatarSrcById,
-  tasks,
-  taskProgress,
   routeScope,
   pathname,
   onProjectPatched,
-  onCreateOrganizationFromQuery,
   tasksPanel,
   docsListPanel,
   docsPanel,
@@ -301,8 +263,6 @@ export function CodebaseProjectWorkbench({
       return next;
     });
   }, [project]);
-
-  const apiProjects = useMemo(() => projects.map(toApiProject), [projects]);
 
   const workingDirectory = normalizeWorkingDirectory(
     apiProject.localWorkingDirectory,
@@ -719,19 +679,7 @@ export function CodebaseProjectWorkbench({
     selection.tab,
   ]);
 
-  const {
-    containerRef,
-    panelWidth: sidePanelWidth,
-    beginResize: beginSidePanelResize,
-    nudgePanelWidth: nudgeSidePanelWidth,
-    isResizing: isSidePanelResizing,
-    collapsed: sidePanelCollapsed,
-    toggleCollapsed: toggleSidePanelCollapsed,
-  } = useCodebaseSidePanelWidth(project.id);
   const keepAliveActive = useKeepAliveActive();
-  const [sidePanelCollapseAnimating, setSidePanelCollapseAnimating] =
-    useState(false);
-  const sidePanelCollapseTimerRef = useRef<number | null>(null);
 
   const {
     containerRef: tabListContainerRef,
@@ -739,57 +687,6 @@ export function CodebaseProjectWorkbench({
     beginResize: beginTabListResize,
     isResizing: isTabListResizing,
   } = useCodebaseTabListWidth(project.id, selection.tab);
-
-  useEffect(() => {
-    function handleKeyDown(event: KeyboardEvent) {
-      const direction = resolvePanelResizeShortcut(event);
-      if (!direction) return;
-      if (!shouldHandleGlobalShortcut(event)) return;
-      event.preventDefault();
-      event.stopPropagation();
-      const delta =
-        direction === "shrink-left"
-          ? -CODEBASE_SIDE_PANEL_NUDGE_STEP
-          : CODEBASE_SIDE_PANEL_NUDGE_STEP;
-      nudgeSidePanelWidth(delta);
-    }
-
-    window.addEventListener("keydown", handleKeyDown, true);
-    return () => window.removeEventListener("keydown", handleKeyDown, true);
-  }, [nudgeSidePanelWidth]);
-
-  useEffect(() => {
-    if (!keepAliveActive) return;
-
-    function handleKeyDown(event: KeyboardEvent) {
-      if (!isContentSidePanelToggleShortcut(event)) return;
-      if (!shouldHandleGlobalShortcut(event)) return;
-      event.preventDefault();
-      event.stopImmediatePropagation();
-      setSidePanelCollapseAnimating(true);
-      if (sidePanelCollapseTimerRef.current != null) {
-        window.clearTimeout(sidePanelCollapseTimerRef.current);
-      }
-      window.requestAnimationFrame(() => {
-        window.requestAnimationFrame(() => {
-          toggleSidePanelCollapsed();
-          sidePanelCollapseTimerRef.current = window.setTimeout(() => {
-            sidePanelCollapseTimerRef.current = null;
-            setSidePanelCollapseAnimating(false);
-          }, 220);
-        });
-      });
-    }
-
-    window.addEventListener("keydown", handleKeyDown, true);
-    return () => {
-      window.removeEventListener("keydown", handleKeyDown, true);
-      if (sidePanelCollapseTimerRef.current != null) {
-        window.clearTimeout(sidePanelCollapseTimerRef.current);
-        sidePanelCollapseTimerRef.current = null;
-      }
-    };
-  }, [keepAliveActive, toggleSidePanelCollapsed]);
 
   const showCommitDetail =
     selection.tab === "commits" && Boolean(selectedCommit);
@@ -1034,69 +931,10 @@ export function CodebaseProjectWorkbench({
 
   return (
     <div
-      ref={containerRef}
-      className={[
-        "codebase-project-workbench",
-        isSidePanelResizing ? "is-resizing" : null,
-        sidePanelCollapsed ? "is-side-panel-collapsed" : null,
-        sidePanelCollapseAnimating ? "is-collapse-animating" : null,
-      ]
-        .filter(Boolean)
-        .join(" ")}
+      className="codebase-project-workbench"
       data-codebase-workbench
       data-content-detail
     >
-      <div
-        className="codebase-project-workbench__list"
-        aria-hidden={sidePanelCollapsed || undefined}
-        {...(sidePanelCollapsed ? { inert: true } : {})}
-      >
-        <div className="console-pane console-pane--overview">
-          <CodebaseProjectOverviewPane
-            project={apiProject}
-            projects={apiProjects}
-            onProjectUpdated={handleProjectUpdated}
-            requestJson={requestJson}
-            fs={resolvedFs}
-            copyIdShortcutEnabled={keepAliveActive}
-            onOpenChatDeepLink={(href) => {
-              void import("../lib/shell-chat-deep-link").then(
-                ({ openShellChatDeepLink }) => {
-                  openShellChatDeepLink(href, { requirePendingForm: true });
-                },
-              );
-            }}
-            belowDescription={
-              <CodebaseProjectActivityPanel
-                projectId={project.id}
-                projectKey={project.key}
-                requestJson={requestJson}
-              />
-            }
-            organizations={organizations}
-            nestedAreas={nestedAreas}
-            agentContacts={agentContacts}
-            teamAgents={teamAgents}
-            avatarSrcById={contactAvatarSrcById}
-            onCreateOrganizationFromQuery={onCreateOrganizationFromQuery}
-            tasks={tasks}
-            taskProgress={taskProgress}
-          />
-        </div>
-        <div
-          role="separator"
-          aria-orientation="vertical"
-          aria-label="Resize side panel"
-          aria-valuemin={CODEBASE_SIDE_PANEL_MIN_WIDTH}
-          aria-valuenow={sidePanelWidth}
-          title="Drag to resize · ⌥- / ⌥="
-          className="desktop-codebase-side-panel-resize"
-          onPointerDown={(event) => {
-            event.preventDefault();
-            beginSidePanelResize(event.clientX);
-          }}
-        />
-      </div>
       <div className="codebase-project-workbench__detail">
         {hideTabBar ? null : (
           <div className="projects-overview__area-nav codebase-project-workbench__tabs">

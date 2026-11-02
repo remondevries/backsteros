@@ -3070,18 +3070,14 @@ button.console-fs-tree-row.keyboard-nav-item-highlight:focus-visible {
 }
 
 /* —— Codebase project workbench host —— */
-/* Must beat `.bos-product-shell [data-content-detail] { flex-direction: column }`
- * Grid + 1fr keeps the detail column filling leftover space while the left
- * width is driven by --desktop-codebase-side-panel-width (rAF / drag). */
+/* Must beat `.bos-product-shell [data-content-detail] { flex-direction: column }`.
+ * Files / Commits / PRs own the full width (properties live on Overview). */
 .bos-product-shell .codebase-project-workbench[data-content-detail],
 .page-scroll .codebase-project-workbench[data-content-detail],
 .codebase-project-workbench[data-content-detail],
 .codebase-project-workbench {
-  --desktop-codebase-side-panel-width: 380px;
-  display: grid !important;
-  grid-template-columns: var(--desktop-codebase-side-panel-width) minmax(0, 1fr);
-  grid-template-rows: minmax(0, 1fr);
-  flex-direction: unset;
+  display: flex !important;
+  flex-direction: column;
   gap: 0;
   min-height: 0;
   width: 100%;
@@ -3090,35 +3086,16 @@ button.console-fs-tree-row.keyboard-nav-item-highlight:focus-visible {
   overflow: hidden;
 }
 
-.codebase-project-workbench__list,
 .codebase-project-workbench__detail {
   display: flex;
   min-width: 0;
   min-height: 0;
   height: 100%;
+  flex: 1;
   flex-direction: column;
   overflow: hidden;
 }
 
-.codebase-project-workbench__list {
-  position: relative;
-  border-right: 1px solid color-mix(in srgb, var(--foreground) 12%, transparent);
-}
-
-.codebase-project-workbench.is-collapse-animating {
-  transition: grid-template-columns 220ms cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.codebase-project-workbench.is-side-panel-collapsed:not(.is-collapse-animating)
-  .codebase-project-workbench__list {
-  border-right-width: 0;
-}
-
-.codebase-project-workbench__detail {
-  min-width: 0;
-}
-
-.codebase-project-workbench__list > .console-pane,
 .codebase-project-workbench__detail > .console-pane {
   flex: 1;
   min-height: 0;
@@ -3149,30 +3126,6 @@ button.console-fs-tree-row.keyboard-nav-item-highlight:focus-visible {
 
 .codebase-project-workbench__detail > .console-github-pane-status {
   padding: 16px;
-}
-
-.codebase-project-workbench .console-pane--overview {
-  display: flex;
-  flex: 1;
-  min-height: 0;
-  height: 100%;
-  flex-direction: column;
-}
-
-.codebase-project-workbench .console-pane--overview > .console-pane-body,
-.codebase-project-workbench .console-pane--overview .console-project-overview,
-.codebase-project-workbench .console-pane--overview .project-panel-repositories {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-.codebase-project-workbench .console-pane--overview .project-panel-repositories > .project-detail {
-  flex: 1;
-  min-height: 0;
-  overflow: auto;
 }
 
 .project-panel-identity-host {
