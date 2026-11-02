@@ -3,15 +3,134 @@ import { describe, test } from "node:test";
 
 import { clearPrimedTabTitles, primeTabTitle } from "./primed-tab-title.js";
 import {
+  activateProductTab,
+  closeProductTab,
   createDefaultTabsState,
   createProductTab,
+  cycleProductTab,
   refreshOpenTabTaskStatuses,
   syncActiveTabTaskMeta,
   syncActiveTabToPath,
   buildProductTabHref,
 } from "./tabs.js";
 
+describe("activateProductTab", () => {
+  test("switches activeTabId without rewriting any tab href", () => {
+    const inbox = createProductTab("/inbox", "Inbox");
+    const calendar = createProductTab("/calendar", "Calendar");
+    const state = {
+      tabs: [inbox, calendar],
+      activeTabId: inbox.id,
+    };
+    const next = activateProductTab(state, calendar.id);
+    assert.equal(next.activeTabId, calendar.id);
+    assert.equal(next.tabs[0]?.href, "/inbox");
+    assert.equal(next.tabs[1]?.href, "/calendar");
+  });
+
+  test("is a no-op when the tab is already active or missing", () => {
+    const state = createDefaultTabsState("/inbox");
+    assert.equal(activateProductTab(state, state.activeTabId), state);
+    assert.equal(activateProductTab(state, "missing"), state);
+  });
+});
+
+describe("cycleProductTab", () => {
+  test("moves activeTabId and reports the target href without clobbering others", () => {
+    const a = createProductTab("/inbox", "Inbox");
+    const b = createProductTab("/calendar", "Calendar");
+    const c = createProductTab("/journal", "Journal");
+    const state = { tabs: [a, b, c], activeTabId: a.id };
+
+    const next = cycleProductTab(state, 1);
+    assert.equal(next.state.activeTabId, b.id);
+    assert.equal(next.navigateHref, "/calendar");
+    assert.equal(next.state.tabs[0]?.href, "/inbox");
+    assert.equal(next.state.tabs[2]?.href, "/journal");
+
+    const prev = cycleProductTab(next.state, -1);
+    assert.equal(prev.state.activeTabId, a.id);
+    assert.equal(prev.navigateHref, "/inbox");
+  });
+});
+
+describe("closeProductTab", () => {
+  test("replaces the last tab with a fresh Inbox tab", () => {
+    const only = createProductTab("/calendar", "Calendar");
+    const { state, navigateHref } = closeProductTab(
+      { tabs: [only], activeTabId: only.id },
+      only.id,
+    );
+    assert.equal(state.tabs.length, 1);
+    assert.equal(state.tabs[0]?.href, "/inbox");
+    assert.equal(state.activeTabId, state.tabs[0]?.id);
+    assert.notEqual(state.tabs[0]?.id, only.id);
+    assert.equal(navigateHref, "/inbox");
+  });
+
+  test("replacing a sole Inbox tab still yields a fresh Inbox tab", () => {
+    const only = createProductTab("/inbox", "Inbox");
+    const { state, navigateHref } = closeProductTab(
+      { tabs: [only], activeTabId: only.id },
+      only.id,
+    );
+    assert.equal(state.tabs[0]?.href, "/inbox");
+    assert.notEqual(state.tabs[0]?.id, only.id);
+    assert.equal(navigateHref, "/inbox");
+  });
+
+  test("closing a non-active tab does not navigate", () => {
+    const a = createProductTab("/inbox", "Inbox");
+    const b = createProductTab("/calendar", "Calendar");
+    const { state, navigateHref } = closeProductTab(
+      { tabs: [a, b], activeTabId: a.id },
+      b.id,
+    );
+    assert.equal(state.tabs.length, 1);
+    assert.equal(state.activeTabId, a.id);
+    assert.equal(navigateHref, null);
+  });
+
+  test("closing the active tab activates a neighbor and navigates", () => {
+    const a = createProductTab("/inbox", "Inbox");
+    const b = createProductTab("/calendar", "Calendar");
+    const { state, navigateHref } = closeProductTab(
+      { tabs: [a, b], activeTabId: b.id },
+      b.id,
+    );
+    assert.equal(state.tabs.length, 1);
+    assert.equal(state.activeTabId, a.id);
+    assert.equal(navigateHref, "/inbox");
+  });
+});
+
 describe("syncActiveTabToPath", () => {
+  test("does not rewrite inactive tabs when the active tab navigates", () => {
+    const inbox = createProductTab("/inbox", "Inbox");
+    const calendar = createProductTab("/calendar", "Calendar");
+    const state = {
+      tabs: [inbox, calendar],
+      activeTabId: calendar.id,
+    };
+    const next = syncActiveTabToPath(state, "/projects");
+    assert.equal(next.tabs[0]?.href, "/inbox");
+    assert.equal(next.tabs[1]?.href, "/projects");
+    assert.equal(next.activeTabId, calendar.id);
+  });
+
+  test("preserves sibling hrefs across an activate-then-sync sequence", () => {
+    // Simulates the fixed shell path: set activeTabId first, then sync the
+    // new location onto that tab only (never the previous one).
+    const inbox = createProductTab("/inbox", "Inbox");
+    const calendar = createProductTab("/calendar", "Calendar");
+    let state = { tabs: [inbox, calendar], activeTabId: inbox.id };
+    state = activateProductTab(state, calendar.id);
+    state = syncActiveTabToPath(state, "/calendar");
+    assert.equal(state.activeTabId, calendar.id);
+    assert.equal(state.tabs[0]?.href, "/inbox");
+    assert.equal(state.tabs[1]?.href, "/calendar");
+  });
+
   test("clears task meta when the active tab navigates", () => {
     clearPrimedTabTitles();
     const first = createProductTab("/projects/bos/tasks/bos-1", "One");

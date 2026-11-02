@@ -1,5 +1,4 @@
 import { createElement, memo, type ReactNode } from "react";
-import { useNavigate } from "@tanstack/react-router";
 
 import {
   BreadcrumbChromeSkeleton,
@@ -18,7 +17,6 @@ import {
 import { CursorCreditsUsageBar } from "../components/cursor-credits-usage-bar";
 import { DevTrafficLights } from "../components/dev-traffic-lights";
 import { useWindowChromeDrag } from "../lib/window-drag";
-import { navigateToHref } from "../router/navigate-href";
 import { RouterLink } from "./app-shell-links";
 import { renderAppShellTabIcon } from "./app-shell-tab-icon";
 import { ShellAgentDmBanner } from "./shell-agent-dm-banner";
@@ -74,11 +72,11 @@ function ShellChromeInner({
   windowFullscreen,
   onComposeOpen,
 }: ShellChromeProps) {
-  const navigate = useNavigate();
   const chromeHeader = useChromeHeader();
   const {
     tabsState,
     history,
+    goHome,
     activateTab,
     closeTab,
     openNewTab,
@@ -91,7 +89,7 @@ function ShellChromeInner({
     <SettingsSidePanelNavView
       pathname={pathname}
       Link={RouterLink}
-      onBack={() => navigateToHref(navigate, "/inbox")}
+      onBack={goHome}
     />
   ) : (
     <ProductSidebar

@@ -1,9 +1,12 @@
-import { startTransition, useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 
 import {
+  activateProductTab,
   buildProductTabHref,
+  closeProductTab,
   createProductTab,
+  cycleProductTab,
   normalizeTabHref,
   syncActiveTabToPath,
   useTabShortcuts,
@@ -26,6 +29,16 @@ export function useShellTabs() {
     loadTabsState(location.pathname, search),
   );
 
+  /**
+   * While a tab switch is in flight, location may update before (or after)
+   * activeTabId. Skip syncActiveTabToPath until location matches the target
+   * tab's bookmark so we never write the destination onto the previous tab.
+   */
+  const pendingTabSwitchRef = useRef<{
+    tabId: string;
+    href: string;
+  } | null>(null);
+
   const tabsLocationKey = buildProductTabHref(
     location.pathname,
     search,
@@ -34,9 +47,39 @@ export function useShellTabs() {
     useState(tabsLocationKey);
   if (tabsLocationKey !== tabsSyncedLocationKey) {
     setTabsSyncedLocationKey(tabsLocationKey);
-    setTabsState((current) =>
-      syncActiveTabToPath(current, location.pathname, search),
-    );
+
+    const pending = pendingTabSwitchRef.current;
+    // While a switch is in flight, location may update before activeTabId.
+    // Never sync onto the previous tab — wait until activeTabId is the target.
+    if (pending && tabsState.activeTabId !== pending.tabId) {
+      // Consume the location key without syncing.
+    } else {
+      if (pending) {
+        pendingTabSwitchRef.current = null;
+      }
+      setTabsState((current) =>
+        syncActiveTabToPath(current, location.pathname, search),
+      );
+    }
+  }
+
+  const activeTab = tabsState.tabs.find(
+    (tab) => tab.id === tabsState.activeTabId,
+  );
+
+  // Location may have landed (and been skipped) before activeTabId. Once the
+  // target tab is active, clear pending and catch the bookmark up if needed.
+  const pendingAfterLocation = pendingTabSwitchRef.current;
+  if (
+    pendingAfterLocation &&
+    pendingAfterLocation.tabId === tabsState.activeTabId
+  ) {
+    pendingTabSwitchRef.current = null;
+    if (activeTab && activeTab.href !== tabsLocationKey) {
+      setTabsState((current) =>
+        syncActiveTabToPath(current, location.pathname, search),
+      );
+    }
   }
 
   const navigateTo = useCallback(
@@ -46,9 +89,6 @@ export function useShellTabs() {
     [navigate],
   );
 
-  const activeTab = tabsState.tabs.find(
-    (tab) => tab.id === tabsState.activeTabId,
-  );
   const tabIds = useMemo(
     () => tabsState.tabs.map((tab) => tab.id),
     [tabsState.tabs],
@@ -146,52 +186,67 @@ export function useShellTabs() {
     (tabId: string) => {
       const tab = tabsState.tabs.find((entry) => entry.id === tabId);
       if (!tab) return;
+      if (tabId === tabsState.activeTabId) return;
+
       const currentHref = buildProductTabHref(
         location.pathname,
         search,
       );
-      // Flip content first (warm keep-alive). Defer tab chrome so setTabsState
-      // does not share the paint-critical frame with the section swap.
-      if (tab.href !== currentHref) {
+      const needsNavigate = tab.href !== currentHref;
+
+      // Mark pending before any state/nav so a location update cannot clobber
+      // the previous tab's href while activeTabId is mid-flight.
+      if (needsNavigate) {
+        pendingTabSwitchRef.current = { tabId, href: tab.href };
+      }
+
+      // Set activeTabId synchronously (same turn as navigate) — do not defer
+      // with startTransition; that was the race that rewrote the wrong tab.
+      setTabsState((current) => activateProductTab(current, tabId));
+
+      if (needsNavigate) {
         navigateToHref(navigate, tab.href);
       }
-      startTransition(() => {
-        setTabsState((current) => ({ ...current, activeTabId: tabId }));
-      });
     },
-    [location.pathname, search, navigate, tabsState.tabs],
+    [
+      location.pathname,
+      search,
+      navigate,
+      tabsState.tabs,
+      tabsState.activeTabId,
+    ],
   );
 
   const closeTab = useCallback(
     (tabId: string) => {
       setTabsState((current) => {
-        if (current.tabs.length <= 1) {
-          return current;
+        const { state, navigateHref } = closeProductTab(current, tabId);
+        if (navigateHref != null) {
+          // Closing active (or last) tab: arm pending so sync does not write
+          // the destination onto a stale active id during the navigate.
+          pendingTabSwitchRef.current = {
+            tabId: state.activeTabId,
+            href: navigateHref,
+          };
+          queueMicrotask(() => navigateToHref(navigate, navigateHref));
         }
-        const index = current.tabs.findIndex((tab) => tab.id === tabId);
-        if (index < 0) {
-          return current;
-        }
-        const nextTabs = current.tabs.filter((tab) => tab.id !== tabId);
-        const closingActive = current.activeTabId === tabId;
-        const nextActive =
-          closingActive
-            ? (nextTabs[Math.max(0, index - 1)] ?? nextTabs[0])!
-            : current.tabs.find((tab) => tab.id === current.activeTabId)!;
-        if (closingActive) {
-          queueMicrotask(() => navigateToHref(navigate, nextActive.href));
-        }
-        return {
-          tabs: nextTabs,
-          activeTabId: closingActive ? nextActive.id : current.activeTabId,
-        };
+        return state;
       });
     },
     [navigate],
   );
 
+  /** Homepage: rewrite the active tab bookmark to Inbox and navigate there. */
+  const goHome = useCallback(() => {
+    setTabsState((current) =>
+      syncActiveTabToPath(current, "/inbox", ""),
+    );
+    navigateToHref(navigate, "/inbox");
+  }, [navigate]);
+
   const openNewTab = useCallback(() => {
     const tab = createProductTab("/inbox");
+    pendingTabSwitchRef.current = { tabId: tab.id, href: tab.href };
     setTabsState((current) => ({
       tabs: [...current.tabs, tab],
       activeTabId: tab.id,
@@ -205,6 +260,7 @@ export function useShellTabs() {
         resolveAppHref(withEntityDetailPageLayout(href)),
       );
       const tab = createProductTab(destination);
+      pendingTabSwitchRef.current = { tabId: tab.id, href: tab.href };
       setTabsState((current) => ({
         tabs: [...current.tabs, tab],
         activeTabId: tab.id,
@@ -216,28 +272,29 @@ export function useShellTabs() {
 
   const activatePreviousTab = useCallback(() => {
     setTabsState((current) => {
-      if (current.tabs.length <= 1) return current;
-      const index = current.tabs.findIndex(
-        (tab) => tab.id === current.activeTabId,
-      );
-      if (index < 0) return current;
-      const previous =
-        current.tabs[(index - 1 + current.tabs.length) % current.tabs.length]!;
-      queueMicrotask(() => navigateToHref(navigate, previous.href));
-      return { ...current, activeTabId: previous.id };
+      const { state, navigateHref } = cycleProductTab(current, -1);
+      if (navigateHref != null) {
+        pendingTabSwitchRef.current = {
+          tabId: state.activeTabId,
+          href: navigateHref,
+        };
+        queueMicrotask(() => navigateToHref(navigate, navigateHref));
+      }
+      return state;
     });
   }, [navigate]);
 
   const activateNextTab = useCallback(() => {
     setTabsState((current) => {
-      if (current.tabs.length <= 1) return current;
-      const index = current.tabs.findIndex(
-        (tab) => tab.id === current.activeTabId,
-      );
-      if (index < 0) return current;
-      const next = current.tabs[(index + 1) % current.tabs.length]!;
-      queueMicrotask(() => navigateToHref(navigate, next.href));
-      return { ...current, activeTabId: next.id };
+      const { state, navigateHref } = cycleProductTab(current, 1);
+      if (navigateHref != null) {
+        pendingTabSwitchRef.current = {
+          tabId: state.activeTabId,
+          href: navigateHref,
+        };
+        queueMicrotask(() => navigateToHref(navigate, navigateHref));
+      }
+      return state;
     });
   }, [navigate]);
 
@@ -255,6 +312,7 @@ export function useShellTabs() {
     setTabsState,
     history,
     navigateTo,
+    goHome,
     updateActiveTabTitle,
     updateActiveTabIcon,
     activateTab,

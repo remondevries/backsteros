@@ -312,9 +312,12 @@ export {
 } from "./tracked-timer/tracked-timer-context.js";
 
 export {
+  activateProductTab,
   buildProductTabHref,
+  closeProductTab,
   createProductTab,
   createDefaultTabsState,
+  cycleProductTab,
   getTabTitleForHref,
   normalizeTabHref,
   refreshOpenTabTaskStatuses,

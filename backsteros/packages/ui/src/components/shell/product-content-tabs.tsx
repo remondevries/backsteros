@@ -82,7 +82,6 @@ export function ProductContentTabs({
           >
             {tabs.map((tab) => {
               const isActive = tab.id === activeTabId;
-              const showClose = tabs.length > 1;
 
               return (
                 <span
@@ -114,25 +113,21 @@ export function ProductContentTabs({
                     )}
                     <span className="content-tab-label">{tab.title}</span>
                   </span>
-                  {showClose ? (
-                    <span className="content-tab-close-fade" aria-hidden="true" />
-                  ) : null}
-                  {showClose ? (
-                    <button
-                      type="button"
-                      tabIndex={-1}
-                      className="content-tab-close"
-                      aria-label={`Close ${tab.title}`}
-                      title={`Close ${tab.title}`}
-                      data-tauri-drag-region="false"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        onCloseTab(tab.id);
-                      }}
-                    >
-                      ×
-                    </button>
-                  ) : null}
+                  <span className="content-tab-close-fade" aria-hidden="true" />
+                  <button
+                    type="button"
+                    tabIndex={-1}
+                    className="content-tab-close"
+                    aria-label={`Close ${tab.title}`}
+                    title={`Close ${tab.title}`}
+                    data-tauri-drag-region="false"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onCloseTab(tab.id);
+                    }}
+                  >
+                    ×
+                  </button>
                 </span>
               );
             })}

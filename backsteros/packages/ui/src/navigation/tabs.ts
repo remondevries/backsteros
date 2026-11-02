@@ -205,6 +205,89 @@ export function createDefaultTabsState(pathname: string): ProductTabsState {
   return { tabs: [tab], activeTabId: tab.id };
 }
 
+/**
+ * Pure activate: switch `activeTabId` without mutating any tab href.
+ * Returns the unchanged state when the tab is missing or already active.
+ */
+export function activateProductTab(
+  state: ProductTabsState,
+  tabId: string,
+): ProductTabsState {
+  if (state.activeTabId === tabId) {
+    return state;
+  }
+  if (!state.tabs.some((tab) => tab.id === tabId)) {
+    return state;
+  }
+  return { ...state, activeTabId: tabId };
+}
+
+/**
+ * Close a tab. When the last tab is closed, replace it with a fresh Inbox tab
+ * (homepage) so the shell never ends up with zero tabs.
+ *
+ * Returns `{ state, navigateHref }` — `navigateHref` is set when the caller
+ * should navigate (closing the active tab, or replacing the last tab).
+ */
+export function closeProductTab(
+  state: ProductTabsState,
+  tabId: string,
+): { state: ProductTabsState; navigateHref: string | null } {
+  const index = state.tabs.findIndex((tab) => tab.id === tabId);
+  if (index < 0) {
+    return { state, navigateHref: null };
+  }
+
+  if (state.tabs.length <= 1) {
+    // Always replace with a fresh Inbox tab so close resets to homepage
+    // (even when the sole tab was already Inbox — clears keep-alive selection).
+    const replacement = createProductTab("/inbox");
+    return {
+      state: { tabs: [replacement], activeTabId: replacement.id },
+      navigateHref: replacement.href,
+    };
+  }
+
+  const nextTabs = state.tabs.filter((tab) => tab.id !== tabId);
+  const closingActive = state.activeTabId === tabId;
+  const nextActive = closingActive
+    ? (nextTabs[Math.max(0, index - 1)] ?? nextTabs[0])!
+    : state.tabs.find((tab) => tab.id === state.activeTabId)!;
+
+  return {
+    state: {
+      tabs: nextTabs,
+      activeTabId: closingActive ? nextActive.id : state.activeTabId,
+    },
+    navigateHref: closingActive ? nextActive.href : null,
+  };
+}
+
+/**
+ * Cycle active tab by `delta` (−1 previous, +1 next). Preserves all hrefs.
+ */
+export function cycleProductTab(
+  state: ProductTabsState,
+  delta: -1 | 1,
+): { state: ProductTabsState; navigateHref: string | null } {
+  if (state.tabs.length <= 1) {
+    return { state, navigateHref: null };
+  }
+  const index = state.tabs.findIndex((tab) => tab.id === state.activeTabId);
+  if (index < 0) {
+    return { state, navigateHref: null };
+  }
+  const next =
+    state.tabs[(index + delta + state.tabs.length) % state.tabs.length]!;
+  if (next.id === state.activeTabId) {
+    return { state, navigateHref: null };
+  }
+  return {
+    state: { ...state, activeTabId: next.id },
+    navigateHref: next.href,
+  };
+}
+
 export function syncActiveTabToPath(
   state: ProductTabsState,
   pathname: string,

@@ -172,8 +172,11 @@ export {
 } from "../content/content-side-panel.js";
 
 export {
+  activateProductTab,
   buildProductTabHref,
+  closeProductTab,
   createProductTab,
+  cycleProductTab,
   normalizeTabHref,
   syncActiveTabToPath,
   type ProductTab,
