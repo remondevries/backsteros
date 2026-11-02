@@ -67,12 +67,13 @@ function buildAddMemberOptions(
     const grokbotId = agent.grokbotAgentId?.trim() || "";
     const value = contactId || grokbotId;
     const name = agent.name?.trim() || "Agent";
-    const role = agent.role?.trim() || undefined;
+    // Match Lead agent: show the contact job title, not the agent-settings role.
+    const jobTitle = agent.jobTitle?.trim() || undefined;
     return {
       value,
       label: name,
-      secondaryLabel: role,
-      searchTerms: [name, role, grokbotId].filter(Boolean).join(" "),
+      secondaryLabel: jobTitle,
+      searchTerms: [name, jobTitle, grokbotId].filter(Boolean).join(" "),
       icon: (
         <AssigneeListMark
           label={name}

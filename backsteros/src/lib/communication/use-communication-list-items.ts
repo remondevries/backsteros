@@ -10,6 +10,7 @@ import {
 import { agentMailMessagesSignature } from "../agentmail-list-cache";
 import { useAgentMail } from "../agentmail-context";
 import { useDesktopAvatarSrcMap } from "../avatar-src";
+import { isEmailListItemPendingRemoval } from "../email-list-pending-removals";
 import { buildMailboxByIdMap } from "../email-list-tasks";
 import { useKeepAliveFrozen } from "../shell-route-keep-alive";
 import {
@@ -45,13 +46,24 @@ export function useCommunicationListItems(): InboxListItem[] {
   );
 
   return useMemo(() => {
-    // Keep the last painted list while the keep-alive pane is hidden — returning
-    // [] made Communication flash empty when thaw lagged (e.g. after spam →
-    // return via `/email/…?list=communication`).
-    if (frozen) {
-      return lastItemsRef.current.length > 0
-        ? lastItemsRef.current
-        : cachedCommunicationListItems;
+    // Freeze only blocks empty-flash while AgentMail is empty. Optimistic
+    // delete/spam must still drop email rows without leave/return.
+    if (frozen && agentMail.messages.length === 0) {
+      const base =
+        lastItemsRef.current.length > 0
+          ? lastItemsRef.current
+          : cachedCommunicationListItems;
+      const pruned = base.filter((item) => {
+        if (item.kind !== "email") return true;
+        return !isEmailListItemPendingRemoval({
+          inboxId: item.inboxId,
+          id: item.messageId,
+          threadId: item.threadId ?? null,
+        });
+      });
+      lastItemsRef.current = pruned;
+      cachedCommunicationListItems = pruned;
+      return pruned;
     }
 
     const contactsById = new Map(contacts.map((contact) => [contact.id, contact]));
@@ -153,6 +165,7 @@ export function useCommunicationListItems(): InboxListItem[] {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     agentMail.mailboxes,
+    agentMail.messages.length,
     agentMailListSignature,
     allTasks,
     contactAvatarSrc,

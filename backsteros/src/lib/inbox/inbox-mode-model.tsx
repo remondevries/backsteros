@@ -33,6 +33,7 @@ import { useAgentMail } from "../agentmail-context";
 import { agentMailMessagesSignature } from "../agentmail-list-cache";
 import { useDesktopAvatarSrcMap } from "../avatar-src";
 import { useChatInbox } from "../chat/use-chat-inbox";
+import { isEmailListItemPendingRemoval } from "../email-list-pending-removals";
 import { buildMailboxByIdMap } from "../email-list-tasks";
 import {
   useDesktopWorkspaceInboxItems,
@@ -46,6 +47,22 @@ import { useInboxListSessionPin } from "./inbox-list-session-context";
 import { useInboxSessionList } from "./use-inbox-session-list";
 import { useInboxTriageNotifications } from "./use-inbox-triage-notifications";
 import { useInboxUpdatedNotifications } from "./use-inbox-updated-notifications";
+
+/** Drop optimistic-deleted emails from a frozen Messages snapshot. */
+function pruneFrozenInboxEmailItems(
+  items: readonly InboxEmailListItem[],
+): InboxEmailListItem[] {
+  if (items.length === 0) return items as InboxEmailListItem[];
+  const next = items.filter(
+    (item) =>
+      !isEmailListItemPendingRemoval({
+        inboxId: item.inboxId,
+        id: item.messageId,
+        threadId: item.threadId ?? null,
+      }),
+  );
+  return next.length === items.length ? (items as InboxEmailListItem[]) : next;
+}
 
 const NO_ENTITIES: [] = [];
 const NO_CONVERSATIONS: ChatConversation[] = [];
@@ -274,9 +291,16 @@ export function InboxModeModelProvider({
   agentMailMessagesRef.current = agentMail.messages;
 
   const emailItems = useMemo((): InboxEmailListItem[] => {
-    if (frozen) return lastEmailItemsRef.current;
+    const live = agentMailMessagesRef.current;
+    // Freeze only protects against an empty flash while AgentMail is still
+    // enabling. Optimistic delete must still drop rows without leave/return.
+    if (frozen && live.length === 0) {
+      const pruned = pruneFrozenInboxEmailItems(lastEmailItemsRef.current);
+      lastEmailItemsRef.current = pruned;
+      return pruned;
+    }
     const mailboxById = buildMailboxByIdMap(agentMail.mailboxes);
-    const next = agentMailMessagesRef.current.map((item) => {
+    const next = live.map((item) => {
       const mailbox = mailboxById.get(item.inboxId) ?? null;
       return buildInboxEmailListItem({
         inboxId: item.inboxId,

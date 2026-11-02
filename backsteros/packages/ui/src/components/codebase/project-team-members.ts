@@ -7,7 +7,7 @@ export type ProjectTeamAgent = {
   contactId: string | null;
   name: string;
   role?: string | null;
-  /** Contact job title — shown on Team chip hover. */
+  /** Contact job title — Team Add dropdown + chip hover (same as Lead agent). */
   jobTitle?: string | null;
   /** Reported by the agent via `PATCH /api/v1/agents/me`. */
   grokbotAgentId?: string | null;
