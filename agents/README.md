@@ -130,8 +130,9 @@ Desktop starts a run on **cloud-core** (this door). The Brief thread
 live here — not on the Mac — so conductor replies and phase PATCHes work.
 Desktop watches the run and runs local Cursor ACP for Build / Record.
 
-When the wake webhook includes `taskAgentRun`, use those ids (do not scrape
-prose):
+When the wake / Brief webhook includes `taskAgentRun`, use those ids (do not
+scrape prose). Brief webhooks also include `project` (+ `channel` uri/members)
+when the task has a project — same shape as project-room chat, separate thread:
 
 ```http
 PATCH /api/v1/tasks/{taskId}/agent-runs/{runId}

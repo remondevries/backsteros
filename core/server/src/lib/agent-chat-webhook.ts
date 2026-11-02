@@ -211,12 +211,16 @@ export type AgentChatWebhookMessage = {
   linkPreviews?: AgentChatWebhookLinkPreview[];
 };
 
-/** Present on project-room chat webhooks (not DMs / webhook tests). */
+/**
+ * Present on project-room chat webhooks, and on task Brief webhooks when the
+ * task belongs to a project (so the conductor sees Channel uri + members).
+ * Not present on plain shell DMs / webhook tests.
+ */
 export type AgentChatWebhookProject = {
   id: string;
   key: string;
   name: string;
-  /** Channel JSON from the project (`{ uri, name? }`), or null. */
+  /** Channel JSON from the project (`{ uri, name?, members? }`), or null. */
   channel: { uri: string; name?: string | null; members?: string[] } | null;
 };
 
@@ -246,11 +250,12 @@ type AgentWebhookPayloadBase = {
   deliveryId: string;
   timestamp: string;
   /**
-   * Project room context when the thread is linked to a project. Agents should
-   * reply to the same `threadId` / `replyUrl` (not the Grok Bot DM room).
+   * Project (+ Channel) context for project rooms and for task Brief threads
+   * whose task belongs to a project. Agents should reply to the same
+   * `threadId` / `replyUrl` (not the shell DM).
    */
   project?: AgentChatWebhookProject;
-  /** Active factory run when this DM/thread is the conductor Brief. */
+  /** Active factory run when this thread is the conductor Brief. */
   taskAgentRun?: AgentChatWebhookTaskAgentRun;
 };
 

@@ -493,7 +493,10 @@ Check statuses: `pending` | `running` | `pass` | `fail` | `skipped`.
 
 **Webhook context:** when the Brief thread receives a user message, the outbound
 `agent.chat.message` webhook includes structured run ids so Grok does not scrape
-prose:
+prose. When the task belongs to a project, the same payload also includes the
+structured `project` block (id / key / name / `channel` with uri + members) —
+same shape as project-room webhooks — without merging Brief into the channel
+room thread:
 
 ```json
 {
@@ -503,6 +506,12 @@ prose:
     "phase": "brief",
     "cycle": 1,
     "status": "active"
+  },
+  "project": {
+    "id": "…",
+    "key": "OS",
+    "name": "BacksterOS",
+    "channel": { "uri": "grokbot://…", "name": "BacksterOS", "members": ["…"] }
   }
 }
 ```

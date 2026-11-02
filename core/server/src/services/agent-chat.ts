@@ -50,6 +50,7 @@ import {
   chatThreads,
   projects,
   taskAgentRuns,
+  tasks,
 } from "../db/schema.js";
 import { newId } from "../lib/crypto.js";
 import { logger } from "../lib/logger.js";
@@ -244,6 +245,26 @@ async function findTaskAgentRunForBriefThread(
     cycle: row.cycle,
     status: row.status,
   };
+}
+
+/**
+ * Project (+ Channel) context for a task Brief thread. Does not change routing —
+ * Brief replies still go to the thread's conductor agent.
+ */
+async function resolveWebhookProjectForTaskBrief(
+  workspaceId: string,
+  taskId: string,
+): Promise<AgentChatWebhookProject | null> {
+  const [task] = await db
+    .select({ projectId: tasks.projectId })
+    .from(tasks)
+    .where(and(eq(tasks.workspaceId, workspaceId), eq(tasks.id, taskId)))
+    .limit(1);
+  const projectId = task?.projectId?.trim();
+  if (!projectId) return null;
+  const ctx = await resolveProjectLeadContext(workspaceId, projectId);
+  if (!ctx) return null;
+  return toWebhookProject(ctx.project);
 }
 
 function toWebhookProject(
@@ -1580,6 +1601,16 @@ export async function postChatThreadMessage(
         workspaceId,
         threadId,
       );
+      // Brief threads are task-scoped (not project rooms) — still attach the
+      // same structured project/channel block so the conductor sees Channel
+      // uri + members without merging into the project room conversation.
+      if (!webhookProject && thread.taskId) {
+        webhookProject =
+          (await resolveWebhookProjectForTaskBrief(
+            workspaceId,
+            thread.taskId,
+          )) ?? undefined;
+      }
       const payload: AgentChatWebhookPayload = {
         event: AGENT_CHAT_WEBHOOK_EVENT,
         workspaceId,
