@@ -564,39 +564,42 @@ function SettingsApiTab({
     const body = JSON.stringify({ agentIds });
     const headers = { "content-type": "application/json" };
 
-    // Persist to cloud (chat write leader) and local-core (instant twin).
-    // localStorage already holds order if either call fails.
-    const cloudReorder = cloudCoreRequestJson<{ agents: Agent[] }>(
-      "/api/v1/agents/reorder",
-      { method: "PUT", headers, body },
-    ).then((response) => {
-      const ordered = sortAgentsForDisplay(
-        response.agents,
-        agentIds,
-        orderedApiKeyIds,
-      );
-      setAgents(ordered);
-      writeAgentSortOrderIds(ordered.map((agent) => agent.id));
-      applyShellAgentRosterOrder(ordered.map((agent) => agent.id));
-    });
-
-    const localReorder = client
-      .requestJson<{ agents: Agent[] }>("/api/v1/agents/reorder", {
+    // Persist off the drag gesture — local commit above already owns the UI.
+    // Awaiting the door here kept reordering=true and raced the preview clear.
+    void Promise.all([
+      cloudCoreRequestJson<{ agents: Agent[] }>("/api/v1/agents/reorder", {
         method: "PUT",
         headers,
         body,
+      }).then((response) => {
+        const ordered = sortAgentsForDisplay(
+          response.agents,
+          agentIds,
+          orderedApiKeyIds,
+        );
+        setAgents(ordered);
+        writeAgentSortOrderIds(ordered.map((agent) => agent.id));
+        applyShellAgentRosterOrder(ordered.map((agent) => agent.id));
+      }),
+      client
+        .requestJson<{ agents: Agent[] }>("/api/v1/agents/reorder", {
+          method: "PUT",
+          headers,
+          body,
+        })
+        .catch(() => null),
+    ])
+      .catch((error) => {
+        setErrorMessage(
+          cloudSettingsErrorMessage(
+            error,
+            "Could not save agent order to cloud",
+          ),
+        );
       })
-      .catch(() => null);
-
-    try {
-      await Promise.all([cloudReorder, localReorder]);
-    } catch (error) {
-      setErrorMessage(
-        cloudSettingsErrorMessage(error, "Could not save agent order to cloud"),
-      );
-    } finally {
-      notifyShellAgentRosterChanged();
-    }
+      .finally(() => {
+        notifyShellAgentRosterChanged();
+      });
   }
 
   return (

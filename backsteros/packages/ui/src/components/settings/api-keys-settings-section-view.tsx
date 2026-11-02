@@ -197,15 +197,30 @@ function moveIdToIndex(ids: string[], id: string, toIndex: number): string[] {
   return next;
 }
 
+function agentDragSlotMargin(slotMids: readonly number[]): number {
+  if (slotMids.length < 2) return 16;
+  let minGap = Number.POSITIVE_INFINITY;
+  for (let i = 1; i < slotMids.length; i += 1) {
+    minGap = Math.min(minGap, Math.abs(slotMids[i]! - slotMids[i - 1]!));
+  }
+  if (!Number.isFinite(minGap) || minGap <= 0) return 16;
+  // ~30% of the tightest row gap — enough to stop 1px flicker at a midpoint.
+  return Math.max(10, Math.min(28, minGap * 0.3));
+}
+
 /**
  * Map pointer Y onto a frozen start-of-drag slot list, then adjust for
  * splice-based moves. Without the down-drag adjustment, crossing a row's
  * midpoint jumps one slot too far (row fights the pointer / skips neighbors).
+ *
+ * `activeToIndex` adds hysteresis so a row that already moved into a slot does
+ * not snap back when the pointer sits on the midpoint boundary.
  */
 export function agentDragTargetIndex(input: {
   clientY: number;
   slotMids: readonly number[];
   fromIndex: number;
+  activeToIndex?: number;
 }): number {
   const { clientY, slotMids, fromIndex } = input;
   if (slotMids.length === 0 || fromIndex < 0) return fromIndex;
@@ -217,8 +232,27 @@ export function agentDragTargetIndex(input: {
     }
   }
   // After removing `fromIndex`, indices above it shift down by one.
-  if (fromIndex < raw) return Math.max(0, raw - 1);
-  return raw;
+  let toIndex = fromIndex < raw ? Math.max(0, raw - 1) : raw;
+  const active = input.activeToIndex;
+  if (
+    active === undefined ||
+    active === toIndex ||
+    active < 0 ||
+    active >= slotMids.length
+  ) {
+    return toIndex;
+  }
+  const margin = agentDragSlotMargin(slotMids);
+  if (toIndex > active) {
+    // Need to clear the next frozen mid by `margin` before stepping down again.
+    const boundary = slotMids[Math.min(active + 1, slotMids.length - 1)]!;
+    if (clientY < boundary + margin) return active;
+  } else {
+    // Need to clear this slot's mid by `margin` before stepping back up.
+    const boundary = slotMids[active]!;
+    if (clientY > boundary - margin) return active;
+  }
+  return toIndex;
 }
 
 /** Preview / commit order while dragging an agent API key row. */
@@ -227,6 +261,8 @@ export function reorderAgentKeysForDrag(input: {
   draggingId: string;
   clientY: number;
   slotMids: readonly number[];
+  /** Current preview index of the dragged id (hysteresis). */
+  activeToIndex?: number;
 }): string[] {
   const ids = [...input.orderIds];
   const fromIndex = ids.indexOf(input.draggingId);
@@ -235,6 +271,7 @@ export function reorderAgentKeysForDrag(input: {
     clientY: input.clientY,
     slotMids: input.slotMids,
     fromIndex,
+    activeToIndex: input.activeToIndex,
   });
   return moveIdToIndex(ids, input.draggingId, toIndex);
 }
@@ -1366,6 +1403,7 @@ export function ApiKeysSettingsSectionView({
       const rect = row.getBoundingClientRect();
       return rect.top + rect.height / 2;
     });
+    const pointerId = event.pointerId;
     dragSessionRef.current = {
       id: apiKeyId,
       startY: event.clientY,
@@ -1376,9 +1414,16 @@ export function ApiKeysSettingsSectionView({
     };
     setDraggingId(apiKeyId);
     setDragOrderIds(initialOrderIds);
-    handle.setPointerCapture(event.pointerId);
+    // Capture on the handle, but listen on window — reordering the <tr> in the
+    // DOM (WKWebView) can drop handle listeners and leave the row stuck grey.
+    try {
+      handle.setPointerCapture(pointerId);
+    } catch {
+      // Some WebViews throw if capture is unsupported; window listeners still work.
+    }
 
     const onMove = (ev: PointerEvent) => {
+      if (ev.pointerId !== pointerId) return;
       const session = dragSessionRef.current;
       if (!session || session.id !== apiKeyId) return;
       if (!session.moved && Math.abs(ev.clientY - session.startY) < 4) return;
@@ -1390,6 +1435,7 @@ export function ApiKeysSettingsSectionView({
         draggingId: session.id,
         clientY: ev.clientY,
         slotMids: session.slotMids,
+        activeToIndex: session.orderIds.indexOf(session.id),
       });
       if (
         next.length === session.orderIds.length &&
@@ -1402,11 +1448,16 @@ export function ApiKeysSettingsSectionView({
     };
 
     const onUp = (ev: PointerEvent) => {
-      handle.removeEventListener("pointermove", onMove);
-      handle.removeEventListener("pointerup", onUp);
-      handle.removeEventListener("pointercancel", onUp);
-      if (handle.hasPointerCapture(ev.pointerId)) {
-        handle.releasePointerCapture(ev.pointerId);
+      if (ev.pointerId !== pointerId) return;
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onUp);
+      try {
+        if (handle.hasPointerCapture(pointerId)) {
+          handle.releasePointerCapture(pointerId);
+        }
+      } catch {
+        // ignore
       }
       const session = dragSessionRef.current;
       dragSessionRef.current = null;
@@ -1429,9 +1480,9 @@ export function ApiKeysSettingsSectionView({
       void saveAgentOrder(orderedIds);
     };
 
-    handle.addEventListener("pointermove", onMove);
-    handle.addEventListener("pointerup", onUp);
-    handle.addEventListener("pointercancel", onUp);
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onUp);
   }
 
   const activityItems = useMemo(

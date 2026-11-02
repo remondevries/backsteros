@@ -68,6 +68,41 @@ test("agent drag: staying in own slot below the midpoint does not swap", () => {
   );
 });
 
+test("agent drag: hysteresis keeps a placed row from snapping back at the mid", () => {
+  // After A moved to index 1, sitting just under B's original mid (149) would
+  // raw-compute back to 0 without stickiness.
+  const slotMids = [50, 150, 250, 350];
+  assert.equal(
+    agentDragTargetIndex({
+      clientY: 149,
+      slotMids,
+      fromIndex: 0,
+      activeToIndex: 1,
+    }),
+    1,
+  );
+  assert.deepEqual(
+    reorderAgentKeysForDrag({
+      orderIds: ["a", "b", "c", "d"],
+      draggingId: "a",
+      clientY: 149,
+      slotMids,
+      activeToIndex: 1,
+    }),
+    ["b", "a", "c", "d"],
+  );
+  // Far enough back into the first slot still allows returning home.
+  assert.equal(
+    agentDragTargetIndex({
+      clientY: 60,
+      slotMids,
+      fromIndex: 0,
+      activeToIndex: 1,
+    }),
+    0,
+  );
+});
+
 test("classifyApiKeyType maps exclusive Applications, TV, and CardDAV scopes", () => {
   assert.equal(
     classifyApiKeyType({
