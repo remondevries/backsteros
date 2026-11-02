@@ -60,13 +60,6 @@ type ReviewCheckItem = {
   startedAtMs?: number | null;
 };
 
-type DeploymentItem = {
-  id: string;
-  label: string;
-  done: boolean;
-  durationLabel?: string | null;
-};
-
 /** Agent turn file changes — same shape as T3 DiffStatLabel rows. */
 type ChangelogFileKind = "added" | "modified" | "deleted" | "renamed";
 
@@ -192,27 +185,6 @@ type CommitRecord = {
   } | null;
 };
 
-/** Scaffold: git receipt after Build/Verify (PR or commit-only). */
-const INITIAL_COMMIT_RECORD: CommitRecord = {
-  kind: "pr",
-  shortSha: "a1b2c3d",
-  sha: "a1b2c3d4e5f678901234567890abcdef12345678",
-  subject: "Wire agent run factory: brief → build → verify → record → ship",
-  body: "Git-first agent run accordion with Diff inside Build, Verify gates, polymorphic Record (PR or commit), and optional Ship.",
-  authorName: "cursor-agent",
-  authoredAtLabel: "Just now",
-  branch: "production",
-  additions: 800,
-  deletions: 76,
-  filesChanged: 5,
-  pullRequest: {
-    number: 482,
-    title: "Agent run factory: brief, build, verify, record, ship",
-    state: "open",
-    urlLabel: "backsteros#482",
-  },
-};
-
 const BUILD_MODE_OPTIONS: readonly SegmentedPillToggleOption<BuildMode>[] = [
   { value: "live", label: "Live" },
   { value: "diff", label: "Diff" },
@@ -222,152 +194,6 @@ const BUILD_MODE_OPTIONS: readonly SegmentedPillToggleOption<BuildMode>[] = [
 const VERIFY_MODE_OPTIONS: readonly SegmentedPillToggleOption<VerifyMode>[] = [
   { value: "results", label: "Results" },
   { value: "log", label: "Log" },
-];
-
-const INITIAL_REVIEW_CHECKS: readonly ReviewCheckItem[] = [
-  {
-    id: "typecheck",
-    label: "Typecheck",
-    status: "pass",
-    detail: "pnpm typecheck completed with no errors.",
-    durationLabel: "12.4s",
-  },
-  {
-    id: "lint",
-    label: "Lint",
-    status: "pass",
-    detail: "pnpm lint passed.",
-    durationLabel: "3.1s",
-  },
-  {
-    id: "unit",
-    label: "Unit tests",
-    status: "running",
-    detail: "pnpm test is still running…",
-  },
-  {
-    id: "integration",
-    label: "Integration tests",
-    status: "pending",
-    detail: "Waiting for unit tests to finish.",
-  },
-  {
-    id: "diff",
-    label: "Diff review",
-    status: "pending",
-    detail: "Review agent will inspect the change set next.",
-  },
-];
-
-const INITIAL_DEPLOYMENT: readonly DeploymentItem[] = [
-  {
-    id: "build",
-    label: "Build production assets",
-    done: true,
-    durationLabel: "48s",
-  },
-  {
-    id: "migrate",
-    label: "Run database migrations",
-    done: true,
-    durationLabel: "2.1s",
-  },
-  { id: "health", label: "Pass health checks", done: false },
-  { id: "publish", label: "Publish release", done: false },
-  { id: "notify", label: "Notify project channel", done: false },
-];
-
-/** Scaffold file list inspired by backsterdev DiffPanel / DiffStatLabel. */
-const INITIAL_CHANGELOG_FILES: readonly ChangelogFileItem[] = [
-  {
-    id: "1",
-    path: "backsteros/src/components/task-agent-run-accordion.tsx",
-    kind: "modified",
-    additions: 186,
-    deletions: 42,
-    preview: [
-      { type: "hunk", text: "@@ -48,7 +48,12 @@" },
-      { type: "del", text: "  { id: \"setup\", title: \"Setup\", status: \"ready_to_start\" }," },
-      { type: "del", text: "  { id: \"process\", title: \"Process\", status: \"in_progress\" }," },
-      { type: "del", text: "  { id: \"review\", title: \"Review\", status: \"in_review\" }," },
-      { type: "add", text: "  { id: \"brief\", title: \"Brief\", status: \"ready_to_start\" }," },
-      { type: "add", text: "  { id: \"build\", title: \"Build\", status: \"in_progress\" }," },
-      { type: "add", text: "  { id: \"verify\", title: \"Verify\", status: \"in_review\" }," },
-      { type: "add", text: "  { id: \"record\", title: \"Record\", status: \"completed\" }," },
-      { type: "add", text: "  { id: \"ship\", title: \"Ship\", status: \"waiting\" }," },
-      { type: "ctx", text: "];" },
-    ],
-  },
-  {
-    id: "2",
-    path: "backsteros/src/styles/task-agent-layout.css",
-    kind: "modified",
-    additions: 120,
-    deletions: 18,
-    preview: [
-      { type: "hunk", text: "@@ -470,6 +470,40 @@" },
-      { type: "ctx", text: ".task-agent-run-accordion__process-footer {" },
-      { type: "add", text: "  justify-content: flex-end;" },
-      { type: "ctx", text: "}" },
-      { type: "add", text: "" },
-      { type: "add", text: ".task-agent-run-accordion__changelog-row {" },
-      { type: "add", text: "  display: flex;" },
-      { type: "add", text: "  align-items: center;" },
-      { type: "add", text: "}" },
-    ],
-  },
-  {
-    id: "3",
-    path: "backsteros/src/lib/cursor-agent-transcript.ts",
-    kind: "added",
-    additions: 210,
-    deletions: 0,
-    preview: [
-      { type: "hunk", text: "@@ -0,0 +1,24 @@" },
-      { type: "add", text: "export async function fetchCursorAgentTranscript(options: {" },
-      { type: "add", text: "  cwd?: string | null;" },
-      { type: "add", text: "  conversationId?: string | null;" },
-      { type: "add", text: "}): Promise<CursorAgentTranscriptResult> {" },
-      { type: "add", text: "  const originResult = getCursorTranscriptHttpOrigin();" },
-      { type: "add", text: "  // …" },
-      { type: "add", text: "}" },
-    ],
-  },
-  {
-    id: "4",
-    path: "backsteros/scripts/cursor-agent-transcript.mjs",
-    kind: "added",
-    additions: 260,
-    deletions: 0,
-    preview: [
-      { type: "hunk", text: "@@ -0,0 +1,18 @@" },
-      { type: "add", text: "export function loadCursorAgentTranscript(options = {}) {" },
-      { type: "add", text: "  const found = findCursorAgentTranscript(options);" },
-      { type: "add", text: "  if (!found) {" },
-      { type: "add", text: "    return { ok: false, messages: [] };" },
-      { type: "add", text: "  }" },
-      { type: "add", text: "  return { ok: true, messages: readCursorAgentTranscriptMessages(found.path) };" },
-      { type: "add", text: "}" },
-    ],
-  },
-  {
-    id: "5",
-    path: "backsteros/packages/ui/src/components/chat/chat-thread.tsx",
-    kind: "modified",
-    additions: 24,
-    deletions: 16,
-    preview: [
-      { type: "hunk", text: "@@ -770,20 +770,28 @@" },
-      { type: "del", text: "      <div className=\"chat-ui-composer__row\">" },
-      { type: "del", text: "        <label className=\"chat-ui-composer__attach\">+</label>" },
-      { type: "add", text: "      <div className=\"chat-ui-composer__row\">" },
-      { type: "add", text: "        <div className=\"chat-ui-composer__input-wrap\">…</div>" },
-      { type: "add", text: "      </div>" },
-      { type: "add", text: "      <div className=\"chat-ui-composer__tools\">" },
-      { type: "add", text: "        <label className=\"chat-ui-composer__attach\">+</label>" },
-      { type: "ctx", text: "        <ComposerPrimitive.Send>↑</ComposerPrimitive.Send>" },
-    ],
-  },
 ];
 
 function changelogKindLetter(kind: ChangelogFileKind): string {
@@ -400,6 +226,14 @@ function ChangelogDiffPanel({
 }) {
   const totalAdditions = files.reduce((n, f) => n + f.additions, 0);
   const totalDeletions = files.reduce((n, f) => n + f.deletions, 0);
+
+  if (files.length === 0) {
+    return (
+      <p className="task-agent-run-accordion__commit-empty" role="status">
+        No file diff for this run yet.
+      </p>
+    );
+  }
 
   return (
     <div className="task-agent-run-accordion__changelog">
@@ -719,7 +553,7 @@ function verifyLogMessagesFromChecks(
 
 /**
  * Full-height exclusive accordion for an agent run: Brief → Build →
- * Verify → Record → Ship. Design scaffold after fake kickoff.
+ * Verify → Record → Ship. Content is driven by the cloud-owned run.
  */
 export function TaskAgentRunAccordion({
   active,
@@ -745,24 +579,13 @@ export function TaskAgentRunAccordion({
   const [buildMode, setBuildMode] = useState<BuildMode>("live");
   const [verifyMode, setVerifyMode] = useState<VerifyMode>("results");
   const [briefMessagesLocal, setBriefMessagesLocal] = useState<ChatUiMessage[]>(
-    () => [
-      newLocalMessage(
-        "assistant",
-        "Share constraints and preferences for this task before we start the build.",
-      ),
-    ],
+    [],
   );
   const briefMessages = briefMessagesProp ?? briefMessagesLocal;
-  const reviewChecks = useMemo(() => {
-    if (run) {
-      return (run.checks ?? []).map(mapRunCheckToReviewItem);
-    }
-    return INITIAL_REVIEW_CHECKS.map((item) =>
-      item.status === "running" && item.startedAtMs == null
-        ? { ...item, startedAtMs: Date.now() }
-        : { ...item },
-    );
-  }, [run]);
+  const reviewChecks = useMemo(
+    () => (run?.checks ?? []).map(mapRunCheckToReviewItem),
+    [run?.checks],
+  );
 
   const verifyLogMessages = useMemo(
     () => verifyLogMessagesFromChecks(run?.checks),
@@ -773,37 +596,35 @@ export function TaskAgentRunAccordion({
     setOpenSection(phaseSection);
   }, [phaseSection, run?.cycle]);
   const [reviewNowMs, setReviewNowMs] = useState(() => Date.now());
-  const [deployment, setDeployment] = useState<DeploymentItem[]>(() => [
-    ...INITIAL_DEPLOYMENT,
-  ]);
-  const [changelogFiles] = useState<ChangelogFileItem[]>(() => [
-    ...INITIAL_CHANGELOG_FILES,
-  ]);
   const [openChangelogFileId, setOpenChangelogFileId] = useState<string | null>(
     null,
   );
-  const [commitRecord] = useState<CommitRecord>(() => ({
-    ...INITIAL_COMMIT_RECORD,
-  }));
-  const displayCommitRecord: CommitRecord = useMemo(() => {
-    if (!run) return commitRecord;
-    const sha = recordHeadSha?.trim() || "";
-    const shortSha = sha ? sha.slice(0, 7) : "———————";
+  const changelogFiles: readonly ChangelogFileItem[] = [];
+  const displayCommitRecord: CommitRecord | null = useMemo(() => {
+    if (!run) return null;
     const intent: RecordKind =
-      run.recordIntent === "commit" ? "commit" : "pr";
+      run.recordIntent === "commit"
+        ? "commit"
+        : run.recordIntent === "pr"
+          ? "pr"
+          : "pr";
+    const sha = recordHeadSha?.trim() || "";
     if (!sha) {
       return {
-        ...commitRecord,
         kind: intent,
-        shortSha,
+        shortSha: "—",
         sha: "",
         subject:
-          intent === "pr"
-            ? "Waiting for Cursor to open the pull request…"
-            : "Waiting for Cursor to commit…",
+          run.phase === "record"
+            ? run.recordIntent === "commit"
+              ? "Waiting for Cursor to commit…"
+              : run.recordIntent === "pr"
+                ? "Waiting for Cursor to open the pull request…"
+                : "Waiting for record intent from the conductor…"
+            : "Record not started yet",
         body: run.recordNotes?.trim() || "",
-        authorName: "cursor-agent",
-        authoredAtLabel: "Pending",
+        authorName: "—",
+        authoredAtLabel: "—",
         branch: "—",
         additions: 0,
         deletions: 0,
@@ -812,9 +633,8 @@ export function TaskAgentRunAccordion({
       };
     }
     return {
-      ...commitRecord,
       kind: intent,
-      shortSha,
+      shortSha: sha.slice(0, 7),
       sha,
       subject:
         run.recordNotes?.trim() ||
@@ -822,17 +642,13 @@ export function TaskAgentRunAccordion({
       body: "",
       authorName: "cursor-agent",
       authoredAtLabel: "Just now",
-      pullRequest:
-        intent === "pr"
-          ? {
-              number: 0,
-              title: run.recordNotes?.trim() || "Pull request",
-              state: "open",
-              urlLabel: "PR pending URL",
-            }
-          : null,
+      branch: "—",
+      additions: 0,
+      deletions: 0,
+      filesChanged: 0,
+      pullRequest: null,
     };
-  }, [commitRecord, recordHeadSha, run]);
+  }, [recordHeadSha, run]);
 
   const hasRunningReviewCheck = reviewChecks.some(
     (item) => item.status === "running",
@@ -855,14 +671,6 @@ export function TaskAgentRunAccordion({
     setOpenSection((current) => (current === id ? current : id));
   };
 
-  const toggleDeploymentItem = (id: string) => {
-    setDeployment((items) =>
-      items.map((item) =>
-        item.id === id ? { ...item, done: !item.done } : item,
-      ),
-    );
-  };
-
   return (
     <div className="task-agent-run-accordion">
       {orchestratorError ? (
@@ -882,7 +690,7 @@ export function TaskAgentRunAccordion({
             open={open}
             onToggle={() => toggleSection(section.id)}
             titleEnd={
-              section.id === "record" ? (
+              section.id === "record" && displayCommitRecord ? (
                 <RecordKindBadge kind={displayCommitRecord.kind} />
               ) : null
             }
@@ -1033,138 +841,80 @@ export function TaskAgentRunAccordion({
 
             {section.id === "record" ? (
               <div className="task-agent-run-accordion__commit">
-                {displayCommitRecord.kind === "pr" &&
-                displayCommitRecord.pullRequest ? (
-                  <article
-                    className={[
-                      "task-agent-run-accordion__commit-pr",
-                      `is-${displayCommitRecord.pullRequest.state}`,
-                    ].join(" ")}
-                  >
-                    <div className="task-agent-run-accordion__commit-pr-top">
-                      <span className="task-agent-run-accordion__commit-pr-id">
-                        {displayCommitRecord.pullRequest.urlLabel}
-                      </span>
-                      <span className="task-agent-run-accordion__commit-pr-state">
-                        {displayCommitRecord.pullRequest.state}
-                      </span>
-                    </div>
-                    <p className="task-agent-run-accordion__commit-pr-title">
-                      {displayCommitRecord.pullRequest.title}
-                    </p>
-                  </article>
-                ) : null}
-                {displayCommitRecord.kind === "pr" &&
-                !displayCommitRecord.pullRequest ? (
+                {!displayCommitRecord ? (
                   <p className="task-agent-run-accordion__commit-empty">
-                    {run?.recordIntent === "pr"
-                      ? "Waiting for Cursor to open the pull request…"
-                      : "No pull request linked yet."}
+                    Waiting for the conductor to enter Record…
                   </p>
-                ) : null}
-                {run?.recordNotes ? (
-                  <p className="task-agent-run-accordion__commit-body">
-                    {run.recordNotes}
-                  </p>
-                ) : null}
-                <article className="task-agent-run-accordion__commit-card">
-                  <header className="task-agent-run-accordion__commit-header">
-                    <code
-                      className="task-agent-run-accordion__commit-sha"
-                      title={displayCommitRecord.sha}
-                    >
-                      {displayCommitRecord.shortSha}
-                    </code>
-                    <span className="task-agent-run-accordion__commit-branch">
-                      {displayCommitRecord.branch}
-                    </span>
-                  </header>
-                  <h3 className="task-agent-run-accordion__commit-subject">
-                    {displayCommitRecord.subject}
-                  </h3>
-                  {displayCommitRecord.body ? (
-                    <p className="task-agent-run-accordion__commit-body">
-                      {displayCommitRecord.body}
-                    </p>
-                  ) : null}
-                  <dl className="task-agent-run-accordion__commit-meta">
-                    <div>
-                      <dt>Author</dt>
-                      <dd>{displayCommitRecord.authorName}</dd>
-                    </div>
-                    <div>
-                      <dt>When</dt>
-                      <dd>{displayCommitRecord.authoredAtLabel}</dd>
-                    </div>
-                    <div>
-                      <dt>Changes</dt>
-                      <dd>
-                        <span className="task-agent-run-accordion__changelog-stat">
-                          <span className="is-add">
-                            +
-                            {formatCompactDiffCount(
-                              displayCommitRecord.additions,
-                            )}
-                          </span>
-                          <span className="is-del">
-                            −
-                            {formatCompactDiffCount(
-                              displayCommitRecord.deletions,
-                            )}
-                          </span>
+                ) : (
+                  <>
+                    {run?.recordIntent === "pr" && !recordHeadSha ? (
+                      <p className="task-agent-run-accordion__commit-empty">
+                        Waiting for Cursor to open the pull request…
+                      </p>
+                    ) : null}
+                    {run?.recordNotes ? (
+                      <p className="task-agent-run-accordion__commit-body">
+                        {run.recordNotes}
+                      </p>
+                    ) : null}
+                    <article className="task-agent-run-accordion__commit-card">
+                      <header className="task-agent-run-accordion__commit-header">
+                        <code
+                          className="task-agent-run-accordion__commit-sha"
+                          title={displayCommitRecord.sha || undefined}
+                        >
+                          {displayCommitRecord.shortSha}
+                        </code>
+                        <span className="task-agent-run-accordion__commit-branch">
+                          {displayCommitRecord.branch}
                         </span>
-                        <span className="task-agent-run-accordion__commit-files">
-                          · {displayCommitRecord.filesChanged} files
-                        </span>
-                      </dd>
-                    </div>
-                  </dl>
-                </article>
-                <ChangelogDiffPanel
-                  files={changelogFiles}
-                  openFileId={openChangelogFileId}
-                  onOpenFileIdChange={setOpenChangelogFileId}
-                />
+                      </header>
+                      <h3 className="task-agent-run-accordion__commit-subject">
+                        {displayCommitRecord.subject}
+                      </h3>
+                      {displayCommitRecord.body ? (
+                        <p className="task-agent-run-accordion__commit-body">
+                          {displayCommitRecord.body}
+                        </p>
+                      ) : null}
+                      {recordHeadSha ? (
+                        <dl className="task-agent-run-accordion__commit-meta">
+                          <div>
+                            <dt>Author</dt>
+                            <dd>{displayCommitRecord.authorName}</dd>
+                          </div>
+                          <div>
+                            <dt>When</dt>
+                            <dd>{displayCommitRecord.authoredAtLabel}</dd>
+                          </div>
+                        </dl>
+                      ) : null}
+                    </article>
+                    <ChangelogDiffPanel
+                      files={changelogFiles}
+                      openFileId={openChangelogFileId}
+                      onOpenFileIdChange={setOpenChangelogFileId}
+                    />
+                  </>
+                )}
               </div>
             ) : null}
 
             {section.id === "ship" ? (
               <div className="task-agent-run-accordion__review">
                 <div className="task-agent-run-accordion__review-body">
-                  <div className="task-agent-run-accordion__review-results">
-                    <ul className="task-agent-run-accordion__review-list">
-                      {deployment.map((item) => {
-                        const status: ReviewCheckStatus = item.done
-                          ? "pass"
-                          : "pending";
-                        return (
-                          <li key={item.id}>
-                            <button
-                              type="button"
-                              className="task-agent-run-accordion__review-row-button"
-                              aria-pressed={item.done}
-                              onClick={() => toggleDeploymentItem(item.id)}
-                            >
-                              <ReviewCheckRow
-                                item={{
-                                  id: item.id,
-                                  label: item.label,
-                                  status,
-                                  detail: item.done
-                                    ? "Completed."
-                                    : "Waiting to run.",
-                                  durationLabel: item.done
-                                    ? item.durationLabel
-                                    : null,
-                                }}
-                                nowMs={reviewNowMs}
-                              />
-                            </button>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  </div>
+                  <p
+                    className="task-agent-run-accordion__process-sync-error"
+                    role="status"
+                  >
+                    {run?.phase === "done"
+                      ? "Run completed."
+                      : run?.phase === "ship"
+                        ? "Ship is waiting — deploy automation is not wired yet."
+                        : run?.phase === "failed"
+                          ? run.lastError?.trim() || "Run failed."
+                          : "Ship starts after Record completes."}
+                  </p>
                 </div>
               </div>
             ) : null}

@@ -6,7 +6,10 @@ import type {
   TaskAgentRun,
 } from "@backsteros/contracts";
 
-import { useDesktopApi } from "./api-context";
+import {
+  cloudCoreRequestJson,
+  isCloudCoreApiError,
+} from "./cloud-core-api";
 import {
   fetchActiveTaskAgentRun,
   patchTaskAgentRun,
@@ -30,11 +33,31 @@ function chatThreadMessageToUi(message: ChatThreadMessage): ChatUiMessage {
   };
 }
 
+function cloudErrorMessage(err: unknown, fallback: string): string {
+  if (isCloudCoreApiError(err)) {
+    const match = err.message.match(/^\d+\s+(\{[\s\S]*\})$/);
+    if (match?.[1]) {
+      try {
+        const parsed = JSON.parse(match[1]) as { error?: string };
+        if (parsed.error?.trim()) return parsed.error.trim();
+      } catch {
+        /* keep raw */
+      }
+    }
+    return err.message || fallback;
+  }
+  if (err instanceof Error && err.message.trim()) return err.message;
+  return fallback;
+}
+
+/**
+ * Factory run + Brief live on **cloud-core** so Grok can reply and PATCH phases
+ * via agent.backsteros.com. Desktop only executes local Cursor ACP.
+ */
 export function useTaskAgentRun(options: {
   active: boolean;
   taskId: string;
 }) {
-  const { client } = useDesktopApi();
   const [run, setRun] = useState<TaskAgentRun | null>(null);
   const [briefMessages, setBriefMessages] = useState<ChatUiMessage[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -43,8 +66,9 @@ export function useTaskAgentRun(options: {
   runIdRef.current = run?.id ?? null;
 
   const requestJson = useCallback(
-    <T,>(path: string, init?: RequestInit) => client.requestJson<T>(path, init),
-    [client],
+    <T,>(path: string, init?: RequestInit) =>
+      cloudCoreRequestJson<T>(path, init),
+    [],
   );
 
   const refreshRun = useCallback(async () => {
@@ -58,7 +82,7 @@ export function useTaskAgentRun(options: {
       setError(null);
       return activeRun;
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load agent run");
+      setError(cloudErrorMessage(err, "Failed to load agent run"));
       return null;
     }
   }, [options.taskId, requestJson]);
@@ -124,8 +148,7 @@ export function useTaskAgentRun(options: {
         }
         return created;
       } catch (err) {
-        const message =
-          err instanceof Error ? err.message : "Failed to start agent run";
+        const message = cloudErrorMessage(err, "Failed to start agent run");
         setError(message);
         throw err;
       } finally {

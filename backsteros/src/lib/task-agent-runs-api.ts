@@ -109,5 +109,8 @@ function isNotFound(error: unknown): boolean {
   if (!error || typeof error !== "object") return false;
   const status = (error as { status?: unknown }).status;
   const code = (error as { code?: unknown }).code;
-  return status === 404 || code === "not_found";
+  if (status === 404 || code === "not_found") return true;
+  // cloudCoreRequestJson embeds status in the message: "404 {…}"
+  const message = (error as { message?: unknown }).message;
+  return typeof message === "string" && /^404\b/.test(message.trim());
 }

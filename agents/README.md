@@ -123,6 +123,31 @@ Desktop replaces the card via SSE. Progress PATCHes do **not** fire `agent.chat.
 
 Full shapes: `docs/04-api-and-sync.md` (Shell agent chat webhooks).
 
+## Task agent factory (Brief → Build → Verify → Record)
+
+Desktop starts a run on **cloud-core** (this door). The Brief DM thread and
+`task_agent_runs` row live here — not on the Mac — so conductor replies and
+phase PATCHes work. Desktop watches the run and runs local Cursor ACP for Build
+/ Record.
+
+When the wake webhook includes `taskAgentRun`, use those ids (do not scrape
+prose):
+
+```http
+PATCH /api/v1/tasks/{taskId}/agent-runs/{runId}
+Authorization: Bearer <your agent API key>
+{
+  "phase": "build",
+  "buildPrompt": "Implement …"
+}
+```
+
+Also: `GET …/agent-runs/active`, `GET …/agent-runs/{runId}`, and
+`GET|POST|PATCH …/agent-runs/{runId}/checks`. Reply to Brief only via the
+webhook `replyUrl` / same `threadId`. Playbook: Brief → `build` + `buildPrompt`
+→ checks + `verify` → loop `brief` (cycle++) or `record` + `recordIntent` →
+`done`. Details: `docs/04-api-and-sync.md` (Task agent factory runs).
+
 ## Channel Connect (project Locations → Channel)
 
 See **[CHANNEL-CONNECT.md](./CHANNEL-CONNECT.md)** for the agent routine.

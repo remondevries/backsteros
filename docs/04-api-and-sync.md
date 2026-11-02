@@ -438,15 +438,18 @@ Remon: update the shared agent skill / CLI finish flow to use status+comment and
 
 Desktop task factory for codebase projects: a **Grok conductor** owns Brief and
 phase decisions; the Mac desktop kicks a **local Cursor ACP** session for Build
-and Record git ops. State lives in Postgres (`task_agent_runs`,
-`task_agent_run_checks`) — not PowerSynced in v1 (REST from desktop).
+and Record git ops. **Run + Brief thread state lives on cloud-core**
+(`task_agent_runs`, `task_agent_run_checks`, `chat_threads`) so Grok can reply
+and PATCH via `https://agent.backsteros.com`. Desktop creates/polls those rows
+on cloud (owner `sk_live_…`); they are not PowerSynced in v1. Local-core alone
+is not enough — agents never call the Mac.
 
-**Start a run** (cancels any other active run on the task by default; opens a DM
-thread with the conductor and posts a wake message with task + project + cwd +
-repo context):
+**Start a run** (from desktop against **cloud** / the agents door; cancels any
+other active run on the task by default; opens a DM thread with the conductor
+and posts a wake message with task + project + cwd + repo context):
 
 ```http
-POST /api/v1/tasks/{taskId}/agent-runs
+POST https://agent.backsteros.com/api/v1/tasks/{taskId}/agent-runs
 Authorization: Bearer sk_live_…
 Content-Type: application/json
 
@@ -457,7 +460,7 @@ Content-Type: application/json
 }
 ```
 
-**Read / patch**
+**Read / patch** (Grok uses the same host with its agent key)
 
 ```http
 GET  /api/v1/tasks/{taskId}/agent-runs/active
@@ -468,6 +471,7 @@ PATCH /api/v1/tasks/{taskId}/agent-runs/{runId}
   "buildPrompt": "Implement …"
 }
 ```
+
 
 Phases: `brief` | `build` | `verify` | `record` | `ship` | `done` | `failed`.
 Statuses: `active` | `paused` | `completed` | `cancelled`.
