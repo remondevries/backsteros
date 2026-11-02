@@ -218,6 +218,12 @@ export function ProductSidebar({
                 <>
                   <span className="app-side-panel-brand-name-thin">Backster</span>
                   <span className="app-side-panel-brand-name-bold">OS</span>
+                  <span
+                    className="app-side-panel-brand-version"
+                    aria-hidden="true"
+                  >
+                    V2
+                  </span>
                 </>
               ) : (
                 displayName

@@ -311,6 +311,29 @@ body.is-resizing .desktop-chat-panel__resize::after {
   font-weight: 700;
 }
 
+/* Version tag after the wordmark — not part of the product name. */
+.app-side-panel-brand-version {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  margin-left: 6px;
+  padding: 1px 5px;
+  border: 0.5px solid color-mix(in srgb, var(--foreground) 12%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--foreground) 4%, transparent);
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  line-height: 1.2;
+  vertical-align: 0.15em;
+}
+
+.desktop-sidebar.is-collapsed .app-side-panel-brand-version,
+.bos-product-sidebar.is-collapsed .app-side-panel-brand-version {
+  display: none;
+}
+
 .app-side-panel-profile-trigger-chevron {
   flex-shrink: 0;
   color: color-mix(in srgb, var(--foreground) 45%, transparent);
