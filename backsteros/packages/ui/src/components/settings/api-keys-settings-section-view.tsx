@@ -232,7 +232,7 @@ export function agentDragTargetIndex(input: {
     }
   }
   // After removing `fromIndex`, indices above it shift down by one.
-  let toIndex = fromIndex < raw ? Math.max(0, raw - 1) : raw;
+  const toIndex = fromIndex < raw ? Math.max(0, raw - 1) : raw;
   const active = input.activeToIndex;
   if (
     active === undefined ||
