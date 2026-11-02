@@ -318,15 +318,36 @@ export function useTaskAgentRunOrchestrator(options: {
       if (lastVerifyKeyRef.current === key) return;
       lastVerifyKeyRef.current = key;
 
-      for (const check of pending) {
-        if (check.status === "running") continue;
-        await patchTaskAgentRunCheck(
-          requestJson,
-          taskId,
-          run.id,
-          check.id,
-          { status: "running" },
-        ).catch(() => undefined);
+      // Only one check is "running"; the rest stay/return to pending (backlog icon).
+      const orderedPending = [...pending].sort(
+        (a, b) => a.sortOrder - b.sortOrder || a.key.localeCompare(b.key),
+      );
+      const activeCheck =
+        orderedPending.find((check) => check.status === "running") ??
+        orderedPending[0];
+      for (const check of orderedPending) {
+        if (!activeCheck) break;
+        if (check.id === activeCheck.id) {
+          if (check.status !== "running") {
+            await patchTaskAgentRunCheck(
+              requestJson,
+              taskId,
+              run.id,
+              check.id,
+              { status: "running" },
+            ).catch(() => undefined);
+          }
+          continue;
+        }
+        if (check.status === "running") {
+          await patchTaskAgentRunCheck(
+            requestJson,
+            taskId,
+            run.id,
+            check.id,
+            { status: "pending" },
+          ).catch(() => undefined);
+        }
       }
 
       const ensured = await ensureTaskAcpSession({

@@ -168,26 +168,40 @@ function sectionsForPhase(phase: TaskAgentRunPhase | null): readonly {
   });
 }
 
-function mapRunCheckToReviewItem(check: TaskAgentRunCheck): ReviewCheckItem {
-  const status: ReviewCheckStatus =
-    check.status === "pass"
-      ? "pass"
-      : check.status === "fail"
-        ? "fail"
-        : check.status === "running"
-          ? "running"
-          : "pending";
-  return {
-    id: check.id,
-    label: check.label,
-    status,
-    detail: check.detail?.trim() || check.logText?.trim() || "",
-    durationLabel: null,
-    startedAtMs:
-      check.status === "running" && check.startedAt
-        ? Date.parse(check.startedAt)
-        : null,
-  };
+function mapRunChecksToReviewItems(
+  checks: readonly TaskAgentRunCheck[],
+): ReviewCheckItem[] {
+  const sorted = [...checks].sort(
+    (a, b) => a.sortOrder - b.sortOrder || a.key.localeCompare(b.key),
+  );
+  // At most one active row — extras that were marked running stay backlog.
+  const activeRunningId =
+    sorted.find((check) => check.status === "running")?.id ?? null;
+
+  return sorted.map((check) => {
+    let status: ReviewCheckStatus =
+      check.status === "pass"
+        ? "pass"
+        : check.status === "fail"
+          ? "fail"
+          : check.status === "running"
+            ? "running"
+            : "pending";
+    if (status === "running" && check.id !== activeRunningId) {
+      status = "pending";
+    }
+    return {
+      id: check.id,
+      label: check.label,
+      status,
+      detail: check.detail?.trim() || check.logText?.trim() || "",
+      durationLabel: null,
+      startedAtMs:
+        status === "running" && check.startedAt
+          ? Date.parse(check.startedAt)
+          : null,
+    };
+  });
 }
 
 type CommitRecord = {
@@ -527,7 +541,7 @@ function ReviewCheckRow({
             />
           ) : null}
           {item.status === "pending" ? (
-            <TaskStatusIcon status="backlog" size={14} title="Pending" />
+            <TaskStatusIcon status="backlog" size={14} title="Backlog" />
           ) : null}
         </span>
         <span className="task-agent-run-accordion__review-label">
@@ -612,7 +626,7 @@ export function TaskAgentRunAccordion({
   );
   const briefMessages = briefMessagesProp ?? briefMessagesLocal;
   const reviewChecks = useMemo(
-    () => (run?.checks ?? []).map(mapRunCheckToReviewItem),
+    () => mapRunChecksToReviewItems(run?.checks ?? []),
     [run?.checks],
   );
 
