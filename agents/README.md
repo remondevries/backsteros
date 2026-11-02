@@ -146,8 +146,9 @@ Authorization: Bearer <your agent API key>
 Also: `GET …/agent-runs/active`, `GET …/agent-runs/{runId}`, and
 `GET|POST|PATCH …/agent-runs/{runId}/checks`. Reply to Brief only via the
 webhook `replyUrl` / same `threadId`. Playbook: Brief → `build` + `buildPrompt`
-→ checks + `verify` → loop `brief` (cycle++) or `record` + `recordIntent` →
-`done`. Details: `docs/04-api-and-sync.md` (Task agent factory runs).
+→ desktop ACP → Brief “Build turn finished…” (webhook) → checks + `verify` →
+loop `brief` (cycle++) or `record` + `recordIntent` → Brief notify → `done`.
+Details: `docs/04-api-and-sync.md` (Task agent factory runs).
 
 ## Channel Connect (project Locations → Channel)
 

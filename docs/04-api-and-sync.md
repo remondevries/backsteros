@@ -517,9 +517,13 @@ room thread:
 ```
 
 **Grok playbook:** Brief until ready → `phase=build` + `buildPrompt` → desktop
-runs Cursor ACP → create checks + `phase=verify` → on results either
-`phase=brief` (loop) or `phase=record` + `recordIntent` → desktop prompts Cursor
-to commit/PR → `phase=done`.
+runs Cursor ACP → desktop posts a **Brief user message** (“Build turn
+finished…”) so the conductor webhook fires → create checks + `phase=verify` →
+on results either `phase=brief` (loop) or `phase=record` + `recordIntent` →
+desktop prompts Cursor to commit/PR → Brief notify again → `phase=done`.
+
+Task comments alone do **not** wake the conductor; handoffs must be Brief
+messages (or an explicit agent poll).
 
 ### Agent-working marker (OS-96)
 
