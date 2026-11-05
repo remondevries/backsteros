@@ -13,6 +13,7 @@ import {
 } from "./services/core-replication/config.js";
 import { ensureLocalCoreControlToken } from "./services/core-replication/local-core-control-token.js";
 import { startCoreReplicationWorker } from "./services/core-replication/worker.js";
+import { startInvoiceReminderScheduler } from "./lib/moneybird-invoice-reminders.js";
 import { startMeetingPortalReminderScheduler } from "./services/meeting-portal-emails.js";
 import { startRecurringTaskRunner } from "./services/recurring-tasks.js";
 import { startAutoReviewWebhookWorker } from "./services/auto-review-webhook.js";
@@ -76,6 +77,12 @@ serve(
     console.log(`OpenAPI: http://${host}:${info.port}/api/v1/openapi.json`);
     startRecurringTaskRunner();
     startMeetingPortalReminderScheduler();
+    void startInvoiceReminderScheduler().catch((error) => {
+      console.error(
+        "invoice reminder scheduler failed to start",
+        error instanceof Error ? error.message : error,
+      );
+    });
     startAutoReviewWebhookWorker();
     startCoreReplicationWorker();
     startSyncEventsRetentionPruner();

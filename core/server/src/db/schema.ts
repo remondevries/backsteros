@@ -3503,3 +3503,38 @@ export const chatWebhookEvents = pgTable(
 );
 
 export type DbChatWebhookEvent = typeof chatWebhookEvents.$inferSelect;
+
+/**
+ * Moneybird portal invoice reminder ladder (Manual-send eligibility + R1–R3 schedule).
+ * Survives cloud-core restarts; in-process Map is a cache hydrated on boot.
+ */
+export const moneybirdInvoiceReminderTracks = pgTable(
+  "moneybird_invoice_reminder_tracks",
+  {
+    invoiceId: text("invoice_id").primaryKey(),
+    eligibleFromManualSend: boolean("eligible_from_manual_send")
+      .notNull()
+      .default(false),
+    lastStep: integer("last_step").notNull().default(0),
+    sentAt1: timestamp("sent_at_1", { withTimezone: true }),
+    sentAt2: timestamp("sent_at_2", { withTimezone: true }),
+    sentAt3: timestamp("sent_at_3", { withTimezone: true }),
+    dueAt2: timestamp("due_at_2", { withTimezone: true }),
+    dueAt3: timestamp("due_at_3", { withTimezone: true }),
+    locale: text("locale"),
+    cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("moneybird_invoice_reminder_tracks_due_at_2_idx").on(table.dueAt2),
+    index("moneybird_invoice_reminder_tracks_due_at_3_idx").on(table.dueAt3),
+  ],
+);
+
+export type DbMoneybirdInvoiceReminderTrack =
+  typeof moneybirdInvoiceReminderTracks.$inferSelect;

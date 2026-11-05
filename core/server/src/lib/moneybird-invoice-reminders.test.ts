@@ -6,6 +6,7 @@ import {
   handleMoneybirdPaidCancelReminders,
   MONEYBIRD_LATE_ACTION,
   MONEYBIRD_PAID_ACTION,
+  registerManualPortalInvoiceForReminders,
   resetInvoiceReminderStateForTests,
 } from "./moneybird-invoice-reminders.js";
 
@@ -42,7 +43,27 @@ describe("moneybird invoice reminders", () => {
     assert.equal(result.skipped, "not_manual_send");
   });
 
+  it("treats Manual registration as eligible (memory mode)", async () => {
+    await registerManualPortalInvoiceForReminders("inv_manual", "nl");
+    // Passing the Manual gate attempts a real send — expect a transport/API error,
+    // not not_manual_send.
+    await assert.rejects(
+      () =>
+        handleMoneybirdLateReminderWebhook({
+          action: MONEYBIRD_LATE_ACTION,
+          entity_id: "inv_manual",
+          entity: { language: "nl" },
+        }),
+      (err: unknown) => {
+        assert.ok(err instanceof Error);
+        assert.doesNotMatch(err.message, /not_manual_send|not sent via Manual/i);
+        return true;
+      },
+    );
+  });
+
   it("cancels pending reminders on paid", async () => {
+    await registerManualPortalInvoiceForReminders("inv_1", "nl");
     const result = await handleMoneybirdPaidCancelReminders({
       action: MONEYBIRD_PAID_ACTION,
       entity_id: "inv_1",
@@ -50,5 +71,11 @@ describe("moneybird invoice reminders", () => {
     assert.equal(result.handled, true);
     assert.equal(result.invoiceId, "inv_1");
     assert.equal(result.skipped, "cancelled_pending");
+
+    const late = await handleMoneybirdLateReminderWebhook({
+      action: MONEYBIRD_LATE_ACTION,
+      entity_id: "inv_1",
+    });
+    assert.equal(late.skipped, "cancelled");
   });
 });

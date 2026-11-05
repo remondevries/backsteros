@@ -47,7 +47,7 @@ export async function handleMoneybirdManualSendWebhook(
 
   if (triggeredInvoiceIds.has(invoiceId)) {
     // Still mark eligible so late reminders work after process retries.
-    registerManualPortalInvoiceForReminders(invoiceId, locale);
+    await registerManualPortalInvoiceForReminders(invoiceId, locale);
     return { handled: true, skipped: "already_triggered", invoiceId };
   }
 
@@ -61,7 +61,7 @@ export async function handleMoneybirdManualSendWebhook(
   }
 
   triggeredInvoiceIds.add(invoiceId);
-  registerManualPortalInvoiceForReminders(result.invoiceId, locale);
+  await registerManualPortalInvoiceForReminders(result.invoiceId, locale);
 
   return {
     handled: true,
