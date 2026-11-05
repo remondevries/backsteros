@@ -1,3 +1,4 @@
+import { registerManualPortalInvoiceForReminders } from "./moneybird-invoice-reminders.js";
 import { sendPortalInvoiceEmailViaPortal } from "./portal-invoice-email-proxy.js";
 
 export const MONEYBIRD_SEND_MANUALLY_ACTION = "sales_invoice_send_manually";
@@ -42,11 +43,14 @@ export async function handleMoneybirdManualSendWebhook(
     });
   }
 
+  const locale = asString(payload.entity?.language);
+
   if (triggeredInvoiceIds.has(invoiceId)) {
+    // Still mark eligible so late reminders work after process retries.
+    registerManualPortalInvoiceForReminders(invoiceId, locale);
     return { handled: true, skipped: "already_triggered", invoiceId };
   }
 
-  const locale = asString(payload.entity?.language);
   const result = await sendPortalInvoiceEmailViaPortal({
     invoiceId,
     locale,
@@ -57,6 +61,7 @@ export async function handleMoneybirdManualSendWebhook(
   }
 
   triggeredInvoiceIds.add(invoiceId);
+  registerManualPortalInvoiceForReminders(result.invoiceId, locale);
 
   return {
     handled: true,

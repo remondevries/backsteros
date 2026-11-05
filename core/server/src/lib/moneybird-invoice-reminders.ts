@@ -7,6 +7,8 @@ export const MONEYBIRD_PAID_ACTION = "sales_invoice_state_changed_to_paid";
 type ReminderStep = 1 | 2 | 3;
 
 type ReminderTrack = {
+  /** Only invoices that received the Manual → portal invoice email. */
+  eligibleFromManualSend: boolean;
   lastStep: 0 | ReminderStep;
   /** ISO times when each step was successfully emailed (or skipped paid). */
   sentAt: Partial<Record<ReminderStep, string>>;
@@ -53,6 +55,7 @@ function getOrCreateTrack(
     return existing;
   }
   const created: ReminderTrack = {
+    eligibleFromManualSend: false,
     lastStep: 0,
     sentAt: {},
     dueAt: {},
@@ -60,6 +63,21 @@ function getOrCreateTrack(
   };
   tracks.set(invoiceId, created);
   return created;
+}
+
+/**
+ * Mark an invoice as eligible for the Lemo reminder ladder after Manual
+ * send triggered the portal invoice email.
+ */
+export function registerManualPortalInvoiceForReminders(
+  invoiceId: string,
+  locale?: string | null,
+): void {
+  const id = invoiceId.trim();
+  if (!id) return;
+  const track = getOrCreateTrack(id, locale?.trim() || null);
+  track.eligibleFromManualSend = true;
+  if (locale?.trim()) track.locale = locale.trim();
 }
 
 function scheduleFollowUps(track: ReminderTrack, fromStep: ReminderStep): void {
@@ -147,7 +165,17 @@ export async function handleMoneybirdLateReminderWebhook(
   }
 
   const locale = asString(payload.entity?.language);
-  const track = getOrCreateTrack(invoiceId, locale);
+  const track = tracks.get(invoiceId);
+  if (!track?.eligibleFromManualSend) {
+    return {
+      handled: true,
+      invoiceId,
+      skipped: "not_manual_send",
+      message: `Skipping reminders for ${invoiceId} — invoice was not sent via Manual / portal invoice email`,
+    };
+  }
+
+  if (locale && !track.locale) track.locale = locale;
 
   ensureReminderScheduler();
 
@@ -207,6 +235,7 @@ export async function handleMoneybirdPaidCancelReminders(
 async function tickDueReminders(): Promise<void> {
   const now = Date.now();
   for (const [invoiceId, track] of tracks) {
+    if (!track.eligibleFromManualSend) continue;
     for (const step of [2, 3] as const) {
       const due = track.dueAt[step];
       if (due == null || due > now || track.sentAt[step]) continue;

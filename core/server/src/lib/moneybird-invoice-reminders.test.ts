@@ -33,6 +33,15 @@ describe("moneybird invoice reminders", () => {
     );
   });
 
+  it("skips late reminders when invoice was not Manual/portal-sent", async () => {
+    const result = await handleMoneybirdLateReminderWebhook({
+      action: MONEYBIRD_LATE_ACTION,
+      entity_id: "inv_email_only",
+    });
+    assert.equal(result.handled, true);
+    assert.equal(result.skipped, "not_manual_send");
+  });
+
   it("cancels pending reminders on paid", async () => {
     const result = await handleMoneybirdPaidCancelReminders({
       action: MONEYBIRD_PAID_ACTION,

@@ -338,8 +338,8 @@ export function registerSettingsRoutes(app: Hono) {
   });
   /**
    * Moneybird → Lemo Design portal email triggers.
-   * - sales_invoice_send_manually → invoice email
-   * - sales_invoice_state_changed_to_late → reminder ladder (1 → schedule 2/3)
+   * - sales_invoice_send_manually → invoice email (+ marks invoice eligible for reminders)
+   * - sales_invoice_state_changed_to_late → reminder ladder only if Manual/portal-sent
    * - sales_invoice_state_changed_to_paid → cancel pending reminders
    * Public URL: https://agent.backsteros.com/api/v1/webhooks/moneybird
    */
