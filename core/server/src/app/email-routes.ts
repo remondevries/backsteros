@@ -164,6 +164,7 @@ export function registerEmailRoutes(app: Hono) {
     try {
       let messages = await agentmailSettingsService.listAgentMailMessages(
         auth.workspaceId,
+        { notifications: parsed.notifications },
       );
       if (parsed.statuses.length) {
         messages = messages.filter((message) =>

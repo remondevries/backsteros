@@ -380,6 +380,61 @@ export class AgentMailClient {
       .map((row) => mapAgentMailInbox(row));
   }
 
+  /** Create an inbox (custom-domain username or @agentmail.to). */
+  async createInbox(input: {
+    username: string;
+    domain?: string;
+    displayName?: string;
+    clientId?: string;
+  }): Promise<AgentMailInbox> {
+    const raw = await this.requestJson<Record<string, unknown>>("/inboxes", {
+      method: "POST",
+      body: JSON.stringify({
+        username: input.username,
+        ...(input.domain ? { domain: input.domain } : {}),
+        ...(input.displayName ? { display_name: input.displayName } : {}),
+        ...(input.clientId ? { client_id: input.clientId } : {}),
+      }),
+    });
+    return mapAgentMailInbox(raw);
+  }
+
+  /** Send a new message from an inbox. */
+  async sendMessage(
+    inboxId: string,
+    input: {
+      to: string | string[];
+      subject: string;
+      text?: string;
+      html?: string;
+      /** AgentMail labels (folders) applied at send time. */
+      labels?: string[];
+    },
+  ): Promise<{ inboxId: string; messageId: string; threadId: string }> {
+    const to = Array.isArray(input.to) ? input.to : [input.to];
+    const labels = (input.labels ?? [])
+      .map((label) => label.trim())
+      .filter(Boolean);
+    const raw = await this.requestJson<Record<string, unknown>>(
+      `/inboxes/${encodeURIComponent(inboxId)}/messages/send`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          to,
+          subject: input.subject,
+          ...(input.text != null ? { text: input.text } : {}),
+          ...(input.html != null ? { html: input.html } : {}),
+          ...(labels.length > 0 ? { labels } : {}),
+        }),
+      },
+    );
+    return {
+      inboxId: asRequiredString(raw.inbox_id ?? inboxId, "inbox_id"),
+      messageId: asRequiredString(raw.message_id, "message_id"),
+      threadId: asRequiredString(raw.thread_id, "thread_id"),
+    };
+  }
+
   async listMessages(
     inboxId: string,
     options?: { limit?: number; pageToken?: string },

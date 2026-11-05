@@ -27,6 +27,7 @@ import {
 } from "../../lib/agentmail-email-list.js";
 import { mapConceptDraftForApi, toApiDraft } from "./drafts.js";
 import * as emailThreadsService from "../email-threads.js";
+import { hasAgentMailNotificationsLabel } from "../../lib/agentmail-notifications.js";
 import { EMAIL_CONCEPT_STATUS, emailStatusLabelPatch } from "../../lib/email-status-labels.js";
 import {
   peekAgentMailMessageDetailCache,
@@ -66,9 +67,19 @@ function toApiMessage(message: {
   };
 }
 
+export type ListAgentMailMessagesOptions = {
+  /**
+   * `exclude` (default) — hide transactional notification mail.
+   * `only` — return only messages labeled `notifications`.
+   */
+  notifications?: "exclude" | "only";
+};
+
 export async function listAgentMailMessages(
   workspaceId: string,
+  options: ListAgentMailMessagesOptions = {},
 ): Promise<AgentMailMessage[]> {
+  const notificationMode = options.notifications === "only" ? "only" : "exclude";
   const { apiKey, inboxIds } = await getAgentMailCredentials(workspaceId);
   if (!apiKey) {
     throw new AgentMailApiError(400, "", "AgentMail API key is not configured");
@@ -82,7 +93,10 @@ export async function listAgentMailMessages(
     inboxIds.map(async (inboxId) => {
       const [messages, rawDrafts] = await Promise.all([
         client.listMessages(inboxId, { limit: 50 }),
-        client.listDrafts(inboxId, { limit: 50 }),
+        // Drafts never belong in the notifications folder.
+        notificationMode === "only"
+          ? Promise.resolve([] as AgentMailDraftSummary[])
+          : client.listDrafts(inboxId, { limit: 50 }),
       ]);
       return { inboxId, messages, rawDrafts };
     }),
@@ -100,7 +114,14 @@ export async function listAgentMailMessages(
       continue;
     }
     const { inboxId, messages, rawDrafts } = page.value;
-    apiMessages.push(...messages.map(toApiMessage));
+    apiMessages.push(
+      ...messages
+        .filter((message) => {
+          const isNotification = hasAgentMailNotificationsLabel(message.labels);
+          return notificationMode === "only" ? isNotification : !isNotification;
+        })
+        .map(toApiMessage),
+    );
     for (const draft of rawDrafts) {
       draftRecords.push({ inboxId, draft });
     }

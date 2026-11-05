@@ -336,6 +336,72 @@ export function registerSettingsRoutes(app: Hono) {
       return c.json({ error: message, code: "bad_request" }, status);
     }
   });
+  /**
+   * Moneybird Manual send → trigger Lemo Design portal invoice email.
+   * Client email / pay / PDF stay on the portal; this route only receives the event.
+   * Public URL: https://agent.backsteros.com/api/v1/webhooks/moneybird
+   */
+  app.post("/api/v1/webhooks/moneybird", async (c) => {
+    const {
+      authorizeMoneybirdWebhook,
+      isMoneybirdWebhookAuthConfigured,
+    } = await import("../lib/moneybird-webhook-auth.js");
+    const { handleMoneybirdManualSendWebhook } = await import(
+      "../lib/moneybird-manual-send.js"
+    );
+
+    if (!isMoneybirdWebhookAuthConfigured()) {
+      return c.json(
+        { error: "Moneybird webhook auth not configured", code: "misconfigured" },
+        503,
+      );
+    }
+
+    const rawBody = await c.req.text();
+    let payload: {
+      action?: string;
+      entity_id?: string | number;
+      webhook_token?: string;
+      entity?: Record<string, unknown> | null;
+    };
+    try {
+      payload = JSON.parse(rawBody) as typeof payload;
+    } catch {
+      return c.json({ error: "Invalid JSON body", code: "bad_request" }, 400);
+    }
+
+    const authorized = authorizeMoneybirdWebhook({
+      rawBody,
+      signatureHeader: c.req.header("moneybird-signature"),
+      payloadToken:
+        typeof payload.webhook_token === "string" ? payload.webhook_token : null,
+    });
+    if (!authorized) {
+      return c.json({ error: "Unauthorized", code: "unauthorized" }, 401);
+    }
+
+    try {
+      const result = await handleMoneybirdManualSendWebhook(payload);
+      return c.json({ received: true, ...result });
+    } catch (error) {
+      const status =
+        error &&
+        typeof error === "object" &&
+        "status" in error &&
+        typeof (error as { status: unknown }).status === "number"
+          ? (error as { status: number }).status
+          : 500;
+      const message =
+        error instanceof Error ? error.message : "Webhook handler failed";
+      return c.json(
+        {
+          error: message,
+          code: status === 500 ? "internal_error" : "bad_request",
+        },
+        status as 400 | 422 | 500 | 502 | 503,
+      );
+    }
+  });
   app.get("/api/v1/settings/google-calendar", async (c) => {
     const auth = getAuth(c);
     if (!can(auth, "settings:read")) return c.json(forbidden(), 403);
@@ -577,6 +643,55 @@ export function registerSettingsRoutes(app: Hono) {
         },
         400,
       );
+    }
+  });
+  /** Portal / staff transactional mail (invite, password reset) via AgentMail noreply. */
+  app.post("/api/v1/mail/transactional", async (c) => {
+    const auth = getAuth(c);
+    if (
+      !can(auth, "email:send") &&
+      !can(auth, "settings:write") &&
+      !can(auth, "contacts:write")
+    ) {
+      return c.json(forbidden(), 403);
+    }
+    const body = (await c.req.json().catch(() => null)) as {
+      to?: string;
+      subject?: string;
+      html?: string;
+      text?: string;
+      locale?: string | null;
+    } | null;
+    const to = body?.to?.trim() ?? "";
+    const subject = body?.subject?.trim() ?? "";
+    const html = body?.html ?? "";
+    const text = body?.text ?? "";
+    if (!to || !subject || (!html.trim() && !text.trim())) {
+      return c.json(
+        {
+          error: "to, subject, and html or text are required",
+          code: "bad_request",
+        },
+        400,
+      );
+    }
+    try {
+      const { sendTransactionalAgentMail } = await import(
+        "../services/agentmail-transactional.js"
+      );
+      const result = await sendTransactionalAgentMail(auth.workspaceId, {
+        to,
+        subject,
+        html: html || text,
+        text: text || html,
+        locale: body?.locale ?? null,
+      });
+      return c.json({ ok: true, ...result });
+    } catch (error) {
+      console.error("Transactional AgentMail send failed:", error);
+      const message =
+        error instanceof Error ? error.message : "Failed to send email";
+      return c.json({ error: message, code: "mail_send_failed" }, 502);
     }
   });
   app.patch("/api/v1/settings/agentmail", async (c) => {

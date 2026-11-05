@@ -565,6 +565,7 @@ export const EMAIL_MESSAGES_LIST_KNOWN_KEYS = new Set([
   "limit",
   "paginated",
   "updatedSince",
+  "notifications",
 ]);
 
 export const EMAIL_MESSAGES_LIST_PAGINATED_ONLY_KEYS = [
@@ -573,8 +574,12 @@ export const EMAIL_MESSAGES_LIST_PAGINATED_ONLY_KEYS = [
   "updatedSince",
 ] as const;
 
+export type EmailMessagesNotificationsMode = "exclude" | "only";
+
 export type ParsedEmailMessagesListQuery = ListPagination & {
   statuses: string[];
+  /** Default exclude — transactional mail lives under the notifications label. */
+  notifications: EmailMessagesNotificationsMode;
 };
 
 export function parseEmailMessagesListQuery(
@@ -584,7 +589,10 @@ export function parseEmailMessagesListQuery(
   const pagination = parseCommonPagination(raw);
   const statuses = parseMultiValues(raw.status);
   assertEnumValues(statuses, STATUS_SET, "status");
-  return { ...pagination, statuses };
+  const notificationsRaw = firstString(raw.notifications)?.trim().toLowerCase();
+  const notifications: EmailMessagesNotificationsMode =
+    notificationsRaw === "only" ? "only" : "exclude";
+  return { ...pagination, statuses, notifications };
 }
 
 // --- Tasks due ---------------------------------------------------------------

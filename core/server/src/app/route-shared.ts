@@ -685,6 +685,7 @@ export async function withAuth(c: Context, next: Next) {
     c.req.path.startsWith("/api/v1/sync") ||
     c.req.path.startsWith("/api/v1/powersync") ||
     c.req.path === "/api/v1/webhooks/agentmail" ||
+    c.req.path === "/api/v1/webhooks/moneybird" ||
     c.req.path === "/api/v1/webhooks/social/zernio" ||
     c.req.path === "/api/v1/webhooks/chatwoot" ||
     c.req.path === "/api/v1/settings/google-calendar/oauth/callback" ||
