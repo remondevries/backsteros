@@ -350,13 +350,6 @@ export function registerSettingsRoutes(app: Hono) {
       "../lib/moneybird-manual-send.js"
     );
 
-    if (!isMoneybirdWebhookAuthConfigured()) {
-      return c.json(
-        { error: "Moneybird webhook auth not configured", code: "misconfigured" },
-        503,
-      );
-    }
-
     const rawBody = await c.req.text();
     let payload: {
       action?: string;
@@ -370,6 +363,15 @@ export function registerSettingsRoutes(app: Hono) {
       return c.json({ error: "Invalid JSON body", code: "bad_request" }, 400);
     }
 
+    // Moneybird probes the URL with HTTP 200 on create (before tokens exist).
+    // Always ACK; only process when auth is configured and verifies.
+    if (!isMoneybirdWebhookAuthConfigured()) {
+      return c.json({
+        received: true,
+        skipped: "auth_not_configured",
+      });
+    }
+
     const authorized = authorizeMoneybirdWebhook({
       rawBody,
       signatureHeader: c.req.header("moneybird-signature"),
@@ -377,7 +379,7 @@ export function registerSettingsRoutes(app: Hono) {
         typeof payload.webhook_token === "string" ? payload.webhook_token : null,
     });
     if (!authorized) {
-      return c.json({ error: "Unauthorized", code: "unauthorized" }, 401);
+      return c.json({ received: true, skipped: "unauthorized" });
     }
 
     try {
