@@ -65,6 +65,12 @@ services:
       # Optional Brandfetch bootstrap (prefer Settings → Integrations → Brandfetch).
       BRANDFETCH_API_KEY: ${BRANDFETCH_API_KEY:-}
       BRANDFETCH_CLIENT_ID: ${BRANDFETCH_CLIENT_ID:-}
+      # Lemo Design portal staff hooks (meeting / invoice email).
+      CLIENT_PORTAL_URL: ${CLIENT_PORTAL_URL:-}
+      CLIENT_PORTAL_HOOK_SECRET: ${CLIENT_PORTAL_HOOK_SECRET:-}
+      # Moneybird Manual send → portal invoice email webhook auth.
+      MONEYBIRD_WEBHOOK_TOKEN: ${MONEYBIRD_WEBHOOK_TOKEN:-}
+      MONEYBIRD_WEBHOOK_SECRET: ${MONEYBIRD_WEBHOOK_SECRET:-}
     ports:
       - "8788:8788"
     volumes:
