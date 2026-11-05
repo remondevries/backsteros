@@ -16,6 +16,7 @@ import {
   CommunicationChatView,
   FinanceSyncIcon,
   RegisterEntityDeleteAction,
+  RegisterPageTitle,
   TaskDetailView,
   buildAssigneeDropdownOptions,
   buildContactDropdownOptions,
@@ -30,17 +31,24 @@ import {
   getCommunicationHrefAfterRemovingRow,
   getCommunicationItemHref,
   getInboxItemDisplayId,
+  isEmailTaskListItem,
   matchEmailMessageParty,
   normalizeContactSocialAccounts,
   normalizeEmailRecipients,
+  parseCommunicationMailFolderFromSearch,
   resolveCommunicationEmailParty,
   resolveOrganizationAvatarSrc,
   resolveSupportParties,
+  taskStatusToChatStatus,
   uniqueEmailPartyContactIds,
+  withCommunicationMailFolder,
   type CommunicationCreateKind,
   type CommunicationEmailActiveParty,
+  type CommunicationMailFolder,
   type EmailMessagePartyMap,
   type InboxEmailListItem,
+  type TaskBulkPatch,
+  type TaskItemRowTask,
 } from "@backsteros/ui";
 
 /** Synthetic message id for Communication new-email party linking. */
@@ -69,6 +77,7 @@ import { useDesktopSectionBreadcrumb } from "../lib/use-desktop-breadcrumb";
 import { useTaskFileAttachments } from "../lib/use-task-file-attachments";
 import { useDesktopAvatarSrcMap, withOrganizationAvatarSrc } from "../lib/avatar-src";
 import { getBrandfetchClientId } from "../lib/brandfetch";
+import { resolveEmailListAvatarSrc } from "../lib/resolve-email-list-avatar-src";
 import {
   normalizeContactEmails,
 } from "../lib/contact-row-normalizers";
@@ -81,19 +90,23 @@ import {
   buildEmailLinkOptions,
 } from "../lib/task-link-picker-options";
 import { useAgentMail } from "../lib/agentmail-context";
+import { useEmailDetailListPrefetch } from "../lib/use-email-detail-list-prefetch";
+import { patchEmailTaskListItem } from "../lib/email-list-tasks";
 import {
   useKeepAliveActive,
   useKeepAliveFrozen,
   useShellLocation,
   useShellParams,
 } from "../lib/shell-route-keep-alive";
-import { useCommunicationListItems } from "../lib/communication/use-communication-list-items";
+import {
+  useCommunicationListItems,
+  useCommunicationNotificationEmails,
+} from "../lib/communication/use-communication-list-items";
 import {
   chatChannelSocialKind,
   chatChannelSocialOffer,
   chatFacebookMessengerIdOffer,
   findContactForFacebookMessengerOffer,
-  matchChatContact,
   resolveChatContact,
 } from "../lib/chat/match-chat-contact";
 import { useChatInbox } from "../lib/chat/use-chat-inbox";
@@ -124,6 +137,10 @@ function CommunicationPageBody() {
   const { client } = useDesktopApi();
   const agentMail = useAgentMail();
   const communicationItems = useCommunicationListItems();
+  const notificationEmails = useCommunicationNotificationEmails();
+  const mailFolder = parseCommunicationMailFolderFromSearch(
+    location.searchStr ?? "",
+  );
   // Unified chat list owns Communication — keep SSE + unread for the section.
   const chatInbox = useChatInbox({
     enabled: keepAliveActive,
@@ -132,6 +149,8 @@ function CommunicationPageBody() {
   const [chatContactCollapsed, setChatContactCollapsed] = useState(false);
   const [chatContactExpanded, setChatContactExpanded] = useState(false);
   const [chatMainFaded, setChatMainFaded] = useState(false);
+  /** Messages list checkbox multi-select — hides thread + contact rail. */
+  const [listBulkSelecting, setListBulkSelecting] = useState(false);
   /** Floating + → type launcher / compose in the center pane (create flow). */
   const [createOpen, setCreateOpen] = useState(false);
   const [createKind, setCreateKind] = useState<CommunicationCreateKind | null>(
@@ -181,6 +200,7 @@ function CommunicationPageBody() {
   } = useCommunicationSelection({
     routeItemId,
     communicationItems,
+    notificationEmails,
     conversations: chatInbox.conversations,
     chatLoading: chatInbox.loading,
     chatSelectedId: chatInbox.selectedId,
@@ -467,6 +487,138 @@ function CommunicationPageBody() {
     [supportTask, workspace],
   );
 
+  const handleMessagesBulkApply = useCallback(
+    async (tasks: readonly TaskItemRowTask[], patch: TaskBulkPatch) => {
+      const conversationIds = new Set(
+        chatInbox.conversations.map((entry) => entry.id),
+      );
+      const supportIds = new Set(chatSupportTasks.map((entry) => entry.id));
+
+      for (const task of tasks) {
+        if (isEmailTaskListItem(task)) {
+          const project =
+            "projectKey" in patch
+              ? workspace.projects.find(
+                  (entry) =>
+                    entry.key.trim().toLowerCase() ===
+                    (patch.projectKey?.trim().toLowerCase() ?? ""),
+                ) ?? null
+              : undefined;
+          const assignee =
+            "assigneeId" in patch && patch.assigneeId
+              ? workspace.contacts.find(
+                  (entry) => entry.id === patch.assigneeId,
+                ) ?? null
+              : null;
+          await patchEmailTaskListItem(
+            client,
+            task,
+            {
+              ...(patch.status !== undefined ? { status: patch.status } : {}),
+              ...(patch.priority !== undefined
+                ? { priority: patch.priority }
+                : {}),
+              ...("dueDate" in patch
+                ? {
+                    dueDate: patch.dueDate
+                      ? patch.dueDate.toISOString()
+                      : null,
+                  }
+                : {}),
+              ...("projectKey" in patch
+                ? { projectId: project?.id ?? null }
+                : {}),
+              ...("assigneeId" in patch
+                ? { assigneeId: patch.assigneeId ?? null }
+                : {}),
+            },
+            {
+              ...("projectKey" in patch
+                ? {
+                    projectKey: project?.key ?? null,
+                    projectName: project?.name ?? null,
+                  }
+                : {}),
+              ...("assigneeId" in patch
+                ? { assigneeName: assignee?.name ?? null }
+                : {}),
+            },
+          );
+          continue;
+        }
+
+        if (supportIds.has(task.id)) {
+          const project =
+            "projectKey" in patch
+              ? workspace.projects.find(
+                  (entry) =>
+                    entry.key.trim().toLowerCase() ===
+                    (patch.projectKey?.trim().toLowerCase() ?? ""),
+                ) ?? null
+              : undefined;
+          await workspace.patchTask(task.id, {
+            ...(patch.status !== undefined ? { status: patch.status } : {}),
+            ...(patch.priority !== undefined
+              ? { priority: patch.priority }
+              : {}),
+            ...("dueDate" in patch
+              ? {
+                  dueDate: patch.dueDate ? patch.dueDate.toISOString() : null,
+                }
+              : {}),
+            ...("projectKey" in patch
+              ? {
+                  projectId: project?.id ?? null,
+                  projectKey: project?.key ?? null,
+                }
+              : {}),
+            ...("assigneeId" in patch
+              ? { assigneeId: patch.assigneeId ?? null }
+              : {}),
+          });
+          continue;
+        }
+
+        if (conversationIds.has(task.id)) {
+          const chatListStatus =
+            patch.status !== undefined
+              ? taskStatusToChatStatus(patch.status)
+              : null;
+          // Chatwoot has no In Review — fold it into Waiting.
+          const chatStatus =
+            chatListStatus === "in_review"
+              ? "pending"
+              : chatListStatus;
+          await chatInbox.patchConversation(
+            {
+              ...(chatStatus != null ? { status: chatStatus } : {}),
+              ...(patch.priority !== undefined
+                ? { priority: patch.priority }
+                : {}),
+              ...("dueDate" in patch
+                ? {
+                    dueDate: patch.dueDate
+                      ? patch.dueDate.toISOString()
+                      : null,
+                  }
+                : {}),
+              ...("assigneeId" in patch
+                ? { assigneeId: patch.assigneeId ?? null }
+                : {}),
+            },
+            task.id,
+          );
+        }
+      }
+    },
+    [
+      chatInbox,
+      chatSupportTasks,
+      client,
+      workspace,
+    ],
+  );
+
   const ensureContactHasOtherEmail = useCallback(
     async (contactId: string, address: string) => {
       const contact =
@@ -697,10 +849,23 @@ function CommunicationPageBody() {
     workspace.contacts,
   ]);
 
+  const handleMailFolderChange = useCallback(
+    (folder: CommunicationMailFolder) => {
+      const href = withCommunicationMailFolder(
+        `${location.pathname}${location.searchStr ?? ""}`,
+        folder,
+      );
+      navigateToHref(navigate, href);
+    },
+    [location.pathname, location.searchStr, navigate],
+  );
+
   // Keep the left-list email card in sync with the latest thread party.
   const chatEmailsForList = useMemo(() => {
-    if (!selectedEmailId || !emailActiveParty) return chatEmails;
-    return chatEmails.map((item) => {
+    const source =
+      mailFolder === "notifications" ? notificationEmails : chatEmails;
+    if (!selectedEmailId || !emailActiveParty) return source;
+    return source.map((item) => {
       if (item.id !== selectedEmailId) return item;
       return {
         ...item,
@@ -741,6 +906,8 @@ function CommunicationPageBody() {
     });
   }, [
     chatEmails,
+    mailFolder,
+    notificationEmails,
     emailActiveParty,
     emailMessageParties,
     latestMessageParty,
@@ -753,11 +920,12 @@ function CommunicationPageBody() {
   // Email: wait for AgentMail thread load before opening the right rail.
   // Create launcher keeps the rail closed; email compose opens it like a thread.
   const chatContactPanelOpen = Boolean(
-    isComposingEmail ||
-      (!createOpen &&
-        (chatInbox.selectedId ||
-          (selectedEmailId && emailThreadReady) ||
-          selectedSupport)),
+    !listBulkSelecting &&
+      (isComposingEmail ||
+        (!createOpen &&
+          (chatInbox.selectedId ||
+            (selectedEmailId && emailThreadReady) ||
+            selectedSupport))),
   );
 
   const supportAsEmailItem = useMemo((): InboxEmailListItem | null => {
@@ -1212,12 +1380,21 @@ function CommunicationPageBody() {
   // On-screen row order (after search/filters) from the chat list, so
   // delete/spam/send open the row the user sees next to the removed one.
   const visibleRowIdsRef = useRef<readonly string[]>([]);
+  const [visibleRowIds, setVisibleRowIds] = useState<readonly string[]>([]);
   const handleVisibleRowIdsChange = useCallback(
     (rowIds: readonly string[]) => {
       visibleRowIdsRef.current = rowIds;
+      setVisibleRowIds(rowIds);
     },
     [],
   );
+  useEmailDetailListPrefetch({
+    enabled: keepAliveActive && !keepAliveFrozen,
+    client,
+    emails: chatEmails,
+    orderedRowIds: visibleRowIds,
+    focusRowId: selectedEmailId,
+  });
   const communicationItemsRef = useRef(communicationItems);
   communicationItemsRef.current = communicationItems;
   const resolveRemovalHref = useCallback(
@@ -1317,24 +1494,35 @@ function CommunicationPageBody() {
       setOptimisticChatItemId(detail.id);
       void chatInbox.refresh();
       void chatInbox.selectConversation(detail.id);
-      navigateToHref(navigate, getCommunicationHref(detail.id, "chat"));
+      navigateToHref(
+        navigate,
+        getCommunicationHref(detail.id, "chat", { mailFolder }),
+      );
     },
-    [chatInbox, leaveCreate, navigate, setOptimisticChatItemId],
+    [chatInbox, leaveCreate, mailFolder, navigate, setOptimisticChatItemId],
   );
   const selectChat = useCallback(
     (conversationId: string) => {
       leaveCreate();
       setOptimisticChatItemId(conversationId);
-      navigateToHref(navigate, getCommunicationHref(conversationId, "chat"));
+      navigateToHref(
+        navigate,
+        getCommunicationHref(conversationId, "chat", { mailFolder }),
+      );
     },
-    [leaveCreate, navigate, setOptimisticChatItemId],
+    [leaveCreate, mailFolder, navigate, setOptimisticChatItemId],
   );
   const selectEmail = useCallback(
     (emailId: string) => {
       leaveCreate();
       setOptimisticChatItemId(emailId);
-      navigateToHref(navigate, getCommunicationHref(emailId, "chat"));
-      const item = chatEmails.find((entry) => entry.id === emailId);
+      navigateToHref(
+        navigate,
+        getCommunicationHref(emailId, "chat", { mailFolder }),
+      );
+      const item = (
+        mailFolder === "notifications" ? notificationEmails : chatEmails
+      ).find((entry) => entry.id === emailId);
       if (!item) return;
       if (item.draftId?.trim()) {
         writeEmailComposeSession({
@@ -1351,7 +1539,15 @@ function CommunicationPageBody() {
       resetEmailComposeSession();
       prefetchEmailMessageDetail(client, item.inboxId, item.messageId);
     },
-    [chatEmails, client, leaveCreate, navigate, setOptimisticChatItemId],
+    [
+      chatEmails,
+      client,
+      leaveCreate,
+      mailFolder,
+      navigate,
+      notificationEmails,
+      setOptimisticChatItemId,
+    ],
   );
   const selectSupport = useCallback(
     (supportId: string) => {
@@ -1361,8 +1557,9 @@ function CommunicationPageBody() {
       const href = item
         ? getCommunicationItemHref(item, communicationItems, {
             channel: "chat",
+            mailFolder,
           })
-        : getCommunicationHref(supportId, "chat");
+        : getCommunicationHref(supportId, "chat", { mailFolder });
       const slug =
         href.split("?")[0]?.split("/").filter(Boolean).pop() ?? supportId;
       setOptimisticChatItemId(decodeURIComponent(slug));
@@ -1372,6 +1569,7 @@ function CommunicationPageBody() {
       chatSupportTasks,
       communicationItems,
       leaveCreate,
+      mailFolder,
       navigate,
       setOptimisticChatItemId,
     ],
@@ -1445,37 +1643,16 @@ function CommunicationPageBody() {
     [contactAvatarSrc, workspace.contacts],
   );
   const resolveEmailAvatarSrc = useCallback(
-    (item: InboxEmailListItem) => {
-      // Prefer the filed contact/org on the row (latest party for the
-      // open thread), then soft-match by party address.
-      const contactId = item.contactId?.trim();
-      if (contactId) {
-        const contact =
-          workspace.contacts.find((entry) => entry.id === contactId) ?? null;
-        const contactSrc =
-          contactAvatarSrc[contactId] ?? contact?.avatarSrc ?? null;
-        if (contactSrc?.trim()) return contactSrc;
-        const orgId =
-          contact?.organizationId?.trim() || item.organizationId?.trim() || null;
-        if (orgId) return resolveOrganizationAvatar(orgId);
-      }
-
-      const organizationId = item.organizationId?.trim();
-      if (organizationId) return resolveOrganizationAvatar(organizationId);
-
-      const matched = matchChatContact(workspace.contacts, {
-        contactEmail: emailListItemPartyEmail(item),
-      });
-      if (matched) {
-        const contactSrc =
-          contactAvatarSrc[matched.id] ?? matched.avatarSrc ?? null;
-        if (contactSrc?.trim()) return contactSrc;
-        const orgId = matched.organizationId?.trim();
-        if (orgId) return resolveOrganizationAvatar(orgId);
-      }
-      return null;
-    },
-    [contactAvatarSrc, resolveOrganizationAvatar, workspace.contacts],
+    (item: InboxEmailListItem) =>
+      resolveEmailListAvatarSrc({
+        item,
+        contacts: workspace.contacts,
+        organizations: workspace.organizations,
+        contactAvatarSrc,
+        organizationUploadedSrc: organizationAvatarSrc,
+        brandfetchClientId: getBrandfetchClientId(),
+      }),
+    [contactAvatarSrc, organizationAvatarSrc, workspace.contacts, workspace.organizations],
   );
   const hideContactPanel = useCallback(() => setChatContactCollapsed(true), []);
   const showContactPanel = useCallback(
@@ -1488,7 +1665,14 @@ function CommunicationPageBody() {
   }
   return (
       <>
-      {selectedChatConversationId && selectedConversation ? (
+      <RegisterPageTitle
+        active={keepAliveActive}
+        href={location.pathname}
+        title="Messages"
+      />
+      {selectedChatConversationId &&
+      selectedConversation &&
+      !listBulkSelecting ? (
         <RegisterEntityDeleteAction
           entityLabel={chatDeleteEntityLabel}
           confirmLabel="Delete conversation"
@@ -1523,9 +1707,15 @@ function CommunicationPageBody() {
             .join(" ")}
         >
           <CommunicationChatView
-            conversations={chatInbox.conversations}
+            conversations={
+              mailFolder === "notifications" ? [] : chatInbox.conversations
+            }
             emails={chatEmailsForList}
-            supportTasks={chatSupportTasks}
+            supportTasks={
+              mailFolder === "notifications" ? [] : chatSupportTasks
+            }
+            mailFolder={mailFolder}
+            onMailFolderChange={handleMailFolderChange}
             selectedId={
               selectedEmail || selectedSupport
                 ? null
@@ -1544,6 +1734,7 @@ function CommunicationPageBody() {
             contactFilterOptions={contactPickerOptions}
             organizationFilterOptions={organizationPickerOptions}
             projectFilterOptions={projectOptions}
+            assigneeOptions={assigneeOptions}
             resolveConversationContactId={resolveConversationContactId}
             resolveConversationOrganizationId={
               resolveConversationOrganizationId
@@ -1555,6 +1746,8 @@ function CommunicationPageBody() {
             onSelect={selectChat}
             onSelectEmail={selectEmail}
             onSelectSupport={selectSupport}
+            onBulkApply={handleMessagesBulkApply}
+            onBulkSelectionChange={setListBulkSelecting}
             onSend={chatInbox.sendMessage}
             createOpen={createOpen}
             createKind={createKind}
