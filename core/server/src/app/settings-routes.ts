@@ -337,8 +337,10 @@ export function registerSettingsRoutes(app: Hono) {
     }
   });
   /**
-   * Moneybird Manual send → trigger Lemo Design portal invoice email.
-   * Client email / pay / PDF stay on the portal; this route only receives the event.
+   * Moneybird → Lemo Design portal email triggers.
+   * - sales_invoice_send_manually → invoice email
+   * - sales_invoice_state_changed_to_late → reminder ladder (1 → schedule 2/3)
+   * - sales_invoice_state_changed_to_paid → cancel pending reminders
    * Public URL: https://agent.backsteros.com/api/v1/webhooks/moneybird
    */
   app.post("/api/v1/webhooks/moneybird", async (c) => {
@@ -349,6 +351,10 @@ export function registerSettingsRoutes(app: Hono) {
     const { handleMoneybirdManualSendWebhook } = await import(
       "../lib/moneybird-manual-send.js"
     );
+    const {
+      handleMoneybirdLateReminderWebhook,
+      handleMoneybirdPaidCancelReminders,
+    } = await import("../lib/moneybird-invoice-reminders.js");
 
     const rawBody = await c.req.text();
     let payload: {
@@ -383,8 +389,26 @@ export function registerSettingsRoutes(app: Hono) {
     }
 
     try {
-      const result = await handleMoneybirdManualSendWebhook(payload);
-      return c.json({ received: true, ...result });
+      const manual = await handleMoneybirdManualSendWebhook(payload);
+      if (manual.handled) {
+        return c.json({ received: true, ...manual });
+      }
+
+      const late = await handleMoneybirdLateReminderWebhook(payload);
+      if (late.handled) {
+        return c.json({ received: true, ...late });
+      }
+
+      const paid = await handleMoneybirdPaidCancelReminders(payload);
+      if (paid.handled) {
+        return c.json({ received: true, ...paid });
+      }
+
+      return c.json({
+        received: true,
+        handled: false,
+        skipped: manual.skipped || late.skipped || paid.skipped,
+      });
     } catch (error) {
       const status =
         error &&
