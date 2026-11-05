@@ -1,8 +1,11 @@
 /**
  * Portal / staff transactional mail via AgentMail.
- * From address follows portal UI language:
- * - nl → hallo@lemo-design.nl
- * - en (default) → hello@lemo-design.com
+ *
+ * From address follows purpose + portal UI language:
+ * - general + nl → hallo@lemo-design.nl
+ * - general + en → hello@lemo-design.com
+ * - invoice + nl → financieel@lemo-design.nl
+ * - invoice + en → financials@lemo-design.com
  */
 
 import { AgentMailClient } from "../lib/agentmail-client.js";
@@ -10,6 +13,7 @@ import { AGENTMAIL_NOTIFICATIONS_LABEL } from "../lib/agentmail-notifications.js
 import { getAgentMailCredentials } from "./agentmail-settings.js";
 
 export type TransactionalMailLocale = "en" | "nl";
+export type TransactionalMailPurpose = "general" | "invoice";
 
 export type TransactionalMailAttachment = {
   filename: string;
@@ -24,6 +28,8 @@ export type SendTransactionalAgentMailInput = {
   html: string;
   text: string;
   locale?: TransactionalMailLocale | string | null;
+  /** Defaults to general (hallo/hello). Invoice uses financieel/financials. */
+  purpose?: TransactionalMailPurpose | string | null;
   attachments?: TransactionalMailAttachment[];
 };
 
@@ -36,21 +42,46 @@ export type SendTransactionalAgentMailResult = {
 
 const DISPLAY_NAME = "Lemo Design";
 
-const FROM_BY_LOCALE: Record<"en" | "nl", { email: string; domain: string }> = {
-  nl: {
-    email: "hallo@lemo-design.nl",
-    domain: "lemo-design.nl",
+type FromAddress = { email: string; domain: string };
+
+const FROM_BY_PURPOSE: Record<
+  TransactionalMailPurpose,
+  Record<"en" | "nl", FromAddress>
+> = {
+  general: {
+    nl: {
+      email: "hallo@lemo-design.nl",
+      domain: "lemo-design.nl",
+    },
+    en: {
+      email: "hello@lemo-design.com",
+      domain: "lemo-design.com",
+    },
   },
-  en: {
-    email: "hello@lemo-design.com",
-    domain: "lemo-design.com",
+  invoice: {
+    nl: {
+      email: "financieel@lemo-design.nl",
+      domain: "lemo-design.nl",
+    },
+    en: {
+      email: "financials@lemo-design.com",
+      domain: "lemo-design.com",
+    },
   },
 };
 
+export function normalizeTransactionalMailPurpose(
+  purpose: string | null | undefined,
+): TransactionalMailPurpose {
+  return purpose === "invoice" ? "invoice" : "general";
+}
+
 export function resolveTransactionalFromAddress(
   locale: string | null | undefined,
-): (typeof FROM_BY_LOCALE)["en"] {
-  return locale === "nl" ? FROM_BY_LOCALE.nl : FROM_BY_LOCALE.en;
+  purpose: string | null | undefined = "general",
+): FromAddress {
+  const profile = FROM_BY_PURPOSE[normalizeTransactionalMailPurpose(purpose)];
+  return locale === "nl" ? profile.nl : profile.en;
 }
 
 /** @deprecated Use resolveTransactionalFromAddress */
@@ -58,6 +89,20 @@ export const resolveTransactionalNoreplyAddress = resolveTransactionalFromAddres
 
 function envInboxOverride(email: string): string | null {
   const normalized = email.trim().toLowerCase();
+  if (normalized === "financieel@lemo-design.nl") {
+    return (
+      process.env.AGENTMAIL_INVOICE_INBOX_NL?.trim() ||
+      process.env.AGENTMAIL_TRANSACTIONAL_INBOX_FINANCIEEL?.trim() ||
+      null
+    );
+  }
+  if (normalized === "financials@lemo-design.com") {
+    return (
+      process.env.AGENTMAIL_INVOICE_INBOX_COM?.trim() ||
+      process.env.AGENTMAIL_TRANSACTIONAL_INBOX_FINANCIALS?.trim() ||
+      null
+    );
+  }
   if (normalized.endsWith(".nl")) {
     return (
       process.env.AGENTMAIL_TRANSACTIONAL_INBOX_NL?.trim() ||
@@ -74,7 +119,7 @@ function envInboxOverride(email: string): string | null {
 
 async function resolveTransactionalInbox(
   client: AgentMailClient,
-  target: (typeof FROM_BY_LOCALE)["en"],
+  target: FromAddress,
 ): Promise<{ inboxId: string; email: string }> {
   const override = envInboxOverride(target.email);
   if (override) {
@@ -90,7 +135,7 @@ async function resolveTransactionalInbox(
   }
 
   throw new Error(
-    `AgentMail inbox ${target.email} was not found. Create it in AgentMail or set AGENTMAIL_TRANSACTIONAL_INBOX_NL / AGENTMAIL_TRANSACTIONAL_INBOX_COM.`,
+    `AgentMail inbox ${target.email} was not found. Create it in AgentMail or set the matching AGENTMAIL_*_INBOX override.`,
   );
 }
 
@@ -107,7 +152,7 @@ export async function sendTransactionalAgentMail(
     throw new Error("Subject is required");
   }
 
-  const target = resolveTransactionalFromAddress(input.locale);
+  const target = resolveTransactionalFromAddress(input.locale, input.purpose);
   const { apiKey } = await getAgentMailCredentials(workspaceId);
   if (!apiKey) {
     throw new Error("AgentMail API key is not configured for this workspace");

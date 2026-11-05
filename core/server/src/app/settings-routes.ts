@@ -663,6 +663,8 @@ export function registerSettingsRoutes(app: Hono) {
       html?: string;
       text?: string;
       locale?: string | null;
+      /** general (hallo/hello) or invoice (financieel/financials). */
+      purpose?: string | null;
       attachments?: Array<{
         filename?: string;
         contentType?: string;
@@ -702,6 +704,7 @@ export function registerSettingsRoutes(app: Hono) {
         html: html || text,
         text: text || html,
         locale: body?.locale ?? null,
+        purpose: body?.purpose ?? null,
         ...(attachments.length > 0 ? { attachments } : {}),
       });
       return c.json({ ok: true, ...result });
