@@ -409,12 +409,47 @@ export class AgentMailClient {
       html?: string;
       /** AgentMail labels (folders) applied at send time. */
       labels?: string[];
+      /**
+       * Outbound attachments. Prefer base64 `content` for small files
+       * (whole request ≤ 6 MB); use `url` for larger public downloads.
+       */
+      attachments?: Array<{
+        filename: string;
+        contentType?: string;
+        contentDisposition?: "inline" | "attachment";
+        contentId?: string;
+        content?: string;
+        url?: string;
+      }>;
     },
   ): Promise<{ inboxId: string; messageId: string; threadId: string }> {
     const to = Array.isArray(input.to) ? input.to : [input.to];
     const labels = (input.labels ?? [])
       .map((label) => label.trim())
       .filter(Boolean);
+    const attachments = (input.attachments ?? [])
+      .map((attachment) => {
+        const filename = attachment.filename.trim();
+        if (!filename) return null;
+        const content = attachment.content?.trim();
+        const url = attachment.url?.trim();
+        if (!content && !url) return null;
+        return {
+          filename,
+          ...(attachment.contentType?.trim()
+            ? { content_type: attachment.contentType.trim() }
+            : {}),
+          ...(attachment.contentDisposition
+            ? { content_disposition: attachment.contentDisposition }
+            : {}),
+          ...(attachment.contentId?.trim()
+            ? { content_id: attachment.contentId.trim() }
+            : {}),
+          ...(content ? { content } : {}),
+          ...(url ? { url } : {}),
+        };
+      })
+      .filter((row): row is NonNullable<typeof row> => Boolean(row));
     const raw = await this.requestJson<Record<string, unknown>>(
       `/inboxes/${encodeURIComponent(inboxId)}/messages/send`,
       {
@@ -425,6 +460,7 @@ export class AgentMailClient {
           ...(input.text != null ? { text: input.text } : {}),
           ...(input.html != null ? { html: input.html } : {}),
           ...(labels.length > 0 ? { labels } : {}),
+          ...(attachments.length > 0 ? { attachments } : {}),
         }),
       },
     );

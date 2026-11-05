@@ -11,12 +11,20 @@ import { getAgentMailCredentials } from "./agentmail-settings.js";
 
 export type TransactionalMailLocale = "en" | "nl";
 
+export type TransactionalMailAttachment = {
+  filename: string;
+  contentType: string;
+  /** Base64-encoded file bytes (AgentMail inline attachment). */
+  contentBase64: string;
+};
+
 export type SendTransactionalAgentMailInput = {
   to: string;
   subject: string;
   html: string;
   text: string;
   locale?: TransactionalMailLocale | string | null;
+  attachments?: TransactionalMailAttachment[];
 };
 
 export type SendTransactionalAgentMailResult = {
@@ -107,12 +115,28 @@ export async function sendTransactionalAgentMail(
   const client = new AgentMailClient({ apiKey });
   const inbox = await resolveTransactionalInbox(client, target);
 
+  const attachments = (input.attachments ?? [])
+    .map((attachment) => {
+      const filename = attachment.filename.trim();
+      const contentBase64 = attachment.contentBase64.trim();
+      const contentType = attachment.contentType.trim() || "application/octet-stream";
+      if (!filename || !contentBase64) return null;
+      return {
+        filename,
+        contentType,
+        contentDisposition: "attachment" as const,
+        content: contentBase64,
+      };
+    })
+    .filter((row): row is NonNullable<typeof row> => Boolean(row));
+
   const sent = await client.sendMessage(inbox.inboxId, {
     to,
     subject,
     text: input.text,
     html: input.html,
     labels: [AGENTMAIL_NOTIFICATIONS_LABEL],
+    ...(attachments.length > 0 ? { attachments } : {}),
   });
 
   // Keep the thread in the Notifications folder even if AgentMail only
