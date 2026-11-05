@@ -369,31 +369,40 @@ async function tickDueReminders(): Promise<void> {
   const now = Date.now();
 
   if (persistenceEnabled) {
-    const nowDate = new Date(now);
-    const dueRows = await db
-      .select()
-      .from(moneybirdInvoiceReminderTracks)
-      .where(
-        and(
-          eq(moneybirdInvoiceReminderTracks.eligibleFromManualSend, true),
-          isNull(moneybirdInvoiceReminderTracks.cancelledAt),
-          or(
-            and(
-              isNotNull(moneybirdInvoiceReminderTracks.dueAt2),
-              lte(moneybirdInvoiceReminderTracks.dueAt2, nowDate),
-              isNull(moneybirdInvoiceReminderTracks.sentAt2),
-            ),
-            and(
-              isNotNull(moneybirdInvoiceReminderTracks.dueAt3),
-              lte(moneybirdInvoiceReminderTracks.dueAt3, nowDate),
-              isNull(moneybirdInvoiceReminderTracks.sentAt3),
+    try {
+      const nowDate = new Date(now);
+      const dueRows = await db
+        .select()
+        .from(moneybirdInvoiceReminderTracks)
+        .where(
+          and(
+            eq(moneybirdInvoiceReminderTracks.eligibleFromManualSend, true),
+            isNull(moneybirdInvoiceReminderTracks.cancelledAt),
+            or(
+              and(
+                isNotNull(moneybirdInvoiceReminderTracks.dueAt2),
+                lte(moneybirdInvoiceReminderTracks.dueAt2, nowDate),
+                isNull(moneybirdInvoiceReminderTracks.sentAt2),
+              ),
+              and(
+                isNotNull(moneybirdInvoiceReminderTracks.dueAt3),
+                lte(moneybirdInvoiceReminderTracks.dueAt3, nowDate),
+                isNull(moneybirdInvoiceReminderTracks.sentAt3),
+              ),
             ),
           ),
-        ),
-      );
+        );
 
-    for (const row of dueRows) {
-      tracks.set(row.invoiceId, rowToTrack(row));
+      for (const row of dueRows) {
+        tracks.set(row.invoiceId, rowToTrack(row));
+      }
+    } catch (error) {
+      // Table may not exist yet (migrate runs after first boot) — retry next tick.
+      console.error(
+        "invoice reminder due query failed",
+        error instanceof Error ? error.message : error,
+      );
+      return;
     }
   }
 
