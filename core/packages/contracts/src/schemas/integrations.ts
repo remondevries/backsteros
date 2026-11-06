@@ -139,6 +139,11 @@ export const bunqSettingsSchema = z.object({
    * BUNQ_PAYMENT_PROPOSALS_ENABLED=true on the core that holds the key.
    */
   paymentProposalsEnabled: z.boolean(),
+  /**
+   * Local preview only — BUNQ_PAYMENT_SIMULATION=true uses an in-process fake
+   * bank adapter (never dials bunq). Always false in production defaults.
+   */
+  paymentSimulation: z.boolean(),
 });
 
 export const updateBunqSettingsSchema = z

@@ -35,6 +35,7 @@ import {
   type BunqPayment,
 } from "../lib/bunq-client.js";
 import { isBunqPaymentProposalsEnabled } from "../lib/bunq-payment-proposal.js";
+import { isBunqPaymentSimulationEnabled } from "../lib/bunq-payment-simulation.js";
 import {
   BUNQ_PERSONAL_BANK_ACCOUNT_KEY,
   ensureBunqPersonalBankAccount,
@@ -168,6 +169,7 @@ export async function getBunqSettings(
     bankAccountId: bankAccount?.id ?? null,
     bankAccountName: bankAccount?.name ?? null,
     paymentProposalsEnabled: isBunqPaymentProposalsEnabled(),
+    paymentSimulation: isBunqPaymentSimulationEnabled(),
   };
 }
 
@@ -458,10 +460,19 @@ export async function getConnectedBunqClient(
 /**
  * OS-167 — payment-capable client. Still uses the workspace production/sandbox
  * bunq key (no separate Ralph key). Call only after Remon approval consume.
+ *
+ * Local preview: when BUNQ_PAYMENT_SIMULATION=true, returns an in-process fake
+ * client that never dials bunq (and refuses BUNQ_ALLOW_LIVE_PAYMENT_WRITES).
  */
 export async function getConnectedBunqPaymentClient(
   workspaceId: string,
 ): Promise<BunqClient> {
+  const { isBunqPaymentSimulationEnabled, createSimulatedBunqPaymentClient } =
+    await import("../lib/bunq-payment-simulation.js");
+  if (isBunqPaymentSimulationEnabled()) {
+    void workspaceId;
+    return createSimulatedBunqPaymentClient();
+  }
   return getConnectedBunqClient(workspaceId, { allowPaymentWrites: true });
 }
 

@@ -53,6 +53,7 @@ import {
   proposalHashesEqual,
   type BunqPaymentProposalStatus,
 } from "../lib/bunq-payment-proposal.js";
+import { isBunqPaymentSimulationEnabled } from "../lib/bunq-payment-simulation.js";
 import type { AuthContext } from "../middleware/auth.js";
 import type { BunqClient } from "../lib/bunq-client.js";
 import { getConnectedBunqPaymentClient } from "./bunq-settings.js";
@@ -132,14 +133,22 @@ function toProposal(row: DbBunqPaymentProposal): BunqPaymentProposal {
 function buildApprovalCard(
   proposal: BunqPaymentProposal,
 ): CreateBunqPaymentProposalResult["approval"] {
+  const simulating = isBunqPaymentSimulationEnabled();
   const unknown =
     proposal.status === "needs_reconciliation"
-      ? "Prior payment outcome is UNKNOWN — do not assume it failed. Approve & Pay only after reconciling with bunq.\n\n"
+      ? "Prior payment outcome is UNKNOWN — do not assume it failed. Approve & Pay only after reconciling.\n\n"
       : "";
+  const simBanner = simulating
+    ? "SIMULATION ONLY — no real bank transfer. Fake destination / amount for local preview.\n\n"
+    : "";
   return {
-    title: "Approve & Pay bunq payment",
+    title: simulating
+      ? "Approve & Pay bunq payment (SIMULATION)"
+      : "Approve & Pay bunq payment",
     kind: "payment",
-    summary: `Pay ${proposal.amountValue} ${proposal.amountCurrency} to ${proposal.recipientName}`,
+    summary: simulating
+      ? `[SIMULATION] Pay ${proposal.amountValue} ${proposal.amountCurrency} to ${proposal.recipientName}`
+      : `Pay ${proposal.amountValue} ${proposal.amountCurrency} to ${proposal.recipientName}`,
     fields: [
       { label: "Recipient", value: proposal.recipientName },
       // Full canonical IBAN on Remon confirm — never mask destination here.
@@ -150,8 +159,11 @@ function buildApprovalCard(
       },
       { label: "Memo", value: proposal.memo },
       { label: "From account", value: proposal.sourceMonetaryAccountId },
+      ...(simulating
+        ? [{ label: "Mode", value: "SIMULATION (local fake bank)" }]
+        : []),
     ],
-    details: `${unknown}Proposal ${proposal.id}\nHash ${proposal.proposalHash}`,
+    details: `${simBanner}${unknown}Proposal ${proposal.id}\nHash ${proposal.proposalHash}`,
     approveLabel: "Approve & Pay",
     rejectLabel: "Reject",
     paymentProposal: {
