@@ -2,6 +2,7 @@
 
 import { ChevronDownIcon } from "@primer/octicons-react";
 import {
+  useCallback,
   useEffect,
   useId,
   useRef,
@@ -95,11 +96,14 @@ export function FinanceInvoiceSendReminderMenu({
   const controlled = openProp !== undefined;
   const open = controlled ? openProp : uncontrolledOpen;
 
-  function setOpen(next: boolean | ((current: boolean) => boolean)) {
-    const resolved = typeof next === "function" ? next(open) : next;
-    if (!controlled) setUncontrolledOpen(resolved);
-    onOpenChange?.(resolved);
-  }
+  const setOpen = useCallback(
+    (next: boolean | ((current: boolean) => boolean)) => {
+      const resolved = typeof next === "function" ? next(open) : next;
+      if (!controlled) setUncontrolledOpen(resolved);
+      onOpenChange?.(resolved);
+    },
+    [controlled, onOpenChange, open],
+  );
 
   const [email, setEmail] = useState(defaultEmail?.trim() || "");
   const [kind, setKind] = useState<FinanceInvoiceSendEmailKind>(() =>
@@ -164,7 +168,7 @@ export function FinanceInvoiceSendReminderMenu({
       document.removeEventListener("pointerdown", onPointerDown, true);
       document.removeEventListener("keydown", onKeyDown, true);
     };
-  }, [open]);
+  }, [open, setOpen]);
 
   async function submit() {
     const to = email.trim();
