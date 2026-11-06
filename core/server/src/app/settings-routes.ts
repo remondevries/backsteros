@@ -33,6 +33,7 @@ import {
   mapboxSettingsService,
   mapboxStaticMapQuerySchema,
   moneybirdSettingsService,
+  bunqSandboxFundSchema,
   provisionBunqSandboxUserSchema,
   recordWorkspaceSettingRestSyncEvent,
   sanitizeWorkspaceSettings,
@@ -408,6 +409,31 @@ export function registerSettingsRoutes(app: Hono) {
           { error: message, code: "bad_request" },
           refused || apiError ? 400 : 400,
         );
+      }
+    },
+  );
+  app.post(
+    "/api/v1/settings/bunq/sandbox-fund",
+    zValidator("json", bunqSandboxFundSchema),
+    async (c) => {
+      const auth = getAuth(c);
+      if (!can(auth, "settings:write") && !can(auth, "finance:write")) {
+        return c.json(forbidden(), 403);
+      }
+      const body = c.req.valid("json");
+      try {
+        return c.json(
+          await bunqSettingsService.fundBunqSandboxFromSugarDaddy(
+            auth.workspaceId,
+            body.amountValue,
+          ),
+        );
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Could not fund bunq sandbox via Sugar Daddy";
+        return c.json({ error: message, code: "bad_request" }, 400);
       }
     },
   );

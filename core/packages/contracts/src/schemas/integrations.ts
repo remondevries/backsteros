@@ -175,6 +175,19 @@ export const provisionBunqSandboxUserSchema = z.object({
   permittedIps: z.array(z.string().min(1)).min(1),
 });
 
+/** Official sandbox Sugar Daddy funding (≤ €500). Sandbox-only UI testing. */
+export const bunqSandboxFundSchema = z.object({
+  /** EUR amount as decimal string, e.g. "25.00". Defaults to 25.00. Max 500. */
+  amountValue: z.string().min(1).optional(),
+});
+
+export const bunqSandboxFundResultSchema = z.object({
+  requestInquiryId: z.string(),
+  monetaryAccountId: z.string(),
+  amountValue: z.string(),
+  currency: z.literal("EUR"),
+});
+
 export const bunqMonetaryAccountSummarySchema = z.object({
   id: z.string(),
   description: z.string().nullable(),
@@ -1018,6 +1031,10 @@ export type BunqTestConnectionResult = z.infer<
 export type ProvisionBunqSandboxUserInput = z.infer<
   typeof provisionBunqSandboxUserSchema
 >;
+
+export type BunqSandboxFundInput = z.infer<typeof bunqSandboxFundSchema>;
+
+export type BunqSandboxFundResult = z.infer<typeof bunqSandboxFundResultSchema>;
 
 export type BunqMonetaryAccountSummary = z.infer<
   typeof bunqMonetaryAccountSummarySchema

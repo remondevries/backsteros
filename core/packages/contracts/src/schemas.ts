@@ -680,6 +680,8 @@ export {
   updateBunqSettingsSchema,
   bunqTestConnectionResultSchema,
   provisionBunqSandboxUserSchema,
+  bunqSandboxFundSchema,
+  bunqSandboxFundResultSchema,
   bunqMonetaryAccountSummarySchema,
   bunqMonetaryAccountsResponseSchema,
   bunqPaymentSummarySchema,

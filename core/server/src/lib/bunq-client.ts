@@ -578,6 +578,62 @@ export class BunqClient {
     return all;
   }
 
+  /**
+   * Official sandbox funding path: request money from Sugar Daddy
+   * (`sugardaddy@bunq.com`). Auto-approves up to €500 per request. Sandbox
+   * host only — never a production payment write.
+   */
+  async createSandboxSugarDaddyRequestInquiry(
+    monetaryAccountId: string,
+    options?: { amountValue?: string; description?: string },
+  ): Promise<{ requestInquiryId: string }> {
+    const userId = this.requireUserId();
+    const amountValue = (options?.amountValue ?? "25.00").trim();
+    const amount = Number(amountValue);
+    if (!Number.isFinite(amount) || amount <= 0 || amount > 500) {
+      throw new BunqApiError(
+        400,
+        "",
+        "sandbox Sugar Daddy amount must be between 0.01 and 500.00 EUR",
+      );
+    }
+    const body = JSON.stringify({
+      amount_inquired: {
+        value: amountValue.includes(".")
+          ? amountValue
+          : amount.toFixed(2),
+        currency: "EUR",
+      },
+      counterparty_alias: {
+        type: "EMAIL",
+        value: "sugardaddy@bunq.com",
+        name: "Sugar Daddy",
+      },
+      description:
+        options?.description?.trim() ||
+        "BacksterOS sandbox ledger test (Sugar Daddy)",
+      allow_bunqme: false,
+    });
+    const path =
+      `/user/${encodeURIComponent(userId)}` +
+      `/monetary-account/${encodeURIComponent(monetaryAccountId)}` +
+      `/request-inquiry`;
+    const payload = await this.requestJson("POST", path, body, {
+      auth: "session",
+      sign: true,
+    });
+    const idObj = findResponseObject(payload, "Id");
+    const requestInquiryId = asString(idObj?.id);
+    if (!requestInquiryId) {
+      throw new BunqApiError(
+        502,
+        JSON.stringify(payload),
+        "bunq request-inquiry response missing Id",
+      );
+    }
+    return { requestInquiryId };
+  }
+
   private requireUserId(): string {
     if (!this.userId) {
       throw new BunqApiError(400, "", "bunq user id is required (open a session)");

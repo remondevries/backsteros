@@ -36,7 +36,7 @@ import {
   resolveDropdownNone,
 } from "../dropdowns/dropdown-options.js";
 import { EntityDetailLayout } from "../entity/entity-detail-layout.js";
-import { EntityListAvatar } from "../entity/entity-list-avatar.js";
+import { FinanceAccountAvatarMark } from "./finance-account-avatar-mark.js";
 import {
   buildCategoryDropdownOptions,
   FinanceTransactionsPanelList,
@@ -1038,16 +1038,13 @@ export function FinanceDashboardView({
             value: entry.id,
             label: entry.name,
             searchTerms: `${entry.name} ${entry.ibanOrMask ?? ""} ${entry.key}`,
-            icon: avatarSrc ? (
-              <EntityListAvatar
+            icon: (
+              <FinanceAccountAvatarMark
                 src={avatarSrc}
+                initial={initial}
+                accountKey={entry.key}
                 size={18}
-                shape="rounded-square"
               />
-            ) : (
-              <span className="finance-account-dropdown-avatar-fallback">
-                {initial}
-              </span>
             ),
           };
         }),

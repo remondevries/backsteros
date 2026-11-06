@@ -198,6 +198,19 @@ export const integrationsRoutes: AppRouter = c.router({
     summary:
       "Create an official bunq sandbox person user and store the sandbox API key",
   },
+  fundBunqSandboxSugarDaddy: {
+    method: "POST",
+    path: "/api/v1/settings/bunq/sandbox-fund",
+    body: s.bunqSandboxFundSchema,
+    responses: {
+      200: s.bunqSandboxFundResultSchema,
+      400: badRequestSchema,
+      401: errorSchema,
+      403: errorSchema,
+    },
+    summary:
+      "Request sandbox money from Sugar Daddy (official request-inquiry, ≤€500)",
+  },
   getMapboxSettings: {
     method: "GET",
     path: "/api/v1/settings/mapbox",

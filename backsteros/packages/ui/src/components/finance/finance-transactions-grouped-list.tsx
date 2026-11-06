@@ -20,7 +20,7 @@ import {
 } from "../../list-nav/keyboard-nav-item.js";
 import type { useListKeyboardNavigationContainerProps } from "../list-nav/list-keyboard-navigation-provider.js";
 import { useKeyHeld } from "../../list-nav/shift-range-selection.js";
-import { EntityListAvatar } from "../entity/entity-list-avatar.js";
+import { FinanceAccountAvatarMark } from "./finance-account-avatar-mark.js";
 import { FinanceGoalBadgeIcon } from "./finance-goal-badge-icon.js";
 import { FinanceRecurringBadgeIcon } from "./finance-recurring-badge-icon.js";
 import { PolishedCheckbox } from "../shared/polished-checkbox.js";
@@ -459,17 +459,12 @@ export function FinanceTransactionsGroupedList({
                                       event.stopPropagation()
                                     }
                                   >
-                                    {txAccountAvatarSrc ? (
-                                      <EntityListAvatar
-                                        src={txAccountAvatarSrc}
-                                        size={18}
-                                        shape="rounded-square"
-                                      />
-                                    ) : (
-                                      <span className="finance-account-dropdown-avatar-fallback">
-                                        {txAccountInitial}
-                                      </span>
-                                    )}
+                                    <FinanceAccountAvatarMark
+                                      src={txAccountAvatarSrc}
+                                      initial={txAccountInitial}
+                                      accountKey={txAccount?.key}
+                                      size={18}
+                                    />
                                   </button>
                                 )}
                                 onChange={(value) => {

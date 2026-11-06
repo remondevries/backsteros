@@ -165,6 +165,7 @@ export {
   type CloudflareIconProps,
 } from "./components/icons/cloudflare-icon.js";
 export { TransipIcon, type TransipIconProps } from "./components/icons/transip-icon.js";
+export { BunqIcon, type BunqIconProps } from "./components/icons/bunq-icon.js";
 export { ProfileLogoIcon } from "./components/icons/profile-logo-icon.js";
 export {
   LemoDesignMarkIcon,

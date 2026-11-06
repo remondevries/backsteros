@@ -23,7 +23,7 @@ import {
   buildOrganizationDropdownOptions,
   resolveDropdownNone,
 } from "../dropdowns/dropdown-options.js";
-import { EntityListAvatar } from "../entity/entity-list-avatar.js";
+import { FinanceAccountAvatarMark } from "../finance/finance-account-avatar-mark.js";
 import {
   FinanceTransactionsPanelList,
   buildCategoryDropdownOptions,
@@ -221,16 +221,13 @@ export function OrganizationTransactionsSection({
             value: entry.id,
             label: entry.name,
             searchTerms: `${entry.name} ${entry.ibanOrMask ?? ""} ${entry.key}`,
-            icon: avatarSrc ? (
-              <EntityListAvatar
+            icon: (
+              <FinanceAccountAvatarMark
                 src={avatarSrc}
+                initial={initial}
+                accountKey={entry.key}
                 size={18}
-                shape="rounded-square"
               />
-            ) : (
-              <span className="finance-account-dropdown-avatar-fallback">
-                {initial}
-              </span>
             ),
           };
         }),

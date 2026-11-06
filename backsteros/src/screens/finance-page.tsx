@@ -357,6 +357,7 @@ function FinancePageBody() {
     moneybirdSyncPending,
     syncMoneybirdAccount,
     bunqSyncPending,
+    bunqSyncMessage,
     syncBunqAccount,
   } = useFinanceTransactions({
     client,
@@ -763,6 +764,7 @@ function FinancePageBody() {
         allAccountsSelected={allAccountsSelected}
         accounts={accounts}
         accountAvatarSrcById={accountAvatarSrcById}
+        accountFeedMessage={bunqSyncMessage}
         onSelectAccount={handleSelectAccount}
         onSelectAllAccounts={handleSelectAllAccounts}
         onRequestImportWithFile={(file) => {

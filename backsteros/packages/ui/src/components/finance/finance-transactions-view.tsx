@@ -214,6 +214,8 @@ export type FinanceTransactionsViewProps = {
   }>;
   moneybirdAccountsLoading?: boolean;
   onChromeStateChange?: (state: FinanceTransactionsChromeState | null) => void;
+  /** Status line after Sync (bunq / linked feeds) — shown above the empty or list pane. */
+  accountFeedMessage?: string | null;
 };
 
 export function FinanceTransactionsView({
@@ -265,6 +267,7 @@ export function FinanceTransactionsView({
   moneybirdAccounts = [],
   moneybirdAccountsLoading = false,
   onChromeStateChange,
+  accountFeedMessage = null,
 }: FinanceTransactionsViewProps) {
   const [collapsedMonths, setCollapsedMonths] = useState<Record<string, boolean>>(
     {},
@@ -311,6 +314,9 @@ export function FinanceTransactionsView({
   });
 
   const isMoneybirdLinked = Boolean(account?.moneybirdFinancialAccountId);
+  /** Sandbox bunq ledger account — synced via chrome Sync, not CSV import. */
+  const isBunqPersonal = account?.key === "bunq-personal";
+  const hideCsvEmptyDropzone = isMoneybirdLinked || isBunqPersonal;
 
   const {
     orgOptions,
@@ -587,14 +593,24 @@ export function FinanceTransactionsView({
         <div className="finance-categories-view__list-pane finance-transactions-view__list-pane">
           <div className="finance-transactions finance-transactions--in-split">
         <div className="finance-transactions__scroll" style={categoryColumnStyle}>
+        {accountFeedMessage && transactions.length > 0 ? (
+          <p className="finance-empty" role="status">
+            {accountFeedMessage}
+          </p>
+        ) : null}
         {loading && !transactions.length ? (
           <p className="finance-empty">Loading transactions…</p>
         ) : !visibleTransactions.length && (hasActiveFilters || transactions.length > 0) ? (
           <p className="finance-empty">No matching transactions.</p>
         ) : !transactions.length ? (
           <div className="finance-tx-empty-dropzone">
-            {isMoneybirdLinked ? (
-              <p className="finance-empty">No transactions yet.</p>
+            {hideCsvEmptyDropzone ? (
+              <p className="finance-empty">
+                {isBunqPersonal
+                  ? accountFeedMessage ??
+                    "No bunq transactions yet. Use Sync in the toolbar to pull sandbox payments."
+                  : "No transactions yet."}
+              </p>
             ) : (
               <FinanceCsvDropzone
                 onFileSelect={(file) => {

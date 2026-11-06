@@ -6,6 +6,7 @@ import {
   assertBunqSandboxApiKey,
   assertBunqSandboxBaseUrl,
   BUNQ_SANDBOX_API_BASE,
+  BunqApiError,
   BunqClient,
   BunqLiveApiRefusedError,
   generateBunqSigningKeyPair,
@@ -249,6 +250,72 @@ describe("bunq-client signing + mocked session flow", () => {
           permittedIps: ["203.0.113.10"],
         }),
       (error: unknown) => error instanceof BunqLiveApiRefusedError,
+    );
+  });
+
+  it("posts Sugar Daddy request-inquiry on the sandbox host only", async () => {
+    const { privateKeyPem } = generateBunqSigningKeyPair();
+    const calls: Array<{ method: string; url: string; body: string | null }> =
+      [];
+    const fetchImpl: typeof fetch = async (input, init) => {
+      const url = String(input);
+      const method = (init?.method ?? "GET").toUpperCase();
+      const body = typeof init?.body === "string" ? init.body : null;
+      calls.push({ method, url, body });
+      assert.match(url, /^https:\/\/public-api\.sandbox\.bunq\.com\//);
+      assert.doesNotMatch(url, /api\.bunq\.com/);
+      return new Response(
+        JSON.stringify({ Response: [{ Id: { id: 4242 } }] }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    };
+    const client = new BunqClient({
+      apiKey: "sandbox_fake_key",
+      signingPrivateKeyPem: privateKeyPem,
+      permittedIps: ["203.0.113.10"],
+      fetchImpl,
+      installationToken: "inst",
+      serverPublicKeyPem:
+        "-----BEGIN PUBLIC KEY-----\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE\n-----END PUBLIC KEY-----",
+      sessionToken: "sess",
+      deviceId: "1",
+      userId: "2",
+    });
+    const result = await client.createSandboxSugarDaddyRequestInquiry("99", {
+      amountValue: "25.00",
+    });
+    assert.equal(result.requestInquiryId, "4242");
+    const inquiry = calls.find((c) => c.url.includes("/request-inquiry"));
+    assert.ok(inquiry);
+    assert.equal(inquiry?.method, "POST");
+    const payload = JSON.parse(inquiry?.body ?? "{}") as {
+      counterparty_alias?: { value?: string };
+      amount_inquired?: { value?: string; currency?: string };
+    };
+    assert.equal(payload.counterparty_alias?.value, "sugardaddy@bunq.com");
+    assert.equal(payload.amount_inquired?.value, "25.00");
+    assert.equal(payload.amount_inquired?.currency, "EUR");
+  });
+
+  it("rejects Sugar Daddy amounts above €500", async () => {
+    const { privateKeyPem } = generateBunqSigningKeyPair();
+    const client = new BunqClient({
+      apiKey: "sandbox_fake_key",
+      signingPrivateKeyPem: privateKeyPem,
+      permittedIps: ["203.0.113.10"],
+      installationToken: "inst",
+      sessionToken: "sess",
+      deviceId: "1",
+      userId: "2",
+    });
+    await assert.rejects(
+      () =>
+        client.createSandboxSugarDaddyRequestInquiry("99", {
+          amountValue: "500.01",
+        }),
+      (error: unknown) =>
+        error instanceof BunqApiError &&
+        /0\.01 and 500/.test(error.message),
     );
   });
 });

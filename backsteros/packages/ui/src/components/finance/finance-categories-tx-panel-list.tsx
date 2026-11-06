@@ -58,7 +58,7 @@ import {
   buildOrganizationDropdownOptions,
   resolveDropdownNone,
 } from "../dropdowns/dropdown-options.js";
-import { EntityListAvatar } from "../entity/entity-list-avatar.js";
+import { FinanceAccountAvatarMark } from "./finance-account-avatar-mark.js";
 import { FinanceDetailSectionTitle } from "./finance-detail-section-title.js";
 import { FinanceGoalBadgeIcon } from "./finance-goal-badge-icon.js";
 import { FinanceRecurringBadgeIcon } from "./finance-recurring-badge-icon.js";
@@ -581,12 +581,13 @@ export function FinanceTransactionsPanelList({
             value: entry.id,
             label: entry.name,
             searchTerms: `${entry.name} ${entry.ibanOrMask ?? ""} ${entry.key}`,
-            icon: avatarSrc ? (
-              <EntityListAvatar src={avatarSrc} size={18} shape="rounded-square" />
-            ) : (
-              <span className="finance-account-dropdown-avatar-fallback">
-                {initial}
-              </span>
+            icon: (
+              <FinanceAccountAvatarMark
+                src={avatarSrc}
+                initial={initial}
+                accountKey={entry.key}
+                size={18}
+              />
             ),
           };
         }),
@@ -1088,17 +1089,12 @@ export function FinanceTransactionsPanelList({
                                 }}
                                 onMouseDown={(event) => event.stopPropagation()}
                               >
-                                {txAccountAvatarSrc ? (
-                                  <EntityListAvatar
-                                    src={txAccountAvatarSrc}
-                                    size={18}
-                                    shape="rounded-square"
-                                  />
-                                ) : (
-                                  <span className="finance-account-dropdown-avatar-fallback">
-                                    {txAccountInitial}
-                                  </span>
-                                )}
+                                <FinanceAccountAvatarMark
+                                  src={txAccountAvatarSrc}
+                                  initial={txAccountInitial}
+                                  accountKey={txAccount?.key}
+                                  size={18}
+                                />
                               </button>
                             )}
                             onChange={(value) => {
@@ -1113,17 +1109,12 @@ export function FinanceTransactionsPanelList({
                             className="finance-tx-row__bank-icon is-static"
                             title={txAccount?.name ?? "Bank account"}
                           >
-                            {txAccountAvatarSrc ? (
-                              <EntityListAvatar
-                                src={txAccountAvatarSrc}
-                                size={18}
-                                shape="rounded-square"
-                              />
-                            ) : (
-                              <span className="finance-account-dropdown-avatar-fallback">
-                                {txAccountInitial}
-                              </span>
-                            )}
+                            <FinanceAccountAvatarMark
+                              src={txAccountAvatarSrc}
+                              initial={txAccountInitial}
+                              accountKey={txAccount?.key}
+                              size={18}
+                            />
                           </span>
                         )}
                       </div>

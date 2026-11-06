@@ -244,6 +244,23 @@
   border-radius: 9999px;
 }
 
+.finance-account-brand-mark {
+  box-sizing: border-box;
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: 4px;
+  line-height: 0;
+}
+
+.finance-account-brand-mark > svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
 .property-dropdown-trigger--inline-chip .property-dropdown-trigger__label {
   font-size: 13px;
   font-weight: 500;

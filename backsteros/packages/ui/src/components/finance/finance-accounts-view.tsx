@@ -64,7 +64,7 @@ import {
 } from "../entity-actions/entity-actions-menu.js";
 import { useEntityHeaderActionsContext } from "../entity-actions/entity-header-actions-context.js";
 import { EntityDetailLayout } from "../entity/entity-detail-layout.js";
-import { EntityListAvatar } from "../entity/entity-list-avatar.js";
+import { FinanceAccountAvatarMark } from "./finance-account-avatar-mark.js";
 import { AccountIncomeExpenseChart } from "./account-income-expense-chart.js";
 import { buildNonCashflowCategoryIdSet } from "../../finance/cashflow-exclusion.js";
 import {
@@ -663,17 +663,12 @@ export function FinanceAccountsView({
                               className="finance-accounts-view__avatar"
                               aria-hidden="true"
                             >
-                              {avatarSrc ? (
-                                <EntityListAvatar
-                                  src={avatarSrc}
-                                  size={28}
-                                  shape="rounded-square"
-                                />
-                              ) : (
-                                <span className="finance-account-dropdown-avatar-fallback">
-                                  {initial}
-                                </span>
-                              )}
+                              <FinanceAccountAvatarMark
+                                src={avatarSrc}
+                                initial={initial}
+                                accountKey={account.key}
+                                size={28}
+                              />
                             </span>
                             <span className="finance-accounts-view__meta">
                               <span className="finance-accounts-view__name">
@@ -1017,17 +1012,14 @@ function AccountDetailPanel({
                 className="finance-accounts-view__detail-avatar"
                 aria-hidden="true"
               >
-                {avatarSrc ? (
-                  <EntityListAvatar
-                    src={avatarSrc}
-                    size={40}
-                    shape="rounded-square"
-                  />
-                ) : (
-                  <span className="finance-account-dropdown-avatar-fallback">
-                    {account.name.trim().charAt(0).toUpperCase() || "?"}
-                  </span>
-                )}
+                <FinanceAccountAvatarMark
+                  src={avatarSrc}
+                  initial={
+                    account.name.trim().charAt(0).toUpperCase() || "?"
+                  }
+                  accountKey={account.key}
+                  size={40}
+                />
               </span>
             )}
           </div>

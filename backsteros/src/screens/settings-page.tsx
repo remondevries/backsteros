@@ -191,6 +191,15 @@ function SettingsApiTab({
 
   const syncApiKeysSearch = useCallback(
     (next: { typeTab: ApiKeyTypeTab; panelView: ApiKeysSettingsPanel }) => {
+      // Address bar can leave /settings/api before this pane unmounts (router
+      // lag). Never replace-navigate back onto the API tab — that trapped
+      // Settings side-nav clicks and fought the outbound route (reload loop).
+      const windowPath =
+        typeof window !== "undefined" ? window.location.pathname : null;
+      const stillOnApi =
+        windowPath === "/settings/api" ||
+        (windowPath?.startsWith("/settings/api/") ?? false);
+      if (!stillOnApi) return;
       void navigate({
         to: "/settings/$tab",
         params: { tab: "api" },
@@ -207,6 +216,15 @@ function SettingsApiTab({
   // Keep the address bar in sync so deep links like ?type=agent work and
   // bare /settings/api still shows an explicit type.
   useEffect(() => {
+    const windowPath =
+      typeof window !== "undefined" ? window.location.pathname : null;
+    if (
+      windowPath != null &&
+      windowPath !== "/settings/api" &&
+      !windowPath.startsWith("/settings/api/")
+    ) {
+      return;
+    }
     const params = new URLSearchParams(
       searchStr.startsWith("?") ? searchStr.slice(1) : searchStr,
     );

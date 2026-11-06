@@ -224,7 +224,8 @@
 }
 
 .finance-side-panel__account-avatar .entity-list-avatar,
-.finance-side-panel__account-avatar .finance-account-dropdown-avatar-fallback {
+.finance-side-panel__account-avatar .finance-account-dropdown-avatar-fallback,
+.finance-side-panel__account-avatar .finance-account-brand-mark {
   width: 18px;
   height: 18px;
   min-width: 18px;

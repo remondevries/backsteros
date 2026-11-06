@@ -92,6 +92,7 @@ export {
   updateMeetingSchema,
   updateMoneybirdSettingsSchema,
   updateBunqSettingsSchema,
+  bunqSandboxFundSchema,
   provisionBunqSandboxUserSchema,
   updateProjectSchema,
   updateProjectUpdateSchema,

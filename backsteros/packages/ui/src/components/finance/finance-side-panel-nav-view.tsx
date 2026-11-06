@@ -25,7 +25,7 @@ import {
 import { bankAccountMatchesSlug } from "../../navigation/entity-routes.js";
 import { keyboardNavItemClass, keyboardNavItemProps } from "../../list-nav/keyboard-nav-item.js";
 import { ContentSidePanelHeader } from "../content/content-side-panel-header.js";
-import { EntityListAvatar } from "../entity/entity-list-avatar.js";
+import { FinanceAccountAvatarMark } from "./finance-account-avatar-mark.js";
 import { ProjectsSidePanelIcon } from "../codebase/projects-side-panel-icon.js";
 import {
   FinanceAccountsNavIcon,
@@ -309,17 +309,12 @@ export function FinanceSidePanelNavView({
                                 className="finance-side-panel__account-avatar"
                                 aria-hidden="true"
                               >
-                                {avatarSrc ? (
-                                  <EntityListAvatar
-                                    src={avatarSrc}
-                                    size={18}
-                                    shape="rounded-square"
-                                  />
-                                ) : (
-                                  <span className="finance-account-dropdown-avatar-fallback">
-                                    {initial}
-                                  </span>
-                                )}
+                                <FinanceAccountAvatarMark
+                                  src={avatarSrc}
+                                  initial={initial}
+                                  accountKey={account.key}
+                                  size={18}
+                                />
                               </span>
                               <span className="sidebar-link-label">
                                 {account.name}

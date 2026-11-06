@@ -1,4 +1,7 @@
-import type { BacksterosApiClient } from "@backsteros/api-client";
+import {
+  ApiClientError,
+  type BacksterosApiClient,
+} from "@backsteros/api-client";
 import type {
   BankAccount,
   BunqBankAccountSyncResult,
@@ -108,6 +111,7 @@ export function useFinanceTransactions({
   const moneybirdSyncAtByAccountRef = useRef<Record<string, number>>({});
   const moneybirdSyncInFlightRef = useRef<Set<string>>(new Set());
   const [bunqSyncPending, setBunqSyncPending] = useState(false);
+  const [bunqSyncMessage, setBunqSyncMessage] = useState<string | null>(null);
   const bunqSyncAtByAccountRef = useRef<Record<string, number>>({});
   const bunqSyncInFlightRef = useRef<Set<string>>(new Set());
 
@@ -394,6 +398,7 @@ export function useFinanceTransactions({
 
       bunqSyncInFlightRef.current.add(accountId);
       setBunqSyncPending(true);
+      if (opts?.force) setBunqSyncMessage(null);
       try {
         const result = await client.requestJson<BunqBankAccountSyncResult>(
           `/api/v1/bank-accounts/${encodeURIComponent(accountId)}/bunq-sync`,
@@ -404,8 +409,24 @@ export function useFinanceTransactions({
           await loadTransactions();
         }
         await refreshAccounts?.().catch(() => undefined);
+        if (opts?.force) {
+          setBunqSyncMessage(
+            result.inserted > 0
+              ? `Synced ${result.inserted} new bunq payment${result.inserted === 1 ? "" : "s"} (${result.fetched} fetched).`
+              : result.fetched > 0
+                ? `Synced — ${result.fetched} sandbox payment${result.fetched === 1 ? "" : "s"} already on this account.`
+                : "Synced — sandbox account has no payments yet.",
+          );
+        }
         return result;
-      } catch {
+      } catch (error) {
+        const message =
+          error instanceof ApiClientError
+            ? error.message
+            : error instanceof Error
+              ? error.message
+              : "bunq sync failed";
+        if (opts?.force) setBunqSyncMessage(message);
         return null;
       } finally {
         bunqSyncInFlightRef.current.delete(accountId);
@@ -823,6 +844,7 @@ export function useFinanceTransactions({
     moneybirdSyncPending,
     syncMoneybirdAccount,
     bunqSyncPending,
+    bunqSyncMessage,
     syncBunqAccount,
     handleToggleSelected,
     handleSetGroupSelected,

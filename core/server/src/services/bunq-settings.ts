@@ -9,6 +9,7 @@ import { and, eq, isNull } from "drizzle-orm";
 import type {
   BunqMonetaryAccountSummary,
   BunqPaymentSummary,
+  BunqSandboxFundResult,
   BunqSettings,
   BunqTestConnectionResult,
   UpdateBunqSettingsInput,
@@ -410,4 +411,40 @@ export async function listBunqPayments(
   const client = await getConnectedBunqClient(workspaceId);
   const payments = await client.listPayments(monetaryAccountId, options);
   return payments.map(mapPayment);
+}
+
+/**
+ * Official bunq sandbox funding: request-inquiry to sugardaddy@bunq.com
+ * (auto-approves ≤ €500). First active monetary account. Sandbox host only.
+ */
+export async function fundBunqSandboxFromSugarDaddy(
+  workspaceId: string,
+  amountValue?: string,
+): Promise<BunqSandboxFundResult> {
+  const client = await getConnectedBunqClient(workspaceId);
+  const accounts = await client.listMonetaryAccounts();
+  const account =
+    accounts.find((a) => a.status === "ACTIVE") ?? accounts[0] ?? null;
+  if (!account) {
+    throw new BunqApiError(
+      400,
+      "",
+      "no bunq sandbox monetary account available to fund",
+    );
+  }
+  const normalized =
+    amountValue?.trim() ||
+    "25.00";
+  const { requestInquiryId } =
+    await client.createSandboxSugarDaddyRequestInquiry(account.id, {
+      amountValue: normalized,
+    });
+  return {
+    requestInquiryId,
+    monetaryAccountId: account.id,
+    amountValue: normalized.includes(".")
+      ? normalized
+      : Number(normalized).toFixed(2),
+    currency: "EUR",
+  };
 }

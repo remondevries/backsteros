@@ -120,7 +120,8 @@
 }
 
 .finance-accounts-view__avatar .entity-list-avatar,
-.finance-accounts-view__avatar .finance-account-dropdown-avatar-fallback {
+.finance-accounts-view__avatar .finance-account-dropdown-avatar-fallback,
+.finance-accounts-view__avatar .finance-account-brand-mark {
   width: 100%;
   height: 100%;
 }
@@ -192,7 +193,8 @@
 }
 
 .finance-accounts-view__detail-avatar .entity-list-avatar,
-.finance-accounts-view__detail-avatar .finance-account-dropdown-avatar-fallback {
+.finance-accounts-view__detail-avatar .finance-account-dropdown-avatar-fallback,
+.finance-accounts-view__detail-avatar .finance-account-brand-mark {
   width: 100%;
   height: 100%;
 }
