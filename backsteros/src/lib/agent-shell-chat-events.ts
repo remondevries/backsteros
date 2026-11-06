@@ -424,6 +424,15 @@ export function startAgentShellChatEventsLoop(input: {
           // No owner key — stop retrying until remount.
           return;
         }
+        // Plain Error from subscribe… or ApiClientError from local stream.
+        if (
+          error instanceof Error &&
+          (/\((401|404)\)\s*$/.test(error.message) ||
+            /\bstatus 401\b/.test(error.message) ||
+            /\bstatus 404\b/.test(error.message))
+        ) {
+          return;
+        }
         console.warn("[agent-shell-chat-sse]", error);
         attempt += 1;
         const delay = Math.min(8_000, 500 * 2 ** Math.min(attempt, 4));

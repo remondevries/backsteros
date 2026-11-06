@@ -325,6 +325,8 @@ export function LiveAgentChatPanel({
     threadId: string;
     messageId: string | null;
     agentId?: string;
+    /** Contact id when known; kept so peer-bootstrap cannot clobber Ralph. */
+    contactId?: string | null;
   } | null>(null);
   const [threads, setThreads] = useState<Record<string, ChatUiMessage[]>>(
     () => {
@@ -371,17 +373,22 @@ export function LiveAgentChatPanel({
               break;
             }
           }
-          if (!contactId || !resolvedPeers.some((peer) => peer.id === contactId)) {
-            return;
-          }
+          // Always stash — peers may still be loading; bootstrap must not
+          // replace this with Judith before Ralph’s contact appears.
           pendingDeepLinkRef.current = {
             threadId,
             messageId,
             agentId: thread.agentId,
+            contactId,
           };
           setProjectId(null);
-          setActivePeerId(contactId);
-          setDeepLinkNonce((n) => n + 1);
+          if (
+            contactId &&
+            resolvedPeers.some((peer) => peer.id === contactId)
+          ) {
+            setActivePeerId(contactId);
+            setDeepLinkNonce((n) => n + 1);
+          }
           if (messageId) setHighlightMessageId(messageId);
         } catch {
           /* ignore missing threads */
@@ -397,16 +404,49 @@ export function LiveAgentChatPanel({
     };
   }, [liveAgentChat, resolvedPeers]);
 
+  // Apply a stashed deep link once the agent contact is in the peer strip.
+  useEffect(() => {
+    const pending = pendingDeepLinkRef.current;
+    if (!pending?.agentId || !liveAgentChat) return;
+    let contactId = pending.contactId?.trim() || null;
+    if (!contactId) {
+      for (const [peerId, agentId] of liveAgentChat.agentIdByContactId) {
+        if (agentId === pending.agentId) {
+          contactId = peerId;
+          break;
+        }
+      }
+    }
+    if (!contactId || !resolvedPeers.some((peer) => peer.id === contactId)) {
+      return;
+    }
+    pendingDeepLinkRef.current = { ...pending, contactId };
+    setProjectId(null);
+    setActivePeerId((current) => {
+      if (current === contactId) return current;
+      return contactId;
+    });
+    // Open effect consumes pendingDeepLinkRef; bump so it runs after peer lands.
+    setDeepLinkNonce((n) => n + 1);
+  }, [liveAgentChat, resolvedPeers]);
+
   // When desktop finishes loading agent contacts, merge peers without wiping
   // threads the user already typed into.
   useEffect(() => {
-    setActivePeerId((current) =>
-      resolvedPeers.some((peer) => peer.id === current)
+    setActivePeerId((current) => {
+      const pendingContact = pendingDeepLinkRef.current?.contactId?.trim();
+      if (
+        pendingContact &&
+        resolvedPeers.some((peer) => peer.id === pendingContact)
+      ) {
+        return pendingContact;
+      }
+      return resolvedPeers.some((peer) => peer.id === current)
         ? current
         : (findPeerByName(resolvedPeers, "Judith")?.id ??
           resolvedPeers[0]?.id ??
-          (allowEmptyPeers ? current : FALLBACK_JUDITH.id)),
-    );
+          (allowEmptyPeers ? current : FALLBACK_JUDITH.id));
+    });
     setThreads((prev) => {
       if (resolvedPeers.length === 0) return prev;
       const next = { ...prev };

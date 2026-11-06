@@ -10,10 +10,6 @@ import type {
 } from "@backsteros/contracts";
 
 import { invalidateAgentDmThreads } from "../lib/agent-dm-seen";
-import {
-  cloudCoreRequestBlob,
-  cloudCoreRequestJson,
-} from "../lib/cloud-core-api";
 import { useDesktopApi } from "../lib/api-context";
 import {
   configureShellAgentRosterLocalFetcher,
@@ -23,6 +19,10 @@ import {
   type ShellAgentRosterSnapshot,
 } from "../lib/shell-agent-roster-store";
 import { isAgentWebhookVerified } from "../lib/shell-agent-webhook-verified";
+import {
+  shellChatRequestBlob,
+  shellChatRequestJson,
+} from "../lib/shell-chat-transport";
 
 /** True when a non-empty webhook URL is stored (settings may still need a test). */
 export function agentHasWebhookUrl(agent: Agent): boolean {
@@ -122,7 +122,8 @@ export type ShellAgentChatApi = {
 
 /**
  * Shell chat + lead-agent roster. Local-core agents paint first (after twin);
- * cloud refresh merges webhook fields. Chat threads still use the agents door.
+ * cloud refresh merges webhook fields. Chat threads use local-core when the
+ * product API is local (`:8788`), otherwise the agents door.
  */
 /** Shared agent roster snapshot (local-core first, cloud overlay). */
 export function useShellAgentRoster(): ShellAgentRosterSnapshot {
@@ -142,6 +143,7 @@ export function useShellAgentRoster(): ShellAgentRosterSnapshot {
 }
 
 export function useShellAgentChat(): ShellAgentChatApi {
+  const { client, apiUrl } = useDesktopApi();
   const roster = useShellAgentRoster();
 
   const agents = roster.agents;
@@ -166,7 +168,9 @@ export function useShellAgentChat(): ShellAgentChatApi {
     async (input: { agentId?: string; projectId?: string }) => {
       const agentId = input.agentId?.trim() || undefined;
       const projectId = input.projectId?.trim() || undefined;
-      return cloudCoreRequestJson<ChatThreadWithMessages>(
+      return shellChatRequestJson<ChatThreadWithMessages>(
+        apiUrl,
+        client,
         "/api/v1/chat/threads",
         {
           method: "POST",
@@ -176,7 +180,7 @@ export function useShellAgentChat(): ShellAgentChatApi {
         },
       );
     },
-    [],
+    [apiUrl, client],
   );
 
   const sendMessage = useCallback(
@@ -188,7 +192,9 @@ export function useShellAgentChat(): ShellAgentChatApi {
         skipLinkPreviews?: boolean;
       },
     ) => {
-      return cloudCoreRequestJson<CreateChatThreadMessageResult>(
+      return shellChatRequestJson<CreateChatThreadMessageResult>(
+        apiUrl,
+        client,
         `/api/v1/chat/threads/${encodeURIComponent(threadId)}/messages`,
         {
           method: "POST",
@@ -204,12 +210,14 @@ export function useShellAgentChat(): ShellAgentChatApi {
         },
       );
     },
-    [],
+    [apiUrl, client],
   );
 
   const uploadAttachment = useCallback(
     async (threadId: string, file: File) => {
-      return cloudCoreRequestJson<{ id: string }>(
+      return shellChatRequestJson<{ id: string }>(
+        apiUrl,
+        client,
         `/api/v1/chat/threads/${encodeURIComponent(threadId)}/attachments`,
         {
           method: "POST",
@@ -221,33 +229,46 @@ export function useShellAgentChat(): ShellAgentChatApi {
         },
       );
     },
-    [],
+    [apiUrl, client],
   );
 
-  const resolveAttachmentUrl = useCallback(async (url: string) => {
-    if (url.startsWith("blob:") || url.startsWith("data:")) return url;
-    const path = url.startsWith("http")
-      ? (() => {
-          const parsed = new URL(url);
-          return `${parsed.pathname}${parsed.search}`;
-        })()
-      : url;
-    const blob = await cloudCoreRequestBlob(path);
-    return URL.createObjectURL(blob);
-  }, []);
+  const resolveAttachmentUrl = useCallback(
+    async (url: string) => {
+      if (url.startsWith("blob:") || url.startsWith("data:")) return url;
+      const path = url.startsWith("http")
+        ? (() => {
+            const parsed = new URL(url);
+            return `${parsed.pathname}${parsed.search}`;
+          })()
+        : url;
+      const blob = await shellChatRequestBlob(apiUrl, client, path);
+      return URL.createObjectURL(blob);
+    },
+    [apiUrl, client],
+  );
 
-  const getThread = useCallback(async (threadId: string) => {
-    return cloudCoreRequestJson<ChatThreadWithMessages>(
-      `/api/v1/chat/threads/${encodeURIComponent(threadId)}`,
-    );
-  }, []);
+  const getThread = useCallback(
+    async (threadId: string) => {
+      return shellChatRequestJson<ChatThreadWithMessages>(
+        apiUrl,
+        client,
+        `/api/v1/chat/threads/${encodeURIComponent(threadId)}`,
+      );
+    },
+    [apiUrl, client],
+  );
 
-  const listMessages = useCallback(async (threadId: string) => {
-    const body = await cloudCoreRequestJson<{ messages: ChatThreadMessage[] }>(
-      `/api/v1/chat/threads/${encodeURIComponent(threadId)}/messages`,
-    );
-    return body.messages;
-  }, []);
+  const listMessages = useCallback(
+    async (threadId: string) => {
+      const body = await shellChatRequestJson<{ messages: ChatThreadMessage[] }>(
+        apiUrl,
+        client,
+        `/api/v1/chat/threads/${encodeURIComponent(threadId)}/messages`,
+      );
+      return body.messages;
+    },
+    [apiUrl, client],
+  );
 
   const deleteMessages = useCallback(
     async (threadId: string, messageIds: readonly string[]) => {
@@ -255,11 +276,15 @@ export function useShellAgentChat(): ShellAgentChatApi {
       if (ids.length === 0) return { deletedIds: [] };
       const result =
         ids.length === 1
-          ? await cloudCoreRequestJson<null>(
+          ? await shellChatRequestJson<null>(
+              apiUrl,
+              client,
               `/api/v1/chat/threads/${encodeURIComponent(threadId)}/messages/${encodeURIComponent(ids[0]!)}`,
               { method: "DELETE" },
             ).then(() => ({ deletedIds: ids }))
-          : await cloudCoreRequestJson<DeleteChatThreadMessagesResult>(
+          : await shellChatRequestJson<DeleteChatThreadMessagesResult>(
+              apiUrl,
+              client,
               `/api/v1/chat/threads/${encodeURIComponent(threadId)}/messages/delete`,
               {
                 method: "POST",
@@ -269,7 +294,7 @@ export function useShellAgentChat(): ShellAgentChatApi {
       invalidateAgentDmThreads();
       return result;
     },
-    [],
+    [apiUrl, client],
   );
 
   const answerChoices = useCallback(
@@ -278,7 +303,9 @@ export function useShellAgentChat(): ShellAgentChatApi {
       messageId: string,
       values: readonly string[],
     ) => {
-      return cloudCoreRequestJson<AnswerChatThreadMessageChoicesResult>(
+      return shellChatRequestJson<AnswerChatThreadMessageChoicesResult>(
+        apiUrl,
+        client,
         `/api/v1/chat/threads/${encodeURIComponent(threadId)}/messages/${encodeURIComponent(messageId)}/answer`,
         {
           method: "POST",
@@ -286,7 +313,7 @@ export function useShellAgentChat(): ShellAgentChatApi {
         },
       );
     },
-    [],
+    [apiUrl, client],
   );
 
   const answerApproval = useCallback(
@@ -296,7 +323,9 @@ export function useShellAgentChat(): ShellAgentChatApi {
       decision: "approved" | "rejected",
       note?: string,
     ) => {
-      return cloudCoreRequestJson<AnswerChatThreadMessageResult>(
+      return shellChatRequestJson<AnswerChatThreadMessageResult>(
+        apiUrl,
+        client,
         `/api/v1/chat/threads/${encodeURIComponent(threadId)}/messages/${encodeURIComponent(messageId)}/answer`,
         {
           method: "POST",
@@ -307,7 +336,7 @@ export function useShellAgentChat(): ShellAgentChatApi {
         },
       );
     },
-    [],
+    [apiUrl, client],
   );
 
   const answerForm = useCallback(
@@ -316,7 +345,9 @@ export function useShellAgentChat(): ShellAgentChatApi {
       messageId: string,
       values: Record<string, string | number | boolean>,
     ) => {
-      return cloudCoreRequestJson<AnswerChatThreadMessageResult>(
+      return shellChatRequestJson<AnswerChatThreadMessageResult>(
+        apiUrl,
+        client,
         `/api/v1/chat/threads/${encodeURIComponent(threadId)}/messages/${encodeURIComponent(messageId)}/answer`,
         {
           method: "POST",
@@ -324,7 +355,7 @@ export function useShellAgentChat(): ShellAgentChatApi {
         },
       );
     },
-    [],
+    [apiUrl, client],
   );
 
   const answerEmailDraft = useCallback(
@@ -341,7 +372,9 @@ export function useShellAgentChat(): ShellAgentChatApi {
         from?: string;
       },
     ) => {
-      return cloudCoreRequestJson<AnswerChatThreadMessageResult>(
+      return shellChatRequestJson<AnswerChatThreadMessageResult>(
+        apiUrl,
+        client,
         `/api/v1/chat/threads/${encodeURIComponent(threadId)}/messages/${encodeURIComponent(messageId)}/answer`,
         {
           method: "POST",
@@ -352,7 +385,7 @@ export function useShellAgentChat(): ShellAgentChatApi {
         },
       );
     },
-    [],
+    [apiUrl, client],
   );
 
   return useMemo(

@@ -1,7 +1,9 @@
 import { useEffect } from "react";
 import { useNavigate, useParams, useSearch } from "@tanstack/react-router";
 
+import { resolveStartupLocation } from "../lib/last-location";
 import { openShellChatThread } from "../lib/shell-chat-deep-link";
+import { navigateToHref } from "../router/navigate-href";
 
 /**
  * In-app router equivalent of `backsteros://chat/<threadId>?message=<id>`.
@@ -17,8 +19,9 @@ export function ChatDeepLinkPage() {
     const id = threadId?.trim();
     if (!id) return;
     openShellChatThread(id, search.message ?? null);
-    // Replace with home so refreshing does not re-fire; panel stays open.
-    void navigate({ to: "/", replace: true });
+    // Skip `/` (StartupRedirect): a persisted `/chat/…` last-location would
+    // bounce right back here. Land on the real startup target once.
+    void navigateToHref(navigate, resolveStartupLocation(), { replace: true });
   }, [navigate, search.message, threadId]);
 
   return null;

@@ -111,9 +111,13 @@ async function loadOnce(): Promise<void> {
     });
   } catch (error) {
     if (sawLocal) {
+      // Local roster is enough for preview / hybrid — cloud 401 (no owner key
+      // in Vite) must not blank the chat column or flash "webhook needed".
+      const cloudUnauthorized =
+        isCloudCoreApiError(error) && error.status === 401;
       setSnapshot({
         loading: false,
-        error: cloudLoadErrorMessage(error),
+        error: cloudUnauthorized ? null : cloudLoadErrorMessage(error),
       });
       return;
     }

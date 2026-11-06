@@ -7,6 +7,10 @@ function isPersistableLocation(href: string): boolean {
   if (!href.startsWith("/")) return false;
   if (href === "/") return false;
   if (href.startsWith("/desktop-overlay")) return false;
+  // Ephemeral deep link: ChatDeepLinkPage opens the shell panel then leaves
+  // the URL. Persisting `/chat/…` makes StartupRedirect bounce back into that
+  // route → history thrash + React max-update-depth in the shell.
+  if (href === "/chat" || href.startsWith("/chat/")) return false;
   return true;
 }
 

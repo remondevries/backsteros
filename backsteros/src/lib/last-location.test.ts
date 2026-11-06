@@ -53,3 +53,19 @@ test("writeLastLocation ignores root and overlay paths", () => {
     null,
   );
 });
+
+test("chat deep links are not persistable (avoids StartupRedirect loop)", () => {
+  mockStorage();
+  writeLastLocation("/chat/un6yMklKBw9fCFSoshWPp");
+  writeLastLocation("/chat/un6yMklKBw9fCFSoshWPp?message=abc");
+  assert.equal(readLastLocation(), null);
+  assert.equal(resolveStartupLocation(), "/inbox");
+
+  // Stale value already in storage must not be reused as startup target.
+  globalThis.window.localStorage.setItem(
+    LAST_LOCATION_STORAGE_KEY,
+    "/chat/stale-thread",
+  );
+  assert.equal(readLastLocation(), null);
+  assert.equal(resolveStartupLocation(), "/inbox");
+});

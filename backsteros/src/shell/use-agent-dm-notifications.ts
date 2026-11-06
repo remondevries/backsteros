@@ -30,14 +30,18 @@ import {
 } from "../lib/agent-shell-chat-events";
 import { useDesktopAvatarSrcMap } from "../lib/avatar-src";
 import {
-  cloudCoreRequestJson,
   isCloudCoreApiError,
 } from "../lib/cloud-core-api";
+import { useDesktopApi } from "../lib/api-context";
 import { openShellChatPeer } from "../lib/shell-chat-open-peer";
+import {
+  shellChatRequestJson,
+  shellChatRequestStream,
+} from "../lib/shell-chat-transport";
 import { useDesktopWorkspacePeople } from "../lib/workspace-data";
 import { useShellAgentChat } from "./use-shell-agent-chat";
 
-/** Slow catch-up; live updates come from cloud SSE. */
+/** Slow catch-up; live updates come from shell-chat SSE (local or cloud). */
 const POLL_MS = 60_000;
 
 type ThreadPushListener = (payload: AgentShellChatMessagePayload) => void;
@@ -48,6 +52,9 @@ const shellChatLive = {
   abort: null as AbortController | null,
   subscribers: new Set<ThreadPushListener>(),
   onReload: null as null | (() => void),
+  requestStream: null as
+    | null
+    | ((path: string, init?: RequestInit) => Promise<Response>),
 };
 
 function ensureShellChatLiveLoop(): void {
@@ -56,6 +63,7 @@ function ensureShellChatLiveLoop(): void {
   shellChatLive.abort = controller;
   startAgentShellChatEventsLoop({
     signal: controller.signal,
+    requestStream: shellChatLive.requestStream ?? undefined,
     onLive: () => {
       shellChatLive.onReload?.();
     },
@@ -151,10 +159,23 @@ const AgentDmNotificationsContext =
  * Mount once at shell chrome so banner + chat column share one subscription.
  */
 function useAgentDmNotificationsState(): UseAgentDmNotificationsResult {
+  const { client, apiUrl } = useDesktopApi();
   const { webhookReadyAgents } = useShellAgentChat();
   const { contacts } = useDesktopWorkspacePeople();
   const [threads, setThreads] = useState<ChatThreadListItem[]>([]);
   const [seenTick, setSeenTick] = useState(0);
+
+  useEffect(() => {
+    const next = shellChatRequestStream(apiUrl, client);
+    const prev = shellChatLive.requestStream;
+    shellChatLive.requestStream = next;
+    // Restart SSE when transport flips (cloud door ↔ local-core).
+    if (prev !== next && shellChatLive.abort) {
+      shellChatLive.abort.abort();
+      shellChatLive.abort = null;
+      ensureShellChatLiveLoop();
+    }
+  }, [apiUrl, client]);
 
   const readyAgentIds = useMemo(
     () => new Set(webhookReadyAgents.map((agent) => agent.id)),
@@ -194,7 +215,9 @@ function useAgentDmNotificationsState(): UseAgentDmNotificationsResult {
       return;
     }
     try {
-      const body = await cloudCoreRequestJson<ChatThreadsList>(
+      const body = await shellChatRequestJson<ChatThreadsList>(
+        apiUrl,
+        client,
         "/api/v1/chat/threads",
       );
       bootstrapAgentDmSeenIfNeeded(
@@ -212,7 +235,7 @@ function useAgentDmNotificationsState(): UseAgentDmNotificationsResult {
       }
       /* keep previous */
     }
-  }, [readyAgentIds.size]);
+  }, [apiUrl, client, readyAgentIds.size]);
 
   useEffect(() => {
     void reload();
