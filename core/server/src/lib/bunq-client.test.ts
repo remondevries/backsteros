@@ -2,9 +2,12 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import {
+  assertBunqApiKey,
+  assertBunqBaseUrl,
   assertBunqPermittedIps,
   assertBunqSandboxApiKey,
   assertBunqSandboxBaseUrl,
+  BUNQ_PRODUCTION_API_BASE,
   BUNQ_SANDBOX_API_BASE,
   BunqApiError,
   BunqClient,
@@ -21,10 +24,12 @@ describe("bunq-client sandbox guards", () => {
     assert.equal(url.hostname, "public-api.sandbox.bunq.com");
   });
 
-  it("refuses live api.bunq.com", () => {
+  it("refuses live api.bunq.com on the sandbox path", () => {
     assert.throws(
       () => assertBunqSandboxBaseUrl("https://api.bunq.com/v1"),
-      (error: unknown) => error instanceof BunqLiveApiRefusedError,
+      (error: unknown) =>
+        error instanceof BunqLiveApiRefusedError &&
+        /sandbox path|disabled on the sandbox path/i.test(error.message),
     );
   });
 
@@ -35,7 +40,7 @@ describe("bunq-client sandbox guards", () => {
     );
   });
 
-  it("accepts sandbox_ API keys only", () => {
+  it("accepts sandbox_ API keys only on sandbox path", () => {
     assert.equal(
       assertBunqSandboxApiKey("sandbox_test_key_abc"),
       "sandbox_test_key_abc",
@@ -46,13 +51,100 @@ describe("bunq-client sandbox guards", () => {
     );
   });
 
-  it("rejects wildcard permitted_ips", () => {
+  it("rejects wildcard / CIDR / IPv6 permitted_ips", () => {
     assert.throws(
       () => assertBunqPermittedIps(["*"]),
       (error: unknown) =>
         error instanceof Error && error.message.includes("wildcards"),
     );
-    assert.deepEqual(assertBunqPermittedIps(["203.0.113.10"]), ["203.0.113.10"]);
+    assert.throws(
+      () => assertBunqPermittedIps(["188.34.196.0/24"]),
+      (error: unknown) =>
+        error instanceof Error && /CIDR|IPv6|IPv4/i.test(error.message),
+    );
+    assert.throws(
+      () => assertBunqPermittedIps(["2001:db8::1"]),
+      (error: unknown) =>
+        error instanceof Error && /CIDR|IPv6|IPv4/i.test(error.message),
+    );
+    assert.deepEqual(assertBunqPermittedIps(["188.34.196.92"]), [
+      "188.34.196.92",
+    ]);
+  });
+});
+
+describe("bunq-client production allowlist", () => {
+  it("allows only https://api.bunq.com/v1 on production path", () => {
+    const url = assertBunqBaseUrl(BUNQ_PRODUCTION_API_BASE, "production");
+    assert.equal(url.hostname, "api.bunq.com");
+  });
+
+  it("refuses sandbox host on production path", () => {
+    assert.throws(
+      () => assertBunqBaseUrl(BUNQ_SANDBOX_API_BASE, "production"),
+      (error: unknown) => error instanceof BunqLiveApiRefusedError,
+    );
+  });
+
+  it("refuses sandbox_ keys on production path", () => {
+    assert.throws(
+      () => assertBunqApiKey("sandbox_test_key_abc", "production"),
+      (error: unknown) =>
+        error instanceof BunqLiveApiRefusedError &&
+        /refuses sandbox_/i.test(error.message),
+    );
+  });
+
+  it("accepts non-sandbox keys on production path", () => {
+    assert.equal(
+      assertBunqApiKey("live-looking-production-key", "production"),
+      "live-looking-production-key",
+    );
+  });
+
+  it("refuses constructing a sandbox client pointed at the live host", () => {
+    const { privateKeyPem } = generateBunqSigningKeyPair();
+    assert.throws(
+      () =>
+        new BunqClient({
+          environment: "sandbox",
+          baseUrl: BUNQ_PRODUCTION_API_BASE,
+          apiKey: "sandbox_fake_key",
+          signingPrivateKeyPem: privateKeyPem,
+          permittedIps: ["188.34.196.92"],
+        }),
+      (error: unknown) => error instanceof BunqLiveApiRefusedError,
+    );
+  });
+
+  it("constructs a production client for api.bunq.com only", () => {
+    const { privateKeyPem } = generateBunqSigningKeyPair();
+    const client = new BunqClient({
+      environment: "production",
+      apiKey: "live-looking-production-key",
+      signingPrivateKeyPem: privateKeyPem,
+      permittedIps: ["188.34.196.92"],
+    });
+    assert.equal(client.environment, "production");
+  });
+
+  it("refuses Sugar Daddy on a production client", async () => {
+    const { privateKeyPem } = generateBunqSigningKeyPair();
+    const client = new BunqClient({
+      environment: "production",
+      apiKey: "live-looking-production-key",
+      signingPrivateKeyPem: privateKeyPem,
+      permittedIps: ["188.34.196.92"],
+      sessionToken: "sess",
+      userId: "2",
+      installationToken: "inst",
+    });
+    await assert.rejects(
+      () => client.createSandboxSugarDaddyRequestInquiry("99"),
+      (error: unknown) =>
+        error instanceof BunqLiveApiRefusedError &&
+        /sandbox-only/i.test(error.message),
+    );
   });
 });
 

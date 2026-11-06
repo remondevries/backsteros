@@ -1,12 +1,17 @@
 /**
- * Thin bunq REST client — sandbox-only, read-only surface for OS-166.
+ * Thin bunq REST client — read-only surface for OS-166.
  *
  * Auth sequence (official docs):
  * 1. POST /installation (client public key) → installation token + server public key
  * 2. POST /device-server (API key + permitted_ips) → device id
  * 3. POST /session-server → short-lived session token
  *
- * Live https://api.bunq.com/v1/ is hard-refused. No payment or mutation methods.
+ * Dual environment (explicit allowlist — no silent toggle):
+ * - sandbox → https://public-api.sandbox.bunq.com/v1 + sandbox_… keys only
+ * - production → https://api.bunq.com/v1 + non-sandbox keys only
+ *
+ * Read-only GETs for monetary-account + payments. The only write is the
+ * sandbox Sugar Daddy request-inquiry helper (hard-refused on production).
  *
  * @see https://doc.bunq.com/tutorials/your-first-payment/creating-the-api-context
  * @see https://doc.bunq.com/basics/getting-started
@@ -20,11 +25,20 @@ import {
 } from "node:crypto";
 
 export const BUNQ_SANDBOX_API_BASE = "https://public-api.sandbox.bunq.com/v1";
+export const BUNQ_PRODUCTION_API_BASE = "https://api.bunq.com/v1";
 export const BUNQ_LIVE_API_HOST = "api.bunq.com";
 export const BUNQ_SANDBOX_ENVIRONMENT = "sandbox" as const;
+export const BUNQ_PRODUCTION_ENVIRONMENT = "production" as const;
 
-/** Sandbox keys use a `sandbox_` prefix; production keys must never be accepted. */
+export type BunqEnvironment =
+  | typeof BUNQ_SANDBOX_ENVIRONMENT
+  | typeof BUNQ_PRODUCTION_ENVIRONMENT;
+
+/** Sandbox keys use a `sandbox_` prefix. */
 export const BUNQ_SANDBOX_API_KEY_PREFIX = "sandbox_";
+
+const IPV4_EXACT =
+  /^(?:(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d\d?)$/;
 
 export type BunqAmount = {
   value: string;
@@ -90,7 +104,12 @@ export class BunqLiveApiRefusedError extends Error {
 export type BunqFetch = typeof fetch;
 
 export type BunqClientOptions = {
-  /** Must be the sandbox base; live hosts are refused. */
+  /**
+   * Explicit environment. Selects the allowed API host + key rules.
+   * Defaults to sandbox (unchanged OS-166 default).
+   */
+  environment?: BunqEnvironment;
+  /** Must match `environment` allowlist; defaults from environment. */
   baseUrl?: string;
   apiKey: string;
   signingPrivateKeyPem: string;
@@ -104,6 +123,29 @@ export type BunqClientOptions = {
   deviceDescription?: string;
   fetchImpl?: BunqFetch;
 };
+
+export function bunqApiBaseForEnvironment(
+  environment: BunqEnvironment,
+): string {
+  return environment === BUNQ_PRODUCTION_ENVIRONMENT
+    ? BUNQ_PRODUCTION_API_BASE
+    : BUNQ_SANDBOX_API_BASE;
+}
+
+export function assertBunqEnvironment(
+  value: string | null | undefined,
+): BunqEnvironment {
+  const trimmed = value?.trim();
+  if (
+    trimmed === BUNQ_SANDBOX_ENVIRONMENT ||
+    trimmed === BUNQ_PRODUCTION_ENVIRONMENT
+  ) {
+    return trimmed;
+  }
+  throw new BunqLiveApiRefusedError(
+    `bunq environment must be "sandbox" or "production" (got ${value ?? "empty"})`,
+  );
+}
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value != null && typeof value === "object" && !Array.isArray(value)
@@ -137,7 +179,10 @@ function findResponseObject(
   return null;
 }
 
-export function assertBunqSandboxBaseUrl(baseUrl: string): URL {
+export function assertBunqBaseUrl(
+  baseUrl: string,
+  environment: BunqEnvironment,
+): URL {
   let url: URL;
   try {
     url = new URL(baseUrl);
@@ -145,53 +190,108 @@ export function assertBunqSandboxBaseUrl(baseUrl: string): URL {
     throw new BunqLiveApiRefusedError(`invalid base URL: ${baseUrl}`);
   }
   const host = url.hostname.toLowerCase();
-  if (host === BUNQ_LIVE_API_HOST || host.endsWith(`.${BUNQ_LIVE_API_HOST}`)) {
+  if (environment === BUNQ_SANDBOX_ENVIRONMENT) {
+    if (host === BUNQ_LIVE_API_HOST || host.endsWith(`.${BUNQ_LIVE_API_HOST}`)) {
+      throw new BunqLiveApiRefusedError(
+        "https://api.bunq.com/v1/ is disabled on the sandbox path — set environment=production to use live bunq (read-only)",
+      );
+    }
+    if (!host.includes("sandbox") || !host.endsWith(".bunq.com")) {
+      throw new BunqLiveApiRefusedError(
+        `sandbox path only allows ${BUNQ_SANDBOX_API_BASE} (got ${host})`,
+      );
+    }
+    return url;
+  }
+  // production allowlist — exact live host only
+  if (host !== BUNQ_LIVE_API_HOST) {
     throw new BunqLiveApiRefusedError(
-      "https://api.bunq.com/v1/ is disabled for OS-166 (sandbox only)",
+      `production path only allows ${BUNQ_PRODUCTION_API_BASE} (got ${host})`,
     );
   }
-  if (!host.includes("sandbox") || !host.endsWith(".bunq.com")) {
+  if (host.includes("sandbox")) {
     throw new BunqLiveApiRefusedError(
-      `only ${BUNQ_SANDBOX_API_BASE} is allowed (got ${host})`,
+      "sandbox API host is refused on the production path",
     );
   }
   return url;
 }
 
-export function assertBunqSandboxApiKey(apiKey: string): string {
+/** @deprecated Prefer assertBunqBaseUrl(url, "sandbox"). Kept for call-site clarity. */
+export function assertBunqSandboxBaseUrl(baseUrl: string): URL {
+  return assertBunqBaseUrl(baseUrl, BUNQ_SANDBOX_ENVIRONMENT);
+}
+
+export function assertBunqApiKey(
+  apiKey: string,
+  environment: BunqEnvironment,
+): string {
   const trimmed = apiKey.trim();
   if (!trimmed) {
     throw new BunqApiError(400, "", "bunq API key is required");
   }
-  if (!trimmed.startsWith(BUNQ_SANDBOX_API_KEY_PREFIX)) {
-    throw new BunqLiveApiRefusedError(
-      "only sandbox API keys (sandbox_… prefix) are accepted; production keys are refused",
-    );
-  }
-  // Never accept the well-known production env name as a source of truth.
+  // Never accept the well-known production env name as a secret value.
   if (trimmed === "BUNQ_PERSONAL_API_KEY") {
     throw new BunqLiveApiRefusedError(
-      "BUNQ_PERSONAL_API_KEY must never be used",
+      "BUNQ_PERSONAL_API_KEY must never be used as the API key value",
+    );
+  }
+  if (environment === BUNQ_SANDBOX_ENVIRONMENT) {
+    if (!trimmed.startsWith(BUNQ_SANDBOX_API_KEY_PREFIX)) {
+      throw new BunqLiveApiRefusedError(
+        "sandbox path only accepts sandbox_… API keys; production keys are refused",
+      );
+    }
+    return trimmed;
+  }
+  if (trimmed.startsWith(BUNQ_SANDBOX_API_KEY_PREFIX)) {
+    throw new BunqLiveApiRefusedError(
+      "production path refuses sandbox_… API keys; use a live bunq API key",
     );
   }
   return trimmed;
 }
 
+/** @deprecated Prefer assertBunqApiKey(key, "sandbox"). */
+export function assertBunqSandboxApiKey(apiKey: string): string {
+  return assertBunqApiKey(apiKey, BUNQ_SANDBOX_ENVIRONMENT);
+}
+
+/**
+ * Exact IPv4 strings only — no wildcards, no CIDR, no IPv6.
+ * Primary cloud-core egress for live bunq: 188.34.196.92.
+ */
 export function assertBunqPermittedIps(ips: string[]): string[] {
   const cleaned = ips.map((ip) => ip.trim()).filter(Boolean);
   if (cleaned.length === 0) {
     throw new BunqApiError(
       400,
       "",
-      "bunq permitted_ips must include at least one explicit IP",
+      "bunq permitted_ips must include at least one explicit IPv4 address",
     );
   }
-  if (cleaned.some((ip) => ip === "*" || ip.includes("*"))) {
-    throw new BunqApiError(
-      400,
-      "",
-      "bunq permitted_ips must not use wildcards (*); use explicit egress IPs only",
-    );
+  for (const ip of cleaned) {
+    if (ip === "*" || ip.includes("*")) {
+      throw new BunqApiError(
+        400,
+        "",
+        "bunq permitted_ips must not use wildcards (*); use explicit egress IPv4 only",
+      );
+    }
+    if (ip.includes("/") || ip.includes(":")) {
+      throw new BunqApiError(
+        400,
+        "",
+        "bunq permitted_ips must be exact IPv4 addresses (no CIDR, no IPv6)",
+      );
+    }
+    if (!IPV4_EXACT.test(ip)) {
+      throw new BunqApiError(
+        400,
+        "",
+        `bunq permitted_ips entry is not a valid IPv4 address: ${ip}`,
+      );
+    }
   }
   return cleaned;
 }
@@ -314,6 +414,7 @@ function extractPayments(payload: unknown): BunqPayment[] {
 }
 
 export class BunqClient {
+  readonly environment: BunqEnvironment;
   private readonly baseUrl: string;
   private readonly apiKey: string;
   private readonly signingPrivateKeyPem: string;
@@ -329,11 +430,15 @@ export class BunqClient {
   userId: string | null;
 
   constructor(options: BunqClientOptions) {
-    const base = assertBunqSandboxBaseUrl(
-      options.baseUrl ?? BUNQ_SANDBOX_API_BASE,
+    this.environment = assertBunqEnvironment(
+      options.environment ?? BUNQ_SANDBOX_ENVIRONMENT,
+    );
+    const base = assertBunqBaseUrl(
+      options.baseUrl ?? bunqApiBaseForEnvironment(this.environment),
+      this.environment,
     );
     this.baseUrl = base.toString().replace(/\/$/, "");
-    this.apiKey = assertBunqSandboxApiKey(options.apiKey);
+    this.apiKey = assertBunqApiKey(options.apiKey, this.environment);
     this.signingPrivateKeyPem = options.signingPrivateKeyPem.trim();
     if (!this.signingPrivateKeyPem.includes("PRIVATE KEY")) {
       throw new BunqApiError(400, "", "bunq signing private key PEM is required");
@@ -341,7 +446,10 @@ export class BunqClient {
     this.publicKeyPem = publicKeyPemFromPrivateKeyPem(this.signingPrivateKeyPem);
     this.permittedIps = assertBunqPermittedIps(options.permittedIps);
     this.deviceDescription =
-      options.deviceDescription?.trim() || "BacksterOS bunq sandbox (read-only)";
+      options.deviceDescription?.trim() ||
+      (this.environment === BUNQ_PRODUCTION_ENVIRONMENT
+        ? "BacksterOS read-only finance"
+        : "BacksterOS bunq sandbox (read-only)");
     this.fetchImpl = options.fetchImpl ?? fetch;
     this.installationToken = options.installationToken?.trim() || null;
     this.serverPublicKeyPem = options.serverPublicKeyPem?.trim() || null;
@@ -587,6 +695,12 @@ export class BunqClient {
     monetaryAccountId: string,
     options?: { amountValue?: string; description?: string },
   ): Promise<{ requestInquiryId: string }> {
+    if (this.environment !== BUNQ_SANDBOX_ENVIRONMENT) {
+      throw new BunqLiveApiRefusedError(
+        "Sugar Daddy request-inquiry is sandbox-only; refused on production",
+      );
+    }
+    assertBunqBaseUrl(this.baseUrl, BUNQ_SANDBOX_ENVIRONMENT);
     const userId = this.requireUserId();
     const amountValue = (options?.amountValue ?? "25.00").trim();
     const amount = Number(amountValue);
@@ -650,13 +764,16 @@ export class BunqClient {
     body: string,
     options: { auth: "none" | "installation" | "session"; sign: boolean },
   ): Promise<unknown> {
-    // Re-check on every request so a misconfigured base can never drift to live.
-    assertBunqSandboxBaseUrl(this.baseUrl);
+    // Re-check on every request so environment/host can never drift.
+    assertBunqBaseUrl(this.baseUrl, this.environment);
 
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
       "Cache-Control": "no-cache",
-      "User-Agent": "BacksterOS-bunq-sandbox/1.0",
+      "User-Agent":
+        this.environment === BUNQ_PRODUCTION_ENVIRONMENT
+          ? "BacksterOS-bunq-readonly/1.0"
+          : "BacksterOS-bunq-sandbox/1.0",
       "X-Bunq-Client-Request-Id": randomUUID(),
       "X-Bunq-Language": "en_US",
       "X-Bunq-Region": "nl_NL",

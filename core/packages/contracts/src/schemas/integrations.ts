@@ -112,10 +112,12 @@ export const moneybirdTestConnectionResultSchema = z.object({
 });
 
 /**
- * bunq sandbox bank connection (OS-166).
- * Secrets are never returned; live api.bunq.com is refused server-side.
+ * bunq bank connection (OS-166).
+ * Secrets are never returned. Dual allowlist:
+ * - sandbox → sandbox host + sandbox_ keys
+ * - production → api.bunq.com + live keys (read-only; explicit)
  */
-export const bunqEnvironmentSchema = z.literal("sandbox");
+export const bunqEnvironmentSchema = z.enum(["sandbox", "production"]);
 
 export const bunqSettingsSchema = z.object({
   environment: bunqEnvironmentSchema,
@@ -129,37 +131,61 @@ export const bunqSettingsSchema = z.object({
   permittedIps: z.array(z.string()),
   lastConnectedAt: z.string().nullable(),
   connected: z.boolean(),
-  /** Finance bank account ensured for sandbox testing (`bunq-personal`). */
+  /** Finance bank account ensured for bunq testing (`bunq-personal`). */
   bankAccountId: z.string().nullable(),
   bankAccountName: z.string().nullable(),
 });
 
 export const updateBunqSettingsSchema = z
   .object({
-    /** Sandbox API key (sandbox_…); empty string clears. Omit to leave unchanged. */
+    /** Explicit environment allowlist. Omit to leave unchanged. */
+    environment: bunqEnvironmentSchema.optional(),
+    /** API key; empty string clears. Prefix rules depend on environment. */
     apiKey: z.string().optional(),
     /** RSA private key PEM used for request signing; empty clears. */
     signingPrivateKeyPem: z.string().optional(),
-    /** Explicit egress IPs only — wildcards (*) rejected. */
+    /** Exact egress IPv4 only — wildcards (*) / CIDR / IPv6 rejected. */
     permittedIps: z.array(z.string().min(1)).optional(),
   })
   .superRefine((value, ctx) => {
     if (value.apiKey !== undefined) {
       const trimmed = value.apiKey.trim();
-      if (trimmed && !trimmed.startsWith("sandbox_")) {
+      if (trimmed === "BUNQ_PERSONAL_API_KEY") {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           path: ["apiKey"],
-          message:
-            "only bunq sandbox API keys (sandbox_… prefix) are accepted",
+          message: "BUNQ_PERSONAL_API_KEY must never be used as the API key value",
         });
+      } else if (trimmed && value.environment === "sandbox") {
+        if (!trimmed.startsWith("sandbox_")) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ["apiKey"],
+            message:
+              "sandbox environment only accepts sandbox_… API keys",
+          });
+        }
+      } else if (trimmed && value.environment === "production") {
+        if (trimmed.startsWith("sandbox_")) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ["apiKey"],
+            message:
+              "production environment refuses sandbox_… API keys",
+          });
+        }
       }
     }
-    if (value.permittedIps?.some((ip) => ip.includes("*"))) {
+    if (
+      value.permittedIps?.some(
+        (ip) => ip.includes("*") || ip.includes("/") || ip.includes(":"),
+      )
+    ) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["permittedIps"],
-        message: "permitted_ips must not use wildcards (*)",
+        message:
+          "permitted_ips must be exact IPv4 addresses (no wildcards, CIDR, or IPv6)",
       });
     }
   });

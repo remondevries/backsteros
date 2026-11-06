@@ -1,7 +1,10 @@
 /**
  * bunq workspace integration settings (OS-166).
  * Secrets in workspace_integration_secrets — never PowerSync, never returned raw.
- * Sandbox-only; refuses live api.bunq.com and non-sandbox API keys.
+ *
+ * Dual environment allowlist:
+ * - sandbox → sandbox host + sandbox_ keys (unchanged)
+ * - production → api.bunq.com + live keys only (explicit; read-only)
  */
 
 import { and, eq, isNull } from "drizzle-orm";
@@ -18,12 +21,16 @@ import type {
 import { db } from "../db/index.js";
 import { bankAccounts, workspaceIntegrationSecrets } from "../db/schema.js";
 import {
+  assertBunqApiKey,
+  assertBunqEnvironment,
   assertBunqPermittedIps,
-  assertBunqSandboxApiKey,
+  BUNQ_PRODUCTION_ENVIRONMENT,
   BUNQ_SANDBOX_ENVIRONMENT,
   BunqApiError,
   BunqClient,
+  BunqLiveApiRefusedError,
   generateBunqSigningKeyPair,
+  type BunqEnvironment,
   type BunqMonetaryAccount,
   type BunqPayment,
 } from "../lib/bunq-client.js";
@@ -80,6 +87,16 @@ function normalizeOptionalSecret(
   return trimmed ? trimmed : null;
 }
 
+function environmentFromRow(row: BunqSecretRow | null): BunqEnvironment {
+  try {
+    return assertBunqEnvironment(
+      row?.bunqEnvironment ?? BUNQ_SANDBOX_ENVIRONMENT,
+    );
+  } catch {
+    return BUNQ_SANDBOX_ENVIRONMENT;
+  }
+}
+
 function mapAccount(account: BunqMonetaryAccount): BunqMonetaryAccountSummary {
   return {
     id: account.id,
@@ -133,9 +150,10 @@ export async function getBunqSettings(
   const installationToken = normalizeOptionalSecret(row?.bunqInstallationToken);
   const sessionToken = normalizeOptionalSecret(row?.bunqSessionToken);
   const permittedIps = row?.bunqPermittedIps ?? [];
+  const environment = environmentFromRow(row);
   const bankAccount = await findBunqPersonalBankAccount(workspaceId);
   return {
-    environment: BUNQ_SANDBOX_ENVIRONMENT,
+    environment,
     apiKeyConfigured: Boolean(apiKey),
     apiKeyPreview: apiKey ? previewBunqSecret(apiKey) : null,
     signingPrivateKeyConfigured: Boolean(privateKey),
@@ -167,18 +185,23 @@ async function upsertBunqRow(
     bunqLastConnectedAt: Date | null;
   }>,
 ): Promise<void> {
+  const environment =
+    patch.bunqEnvironment != null
+      ? assertBunqEnvironment(patch.bunqEnvironment)
+      : undefined;
   await db
     .insert(workspaceIntegrationSecrets)
     .values({
       workspaceId,
-      bunqEnvironment: BUNQ_SANDBOX_ENVIRONMENT,
+      bunqEnvironment: environment ?? BUNQ_SANDBOX_ENVIRONMENT,
       ...patch,
+      ...(environment ? { bunqEnvironment: environment } : {}),
     })
     .onConflictDoUpdate({
       target: workspaceIntegrationSecrets.workspaceId,
       set: {
         ...patch,
-        bunqEnvironment: BUNQ_SANDBOX_ENVIRONMENT,
+        ...(environment ? { bunqEnvironment: environment } : {}),
         updatedAt: new Date(),
       },
     });
@@ -189,6 +212,7 @@ export async function updateBunqSettings(
   patch: UpdateBunqSettingsInput,
 ): Promise<BunqSettings> {
   const current = await getSecretRow(workspaceId);
+  let nextEnvironment = environmentFromRow(current);
   let nextApiKey = normalizeOptionalSecret(current?.bunqApiKey);
   let nextPrivateKey = normalizeOptionalSecret(
     current?.bunqSigningPrivateKeyPem,
@@ -196,15 +220,29 @@ export async function updateBunqSettings(
   let nextPermittedIps = current?.bunqPermittedIps ?? [];
   let clearConnection = false;
 
+  if (patch.environment !== undefined) {
+    const env = assertBunqEnvironment(patch.environment);
+    if (env !== nextEnvironment) {
+      nextEnvironment = env;
+      clearConnection = true;
+    }
+  }
+
   if (patch.apiKey !== undefined) {
     const trimmed = patch.apiKey.trim();
     if (!trimmed) {
       nextApiKey = null;
       clearConnection = true;
     } else {
-      nextApiKey = assertBunqSandboxApiKey(trimmed);
+      nextApiKey = assertBunqApiKey(trimmed, nextEnvironment);
       clearConnection = true;
     }
+  } else if (
+    nextApiKey &&
+    patch.environment !== undefined
+  ) {
+    // Re-validate stored key when environment flips.
+    nextApiKey = assertBunqApiKey(nextApiKey, nextEnvironment);
   }
 
   if (patch.signingPrivateKeyPem !== undefined) {
@@ -225,14 +263,11 @@ export async function updateBunqSettings(
     clearConnection = true;
   }
 
-  // Production personal keys and BUNQ_PERSONAL_API_KEY are out of scope —
-  // assertBunqSandboxApiKey already refuses non-sandbox_ keys.
-
   const writePatch: Parameters<typeof upsertBunqRow>[1] = {
     bunqApiKey: nextApiKey,
     bunqSigningPrivateKeyPem: nextPrivateKey,
     bunqPermittedIps: nextPermittedIps,
-    bunqEnvironment: BUNQ_SANDBOX_ENVIRONMENT,
+    bunqEnvironment: nextEnvironment,
   };
 
   if (clearConnection) {
@@ -256,11 +291,13 @@ function buildClientFromRow(row: BunqSecretRow): BunqClient {
     throw new BunqApiError(
       400,
       "",
-      "bunq sandbox API key and signing private key are required",
+      "bunq API key and signing private key are required",
     );
   }
+  const environment = environmentFromRow(row);
   const permittedIps = assertBunqPermittedIps(row.bunqPermittedIps ?? []);
   return new BunqClient({
+    environment,
     apiKey,
     signingPrivateKeyPem: privateKey,
     permittedIps,
@@ -269,6 +306,10 @@ function buildClientFromRow(row: BunqSecretRow): BunqClient {
     sessionToken: row.bunqSessionToken,
     deviceId: row.bunqDeviceId,
     userId: row.bunqUserId,
+    deviceDescription:
+      environment === BUNQ_PRODUCTION_ENVIRONMENT
+        ? "BacksterOS read-only finance"
+        : undefined,
   });
 }
 
@@ -285,25 +326,26 @@ async function persistClientContext(
     bunqDeviceId: client.deviceId,
     bunqUserId: client.userId,
     bunqLastConnectedAt: new Date(),
-    bunqEnvironment: BUNQ_SANDBOX_ENVIRONMENT,
+    bunqEnvironment: client.environment,
   });
 }
 
 /**
- * Ensure sandbox installation/device/session. Generates a signing keypair when
- * missing so agents can connect after storing only a sandbox API key + IPs.
+ * Ensure installation/device/session for the configured environment.
+ * Generates a signing keypair when missing.
  */
-export async function connectBunqSandbox(
+export async function connectBunq(
   workspaceId: string,
 ): Promise<BunqSettings> {
   let row = await getSecretRow(workspaceId);
   if (!normalizeOptionalSecret(row?.bunqApiKey)) {
-    throw new BunqApiError(400, "", "bunq sandbox API key is not configured");
+    throw new BunqApiError(400, "", "bunq API key is not configured");
   }
   if (!normalizeOptionalSecret(row?.bunqSigningPrivateKeyPem)) {
     const { privateKeyPem } = generateBunqSigningKeyPair();
     await upsertBunqRow(workspaceId, {
       bunqSigningPrivateKeyPem: privateKeyPem,
+      bunqEnvironment: environmentFromRow(row),
     });
     row = await getSecretRow(workspaceId);
   }
@@ -314,7 +356,7 @@ export async function connectBunqSandbox(
     throw new BunqApiError(
       400,
       "",
-      "bunq permitted_ips must be set to explicit egress IP(s) before connect",
+      "bunq permitted_ips must be set to explicit egress IPv4(s) before connect",
     );
   }
 
@@ -331,16 +373,24 @@ export async function connectBunqSandbox(
   return getBunqSettings(workspaceId);
 }
 
+/** @deprecated Prefer connectBunq — works for sandbox and production. */
+export async function connectBunqSandbox(
+  workspaceId: string,
+): Promise<BunqSettings> {
+  return connectBunq(workspaceId);
+}
+
 export async function testBunqConnection(
   workspaceId: string,
 ): Promise<BunqTestConnectionResult> {
+  const before = await getBunqSettings(workspaceId);
   try {
-    await connectBunqSandbox(workspaceId);
+    await connectBunq(workspaceId);
     const accounts = await listBunqMonetaryAccounts(workspaceId);
     return {
       ok: true,
       error: null,
-      environment: BUNQ_SANDBOX_ENVIRONMENT,
+      environment: before.environment,
       accountCount: accounts.length,
     };
   } catch (error) {
@@ -349,7 +399,7 @@ export async function testBunqConnection(
     return {
       ok: false,
       error: message,
-      environment: BUNQ_SANDBOX_ENVIRONMENT,
+      environment: before.environment,
       accountCount: null,
     };
   }
@@ -380,13 +430,13 @@ export async function provisionBunqSandboxUser(
   return getBunqSettings(workspaceId);
 }
 
-/** Connected sandbox client after ensureApiContext. Secrets never returned. */
+/** Connected client after ensureApiContext. Secrets never returned. */
 export async function getConnectedBunqClient(
   workspaceId: string,
 ): Promise<BunqClient> {
-  const settings = await connectBunqSandbox(workspaceId);
+  const settings = await connectBunq(workspaceId);
   if (!settings.connected) {
-    throw new BunqApiError(400, "", "bunq sandbox connection is not ready");
+    throw new BunqApiError(400, "", "bunq connection is not ready");
   }
   const row = await getSecretRow(workspaceId);
   if (!row) {
@@ -414,14 +464,25 @@ export async function listBunqPayments(
 }
 
 /**
- * Official bunq sandbox funding: request-inquiry to sugardaddy@bunq.com
- * (auto-approves ≤ €500). First active monetary account. Sandbox host only.
+ * Official bunq sandbox funding: request-inquiry to sugardaddy@bunq.com.
+ * Hard-refused when workspace environment is production.
  */
 export async function fundBunqSandboxFromSugarDaddy(
   workspaceId: string,
   amountValue?: string,
 ): Promise<BunqSandboxFundResult> {
+  const settings = await getBunqSettings(workspaceId);
+  if (settings.environment !== BUNQ_SANDBOX_ENVIRONMENT) {
+    throw new BunqLiveApiRefusedError(
+      "Sugar Daddy sandbox-fund is sandbox-only; refused when environment=production",
+    );
+  }
   const client = await getConnectedBunqClient(workspaceId);
+  if (client.environment !== BUNQ_SANDBOX_ENVIRONMENT) {
+    throw new BunqLiveApiRefusedError(
+      "Sugar Daddy request-inquiry is sandbox-only; refused on production",
+    );
+  }
   const accounts = await client.listMonetaryAccounts();
   const account =
     accounts.find((a) => a.status === "ACTIVE") ?? accounts[0] ?? null;
@@ -432,9 +493,7 @@ export async function fundBunqSandboxFromSugarDaddy(
       "no bunq sandbox monetary account available to fund",
     );
   }
-  const normalized =
-    amountValue?.trim() ||
-    "25.00";
+  const normalized = amountValue?.trim() || "25.00";
   const { requestInquiryId } =
     await client.createSandboxSugarDaddyRequestInquiry(account.id, {
       amountValue: normalized,

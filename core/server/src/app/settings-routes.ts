@@ -355,13 +355,13 @@ export function registerSettingsRoutes(app: Hono) {
     if (!can(auth, "settings:write")) return c.json(forbidden(), 403);
     try {
       return c.json(
-        await bunqSettingsService.connectBunqSandbox(auth.workspaceId),
+        await bunqSettingsService.connectBunq(auth.workspaceId),
       );
     } catch (error) {
       const message =
         error instanceof Error
           ? error.message
-          : "Could not connect bunq sandbox";
+          : "Could not connect bunq";
       return c.json({ error: message, code: "bad_request" }, 400);
     }
   });
