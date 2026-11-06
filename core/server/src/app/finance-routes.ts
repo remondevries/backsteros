@@ -51,6 +51,7 @@ import { clientEstimateRouteDeps } from "../services/finance/client-estimates.js
 import * as financeService from "../services/finance/finance.js";
 import * as moneybirdBankSyncService from "../services/finance/moneybird-sync.js";
 import * as moneybirdSettingsService from "../services/moneybird-settings.js";
+import * as bunqBankSyncService from "../services/finance/bunq-sync.js";
 import * as bunqSettingsService from "../services/bunq-settings.js";
 import {
   recordBankAccountRestSyncEvent,
@@ -1403,6 +1404,34 @@ export function registerFinanceRoutes(app: Hono) {
       }
     },
   );
+
+  app.post("/api/v1/bank-accounts/:id/bunq-sync", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "finance:write")) return c.json(forbidden(), 403);
+    try {
+      const result = await bunqBankSyncService.syncBankAccountFromBunq(
+        auth.workspaceId,
+        c.req.param("id"),
+      );
+      if (!result) return c.json(notFound("Bank account"), 404);
+      return c.json(result);
+    } catch (error) {
+      if (error instanceof BunqLiveApiRefusedError) {
+        return c.json({ error: error.message, code: "bad_request" }, 400);
+      }
+      if (error instanceof BunqApiError) {
+        return c.json(
+          { error: error.message, code: "bad_request" },
+          error.status >= 400 && error.status < 600
+            ? (Math.min(error.status, 502) as 400)
+            : 400,
+        );
+      }
+      const message =
+        error instanceof Error ? error.message : "bunq bank sync failed";
+      return c.json({ error: message, code: "bad_request" }, 400);
+    }
+  });
 
   /** Owner gate for Settings → API keys (see `canManageApiKeys`). */
 }

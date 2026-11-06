@@ -379,7 +379,10 @@ export async function provisionBunqSandboxUser(
   return getBunqSettings(workspaceId);
 }
 
-async function clientForReads(workspaceId: string): Promise<BunqClient> {
+/** Connected sandbox client after ensureApiContext. Secrets never returned. */
+export async function getConnectedBunqClient(
+  workspaceId: string,
+): Promise<BunqClient> {
   const settings = await connectBunqSandbox(workspaceId);
   if (!settings.connected) {
     throw new BunqApiError(400, "", "bunq sandbox connection is not ready");
@@ -394,7 +397,7 @@ async function clientForReads(workspaceId: string): Promise<BunqClient> {
 export async function listBunqMonetaryAccounts(
   workspaceId: string,
 ): Promise<BunqMonetaryAccountSummary[]> {
-  const client = await clientForReads(workspaceId);
+  const client = await getConnectedBunqClient(workspaceId);
   const accounts = await client.listMonetaryAccounts();
   return accounts.map(mapAccount);
 }
@@ -404,7 +407,7 @@ export async function listBunqPayments(
   monetaryAccountId: string,
   options?: { count?: number },
 ): Promise<BunqPaymentSummary[]> {
-  const client = await clientForReads(workspaceId);
+  const client = await getConnectedBunqClient(workspaceId);
   const payments = await client.listPayments(monetaryAccountId, options);
   return payments.map(mapPayment);
 }

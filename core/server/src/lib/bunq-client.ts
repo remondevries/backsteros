@@ -536,19 +536,46 @@ export class BunqClient {
 
   async listPayments(
     monetaryAccountId: string,
-    options?: { count?: number },
+    options?: { count?: number; olderId?: string },
   ): Promise<BunqPayment[]> {
     const userId = this.requireUserId();
     const count = Math.min(Math.max(options?.count ?? 50, 1), 200);
+    const params = new URLSearchParams({ count: String(count) });
+    if (options?.olderId?.trim()) {
+      params.set("older_id", options.olderId.trim());
+    }
     const path =
       `/user/${encodeURIComponent(userId)}` +
       `/monetary-account/${encodeURIComponent(monetaryAccountId)}` +
-      `/payment?count=${count}`;
+      `/payment?${params.toString()}`;
     const payload = await this.requestJson("GET", path, "", {
       auth: "session",
       sign: false,
     });
     return extractPayments(payload);
+  }
+
+  /** Paginate payments newest→oldest until empty or maxPages. */
+  async listAllPayments(
+    monetaryAccountId: string,
+    options?: { pageSize?: number; maxPages?: number },
+  ): Promise<BunqPayment[]> {
+    const pageSize = Math.min(Math.max(options?.pageSize ?? 200, 1), 200);
+    const maxPages = Math.min(Math.max(options?.maxPages ?? 25, 1), 100);
+    const all: BunqPayment[] = [];
+    let olderId: string | undefined;
+    for (let page = 0; page < maxPages; page += 1) {
+      const batch = await this.listPayments(monetaryAccountId, {
+        count: pageSize,
+        olderId,
+      });
+      if (batch.length === 0) break;
+      all.push(...batch);
+      const lastId = batch[batch.length - 1]?.id;
+      if (!lastId || batch.length < pageSize) break;
+      olderId = lastId;
+    }
+    return all;
   }
 
   private requireUserId(): string {

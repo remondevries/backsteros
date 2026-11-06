@@ -356,6 +356,8 @@ function FinancePageBody() {
     moneybirdAccountsLoading,
     moneybirdSyncPending,
     syncMoneybirdAccount,
+    bunqSyncPending,
+    syncBunqAccount,
   } = useFinanceTransactions({
     client,
     navigate,
@@ -439,6 +441,8 @@ function FinancePageBody() {
     setImportOpen,
     moneybirdSyncPending,
     syncMoneybirdAccount,
+    bunqSyncPending,
+    syncBunqAccount,
   });
 
   let main: ReactNode = null;

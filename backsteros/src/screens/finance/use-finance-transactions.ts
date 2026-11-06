@@ -1,6 +1,7 @@
 import type { BacksterosApiClient } from "@backsteros/api-client";
 import type {
   BankAccount,
+  BunqBankAccountSyncResult,
   FinancialImportBatch,
   FinancialImportResult,
   FinancialTransaction,
@@ -37,6 +38,8 @@ export type FinanceHrefNavigate = (
 const MONEYBIRD_SYNC_DEBOUNCE_MS = 60_000;
 /** Re-pull from Moneybird when the account has not synced for this long. */
 const MONEYBIRD_STALE_MS = 5 * 60_000;
+const BUNQ_PERSONAL_BANK_ACCOUNT_KEY = "bunq-personal";
+const BUNQ_SYNC_DEBOUNCE_MS = 60_000;
 
 export function useFinanceTransactions({
   client,
@@ -104,6 +107,9 @@ export function useFinanceTransactions({
   const [moneybirdSyncPending, setMoneybirdSyncPending] = useState(false);
   const moneybirdSyncAtByAccountRef = useRef<Record<string, number>>({});
   const moneybirdSyncInFlightRef = useRef<Set<string>>(new Set());
+  const [bunqSyncPending, setBunqSyncPending] = useState(false);
+  const bunqSyncAtByAccountRef = useRef<Record<string, number>>({});
+  const bunqSyncInFlightRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     const timer = window.setTimeout(() => setDebouncedSearch(search), 250);
@@ -370,6 +376,54 @@ export function useFinanceTransactions({
       void syncMoneybirdAccount({ accountId: account.id });
     }
   }, [accounts, syncMoneybirdAccount]);
+
+  const syncBunqAccount = useCallback(
+    async (opts?: { force?: boolean; accountId?: string }) => {
+      const accountId = opts?.accountId ?? selected?.id ?? null;
+      if (!accountId) return null;
+      const account =
+        accounts.find((entry) => entry.id === accountId) ??
+        (selected?.id === accountId ? selected : null);
+      if (account?.key !== BUNQ_PERSONAL_BANK_ACCOUNT_KEY) return null;
+
+      const lastAt = bunqSyncAtByAccountRef.current[accountId] ?? 0;
+      if (!opts?.force && Date.now() - lastAt < BUNQ_SYNC_DEBOUNCE_MS) {
+        return null;
+      }
+      if (bunqSyncInFlightRef.current.has(accountId)) return null;
+
+      bunqSyncInFlightRef.current.add(accountId);
+      setBunqSyncPending(true);
+      try {
+        const result = await client.requestJson<BunqBankAccountSyncResult>(
+          `/api/v1/bank-accounts/${encodeURIComponent(accountId)}/bunq-sync`,
+          { method: "POST" },
+        );
+        bunqSyncAtByAccountRef.current[accountId] = Date.now();
+        if (opts?.force || result.inserted > 0) {
+          await loadTransactions();
+        }
+        await refreshAccounts?.().catch(() => undefined);
+        return result;
+      } catch {
+        return null;
+      } finally {
+        bunqSyncInFlightRef.current.delete(accountId);
+        setBunqSyncPending(bunqSyncInFlightRef.current.size > 0);
+      }
+    },
+    [accounts, client, loadTransactions, refreshAccounts, selected],
+  );
+
+  useEffect(() => {
+    const bunqAccounts = accounts.filter(
+      (account) => account.key === BUNQ_PERSONAL_BANK_ACCOUNT_KEY,
+    );
+    if (bunqAccounts.length === 0) return;
+    for (const account of bunqAccounts) {
+      void syncBunqAccount({ accountId: account.id });
+    }
+  }, [accounts, syncBunqAccount]);
 
   useEffect(() => {
     if (!importOpen) return;
@@ -768,6 +822,8 @@ export function useFinanceTransactions({
     moneybirdAccountsLoading,
     moneybirdSyncPending,
     syncMoneybirdAccount,
+    bunqSyncPending,
+    syncBunqAccount,
     handleToggleSelected,
     handleSetGroupSelected,
     handleSelectAllTransactions,

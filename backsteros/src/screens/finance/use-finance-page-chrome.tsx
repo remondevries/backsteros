@@ -53,6 +53,8 @@ export function useFinancePageChrome({
   setImportOpen,
   moneybirdSyncPending,
   syncMoneybirdAccount,
+  bunqSyncPending,
+  syncBunqAccount,
   selectedEstimate = null,
   onClearSelectedEstimate,
   enabled = true,
@@ -69,6 +71,8 @@ export function useFinancePageChrome({
     | "setImportOpen"
     | "moneybirdSyncPending"
     | "syncMoneybirdAccount"
+    | "bunqSyncPending"
+    | "syncBunqAccount"
   > & {
     navId: FinanceNavId | null;
     showTransactions: boolean;
@@ -140,6 +144,30 @@ export function useFinancePageChrome({
         </div>
       );
     }
+    if (selected?.key === "bunq-personal") {
+      return (
+        <div className="finance-chrome-actions">
+          <button
+            type="button"
+            className="finance-chrome-actions__button"
+            disabled={bunqSyncPending}
+            aria-label="Sync bunq transactions"
+            title="Sync bunq transactions"
+            onClick={() => {
+              void syncBunqAccount({ force: true });
+            }}
+          >
+            <FinanceSyncIcon
+              className={
+                bunqSyncPending
+                  ? "finance-chrome-actions__sync-icon is-spinning"
+                  : "finance-chrome-actions__sync-icon"
+              }
+            />
+          </button>
+        </div>
+      );
+    }
     return (
       <div className="finance-chrome-actions">
         <button
@@ -158,11 +186,13 @@ export function useFinancePageChrome({
       </div>
     );
   }, [
+    bunqSyncPending,
     loadMoneybirdInvoicesPage,
     moneybirdInvoicesLoading,
     moneybirdSyncPending,
     navId,
     selected?.id,
+    selected?.key,
     selected?.moneybirdFinancialAccountId,
     setCsvFile,
     setImportAccountId,
@@ -170,6 +200,7 @@ export function useFinancePageChrome({
     setImportOpen,
     setLastImportResult,
     showTransactions,
+    syncBunqAccount,
     syncMoneybirdAccount,
   ]);
 

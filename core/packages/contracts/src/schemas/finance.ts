@@ -716,6 +716,16 @@ export const moneybirdBankAccountSyncQuerySchema = z.object({
   period: z.string().min(1).max(64).optional(),
 });
 
+/** Result of ingesting bunq sandbox payments into the Bunq Personal bank account. */
+export const bunqBankAccountSyncResultSchema = z.object({
+  bankAccountId: z.string(),
+  fetched: z.number().int().nonnegative(),
+  inserted: z.number().int().nonnegative(),
+  duplicates: z.number().int().nonnegative(),
+  monetaryAccountCount: z.number().int().nonnegative(),
+  lastSyncedAt: isoDateSchema,
+});
+
 export type BankAccount = z.infer<typeof bankAccountSchema>;
 
 export type BankAccountInput = z.infer<typeof bankAccountInputSchema>;
@@ -838,4 +848,8 @@ export type MoneybirdFinancialAccount = z.infer<
 
 export type MoneybirdBankAccountSyncResult = z.infer<
   typeof moneybirdBankAccountSyncResultSchema
+>;
+
+export type BunqBankAccountSyncResult = z.infer<
+  typeof bunqBankAccountSyncResultSchema
 >;

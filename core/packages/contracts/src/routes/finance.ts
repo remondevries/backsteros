@@ -635,4 +635,19 @@ export const financeRoutes: AppRouter = c.router({
     summary:
       "Ingest new Moneybird financial mutations into a linked bank account",
   },
+  syncBankAccountBunq: {
+    method: "POST",
+    path: "/api/v1/bank-accounts/:id/bunq-sync",
+    pathParams: s.idParamsSchema,
+    body: z.undefined().optional(),
+    responses: {
+      200: s.bunqBankAccountSyncResultSchema,
+      400: badRequestSchema,
+      401: errorSchema,
+      403: errorSchema,
+      404: errorSchema,
+    },
+    summary:
+      "Ingest bunq sandbox payments into the Bunq Personal bank account (read-only)",
+  },
 });
