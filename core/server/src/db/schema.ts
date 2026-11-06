@@ -3632,6 +3632,18 @@ export const bunqPaymentProposals = pgTable(
      * proposal hash; reused only for the identical payment payload.
      */
     bunqIdempotencyKey: text("bunq_idempotency_key").notNull(),
+    /**
+     * OS-169 — Remon must explicitly acknowledge unknown outcome via the
+     * dedicated ack endpoint before Approve & Pay / retry. Cleared when the
+     * proposal re-enters needs_reconciliation.
+     */
+    unknownOutcomeAcknowledgedAt: timestamp(
+      "unknown_outcome_acknowledged_at",
+      { withTimezone: true },
+    ),
+    unknownOutcomeAcknowledgedByUserId: text(
+      "unknown_outcome_acknowledged_by_user_id",
+    ).references(() => users.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),

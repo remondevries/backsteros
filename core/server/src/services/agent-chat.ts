@@ -1960,6 +1960,7 @@ export async function answerChatThreadMessageApproval(
 
   const trimmedNote = note?.trim() || undefined;
 
+  let paymentProposalResult: { status: string } | null = null;
   if (approval.paymentProposal) {
     if (!paymentApproverAuth) {
       throw badRequest(
@@ -1969,7 +1970,7 @@ export async function answerChatThreadMessageApproval(
     const { handleChatPaymentProposalAnswer } = await import(
       "./bunq-payment-proposals.js"
     );
-    await handleChatPaymentProposalAnswer({
+    paymentProposalResult = await handleChatPaymentProposalAnswer({
       workspaceId,
       auth: paymentApproverAuth,
       proposalId: approval.paymentProposal.proposalId,
@@ -1980,6 +1981,49 @@ export async function answerChatThreadMessageApproval(
   }
 
   const now = deps.now?.() ?? new Date();
+
+  // OS-169: unknown outcome leaves the card unanswered so Remon can explicitly
+  // ack reconciliation, then Retry payment on the same card.
+  if (
+    decision === "approved" &&
+    paymentProposalResult?.status === "needs_reconciliation"
+  ) {
+    const [refreshed] = await db
+      .select()
+      .from(chatThreadMessages)
+      .where(
+        and(
+          eq(chatThreadMessages.workspaceId, workspaceId),
+          eq(chatThreadMessages.threadId, threadId),
+          eq(chatThreadMessages.id, messageId),
+          isNull(chatThreadMessages.deletedAt),
+        ),
+      )
+      .limit(1);
+    if (!refreshed) throw notFound("Message");
+    const refreshedMessage = toMessage(refreshed);
+    const [threadRow] = await db
+      .select({ agentId: chatThreads.agentId, taskId: chatThreads.taskId })
+      .from(chatThreads)
+      .where(
+        and(
+          eq(chatThreads.workspaceId, workspaceId),
+          eq(chatThreads.id, threadId),
+        ),
+      )
+      .limit(1);
+    if (threadRow) {
+      publishShellMessageEvent({
+        workspaceId,
+        threadId,
+        agentId: threadRow.agentId,
+        message: refreshedMessage,
+        taskId: threadRow.taskId,
+      });
+    }
+    return { message: refreshedMessage, reply: null };
+  }
+
   const answer: ChatThreadMessageApprovalAnswer = {
     decision,
     ...(trimmedNote ? { note: trimmedNote } : {}),

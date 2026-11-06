@@ -188,6 +188,24 @@ export const financeRoutes: AppRouter = c.router({
     summary:
       "Remon approves a proposal (exact hash, one-time) and executes the transfer",
   },
+  acknowledgeBunqPaymentUnknownOutcome: {
+    method: "POST",
+    path: "/api/v1/finance/bunq/payment-proposals/:proposalId/acknowledge-unknown-outcome",
+    pathParams: z.object({
+      proposalId: z.string().min(1),
+    }),
+    body: s.acknowledgeBunqPaymentUnknownOutcomeInputSchema,
+    responses: {
+      200: s.bunqPaymentProposalResponseSchema,
+      400: badRequestSchema,
+      401: errorSchema,
+      403: errorSchema,
+      404: errorSchema,
+      409: errorSchema,
+    },
+    summary:
+      "Remon explicitly acknowledges UNKNOWN prior payment outcome before retry",
+  },
   rejectBunqPaymentProposal: {
     method: "POST",
     path: "/api/v1/finance/bunq/payment-proposals/:proposalId/reject",

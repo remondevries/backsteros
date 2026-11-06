@@ -296,6 +296,11 @@ export const bunqPaymentProposalSchema = z.object({
   paymentAttemptedAt: z.string().datetime().nullable(),
   /** Client create dedupe key (not the bunq payment idempotency header). */
   clientIdempotencyKey: z.string().min(1).max(128),
+  /**
+   * OS-169 — set by dedicated Remon ack endpoint; required before retry when
+   * status is needs_reconciliation. Null until explicitly acknowledged.
+   */
+  unknownOutcomeAcknowledgedAt: z.string().datetime().nullable(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
 });
@@ -344,6 +349,13 @@ export const createBunqPaymentProposalResultSchema = z.object({
       proposalId: z.string(),
       /** Server-derived hash — clients must not invent/bypass. */
       proposalHash: z.string().length(64),
+      /**
+       * OS-169 — when true, Approve / Retry stays disabled until Remon ticks
+       * the reconciliation checkbox (dedicated ack endpoint).
+       */
+      requiresUnknownOutcomeAck: z.boolean().optional(),
+      unknownOutcomeAcknowledged: z.boolean().optional(),
+      unknownOutcomeAckLabel: z.string().min(1).max(120).optional(),
     }),
   }),
 });
@@ -359,10 +371,21 @@ export const approveBunqPaymentProposalInputSchema = z.object({
    */
   amountValue: z.string().trim().min(1).max(32).optional(),
   /**
-   * Required when status is needs_reconciliation — Remon acknowledges the
-   * unknown prior outcome before a fresh one-use Approve & Pay.
+   * Required on finance REST when status is needs_reconciliation — Remon must
+   * also have recorded a prior dedicated ack (`unknownOutcomeAcknowledgedAt`).
+   * Chat never invents this flag from Approve alone.
    */
   acknowledgeUnknownOutcome: z.boolean().optional(),
+});
+
+export const acknowledgeBunqPaymentUnknownOutcomeInputSchema = z.object({
+  proposalHash: z.string().trim().length(64),
+  /**
+   * When true and the row already has a known bunq payment id, mark executed
+   * (reconciled) and never resubmit. Otherwise only records the ack so Retry
+   * / Approve & Pay may proceed with the same idempotency key.
+   */
+  confirmPaymentAlreadyExists: z.boolean().optional(),
 });
 
 export const rejectBunqPaymentProposalInputSchema = z.object({
@@ -1214,6 +1237,10 @@ export type CreateBunqPaymentProposalResult = z.infer<
 
 export type ApproveBunqPaymentProposalInput = z.infer<
   typeof approveBunqPaymentProposalInputSchema
+>;
+
+export type AcknowledgeBunqPaymentUnknownOutcomeInput = z.infer<
+  typeof acknowledgeBunqPaymentUnknownOutcomeInputSchema
 >;
 
 export type RejectBunqPaymentProposalInput = z.infer<

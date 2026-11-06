@@ -48,6 +48,16 @@ import {
 } from "../../chat/live-agent-thread-state.js";
 import type { ChatCardNavigate } from "./chat-card-navigate.js";
 import { ChatAttachmentActionsProvider } from "./chat-attachments-card.js";
+
+/** Choices/form/email answers always post a user reply; approval may not (OS-169). */
+function requireAnswerReply(
+  reply: CreateChatThreadMessageResult | null,
+): CreateChatThreadMessageResult {
+  if (!reply) {
+    throw new Error("Chat answer reply missing");
+  }
+  return reply;
+}
 import type { ChatEmailDraftComposeContextValue } from "./chat-email-draft-card.js";
 import { ChatThread } from "./chat-thread.js";
 import type { ChatThreadPeer } from "./chat-thread-header.js";
@@ -118,6 +128,11 @@ export type LiveAgentChatHandlers = {
     decision: "approved" | "rejected",
     note?: string,
   ) => Promise<AnswerChatThreadMessageChoicesResult>;
+  /** OS-169 — dedicated Remon reconciliation ack before Retry payment. */
+  acknowledgeBunqPaymentUnknownOutcome?: (
+    proposalId: string,
+    proposalHash: string,
+  ) => Promise<void>;
   answerForm?: (
     threadId: string,
     messageId: string,
@@ -1038,12 +1053,13 @@ export function LiveAgentChatPanel({
               : {}),
           },
         });
+        const reply = requireAnswerReply(result.reply);
         dispatchLive({
           type: "sendSucceeded",
           pendingId,
-          message: result.reply.message,
-          thinking: result.reply.thinking,
-          webhookError: result.reply.webhookError,
+          message: reply.message,
+          thinking: reply.thinking,
+          webhookError: reply.webhookError,
           nowMs: Date.now(),
         });
       } catch (error) {
@@ -1059,6 +1075,17 @@ export function LiveAgentChatPanel({
       }
     },
     [liveAgentChat, liveAgentId, liveThreadId],
+  );
+
+  const onAcknowledgePaymentUnknownOutcome = useCallback(
+    async (proposalId: string, proposalHash: string) => {
+      if (!liveAgentChat?.acknowledgeBunqPaymentUnknownOutcome) return;
+      await liveAgentChat.acknowledgeBunqPaymentUnknownOutcome(
+        proposalId,
+        proposalHash,
+      );
+    },
+    [liveAgentChat],
   );
 
   const onAnswerApproval = useCallback(
@@ -1127,14 +1154,20 @@ export function LiveAgentChatPanel({
               : {}),
           },
         });
-        dispatchLive({
-          type: "sendSucceeded",
-          pendingId,
-          message: result.reply.message,
-          thinking: result.reply.thinking,
-          webhookError: result.reply.webhookError,
-          nowMs: Date.now(),
-        });
+        if (result.reply) {
+          dispatchLive({
+            type: "sendSucceeded",
+            pendingId,
+            message: result.reply.message,
+            thinking: result.reply.thinking,
+            webhookError: result.reply.webhookError,
+            nowMs: Date.now(),
+          });
+        } else {
+          // OS-169: needs_reconciliation — card refreshed unanswered; drop the
+          // optimistic "Approved" bubble (no webhook user message yet).
+          dispatchLive({ type: "sendCancelled", pendingId });
+        }
       } catch (error) {
         dispatchLive({
           type: "sendFailed",
@@ -1216,12 +1249,13 @@ export function LiveAgentChatPanel({
               : {}),
           },
         });
+        const reply = requireAnswerReply(result.reply);
         dispatchLive({
           type: "sendSucceeded",
           pendingId,
-          message: result.reply.message,
-          thinking: result.reply.thinking,
-          webhookError: result.reply.webhookError,
+          message: reply.message,
+          thinking: reply.thinking,
+          webhookError: reply.webhookError,
           nowMs: Date.now(),
         });
       } catch (error) {
@@ -1306,12 +1340,13 @@ export function LiveAgentChatPanel({
               : {}),
           },
         });
+        const reply = requireAnswerReply(result.reply);
         dispatchLive({
           type: "sendSucceeded",
           pendingId,
-          message: result.reply.message,
-          thinking: result.reply.thinking,
-          webhookError: result.reply.webhookError,
+          message: reply.message,
+          thinking: reply.thinking,
+          webhookError: reply.webhookError,
           nowMs: Date.now(),
         });
       } catch (error) {
@@ -1411,6 +1446,11 @@ export function LiveAgentChatPanel({
           onAnswerApproval={
             liveAgentId && liveAgentChat?.answerApproval
               ? onAnswerApproval
+              : null
+          }
+          onAcknowledgePaymentUnknownOutcome={
+            liveAgentChat?.acknowledgeBunqPaymentUnknownOutcome
+              ? onAcknowledgePaymentUnknownOutcome
               : null
           }
           onAnswerForm={

@@ -68,6 +68,9 @@ function approvalCardPart(
       : {}),
     destructive: message.approval.destructive,
     answer: message.approvalAnswer ?? null,
+    ...(message.approval.paymentProposal
+      ? { paymentProposal: message.approval.paymentProposal }
+      : {}),
     ...(dismissed ? { dismissed: true } : {}),
   };
   return {

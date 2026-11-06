@@ -34,6 +34,7 @@ import {
   bunqPaymentsQuerySchema,
   createBunqPaymentProposalInputSchema,
   approveBunqPaymentProposalInputSchema,
+  acknowledgeBunqPaymentUnknownOutcomeInputSchema,
   rejectBunqPaymentProposalInputSchema,
 } from "@backsteros/contracts";
 
@@ -593,6 +594,45 @@ export function registerFinanceRoutes(app: Hono) {
           error instanceof Error
             ? error.message
             : "Could not approve bunq payment proposal";
+        return c.json(
+          { error: message, code: bunqProposalErrorCode(status) },
+          status,
+        );
+      }
+    },
+  );
+  app.post(
+    "/api/v1/finance/bunq/payment-proposals/:proposalId/acknowledge-unknown-outcome",
+    zValidator("json", acknowledgeBunqPaymentUnknownOutcomeInputSchema),
+    async (c) => {
+      const auth = getAuth(c);
+      if (!can(auth, "finance:write") && auth.kind !== "local_shell") {
+        return c.json(forbidden(), 403);
+      }
+      if (isAgentPersonaAuth(auth)) {
+        return c.json(
+          {
+            error: "Ralph cannot acknowledge bunq payment reconciliation",
+            code: "forbidden",
+          },
+          403,
+        );
+      }
+      try {
+        const proposal =
+          await bunqPaymentProposalsService.acknowledgeBunqPaymentUnknownOutcome(
+            auth.workspaceId,
+            c.req.param("proposalId"),
+            auth,
+            c.req.valid("json"),
+          );
+        return c.json({ proposal });
+      } catch (error) {
+        const status = bunqProposalErrorStatus(error);
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Could not acknowledge bunq payment unknown outcome";
         return c.json(
           { error: message, code: bunqProposalErrorCode(status) },
           status,

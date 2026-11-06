@@ -701,4 +701,18 @@ Boot graph, gaps, risks, and the first implementation slice: [17-desktop-without
 
 ---
 
+## ADR-041 addendum: explicit Remon reconciliation ack (OS-169)
+
+**Status:** Accepted (2026-11-06)  
+**Context:** Chat Approve & Pay auto-set `acknowledgeUnknownOutcome=true` whenever status was `needs_reconciliation`, bypassing the finance-API gate that requires an explicit unknown-outcome acknowledgment.
+
+**Decision:**
+
+1. Persist Remon’s reconciliation ack on `bunq_payment_proposals.unknown_outcome_acknowledged_at` (migration `0201`). Cleared whenever the proposal re-enters `needs_reconciliation`.
+2. Dedicated Remon-only endpoint `POST …/acknowledge-unknown-outcome` records the ack (optional `confirmPaymentAlreadyExists` marks `executed` when a bunq payment id is already known — never resubmits). Personas/agent keys stay 403.
+3. Retry / Approve & Pay for `needs_reconciliation` requires **both** the persisted ack **and** finance REST `acknowledgeUnknownOutcome=true`. Chat never invents the flag from Approve alone — it only forwards true after a prior dedicated ack.
+4. Chat UX shows UNKNOWN copy + checkbox (“I checked / reconciled this payment in Bunq”, SIMULATION suffix when simulating); “Retry payment” stays disabled until ack. Linked chat cards stay unanswered after unknown outcome so Remon can ack + retry on the same card.
+
+---
+
 

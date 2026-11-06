@@ -111,6 +111,8 @@ export type LiveAgentThreadAction =
       nowMs: number;
     }
   | { type: "sendFailed"; pendingId: string; error: string }
+  /** Drop optimistic pending bubble without an error notice (e.g. OS-169 reconcile). */
+  | { type: "sendCancelled"; pendingId: string }
   | { type: "deleteStarted"; ids: readonly string[] }
   | { type: "deleteFailed"; restore: readonly ChatUiMessage[] }
   | { type: "thinkingExpired"; nowMs: number };
@@ -446,6 +448,14 @@ export function liveAgentThreadReducer(
           (message) => message.id !== action.pendingId,
         ),
         notices: [webhookErrorStatusMessage(action.error)],
+      };
+
+    case "sendCancelled":
+      return {
+        ...state,
+        messages: state.messages.filter(
+          (message) => message.id !== action.pendingId,
+        ),
       };
 
     case "deleteStarted": {

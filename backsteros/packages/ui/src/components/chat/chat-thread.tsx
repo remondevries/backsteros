@@ -82,6 +82,7 @@ import {
 import {
   ChatApprovalAnswerProvider,
   type ChatApprovalAnswerFn,
+  type ChatPaymentUnknownOutcomeAckFn,
 } from "./chat-approval-card.js";
 import {
   ChatChoicesAnswerProvider,
@@ -194,6 +195,10 @@ export type ChatThreadProps = {
    * normal user message via the same answer API.
    */
   onAnswerApproval?: ChatApprovalAnswerFn | null;
+  /**
+   * OS-169 — Remon explicit bunq unknown-outcome ack before Retry payment.
+   */
+  onAcknowledgePaymentUnknownOutcome?: ChatPaymentUnknownOutcomeAckFn | null;
   /**
    * Answer assistant form cards (owner). Posts a summary user message via the
    * same answer API.
@@ -941,6 +946,7 @@ export function ChatThread({
   onDeleteMessages = null,
   onAnswerChoices = null,
   onAnswerApproval = null,
+  onAcknowledgePaymentUnknownOutcome = null,
   onAnswerForm = null,
   onAnswerEmailDraft = null,
   emailDraftCompose = null,
@@ -1304,7 +1310,12 @@ export function ChatThread({
     <ChatCardNavigateProvider navigate={onNavigate}>
       <ChatCardRegistryProvider registry={registry}>
         <ChatChoicesAnswerProvider onAnswer={onAnswerChoices}>
-        <ChatApprovalAnswerProvider onAnswer={onAnswerApproval}>
+        <ChatApprovalAnswerProvider
+          onAnswer={onAnswerApproval}
+          onAcknowledgePaymentUnknownOutcome={
+            onAcknowledgePaymentUnknownOutcome
+          }
+        >
         <ChatFormAnswerProvider onAnswer={onAnswerForm}>
         <ChatEmailDraftAnswerProvider onAnswer={onAnswerEmailDraft}>
         <ChatEmailDraftComposeProvider value={emailDraftCompose}>

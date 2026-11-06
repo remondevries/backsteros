@@ -298,6 +298,8 @@ export function ShellChatPanel() {
       deleteMessages: agentChat.deleteMessages,
       answerChoices: agentChat.answerChoices,
       answerApproval: agentChat.answerApproval,
+      acknowledgeBunqPaymentUnknownOutcome:
+        agentChat.acknowledgeBunqPaymentUnknownOutcome,
       answerForm: agentChat.answerForm,
       answerEmailDraft: agentChat.answerEmailDraft,
     };

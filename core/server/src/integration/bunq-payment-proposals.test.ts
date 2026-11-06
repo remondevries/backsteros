@@ -28,8 +28,10 @@ import { apiKeyLookupPrefix, hashApiKey } from "../lib/crypto.js";
 import { hashBunqPaymentProposal } from "../lib/bunq-payment-proposal.js";
 import type { AuthContext } from "../middleware/auth.js";
 import {
+  acknowledgeBunqPaymentUnknownOutcome,
   approveBunqPaymentProposal,
   createBunqPaymentProposal,
+  handleChatPaymentProposalAnswer,
 } from "../services/bunq-payment-proposals.js";
 
 process.env.BACKSTEROS_INTEGRATION_TEST = "1";
@@ -382,7 +384,68 @@ test("OS-167: ambiguous bunq outcome → needs_reconciliation; no second send wi
   assert.equal(counter.n, 1);
   assert.match(first.executionError ?? "", /Unknown payment outcome/i);
 
-  // Without acknowledgeUnknownOutcome — blocked.
+  // Without dedicated ack — blocked (flag alone is not enough).
+  await assert.rejects(
+    () =>
+      approveBunqPaymentProposal(
+        workspaceId,
+        created.proposal.id,
+        remon,
+        { proposalHash, acknowledgeUnknownOutcome: true },
+        ambiguousDeps,
+      ),
+    (error: unknown) =>
+      error instanceof Error &&
+      (error as { status?: number }).status === 409 &&
+      /acknowledge-unknown-outcome|UNKNOWN|needs_reconciliation/i.test(
+        error.message,
+      ),
+  );
+  assert.equal(counter.n, 1);
+
+  // Chat Approve alone must not invent the ack (OS-169).
+  await assert.rejects(
+    () =>
+      handleChatPaymentProposalAnswer({
+        workspaceId,
+        auth: remon,
+        proposalId: created.proposal.id,
+        proposalHash,
+        decision: "approved",
+      }),
+    (error: unknown) =>
+      error instanceof Error &&
+      (error as { status?: number }).status === 409 &&
+      /acknowledge-unknown-outcome|UNKNOWN|needs_reconciliation/i.test(
+        error.message,
+      ),
+  );
+  assert.equal(counter.n, 1);
+
+  // Persona cannot ack.
+  await assert.rejects(
+    () =>
+      acknowledgeBunqPaymentUnknownOutcome(
+        workspaceId,
+        created.proposal.id,
+        agentAuth(workspaceId, agentKeyId, contactId),
+        { proposalHash },
+      ),
+    (error: unknown) =>
+      error instanceof Error &&
+      (error as { status?: number }).status === 403,
+  );
+
+  const acked = await acknowledgeBunqPaymentUnknownOutcome(
+    workspaceId,
+    created.proposal.id,
+    remon,
+    { proposalHash },
+  );
+  assert.equal(acked.status, "needs_reconciliation");
+  assert.ok(acked.unknownOutcomeAcknowledgedAt);
+
+  // Flag still required on finance REST after dedicated ack.
   await assert.rejects(
     () =>
       approveBunqPaymentProposal(
@@ -395,11 +458,10 @@ test("OS-167: ambiguous bunq outcome → needs_reconciliation; no second send wi
     (error: unknown) =>
       error instanceof Error &&
       (error as { status?: number }).status === 409 &&
-      /acknowledgeUnknownOutcome|needs_reconciliation/i.test(error.message),
+      /acknowledgeUnknownOutcome/i.test(error.message),
   );
-  assert.equal(counter.n, 1);
 
-  // Fresh Approve & Pay after acknowledgment — same bunq idempotency key, one more attempt.
+  // Fresh Approve & Pay after dedicated ack + flag — same bunq idempotency key.
   const successDeps = {
     getPaymentClient: async () => mockPaymentClient({ mode: "success", counter }),
   };
@@ -426,6 +488,170 @@ test("OS-167: ambiguous bunq outcome → needs_reconciliation; no second send wi
     .where(eq(bunqPaymentProposals.id, created.proposal.id))
     .limit(1);
   assert.equal(after?.key, before?.key);
+
+  // Replay after executed — one execution (idempotent).
+  const replay = await approveBunqPaymentProposal(
+    workspaceId,
+    created.proposal.id,
+    remon,
+    { proposalHash, acknowledgeUnknownOutcome: true },
+    successDeps,
+  );
+  assert.equal(replay.status, "executed");
+  assert.equal(replay.bunqPaymentId, "4242");
+  assert.equal(counter.n, 2);
+});
+
+test("OS-169: chat Approve after dedicated ack retries with same idempotency key", async (context) => {
+  const userId = id("user");
+  const workspaceId = id("workspace");
+  const contactId = id("contact");
+  const agentId = id("ralph-agent");
+  process.env.BUNQ_PAYMENT_PROPOSAL_AGENT_ID = agentId;
+  const agentKeyId = id("agent-key");
+  const agentKeySecret = agentSecret();
+
+  context.after(async () => {
+    await db
+      .delete(bunqPaymentProposals)
+      .where(eq(bunqPaymentProposals.workspaceId, workspaceId));
+    await db.delete(agents).where(eq(agents.workspaceId, workspaceId));
+    await db.delete(apiKeys).where(eq(apiKeys.workspaceId, workspaceId));
+    await db.delete(contacts).where(eq(contacts.workspaceId, workspaceId));
+    await db.delete(workspaces).where(eq(workspaces.id, workspaceId));
+    await db.delete(users).where(eq(users.id, userId));
+  });
+
+  await db.insert(users).values({
+    id: userId,
+    clerkId: id("clerk"),
+    email: `remon-${randomUUID()}@example.test`,
+    displayName: "Remon",
+  });
+  await db.insert(workspaces).values({
+    id: workspaceId,
+    name: "bunq os169 chat",
+    slug: id("bunq-169"),
+    ownerUserId: userId,
+  });
+  await db.insert(contacts).values({
+    id: contactId,
+    workspaceId,
+    key: id("c"),
+    name: "Ralph",
+    firstName: "Ralph",
+    lastName: "",
+  });
+  await db.insert(apiKeys).values({
+    id: agentKeyId,
+    workspaceId,
+    userId: null,
+    contactId,
+    name: "Ralph",
+    prefix: apiKeyLookupPrefix(agentKeySecret),
+    keyHash: hashApiKey(agentKeySecret),
+    scopes: [...AGENT_KEY_SCOPES],
+  });
+  await db.insert(agents).values({
+    id: agentId,
+    workspaceId,
+    contactId,
+    apiKeyId: agentKeyId,
+    name: "WhateverName",
+    enabled: true,
+  });
+
+  const paymentFields = {
+    recipientName: "Ada",
+    recipientIban: "NL91ABNA0417164300",
+    amountValue: "4.00",
+    amountCurrency: "EUR",
+    memo: "OS-169 chat ack",
+    sourceMonetaryAccountId: "55",
+  };
+  const { proposalHash } = hashBunqPaymentProposal(paymentFields);
+  const created = await createBunqPaymentProposal(
+    workspaceId,
+    agentAuth(workspaceId, agentKeyId, contactId),
+    { ...paymentFields, idempotencyKey: `os169-${randomUUID()}` },
+  );
+
+  const counter = { n: 0 };
+  const remon = ownerAuth(userId, workspaceId);
+  const ambiguousDeps = {
+    getPaymentClient: async () => {
+      counter.n += 1;
+      const { privateKeyPem } = generateBunqSigningKeyPair();
+      return new BunqClient({
+        environment: "sandbox",
+        apiKey: "sandbox_integration_fake",
+        signingPrivateKeyPem: privateKeyPem,
+        permittedIps: ["127.0.0.1"],
+        sessionToken: "sess",
+        userId: "2",
+        allowPaymentWrites: true,
+        fetchImpl: async () => {
+          throw new BunqPaymentAmbiguousOutcomeError("sim timeout", null);
+        },
+      });
+    },
+  };
+
+  const first = await approveBunqPaymentProposal(
+    workspaceId,
+    created.proposal.id,
+    remon,
+    { proposalHash },
+    ambiguousDeps,
+  );
+  assert.equal(first.status, "needs_reconciliation");
+  assert.equal(counter.n, 1);
+
+  await acknowledgeBunqPaymentUnknownOutcome(
+    workspaceId,
+    created.proposal.id,
+    remon,
+    { proposalHash },
+  );
+
+  const [before] = await db
+    .select({
+      key: bunqPaymentProposals.bunqIdempotencyKey,
+      hash: bunqPaymentProposals.proposalHash,
+    })
+    .from(bunqPaymentProposals)
+    .where(eq(bunqPaymentProposals.id, created.proposal.id))
+    .limit(1);
+
+  const successDeps = {
+    getPaymentClient: async () => mockPaymentClient({ mode: "success", counter }),
+  };
+  const second = await handleChatPaymentProposalAnswer(
+    {
+      workspaceId,
+      auth: remon,
+      proposalId: created.proposal.id,
+      proposalHash,
+      decision: "approved",
+    },
+    successDeps,
+  );
+  assert.ok(second);
+  assert.equal(second.status, "executed");
+  assert.equal(second.bunqPaymentId, "4242");
+  assert.equal(counter.n, 2);
+
+  const [after] = await db
+    .select({
+      key: bunqPaymentProposals.bunqIdempotencyKey,
+      hash: bunqPaymentProposals.proposalHash,
+    })
+    .from(bunqPaymentProposals)
+    .where(eq(bunqPaymentProposals.id, created.proposal.id))
+    .limit(1);
+  assert.equal(after?.key, before?.key);
+  assert.equal(after?.hash, proposalHash);
+  assert.equal(after?.hash, before?.hash);
 });
 
 test("OS-167: expired pending proposal cannot Approve & Pay", async (context) => {

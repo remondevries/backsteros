@@ -4,7 +4,8 @@
  *
  * bunq idempotency: server UUID as X-Bunq-Client-Idempotency-Key (not Request-Id).
  * Unknown outcomes → needs_reconciliation; no auto-retry / no new key until
- * Remon gives a fresh one-use approval acknowledging the unknown outcome.
+ * Remon explicitly acks via the dedicated endpoint, then gives a fresh one-use
+ * Approve & Pay (OS-169 — chat Approve alone never invents the ack).
  *
  * Feature default OFF (`BUNQ_PAYMENT_PROPOSALS_ENABLED`). Live production
  * payment HTTP additionally requires `BUNQ_ALLOW_LIVE_PAYMENT_WRITES` and is
@@ -14,6 +15,7 @@
 import { randomUUID } from "node:crypto";
 import { and, desc, eq, sql } from "drizzle-orm";
 import type {
+  AcknowledgeBunqPaymentUnknownOutcomeInput,
   ApproveBunqPaymentProposalInput,
   BunqPaymentProposal,
   CreateBunqPaymentProposalInput,
@@ -53,12 +55,16 @@ import {
   proposalHashesEqual,
   type BunqPaymentProposalStatus,
 } from "../lib/bunq-payment-proposal.js";
-import { isBunqPaymentSimulationEnabled } from "../lib/bunq-payment-simulation.js";
+import { buildApprovalCard } from "../lib/bunq-payment-proposal-approval-card.js";
 import type { AuthContext } from "../middleware/auth.js";
 import type { BunqClient } from "../lib/bunq-client.js";
 import { getConnectedBunqPaymentClient } from "./bunq-settings.js";
 
 export { assertRemonPaymentApprover } from "../lib/bunq-payment-proposal-auth.js";
+export {
+  buildApprovalCard,
+  bunqUnknownOutcomeAckLabel,
+} from "../lib/bunq-payment-proposal-approval-card.js";
 
 /** Test / sandbox seams — production callers leave defaults. */
 export type BunqPaymentProposalDeps = {
@@ -125,51 +131,62 @@ function toProposal(row: DbBunqPaymentProposal): BunqPaymentProposal {
     executionError: row.executionError,
     paymentAttemptedAt: row.paymentAttemptedAt?.toISOString() ?? null,
     clientIdempotencyKey: row.clientIdempotencyKey,
+    unknownOutcomeAcknowledgedAt:
+      row.unknownOutcomeAcknowledgedAt?.toISOString() ?? null,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
 }
 
-function buildApprovalCard(
-  proposal: BunqPaymentProposal,
-): CreateBunqPaymentProposalResult["approval"] {
-  const simulating = isBunqPaymentSimulationEnabled();
-  const unknown =
-    proposal.status === "needs_reconciliation"
-      ? "Prior payment outcome is UNKNOWN — do not assume it failed. Approve & Pay only after reconciling.\n\n"
-      : "";
-  const simBanner = simulating
-    ? "SIMULATION ONLY — no real bank transfer. Fake destination / amount for local preview.\n\n"
-    : "";
+/**
+ * When a linked chat card exists, refresh its approval payload after
+ * needs_reconciliation / ack so Remon sees the checkbox before Retry.
+ * Clears approvalAnswer so the card is not locked as "Approved".
+ */
+async function syncLinkedChatApprovalCard(
+  row: DbBunqPaymentProposal,
+): Promise<void> {
+  if (!row.chatMessageId || !row.chatThreadId) return;
+  const { chatThreadMessages } = await import("../db/schema.js");
+  const approval = buildApprovalCard(toProposal(row));
+  await db
+    .update(chatThreadMessages)
+    .set({
+      approval,
+      // Leave unanswered so Remon can ack + Retry on the same card.
+      approvalAnswer: null,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(chatThreadMessages.id, row.chatMessageId),
+        eq(chatThreadMessages.workspaceId, row.workspaceId),
+        eq(chatThreadMessages.threadId, row.chatThreadId),
+      ),
+    );
+}
+
+/** Shared patch when entering needs_reconciliation — clears prior ack. */
+function needsReconciliationPatch(extra: {
+  bunqPaymentId?: string | null;
+  executionError: string;
+}): {
+  status: "needs_reconciliation";
+  bunqPaymentId?: string | null;
+  executionError: string;
+  unknownOutcomeAcknowledgedAt: null;
+  unknownOutcomeAcknowledgedByUserId: null;
+  updatedAt: Date;
+} {
   return {
-    title: simulating
-      ? "Approve bunq payment (SIMULATION)"
-      : "Approve bunq payment",
-    kind: "payment",
-    summary: simulating
-      ? `[SIMULATION] Pay ${proposal.amountValue} ${proposal.amountCurrency} to ${proposal.recipientName}`
-      : `Pay ${proposal.amountValue} ${proposal.amountCurrency} to ${proposal.recipientName}`,
-    fields: [
-      { label: "Recipient", value: proposal.recipientName },
-      // Full canonical IBAN on Remon confirm — never mask destination here.
-      { label: "IBAN", value: proposal.recipientIban },
-      {
-        label: "Amount",
-        value: `${proposal.amountValue} ${proposal.amountCurrency}`,
-      },
-      { label: "Memo", value: proposal.memo },
-      { label: "From account", value: proposal.sourceMonetaryAccountId },
-      ...(simulating
-        ? [{ label: "Mode", value: "SIMULATION (local fake bank)" }]
-        : []),
-    ],
-    details: `${simBanner}${unknown}Proposal ${proposal.id}\nHash ${proposal.proposalHash}`,
-    approveLabel: "Approve",
-    rejectLabel: "Reject",
-    paymentProposal: {
-      proposalId: proposal.id,
-      proposalHash: proposal.proposalHash,
-    },
+    status: "needs_reconciliation",
+    ...(extra.bunqPaymentId !== undefined
+      ? { bunqPaymentId: extra.bunqPaymentId }
+      : {}),
+    executionError: extra.executionError,
+    unknownOutcomeAcknowledgedAt: null,
+    unknownOutcomeAcknowledgedByUserId: null,
+    updatedAt: new Date(),
   };
 }
 
@@ -512,42 +529,45 @@ async function executeApprovedPayment(
           : "DB update failed after bunq payment";
       const [reconcile] = await db
         .update(bunqPaymentProposals)
-        .set({
-          status: "needs_reconciliation",
-          bunqPaymentId: paymentId,
-          executionError: `Payment may have succeeded (id recorded when possible): ${message}`,
-          updatedAt: new Date(),
-        })
+        .set(
+          needsReconciliationPatch({
+            bunqPaymentId: paymentId,
+            executionError: `Payment may have succeeded (id recorded when possible): ${message}`,
+          }),
+        )
         .where(eq(bunqPaymentProposals.id, proposalId))
         .returning();
       if (!reconcile) throw notFound("Payment proposal");
+      await syncLinkedChatApprovalCard(reconcile);
       return reconcile;
     }
   } catch (error) {
     if (error instanceof BunqPaymentAmbiguousOutcomeError) {
       const [reconcile] = await db
         .update(bunqPaymentProposals)
-        .set({
-          status: "needs_reconciliation",
-          executionError: `Unknown payment outcome: ${error.message}. Do not assume failure; reconcile with bunq before Approve & Pay again.`,
-          updatedAt: new Date(),
-        })
+        .set(
+          needsReconciliationPatch({
+            executionError: `Unknown payment outcome: ${error.message}. Do not assume failure; reconcile with bunq before Retry payment.`,
+          }),
+        )
         .where(eq(bunqPaymentProposals.id, proposalId))
         .returning();
       if (!reconcile) throw notFound("Payment proposal");
+      await syncLinkedChatApprovalCard(reconcile);
       return reconcile;
     }
     if (error instanceof BunqPaymentIdempotencyConflictError) {
       const [reconcile] = await db
         .update(bunqPaymentProposals)
-        .set({
-          status: "needs_reconciliation",
-          executionError: `bunq idempotency conflict (409): payment may already exist for this key. Reconcile before a new key or Approve & Pay again with the same key after confirmation.`,
-          updatedAt: new Date(),
-        })
+        .set(
+          needsReconciliationPatch({
+            executionError: `bunq idempotency conflict (409): payment may already exist for this key. Reconcile before a new key or Retry payment with the same key after confirmation.`,
+          }),
+        )
         .where(eq(bunqPaymentProposals.id, proposalId))
         .returning();
       if (!reconcile) throw notFound("Payment proposal");
+      await syncLinkedChatApprovalCard(reconcile);
       return reconcile;
     }
     if (error instanceof BunqLiveApiRefusedError) {
@@ -581,14 +601,15 @@ async function executeApprovedPayment(
       error instanceof Error ? error.message : "bunq payment failed";
     const [reconcile] = await db
       .update(bunqPaymentProposals)
-      .set({
-        status: "needs_reconciliation",
-        executionError: `Unknown payment outcome: ${message}`,
-        updatedAt: new Date(),
-      })
+      .set(
+        needsReconciliationPatch({
+          executionError: `Unknown payment outcome: ${message}`,
+        }),
+      )
       .where(eq(bunqPaymentProposals.id, proposalId))
       .returning();
     if (!reconcile) throw notFound("Payment proposal");
+    await syncLinkedChatApprovalCard(reconcile);
     return reconcile;
   }
 }
@@ -631,9 +652,14 @@ export async function approveBunqPaymentProposal(
     }
 
     if (row.status === "needs_reconciliation") {
+      if (row.unknownOutcomeAcknowledgedAt == null) {
+        throw conflict(
+          "Prior payment outcome is UNKNOWN (needs_reconciliation). Acknowledge via POST …/acknowledge-unknown-outcome after reconciling in Bunq, then Retry payment (same bunq idempotency key).",
+        );
+      }
       if (input.acknowledgeUnknownOutcome !== true) {
         throw conflict(
-          "Prior payment outcome is unknown (needs_reconciliation). Set acknowledgeUnknownOutcome=true after reconciling, then Approve & Pay again (same bunq idempotency key).",
+          "Prior payment outcome is unknown (needs_reconciliation). Set acknowledgeUnknownOutcome=true after the dedicated reconciliation ack, then Approve & Pay again (same bunq idempotency key).",
         );
       }
     } else if (!canAcceptFreshPaymentApproval(row.status)) {
@@ -752,18 +778,110 @@ export async function rejectBunqPaymentProposal(
 }
 
 /**
+ * OS-169 — Remon explicitly acknowledges UNKNOWN prior outcome.
+ * Does not execute a payment. Optional confirmPaymentAlreadyExists marks
+ * executed when a bunq payment id is already known (never resubmits).
+ */
+export async function acknowledgeBunqPaymentUnknownOutcome(
+  workspaceId: string,
+  proposalId: string,
+  auth: AuthContext,
+  input: AcknowledgeBunqPaymentUnknownOutcomeInput,
+): Promise<BunqPaymentProposal> {
+  assertFeatureEnabled();
+  const ownerUserId = await resolveWorkspaceOwnerUserId(workspaceId);
+  const acknowledgerUserId = assertRemonPaymentApprover(auth, ownerUserId);
+  const now = new Date();
+
+  const updated = await db.transaction(async (tx) => {
+    await tx.execute(sql`SET LOCAL lock_timeout = '5s'`);
+    const row = await lockProposal(tx, workspaceId, proposalId);
+    if (!row) return null;
+
+    if (!proposalHashesEqual(row.proposalHash, input.proposalHash)) {
+      throw badRequest("Proposal hash mismatch — acknowledgment refused");
+    }
+
+    if (row.status === "executed" && row.bunqPaymentId) {
+      return row;
+    }
+
+    if (row.status !== "needs_reconciliation") {
+      throw conflict(
+        `Payment proposal is ${row.status} — unknown-outcome ack only applies to needs_reconciliation`,
+      );
+    }
+
+    if (
+      input.confirmPaymentAlreadyExists === true &&
+      row.bunqPaymentId != null &&
+      row.bunqPaymentId.trim() !== ""
+    ) {
+      const [executed] = await tx
+        .update(bunqPaymentProposals)
+        .set({
+          status: "executed",
+          unknownOutcomeAcknowledgedAt: now,
+          unknownOutcomeAcknowledgedByUserId: acknowledgerUserId,
+          executionError: null,
+          updatedAt: now,
+        })
+        .where(
+          and(
+            eq(bunqPaymentProposals.id, row.id),
+            eq(bunqPaymentProposals.status, "needs_reconciliation"),
+          ),
+        )
+        .returning();
+      if (!executed) throw conflict("Payment proposal already consumed");
+      return executed;
+    }
+
+    if (row.unknownOutcomeAcknowledgedAt != null) {
+      // Idempotent replay of the same ack.
+      return row;
+    }
+
+    const [acked] = await tx
+      .update(bunqPaymentProposals)
+      .set({
+        unknownOutcomeAcknowledgedAt: now,
+        unknownOutcomeAcknowledgedByUserId: acknowledgerUserId,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(bunqPaymentProposals.id, row.id),
+          eq(bunqPaymentProposals.status, "needs_reconciliation"),
+        ),
+      )
+      .returning();
+    if (!acked) throw conflict("Payment proposal already consumed");
+    return acked;
+  });
+
+  if (!updated) throw notFound("Payment proposal");
+  await syncLinkedChatApprovalCard(updated);
+  return toProposal(updated);
+}
+
+/**
  * Called from chat approval /answer when the card carries paymentProposal.
  * Remon-only path already enforced by the chat route (agents get 403).
- * Chat Approve & Pay on needs_reconciliation implies acknowledgment.
+ * OS-169: never invent acknowledgeUnknownOutcome from Approve alone — only
+ * forward true when a prior dedicated ack is already persisted.
  */
-export async function handleChatPaymentProposalAnswer(input: {
-  workspaceId: string;
-  auth: AuthContext;
-  proposalId: string;
-  proposalHash: string;
-  decision: "approved" | "rejected";
-  note?: string;
-}): Promise<BunqPaymentProposal | null> {
+export async function handleChatPaymentProposalAnswer(
+  input: {
+    workspaceId: string;
+    auth: AuthContext;
+    proposalId: string;
+    proposalHash: string;
+    decision: "approved" | "rejected";
+    note?: string;
+  },
+  deps: BunqPaymentProposalDeps = {},
+): Promise<BunqPaymentProposal | null> {
   if (!isBunqPaymentProposalsEnabled()) {
     return null;
   }
@@ -772,15 +890,19 @@ export async function handleChatPaymentProposalAnswer(input: {
       input.workspaceId,
       input.proposalId,
     );
+    const priorAck =
+      existing.status === "needs_reconciliation" &&
+      existing.unknownOutcomeAcknowledgedAt != null;
     return approveBunqPaymentProposal(
       input.workspaceId,
       input.proposalId,
       input.auth,
       {
         proposalHash: input.proposalHash,
-        acknowledgeUnknownOutcome:
-          existing.status === "needs_reconciliation" ? true : undefined,
+        // Only after dedicated ack endpoint — never from Approve click alone.
+        ...(priorAck ? { acknowledgeUnknownOutcome: true } : {}),
       },
+      deps,
     );
   }
   return rejectBunqPaymentProposal(

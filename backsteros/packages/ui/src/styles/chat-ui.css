@@ -2010,6 +2010,25 @@
   max-height: 220px;
 }
 
+.chat-ui-approval-card__unknown-ack {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid color-mix(in oklab, var(--foreground, #fff) 14%, transparent);
+  background: color-mix(in oklab, var(--foreground, #fff) 4%, transparent);
+  font-size: 0.8125rem;
+  line-height: 1.35;
+  cursor: pointer;
+}
+
+.chat-ui-approval-card__unknown-ack input {
+  margin-top: 2px;
+  flex-shrink: 0;
+}
+
 .chat-ui-approval-card__actions {
   display: flex;
   flex-wrap: wrap;

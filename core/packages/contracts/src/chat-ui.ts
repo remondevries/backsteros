@@ -469,6 +469,18 @@ export const chatUiApprovalCardDataSchema = z.object({
    * greyed out, no buttons.
    */
   dismissed: z.boolean().optional(),
+  /**
+   * OS-169 — bunq payment proposal binding for reconciliation ack UI.
+   */
+  paymentProposal: z
+    .object({
+      proposalId: z.string().min(1).max(64),
+      proposalHash: z.string().length(64),
+      requiresUnknownOutcomeAck: z.boolean().optional(),
+      unknownOutcomeAcknowledged: z.boolean().optional(),
+      unknownOutcomeAckLabel: z.string().min(1).max(120).optional(),
+    })
+    .optional(),
 });
 export type ChatUiApprovalCardData = z.infer<typeof chatUiApprovalCardDataSchema>;
 

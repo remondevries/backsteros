@@ -174,6 +174,13 @@ export const chatThreadMessageApprovalPaymentProposalSchema = z.object({
   proposalId: z.string().trim().min(1).max(64),
   /** Exact SHA-256 hex — Remon approval must match server proposal hash. */
   proposalHash: z.string().trim().length(64),
+  /**
+   * OS-169 — when true, chat Approve / Retry stays disabled until Remon
+   * explicitly acknowledges via the dedicated ack control (not Approve alone).
+   */
+  requiresUnknownOutcomeAck: z.boolean().optional(),
+  unknownOutcomeAcknowledged: z.boolean().optional(),
+  unknownOutcomeAckLabel: z.string().trim().min(1).max(120).optional(),
 });
 
 export const chatThreadMessageApprovalSchema = z.object({
@@ -973,8 +980,10 @@ export const answerChatThreadMessageChoicesResultSchema = z.object({
   /**
    * Normal user-message post for the chosen value(s) / decision / form /
    * email draft — same webhook path as typing a reply. Agents need no new logic.
+   * Null when a bunq payment lands in needs_reconciliation (OS-169): the card
+   * stays unanswered for explicit Remon reconciliation ack + Retry.
    */
-  reply: createChatThreadMessageResultSchema,
+  reply: createChatThreadMessageResultSchema.nullable(),
 });
 
 /** Alias — same shape for choices, approval, form, and email-draft answers. */
