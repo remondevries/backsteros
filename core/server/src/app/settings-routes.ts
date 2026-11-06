@@ -3,6 +3,8 @@
  */
 import {
   AgentMailApiError,
+  BunqApiError,
+  BunqLiveApiRefusedError,
   GoogleCalendarApiError,
   MapboxApiError,
   MoneybirdApiError,
@@ -11,6 +13,7 @@ import {
   apiKeyService,
   autoReviewWebhookService,
   brandfetchSettingsService,
+  bunqSettingsService,
   buildWorkspaceSettingRestPayload,
   can,
   canManageApiKeys,
@@ -30,6 +33,7 @@ import {
   mapboxSettingsService,
   mapboxStaticMapQuerySchema,
   moneybirdSettingsService,
+  provisionBunqSandboxUserSchema,
   recordWorkspaceSettingRestSyncEvent,
   sanitizeWorkspaceSettings,
   testCursorConnection,
@@ -38,6 +42,7 @@ import {
   updateAgentMailSettingsSchema,
   updateAutoReviewWebhookSettingsSchema,
   updateBrandfetchSettingsSchema,
+  updateBunqSettingsSchema,
   updateCloudflareSettingsSchema,
   updateCursorSettingsSchema,
   updateGithubSettingsSchema,
@@ -285,6 +290,14 @@ export function registerSettingsRoutes(app: Hono) {
       test: moneybirdSettingsService.testMoneybirdConnection,
     }),
     integrationSettingsRoute({
+      slug: "bunq",
+      label: "bunq",
+      schema: updateBunqSettingsSchema,
+      get: bunqSettingsService.getBunqSettings,
+      update: bunqSettingsService.updateBunqSettings,
+      test: bunqSettingsService.testBunqConnection,
+    }),
+    integrationSettingsRoute({
       slug: "mapbox",
       label: "Mapbox",
       schema: updateMapboxSettingsSchema,
@@ -336,6 +349,49 @@ export function registerSettingsRoutes(app: Hono) {
       return c.json({ error: message, code: "bad_request" }, status);
     }
   });
+  app.post("/api/v1/settings/bunq/connect", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "settings:write")) return c.json(forbidden(), 403);
+    try {
+      return c.json(
+        await bunqSettingsService.connectBunqSandbox(auth.workspaceId),
+      );
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Could not connect bunq sandbox";
+      return c.json({ error: message, code: "bad_request" }, 400);
+    }
+  });
+  app.post(
+    "/api/v1/settings/bunq/sandbox-user",
+    zValidator("json", provisionBunqSandboxUserSchema),
+    async (c) => {
+      const auth = getAuth(c);
+      if (!can(auth, "settings:write")) return c.json(forbidden(), 403);
+      const body = c.req.valid("json");
+      try {
+        return c.json(
+          await bunqSettingsService.provisionBunqSandboxUser(
+            auth.workspaceId,
+            body.permittedIps,
+          ),
+        );
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Could not provision bunq sandbox user";
+        const refused = error instanceof BunqLiveApiRefusedError;
+        const apiError = error instanceof BunqApiError;
+        return c.json(
+          { error: message, code: "bad_request" },
+          refused || apiError ? 400 : 400,
+        );
+      }
+    },
+  );
   /**
    * Moneybird → Lemo Design portal email triggers.
    * - sales_invoice_send_manually → invoice email (+ marks invoice eligible for reminders)

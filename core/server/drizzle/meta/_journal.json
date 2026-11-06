@@ -1387,6 +1387,13 @@
       "when": 1796320000000,
       "tag": "0196_moneybird_invoice_reminder_tracks",
       "breakpoints": true
+    },
+    {
+      "idx": 198,
+      "version": "7",
+      "when": 1796350000000,
+      "tag": "0199_bunq_integration",
+      "breakpoints": true
     }
   ]
 }

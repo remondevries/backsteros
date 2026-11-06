@@ -111,6 +111,101 @@ export const moneybirdTestConnectionResultSchema = z.object({
   invoiceSampleCount: z.number().int().nullable(),
 });
 
+/**
+ * bunq sandbox bank connection (OS-166).
+ * Secrets are never returned; live api.bunq.com is refused server-side.
+ */
+export const bunqEnvironmentSchema = z.literal("sandbox");
+
+export const bunqSettingsSchema = z.object({
+  environment: bunqEnvironmentSchema,
+  apiKeyConfigured: z.boolean(),
+  apiKeyPreview: z.string().nullable(),
+  signingPrivateKeyConfigured: z.boolean(),
+  installationConfigured: z.boolean(),
+  sessionConfigured: z.boolean(),
+  deviceId: z.string().nullable(),
+  userId: z.string().nullable(),
+  permittedIps: z.array(z.string()),
+  lastConnectedAt: z.string().nullable(),
+  connected: z.boolean(),
+});
+
+export const updateBunqSettingsSchema = z
+  .object({
+    /** Sandbox API key (sandbox_…); empty string clears. Omit to leave unchanged. */
+    apiKey: z.string().optional(),
+    /** RSA private key PEM used for request signing; empty clears. */
+    signingPrivateKeyPem: z.string().optional(),
+    /** Explicit egress IPs only — wildcards (*) rejected. */
+    permittedIps: z.array(z.string().min(1)).optional(),
+  })
+  .superRefine((value, ctx) => {
+    if (value.apiKey !== undefined) {
+      const trimmed = value.apiKey.trim();
+      if (trimmed && !trimmed.startsWith("sandbox_")) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["apiKey"],
+          message:
+            "only bunq sandbox API keys (sandbox_… prefix) are accepted",
+        });
+      }
+    }
+    if (value.permittedIps?.some((ip) => ip.includes("*"))) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["permittedIps"],
+        message: "permitted_ips must not use wildcards (*)",
+      });
+    }
+  });
+
+export const bunqTestConnectionResultSchema = z.object({
+  ok: z.boolean(),
+  error: z.string().nullable(),
+  environment: bunqEnvironmentSchema,
+  accountCount: z.number().int().nullable(),
+});
+
+export const provisionBunqSandboxUserSchema = z.object({
+  permittedIps: z.array(z.string().min(1)).min(1),
+});
+
+export const bunqMonetaryAccountSummarySchema = z.object({
+  id: z.string(),
+  description: z.string().nullable(),
+  balanceValue: z.string().nullable(),
+  balanceCurrency: z.string().nullable(),
+  status: z.string().nullable(),
+  iban: z.string().nullable(),
+});
+
+export const bunqMonetaryAccountsResponseSchema = z.object({
+  accounts: z.array(bunqMonetaryAccountSummarySchema),
+});
+
+export const bunqPaymentSummarySchema = z.object({
+  id: z.string(),
+  created: z.string().nullable(),
+  updated: z.string().nullable(),
+  amountValue: z.string().nullable(),
+  amountCurrency: z.string().nullable(),
+  description: z.string().nullable(),
+  counterpartyName: z.string().nullable(),
+  counterpartyIban: z.string().nullable(),
+  type: z.string().nullable(),
+  subType: z.string().nullable(),
+});
+
+export const bunqPaymentsQuerySchema = z.object({
+  count: z.coerce.number().int().min(1).max(200).optional(),
+});
+
+export const bunqPaymentsResponseSchema = z.object({
+  payments: z.array(bunqPaymentSummarySchema),
+});
+
 /** Mapbox integration (access token for geocode + static maps). */
 export const mapboxSettingsSchema = z.object({
   accessTokenConfigured: z.boolean(),
@@ -908,6 +1003,24 @@ export type MoneybirdAdministrationSummary = z.infer<
 export type MoneybirdTestConnectionResult = z.infer<
   typeof moneybirdTestConnectionResultSchema
 >;
+
+export type BunqSettings = z.infer<typeof bunqSettingsSchema>;
+
+export type UpdateBunqSettingsInput = z.infer<typeof updateBunqSettingsSchema>;
+
+export type BunqTestConnectionResult = z.infer<
+  typeof bunqTestConnectionResultSchema
+>;
+
+export type ProvisionBunqSandboxUserInput = z.infer<
+  typeof provisionBunqSandboxUserSchema
+>;
+
+export type BunqMonetaryAccountSummary = z.infer<
+  typeof bunqMonetaryAccountSummarySchema
+>;
+
+export type BunqPaymentSummary = z.infer<typeof bunqPaymentSummarySchema>;
 
 export type MapboxSettings = z.infer<typeof mapboxSettingsSchema>;
 

@@ -65,7 +65,7 @@ Owned-account social data sits behind `OwnedAccountAdapter` in `core/server/src/
 | Social post / comment / conversation / message | C | Bodies in Postgres; media URLs are Tier D pointers |
 | Social analytics snapshot | C | Synced from provider (`analytics.synced` + delta); dashboards read our DB |
 | Social webhook event id | — (server audit) | Idempotency for provider retries |
-| Integration secrets (Zernio API key, webhook secret, profile id, analytics cursor) | — (server only) | `workspace_integration_secrets`; same pattern as Moneybird / Mapbox / Cursor |
+| Integration secrets (Zernio API key, webhook secret, profile id, analytics cursor; bunq sandbox API key / signing key / session tokens — ADR-041) | — (server only) | `workspace_integration_secrets`; same pattern as Moneybird / Mapbox / Cursor |
 
 ## Future entities
 

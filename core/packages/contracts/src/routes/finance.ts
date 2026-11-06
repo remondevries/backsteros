@@ -96,6 +96,33 @@ export const financeRoutes: AppRouter = c.router({
     summary:
       "List Moneybird financial accounts for linking a BacksterOS bank account",
   },
+  listBunqMonetaryAccounts: {
+    method: "GET",
+    path: "/api/v1/finance/bunq/accounts",
+    responses: {
+      200: s.bunqMonetaryAccountsResponseSchema,
+      400: badRequestSchema,
+      401: errorSchema,
+      403: errorSchema,
+    },
+    summary:
+      "List bunq sandbox monetary accounts + balances (read-only live proxy)",
+  },
+  listBunqPayments: {
+    method: "GET",
+    path: "/api/v1/finance/bunq/accounts/:monetaryAccountId/payments",
+    pathParams: z.object({
+      monetaryAccountId: z.string().min(1),
+    }),
+    query: s.bunqPaymentsQuerySchema,
+    responses: {
+      200: s.bunqPaymentsResponseSchema,
+      400: badRequestSchema,
+      401: errorSchema,
+      403: errorSchema,
+    },
+    summary: "List bunq sandbox payments for a monetary account (read-only)",
+  },
   listBankAccounts: {
     method: "GET",
     path: "/api/v1/bank-accounts",

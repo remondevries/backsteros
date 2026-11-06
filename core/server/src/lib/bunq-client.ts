@@ -1,0 +1,623 @@
+/**
+ * Thin bunq REST client — sandbox-only, read-only surface for OS-166.
+ *
+ * Auth sequence (official docs):
+ * 1. POST /installation (client public key) → installation token + server public key
+ * 2. POST /device-server (API key + permitted_ips) → device id
+ * 3. POST /session-server → short-lived session token
+ *
+ * Live https://api.bunq.com/v1/ is hard-refused. No payment or mutation methods.
+ *
+ * @see https://doc.bunq.com/tutorials/your-first-payment/creating-the-api-context
+ * @see https://doc.bunq.com/basics/getting-started
+ */
+
+import {
+  createPublicKey,
+  createSign,
+  generateKeyPairSync,
+  randomUUID,
+} from "node:crypto";
+
+export const BUNQ_SANDBOX_API_BASE = "https://public-api.sandbox.bunq.com/v1";
+export const BUNQ_LIVE_API_HOST = "api.bunq.com";
+export const BUNQ_SANDBOX_ENVIRONMENT = "sandbox" as const;
+
+/** Sandbox keys use a `sandbox_` prefix; production keys must never be accepted. */
+export const BUNQ_SANDBOX_API_KEY_PREFIX = "sandbox_";
+
+export type BunqAmount = {
+  value: string;
+  currency: string;
+};
+
+export type BunqMonetaryAccount = {
+  id: string;
+  description: string | null;
+  balance: BunqAmount | null;
+  currency: string | null;
+  status: string | null;
+  iban: string | null;
+};
+
+export type BunqPayment = {
+  id: string;
+  created: string | null;
+  updated: string | null;
+  amount: BunqAmount | null;
+  description: string | null;
+  counterpartyName: string | null;
+  counterpartyIban: string | null;
+  type: string | null;
+  subType: string | null;
+};
+
+export type BunqInstallationResult = {
+  installationToken: string;
+  serverPublicKeyPem: string;
+};
+
+export type BunqSessionResult = {
+  sessionToken: string;
+  userId: string;
+  /** Session expiry hint; bunq auto-logout driven — callers may refresh earlier. */
+  expiresAt: Date | null;
+};
+
+export type BunqSandboxUserResult = {
+  apiKey: string;
+};
+
+export class BunqApiError extends Error {
+  readonly status: number;
+  readonly body: string;
+
+  constructor(status: number, body: string, message?: string) {
+    super(message ?? `bunq API error ${status}`);
+    this.name = "BunqApiError";
+    this.status = status;
+    this.body = body;
+  }
+}
+
+export class BunqLiveApiRefusedError extends Error {
+  constructor(detail: string) {
+    super(`bunq live API refused: ${detail}`);
+    this.name = "BunqLiveApiRefusedError";
+  }
+}
+
+export type BunqFetch = typeof fetch;
+
+export type BunqClientOptions = {
+  /** Must be the sandbox base; live hosts are refused. */
+  baseUrl?: string;
+  apiKey: string;
+  signingPrivateKeyPem: string;
+  installationToken?: string | null;
+  serverPublicKeyPem?: string | null;
+  sessionToken?: string | null;
+  deviceId?: string | null;
+  userId?: string | null;
+  permittedIps: string[];
+  /** Optional description registered on device-server. */
+  deviceDescription?: string;
+  fetchImpl?: BunqFetch;
+};
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value != null && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function asString(value: unknown): string | null {
+  if (typeof value === "string") return value;
+  if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  return null;
+}
+
+function responseItems(payload: unknown): Record<string, unknown>[] {
+  const root = asRecord(payload);
+  const response = root?.Response;
+  if (!Array.isArray(response)) return [];
+  return response
+    .map((entry) => asRecord(entry))
+    .filter((entry): entry is Record<string, unknown> => entry != null);
+}
+
+function findResponseObject(
+  payload: unknown,
+  key: string,
+): Record<string, unknown> | null {
+  for (const entry of responseItems(payload)) {
+    const nested = asRecord(entry[key]);
+    if (nested) return nested;
+  }
+  return null;
+}
+
+export function assertBunqSandboxBaseUrl(baseUrl: string): URL {
+  let url: URL;
+  try {
+    url = new URL(baseUrl);
+  } catch {
+    throw new BunqLiveApiRefusedError(`invalid base URL: ${baseUrl}`);
+  }
+  const host = url.hostname.toLowerCase();
+  if (host === BUNQ_LIVE_API_HOST || host.endsWith(`.${BUNQ_LIVE_API_HOST}`)) {
+    throw new BunqLiveApiRefusedError(
+      "https://api.bunq.com/v1/ is disabled for OS-166 (sandbox only)",
+    );
+  }
+  if (!host.includes("sandbox") || !host.endsWith(".bunq.com")) {
+    throw new BunqLiveApiRefusedError(
+      `only ${BUNQ_SANDBOX_API_BASE} is allowed (got ${host})`,
+    );
+  }
+  return url;
+}
+
+export function assertBunqSandboxApiKey(apiKey: string): string {
+  const trimmed = apiKey.trim();
+  if (!trimmed) {
+    throw new BunqApiError(400, "", "bunq API key is required");
+  }
+  if (!trimmed.startsWith(BUNQ_SANDBOX_API_KEY_PREFIX)) {
+    throw new BunqLiveApiRefusedError(
+      "only sandbox API keys (sandbox_… prefix) are accepted; production keys are refused",
+    );
+  }
+  // Never accept the well-known production env name as a source of truth.
+  if (trimmed === "BUNQ_PERSONAL_API_KEY") {
+    throw new BunqLiveApiRefusedError(
+      "BUNQ_PERSONAL_API_KEY must never be used",
+    );
+  }
+  return trimmed;
+}
+
+export function assertBunqPermittedIps(ips: string[]): string[] {
+  const cleaned = ips.map((ip) => ip.trim()).filter(Boolean);
+  if (cleaned.length === 0) {
+    throw new BunqApiError(
+      400,
+      "",
+      "bunq permitted_ips must include at least one explicit IP",
+    );
+  }
+  if (cleaned.some((ip) => ip === "*" || ip.includes("*"))) {
+    throw new BunqApiError(
+      400,
+      "",
+      "bunq permitted_ips must not use wildcards (*); use explicit egress IPs only",
+    );
+  }
+  return cleaned;
+}
+
+export function generateBunqSigningKeyPair(): {
+  privateKeyPem: string;
+  publicKeyPem: string;
+} {
+  const { privateKey, publicKey } = generateKeyPairSync("rsa", {
+    modulusLength: 2048,
+    publicKeyEncoding: { type: "spki", format: "pem" },
+    privateKeyEncoding: { type: "pkcs8", format: "pem" },
+  });
+  return { privateKeyPem: privateKey, publicKeyPem: publicKey };
+}
+
+export function publicKeyPemFromPrivateKeyPem(privateKeyPem: string): string {
+  return createPublicKey(privateKeyPem).export({
+    type: "spki",
+    format: "pem",
+  }) as string;
+}
+
+export function signBunqRequestBody(
+  privateKeyPem: string,
+  body: string,
+): string {
+  const signer = createSign("SHA256");
+  signer.update(body);
+  signer.end();
+  return signer.sign(privateKeyPem, "base64");
+}
+
+export function mapBunqAmount(raw: unknown): BunqAmount | null {
+  const record = asRecord(raw);
+  if (!record) return null;
+  const value = asString(record.value);
+  const currency = asString(record.currency);
+  if (!value || !currency) return null;
+  return { value, currency };
+}
+
+function aliasIban(alias: unknown): string | null {
+  const record = asRecord(alias);
+  if (!record) return null;
+  if (asString(record.type)?.toUpperCase() === "IBAN") {
+    return asString(record.value);
+  }
+  return asString(record.iban) ?? asString(record.value);
+}
+
+function aliasDisplayName(alias: unknown): string | null {
+  const record = asRecord(alias);
+  if (!record) return null;
+  return (
+    asString(record.display_name) ??
+    asString(record.public_nick_name) ??
+    asString(record.name)
+  );
+}
+
+export function mapBunqMonetaryAccount(raw: unknown): BunqMonetaryAccount | null {
+  const record = asRecord(raw);
+  if (!record) return null;
+  const id = asString(record.id);
+  if (!id) return null;
+  const alias = Array.isArray(record.alias) ? record.alias : [];
+  const iban =
+    alias.map(aliasIban).find((value): value is string => Boolean(value)) ??
+    null;
+  return {
+    id,
+    description: asString(record.description),
+    balance: mapBunqAmount(record.balance),
+    currency: asString(record.currency) ?? mapBunqAmount(record.balance)?.currency ?? null,
+    status: asString(record.status),
+    iban,
+  };
+}
+
+export function mapBunqPayment(raw: unknown): BunqPayment | null {
+  const record = asRecord(raw);
+  if (!record) return null;
+  const id = asString(record.id);
+  if (!id) return null;
+  const counterparty = record.counterparty_alias;
+  return {
+    id,
+    created: asString(record.created),
+    updated: asString(record.updated),
+    amount: mapBunqAmount(record.amount),
+    description: asString(record.description),
+    counterpartyName: aliasDisplayName(counterparty),
+    counterpartyIban: aliasIban(counterparty),
+    type: asString(record.type),
+    subType: asString(record.sub_type),
+  };
+}
+
+function extractMonetaryAccounts(payload: unknown): BunqMonetaryAccount[] {
+  const accounts: BunqMonetaryAccount[] = [];
+  for (const entry of responseItems(payload)) {
+    for (const key of Object.keys(entry)) {
+      if (!key.startsWith("MonetaryAccount")) continue;
+      const mapped = mapBunqMonetaryAccount(entry[key]);
+      if (mapped) accounts.push(mapped);
+    }
+  }
+  return accounts;
+}
+
+function extractPayments(payload: unknown): BunqPayment[] {
+  const payments: BunqPayment[] = [];
+  for (const entry of responseItems(payload)) {
+    const payment = asRecord(entry.Payment);
+    const mapped = mapBunqPayment(payment);
+    if (mapped) payments.push(mapped);
+  }
+  return payments;
+}
+
+export class BunqClient {
+  private readonly baseUrl: string;
+  private readonly apiKey: string;
+  private readonly signingPrivateKeyPem: string;
+  private readonly publicKeyPem: string;
+  private readonly permittedIps: string[];
+  private readonly deviceDescription: string;
+  private readonly fetchImpl: BunqFetch;
+
+  installationToken: string | null;
+  serverPublicKeyPem: string | null;
+  sessionToken: string | null;
+  deviceId: string | null;
+  userId: string | null;
+
+  constructor(options: BunqClientOptions) {
+    const base = assertBunqSandboxBaseUrl(
+      options.baseUrl ?? BUNQ_SANDBOX_API_BASE,
+    );
+    this.baseUrl = base.toString().replace(/\/$/, "");
+    this.apiKey = assertBunqSandboxApiKey(options.apiKey);
+    this.signingPrivateKeyPem = options.signingPrivateKeyPem.trim();
+    if (!this.signingPrivateKeyPem.includes("PRIVATE KEY")) {
+      throw new BunqApiError(400, "", "bunq signing private key PEM is required");
+    }
+    this.publicKeyPem = publicKeyPemFromPrivateKeyPem(this.signingPrivateKeyPem);
+    this.permittedIps = assertBunqPermittedIps(options.permittedIps);
+    this.deviceDescription =
+      options.deviceDescription?.trim() || "BacksterOS bunq sandbox (read-only)";
+    this.fetchImpl = options.fetchImpl ?? fetch;
+    this.installationToken = options.installationToken?.trim() || null;
+    this.serverPublicKeyPem = options.serverPublicKeyPem?.trim() || null;
+    this.sessionToken = options.sessionToken?.trim() || null;
+    this.deviceId = options.deviceId?.trim() || null;
+    this.userId = options.userId?.trim() || null;
+  }
+
+  /** Create a sandbox person user and return the API key (sandbox host only). */
+  static async createSandboxUser(
+    fetchImpl: BunqFetch = fetch,
+    baseUrl: string = BUNQ_SANDBOX_API_BASE,
+  ): Promise<BunqSandboxUserResult> {
+    assertBunqSandboxBaseUrl(baseUrl);
+    const url = `${baseUrl.replace(/\/$/, "")}/sandbox-user-person`;
+    const body = "{}";
+    const response = await fetchImpl(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Cache-Control": "no-cache",
+        "User-Agent": "BacksterOS-bunq-sandbox/1.0",
+        "X-Bunq-Client-Request-Id": randomUUID(),
+        "X-Bunq-Language": "en_US",
+        "X-Bunq-Region": "nl_NL",
+        "X-Bunq-Geolocation": "0 0 0 0 000",
+      },
+      body,
+    });
+    const text = await response.text();
+    let payload: unknown = null;
+    try {
+      payload = text ? JSON.parse(text) : null;
+    } catch {
+      payload = null;
+    }
+    if (!response.ok) {
+      throw new BunqApiError(
+        response.status,
+        text,
+        `bunq sandbox-user-person failed (${response.status})`,
+      );
+    }
+    const apiKeyObj = findResponseObject(payload, "ApiKey");
+    const apiKey = asString(apiKeyObj?.api_key);
+    if (!apiKey) {
+      throw new BunqApiError(
+        502,
+        text,
+        "bunq sandbox-user-person response missing ApiKey",
+      );
+    }
+    return { apiKey: assertBunqSandboxApiKey(apiKey) };
+  }
+
+  async createInstallation(): Promise<BunqInstallationResult> {
+    const body = JSON.stringify({
+      client_public_key: this.publicKeyPem,
+    });
+    const payload = await this.requestJson("POST", "/installation", body, {
+      auth: "none",
+      sign: false,
+    });
+    const tokenObj = findResponseObject(payload, "Token");
+    const serverKeyObj = findResponseObject(payload, "ServerPublicKey");
+    const installationToken = asString(tokenObj?.token);
+    const serverPublicKeyPem = asString(serverKeyObj?.server_public_key);
+    if (!installationToken || !serverPublicKeyPem) {
+      throw new BunqApiError(
+        502,
+        JSON.stringify(payload),
+        "bunq installation response missing Token or ServerPublicKey",
+      );
+    }
+    this.installationToken = installationToken;
+    this.serverPublicKeyPem = serverPublicKeyPem;
+    return { installationToken, serverPublicKeyPem };
+  }
+
+  async createDeviceServer(): Promise<string> {
+    if (!this.installationToken) {
+      throw new BunqApiError(400, "", "bunq installation token is required");
+    }
+    const body = JSON.stringify({
+      description: this.deviceDescription,
+      secret: this.apiKey,
+      permitted_ips: this.permittedIps,
+    });
+    const payload = await this.requestJson("POST", "/device-server", body, {
+      auth: "installation",
+      sign: true,
+    });
+    const idObj = findResponseObject(payload, "Id");
+    const deviceId = asString(idObj?.id);
+    if (!deviceId) {
+      throw new BunqApiError(
+        502,
+        JSON.stringify(payload),
+        "bunq device-server response missing Id",
+      );
+    }
+    this.deviceId = deviceId;
+    return deviceId;
+  }
+
+  async createSession(): Promise<BunqSessionResult> {
+    if (!this.installationToken) {
+      throw new BunqApiError(400, "", "bunq installation token is required");
+    }
+    const body = JSON.stringify({ secret: this.apiKey });
+    const payload = await this.requestJson("POST", "/session-server", body, {
+      auth: "installation",
+      sign: true,
+    });
+    const tokenObj = findResponseObject(payload, "Token");
+    const sessionToken = asString(tokenObj?.token);
+    let userId: string | null = null;
+    for (const entry of responseItems(payload)) {
+      for (const key of Object.keys(entry)) {
+        if (!key.startsWith("User")) continue;
+        const user = asRecord(entry[key]);
+        userId = asString(user?.id);
+        if (userId) break;
+      }
+      if (userId) break;
+    }
+    if (!sessionToken || !userId) {
+      throw new BunqApiError(
+        502,
+        JSON.stringify(payload),
+        "bunq session-server response missing Token or User",
+      );
+    }
+    this.sessionToken = sessionToken;
+    this.userId = userId;
+    // bunq extends sessions near expiry; we refresh proactively after 24h when unknown.
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    return { sessionToken, userId, expiresAt };
+  }
+
+  /**
+   * Ensure installation + device + session exist. Reuses durable installation
+   * token when present; always refreshes session when missing/forced.
+   */
+  async ensureApiContext(options?: {
+    forceNewSession?: boolean;
+  }): Promise<{
+    installationToken: string;
+    serverPublicKeyPem: string;
+    deviceId: string;
+    sessionToken: string;
+    userId: string;
+    expiresAt: Date | null;
+  }> {
+    if (!this.installationToken || !this.serverPublicKeyPem) {
+      await this.createInstallation();
+    }
+    if (!this.deviceId) {
+      await this.createDeviceServer();
+    }
+    if (!this.sessionToken || !this.userId || options?.forceNewSession) {
+      const session = await this.createSession();
+      return {
+        installationToken: this.installationToken!,
+        serverPublicKeyPem: this.serverPublicKeyPem!,
+        deviceId: this.deviceId!,
+        sessionToken: session.sessionToken,
+        userId: session.userId,
+        expiresAt: session.expiresAt,
+      };
+    }
+    return {
+      installationToken: this.installationToken!,
+      serverPublicKeyPem: this.serverPublicKeyPem!,
+      deviceId: this.deviceId!,
+      sessionToken: this.sessionToken,
+      userId: this.userId,
+      expiresAt: null,
+    };
+  }
+
+  async listMonetaryAccounts(): Promise<BunqMonetaryAccount[]> {
+    const userId = this.requireUserId();
+    const payload = await this.requestJson(
+      "GET",
+      `/user/${encodeURIComponent(userId)}/monetary-account`,
+      "",
+      { auth: "session", sign: false },
+    );
+    return extractMonetaryAccounts(payload);
+  }
+
+  async listPayments(
+    monetaryAccountId: string,
+    options?: { count?: number },
+  ): Promise<BunqPayment[]> {
+    const userId = this.requireUserId();
+    const count = Math.min(Math.max(options?.count ?? 50, 1), 200);
+    const path =
+      `/user/${encodeURIComponent(userId)}` +
+      `/monetary-account/${encodeURIComponent(monetaryAccountId)}` +
+      `/payment?count=${count}`;
+    const payload = await this.requestJson("GET", path, "", {
+      auth: "session",
+      sign: false,
+    });
+    return extractPayments(payload);
+  }
+
+  private requireUserId(): string {
+    if (!this.userId) {
+      throw new BunqApiError(400, "", "bunq user id is required (open a session)");
+    }
+    if (!this.sessionToken) {
+      throw new BunqApiError(400, "", "bunq session token is required");
+    }
+    return this.userId;
+  }
+
+  private async requestJson(
+    method: "GET" | "POST",
+    path: string,
+    body: string,
+    options: { auth: "none" | "installation" | "session"; sign: boolean },
+  ): Promise<unknown> {
+    // Re-check on every request so a misconfigured base can never drift to live.
+    assertBunqSandboxBaseUrl(this.baseUrl);
+
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      "Cache-Control": "no-cache",
+      "User-Agent": "BacksterOS-bunq-sandbox/1.0",
+      "X-Bunq-Client-Request-Id": randomUUID(),
+      "X-Bunq-Language": "en_US",
+      "X-Bunq-Region": "nl_NL",
+      "X-Bunq-Geolocation": "0 0 0 0 000",
+    };
+
+    if (options.auth === "installation") {
+      if (!this.installationToken) {
+        throw new BunqApiError(400, "", "bunq installation token is required");
+      }
+      headers["X-Bunq-Client-Authentication"] = this.installationToken;
+    } else if (options.auth === "session") {
+      if (!this.sessionToken) {
+        throw new BunqApiError(400, "", "bunq session token is required");
+      }
+      headers["X-Bunq-Client-Authentication"] = this.sessionToken;
+    }
+
+    if (options.sign) {
+      headers["X-Bunq-Client-Signature"] = signBunqRequestBody(
+        this.signingPrivateKeyPem,
+        body,
+      );
+    }
+
+    const response = await this.fetchImpl(`${this.baseUrl}${path}`, {
+      method,
+      headers,
+      body: method === "GET" ? undefined : body,
+    });
+    const text = await response.text();
+    let payload: unknown = null;
+    try {
+      payload = text ? JSON.parse(text) : null;
+    } catch {
+      payload = null;
+    }
+    if (!response.ok) {
+      throw new BunqApiError(
+        response.status,
+        text,
+        `bunq ${method} ${path} failed (${response.status})`,
+      );
+    }
+    return payload;
+  }
+}

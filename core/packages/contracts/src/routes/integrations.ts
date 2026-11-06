@@ -138,6 +138,66 @@ export const integrationsRoutes: AppRouter = c.router({
     },
     summary: "Test Moneybird API token and optional administration access",
   },
+  getBunqSettings: {
+    method: "GET",
+    path: "/api/v1/settings/bunq",
+    responses: {
+      200: s.bunqSettingsSchema,
+      401: errorSchema,
+      403: errorSchema,
+    },
+    summary:
+      "Get bunq sandbox integration settings (API key / signing key redacted)",
+  },
+  updateBunqSettings: {
+    method: "PATCH",
+    path: "/api/v1/settings/bunq",
+    body: s.updateBunqSettingsSchema,
+    responses: {
+      200: s.bunqSettingsSchema,
+      400: badRequestSchema,
+      401: errorSchema,
+      403: errorSchema,
+    },
+    summary:
+      "Update bunq sandbox API key, signing key, and permitted egress IPs",
+  },
+  testBunqConnection: {
+    method: "GET",
+    path: "/api/v1/settings/bunq/test",
+    responses: {
+      200: s.bunqTestConnectionResultSchema,
+      401: errorSchema,
+      403: errorSchema,
+    },
+    summary: "Connect sandbox session and list monetary accounts (read-only)",
+  },
+  connectBunqSandbox: {
+    method: "POST",
+    path: "/api/v1/settings/bunq/connect",
+    body: z.object({}).optional(),
+    responses: {
+      200: s.bunqSettingsSchema,
+      400: badRequestSchema,
+      401: errorSchema,
+      403: errorSchema,
+    },
+    summary:
+      "Ensure sandbox installation / device / session (no live api.bunq.com)",
+  },
+  provisionBunqSandboxUser: {
+    method: "POST",
+    path: "/api/v1/settings/bunq/sandbox-user",
+    body: s.provisionBunqSandboxUserSchema,
+    responses: {
+      200: s.bunqSettingsSchema,
+      400: badRequestSchema,
+      401: errorSchema,
+      403: errorSchema,
+    },
+    summary:
+      "Create an official bunq sandbox person user and store the sandbox API key",
+  },
   getMapboxSettings: {
     method: "GET",
     path: "/api/v1/settings/mapbox",

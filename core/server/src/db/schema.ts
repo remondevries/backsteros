@@ -168,6 +168,29 @@ export const workspaceIntegrationSecrets = pgTable(
     zernioWebhookUrl: text("zernio_webhook_url"),
     /** Cursor from analytics.synced / GET /v1/analytics/delta. */
     zernioAnalyticsCursor: text("zernio_analytics_cursor"),
+    /**
+     * bunq (OS-166) — sandbox-only read-only bank connection.
+     * API key / signing key / tokens never returned in full; never PowerSync.
+     */
+    bunqApiKey: text("bunq_api_key"),
+    bunqSigningPrivateKeyPem: text("bunq_signing_private_key_pem"),
+    bunqInstallationToken: text("bunq_installation_token"),
+    bunqServerPublicKeyPem: text("bunq_server_public_key_pem"),
+    bunqSessionToken: text("bunq_session_token"),
+    bunqSessionExpiresAt: timestamp("bunq_session_expires_at", {
+      withTimezone: true,
+    }),
+    bunqDeviceId: text("bunq_device_id"),
+    bunqUserId: text("bunq_user_id"),
+    /** Always `sandbox` for this pass; live refused in the client. */
+    bunqEnvironment: text("bunq_environment"),
+    bunqPermittedIps: jsonb("bunq_permitted_ips")
+      .$type<string[]>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    bunqLastConnectedAt: timestamp("bunq_last_connected_at", {
+      withTimezone: true,
+    }),
     /** Google Calendar OAuth (ADR-037) — never returned in full. */
     googleCalendarClientId: text("google_calendar_client_id"),
     googleCalendarClientSecret: text("google_calendar_client_secret"),
@@ -3523,6 +3546,24 @@ export const moneybirdInvoiceReminderTracks = pgTable(
     dueAt3: timestamp("due_at_3", { withTimezone: true }),
     locale: text("locale"),
     cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
+    /** When the portal invoice email was first sent / eligibility set. */
+    portalInvoiceSentAt: timestamp("portal_invoice_sent_at", {
+      withTimezone: true,
+    }),
+    /** AgentMail ids for the portal invoice email (1:1 activity → message). */
+    portalInvoiceMessageId: text("portal_invoice_message_id"),
+    portalInvoiceInboxId: text("portal_invoice_inbox_id"),
+    /** Recipient email for the portal invoice send (activity label). */
+    portalInvoiceTo: text("portal_invoice_to"),
+    reminderMessageId1: text("reminder_message_id_1"),
+    reminderInboxId1: text("reminder_inbox_id_1"),
+    reminderTo1: text("reminder_to_1"),
+    reminderMessageId2: text("reminder_message_id_2"),
+    reminderInboxId2: text("reminder_inbox_id_2"),
+    reminderTo2: text("reminder_to_2"),
+    reminderMessageId3: text("reminder_message_id_3"),
+    reminderInboxId3: text("reminder_inbox_id_3"),
+    reminderTo3: text("reminder_to_3"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),

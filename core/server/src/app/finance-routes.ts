@@ -31,6 +31,7 @@ import {
   moneybirdSalesInvoicesQuerySchema,
   moneybirdInvoiceRevenueQuerySchema,
   moneybirdBankAccountSyncQuerySchema,
+  bunqPaymentsQuerySchema,
 } from "@backsteros/contracts";
 
 import {
@@ -43,12 +44,14 @@ import {
   toFinancialImportBatch,
   toFinancialTransaction,
 } from "../lib/mappers.js";
+import { BunqApiError, BunqLiveApiRefusedError } from "../lib/bunq-client.js";
 import { MoneybirdApiError } from "../lib/moneybird-client.js";
 import { newId } from "../lib/crypto.js";
 import { clientEstimateRouteDeps } from "../services/finance/client-estimates.js";
 import * as financeService from "../services/finance/finance.js";
 import * as moneybirdBankSyncService from "../services/finance/moneybird-sync.js";
 import * as moneybirdSettingsService from "../services/moneybird-settings.js";
+import * as bunqSettingsService from "../services/bunq-settings.js";
 import {
   recordBankAccountRestSyncEvent,
   recordCashflowPlannerRestSyncEvent,
@@ -359,6 +362,52 @@ export function registerFinanceRoutes(app: Hono) {
       return c.json({ error: message, code: "bad_request" }, 400);
     }
   });
+  app.get("/api/v1/finance/bunq/accounts", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "finance:read")) return c.json(forbidden(), 403);
+    try {
+      const accounts = await bunqSettingsService.listBunqMonetaryAccounts(
+        auth.workspaceId,
+      );
+      return c.json({ accounts });
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Could not list bunq sandbox accounts";
+      const status =
+        error instanceof BunqLiveApiRefusedError
+          ? 400
+          : error instanceof BunqApiError && error.status >= 400
+            ? Math.min(error.status, 502)
+            : 400;
+      return c.json({ error: message, code: "bad_request" }, status as 400);
+    }
+  });
+  app.get(
+    "/api/v1/finance/bunq/accounts/:monetaryAccountId/payments",
+    zValidator("query", bunqPaymentsQuerySchema),
+    async (c) => {
+      const auth = getAuth(c);
+      if (!can(auth, "finance:read")) return c.json(forbidden(), 403);
+      const monetaryAccountId = c.req.param("monetaryAccountId");
+      const query = c.req.valid("query");
+      try {
+        const payments = await bunqSettingsService.listBunqPayments(
+          auth.workspaceId,
+          monetaryAccountId,
+          { count: query.count },
+        );
+        return c.json({ payments });
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Could not list bunq sandbox payments";
+        return c.json({ error: message, code: "bad_request" }, 400);
+      }
+    },
+  );
   app.get("/api/v1/bank-accounts", async (c) => {
     const auth = getAuth(c);
     if (!can(auth, "finance:read")) return c.json(forbidden(), 403);

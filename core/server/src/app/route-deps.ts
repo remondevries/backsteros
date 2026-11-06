@@ -91,6 +91,8 @@ export {
   updateMapboxSettingsSchema,
   updateMeetingSchema,
   updateMoneybirdSettingsSchema,
+  updateBunqSettingsSchema,
+  provisionBunqSandboxUserSchema,
   updateProjectSchema,
   updateProjectUpdateSchema,
   updateTaskCommentSchema,
@@ -371,6 +373,11 @@ export {
   meetingExternalCalendarHttpError,
 } from "../services/meetings.js";
 export * as moneybirdSettingsService from "../services/moneybird-settings.js";
+export * as bunqSettingsService from "../services/bunq-settings.js";
+export {
+  BunqApiError,
+  BunqLiveApiRefusedError,
+} from "../lib/bunq-client.js";
 export * as portalContactLogsService from "../services/portal-contact-logs.js";
 export * as projectFsService from "../services/project-fs.js";
 export * as projectUpdatesService from "../services/project-updates.js";

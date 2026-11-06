@@ -659,4 +659,28 @@ Boot graph, gaps, risks, and the first implementation slice: [17-desktop-without
 
 ---
 
+## ADR-041: bunq — sandbox-only read-only bank connection (OS-166)
+
+**Status:** Accepted (2026-11-06)  
+**Context:** Remon has a personal bunq Pro account and wants a BacksterOS bank connection. Official bunq docs state a personal API key grants full account access (not a read-only OAuth scope). Live credentials, payments, account/card mutations, and public callback exposure are out of scope for the first pass.
+
+**Decision:**
+
+1. Add a thin first-party bunq HTTP client in `core/server` (`lib/bunq-client.ts`) that talks **only** to `https://public-api.sandbox.bunq.com/v1/`. Construction and every request hard-refuse `api.bunq.com`.
+2. Accept **sandbox API keys only** (`sandbox_` prefix). Never read or use `BUNQ_PERSONAL_API_KEY` or any production key. Prefer generating a sandbox person user via official `POST /sandbox-user-person` when agents need a key.
+3. Auth follows the official installation → device-server → session-server sequence with RSA request signing. Session tokens are refreshed; installation tokens persist. `permitted_ips` must be explicit egress IPs — wildcards (`*`) are rejected.
+4. Store secrets + durable non-secret connection state on `workspace_integration_secrets` (Moneybird / Mapbox pattern; never PowerSync): API key, signing private key PEM, installation/session tokens, server public key, device/user ids, permitted IPs, last connected at. Settings responses expose configured/masked previews only.
+5. Expose Settings routes (`GET/PATCH /api/v1/settings/bunq`, test, connect, sandbox-user) and read-only Finance live-proxy routes (`GET /api/v1/finance/bunq/accounts`, `…/payments`). No payment creation, draft payments, card/account mutations, or ingest into Moneybird / local ledger in this pass.
+6. Ralph owns later finance consumption (e.g. reconciliation). Remon decides host egress IPs, whether to enable a later reviewed production/read path, and whether callbacks are wanted.
+
+**Live-credential handoff (not in this pass):**
+
+- Remon must explicitly approve production use, provide a secret via a secure channel (never chat / task comments / git), and review permitted egress IPs for the host that will call bunq (inbound IP ≠ outbound IP for `agent.backsteros.com`).
+- Document that a personal key is **not** a safe read-only credential even if BacksterOS only calls read endpoints.
+- Production signing, token storage, and any callback URL require a separate reviewed change; do not flip the sandbox hard-gate without that review.
+
+**Alternatives rejected:** Archived bunq SDKs as hard deps; OAuth-as-read-only; Ponto / Moneybird as the bunq pipe; storing secrets in env-only when workspace_integration_secrets already exists; `permitted_ips: ["*"]`; live API testing in OS-166.
+
+---
+
 
