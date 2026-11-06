@@ -165,215 +165,230 @@ export function SettingsIntegrationsTab({
     };
 
     // 1) Load settings (fast) — show Checking… only where a probe will run.
-    const [
-      cursor,
-      github,
-      transip,
-      cloudflare,
-      moneybird,
-      mapbox,
-      brandfetch,
-      chatwoot,
-      googleCalendar,
-      email,
-      social,
-    ] = await Promise.all([
-      loadConfigured(
-        "cursor",
-        () => client.requestJson<CursorSettings>("/api/v1/settings/cursor"),
-        (body) => body.apiKeyConfigured,
-      ),
-      loadConfigured(
-        "github",
-        () => client.requestJson<GithubSettings>("/api/v1/settings/github"),
-        (body) => body.apiTokenConfigured || body.envTokenConfigured,
-      ),
-      loadConfigured(
-        "transip",
-        () => client.requestJson<TransipSettings>("/api/v1/settings/transip"),
-        (body) =>
-          body.keyConfigured ||
-          body.apiTokenConfigured ||
-          body.envKeyConfigured ||
-          body.envTokenConfigured,
-      ),
-      loadConfigured(
-        "cloudflare",
-        () =>
-          client.requestJson<CloudflareSettings>("/api/v1/settings/cloudflare"),
-        (body) => body.apiTokenConfigured || body.envTokenConfigured,
-      ),
-      loadConfigured(
-        "moneybird",
-        () =>
-          client.requestJson<MoneybirdSettings>("/api/v1/settings/moneybird"),
-        (body) => body.apiTokenConfigured,
-      ),
-      loadConfigured(
-        "mapbox",
-        () => client.requestJson<MapboxSettings>("/api/v1/settings/mapbox"),
-        (body) => body.accessTokenConfigured,
-      ),
-      loadConfigured(
-        "brandfetch",
-        () =>
-          client.requestJson<BrandfetchSettings>(
-            "/api/v1/settings/brandfetch",
-          ),
-        (body) => body.apiKeyConfigured || body.envKeyConfigured,
-      ),
-      loadConfigured(
-        "chatwoot",
-        () =>
-          client.requestJson<ChatwootSettings>("/api/v1/settings/chatwoot"),
-        (body) =>
-          Boolean(body.baseUrl && body.accountId && body.apiTokenConfigured),
-      ),
-      loadConfigured(
-        "google-calendar",
-        () =>
-          client.requestJson<GoogleCalendarSettings>(
-            "/api/v1/settings/google-calendar",
-          ),
-        (body) => body.clientIdConfigured && body.clientSecretConfigured,
-        // OAuth refresh token required for a real Calendar probe.
-        (body) => body.connected,
-      ),
-      loadConfigured(
-        "email",
-        () =>
-          client.requestJson<AgentMailSettings>("/api/v1/settings/agentmail"),
-        (body) => body.apiKeyConfigured,
-      ),
-      loadConfigured(
-        "social",
-        () => client.requestJson<SocialSettings>("/api/v1/settings/social"),
-        (body) => body.apiKeyConfigured,
-      ),
-      // Whoop has no provider /test route — token presence in totem.env is the check.
-      (async () => {
-        try {
-          const body = await fetchWhoopSettingsStatus();
-          next.whoop = {
-            configured: body.configured,
-            connected: body.connected,
-          };
-        } catch {
-          next.whoop = EMPTY_STATUS;
-        }
-      })(),
-      // Auto-review /test POSTs a webhook (side effect) — don't fire from the grid.
-      (async () => {
-        try {
-          const body =
-            await client.requestJson<AutoReviewWebhookSettings>(
-              "/api/v1/settings/auto-review-webhook",
+    // Whoop / auto-review mutate `next` themselves and must not share the
+    // destructured probe slots (that used to shift `social` onto `undefined`
+    // and crash Integrations before the grid could paint).
+    try {
+      const [
+        cursor,
+        github,
+        transip,
+        cloudflare,
+        moneybird,
+        mapbox,
+        brandfetch,
+        chatwoot,
+        googleCalendar,
+        email,
+        social,
+      ] = await Promise.all([
+        loadConfigured(
+          "cursor",
+          () => client.requestJson<CursorSettings>("/api/v1/settings/cursor"),
+          (body) => body.apiKeyConfigured,
+        ),
+        loadConfigured(
+          "github",
+          () => client.requestJson<GithubSettings>("/api/v1/settings/github"),
+          (body) => body.apiTokenConfigured || body.envTokenConfigured,
+        ),
+        loadConfigured(
+          "transip",
+          () => client.requestJson<TransipSettings>("/api/v1/settings/transip"),
+          (body) =>
+            body.keyConfigured ||
+            body.apiTokenConfigured ||
+            body.envKeyConfigured ||
+            body.envTokenConfigured,
+        ),
+        loadConfigured(
+          "cloudflare",
+          () =>
+            client.requestJson<CloudflareSettings>(
+              "/api/v1/settings/cloudflare",
+            ),
+          (body) => body.apiTokenConfigured || body.envTokenConfigured,
+        ),
+        loadConfigured(
+          "moneybird",
+          () =>
+            client.requestJson<MoneybirdSettings>(
+              "/api/v1/settings/moneybird",
+            ),
+          (body) => body.apiTokenConfigured,
+        ),
+        loadConfigured(
+          "mapbox",
+          () => client.requestJson<MapboxSettings>("/api/v1/settings/mapbox"),
+          (body) => body.accessTokenConfigured,
+        ),
+        loadConfigured(
+          "brandfetch",
+          () =>
+            client.requestJson<BrandfetchSettings>(
+              "/api/v1/settings/brandfetch",
+            ),
+          (body) => body.apiKeyConfigured || body.envKeyConfigured,
+        ),
+        loadConfigured(
+          "chatwoot",
+          () =>
+            client.requestJson<ChatwootSettings>("/api/v1/settings/chatwoot"),
+          (body) =>
+            Boolean(body.baseUrl && body.accountId && body.apiTokenConfigured),
+        ),
+        loadConfigured(
+          "google-calendar",
+          () =>
+            client.requestJson<GoogleCalendarSettings>(
+              "/api/v1/settings/google-calendar",
+            ),
+          (body) => body.clientIdConfigured && body.clientSecretConfigured,
+          // OAuth refresh token required for a real Calendar probe.
+          (body) => body.connected,
+        ),
+        loadConfigured(
+          "email",
+          () =>
+            client.requestJson<AgentMailSettings>(
+              "/api/v1/settings/agentmail",
+            ),
+          (body) => body.apiKeyConfigured,
+        ),
+        loadConfigured(
+          "social",
+          () => client.requestJson<SocialSettings>("/api/v1/settings/social"),
+          (body) => body.apiKeyConfigured,
+        ),
+      ]);
+
+      await Promise.all([
+        // Whoop has no provider /test route — token presence in totem.env is the check.
+        (async () => {
+          try {
+            const body = await fetchWhoopSettingsStatus();
+            next.whoop = {
+              configured: body.configured,
+              connected: body.connected,
+            };
+          } catch {
+            next.whoop = EMPTY_STATUS;
+          }
+        })(),
+        // Auto-review /test POSTs a webhook (side effect) — don't fire from the grid.
+        (async () => {
+          try {
+            const body =
+              await client.requestJson<AutoReviewWebhookSettings>(
+                "/api/v1/settings/auto-review-webhook",
+              );
+            const ready = Boolean(
+              body.enabled && body.url && body.secretConfigured,
             );
-          const ready = Boolean(
-            body.enabled && body.url && body.secretConfigured,
-          );
-          next["auto-review"] = {
-            configured: Boolean(body.url && body.secretConfigured),
-            connected: ready,
-          };
-        } catch {
-          next["auto-review"] = EMPTY_STATUS;
-        }
-      })(),
-    ]);
+            next["auto-review"] = {
+              configured: Boolean(body.url && body.secretConfigured),
+              connected: ready,
+            };
+          } catch {
+            next["auto-review"] = EMPTY_STATUS;
+          }
+        })(),
+      ]);
 
-    publish();
-    setStatusesLoading(false);
-    setLoadedSettings({
-      github: github.body,
-      cloudflare: cloudflare.body,
-      moneybird: moneybird.body,
-      mapbox: mapbox.body,
-      brandfetch: brandfetch.body,
-      chatwoot: chatwoot.body,
-      social: social.body,
-    });
+      publish();
+      setLoadedSettings({
+        github: github.body,
+        cloudflare: cloudflare.body,
+        moneybird: moneybird.body,
+        mapbox: mapbox.body,
+        brandfetch: brandfetch.body,
+        chatwoot: chatwoot.body,
+        social: social.body,
+      });
 
-    // 2) Live probes in parallel — same endpoints as each Settings "Test" button.
-    await Promise.all([
-      cursor.probe
-        ? probeLive("cursor", () =>
-            client.requestJson<CursorTestConnectionResult>(
-              "/api/v1/settings/cursor/test",
-            ),
-          )
-        : null,
-      github.probe
-        ? probeLive("github", () =>
-            client.requestJson<GithubTestConnectionResult>(
-              "/api/v1/settings/github/test",
-            ),
-          )
-        : null,
-      transip.probe
-        ? probeLive("transip", () =>
-            client.requestJson<TransipTestConnectionResult>(
-              "/api/v1/settings/transip/test",
-            ),
-          )
-        : null,
-      cloudflare.probe
-        ? probeLive("cloudflare", () =>
-            client.requestJson<CloudflareTestConnectionResult>(
-              "/api/v1/settings/cloudflare/test",
-            ),
-          )
-        : null,
-      moneybird.probe
-        ? probeLive("moneybird", () =>
-            client.requestJson<MoneybirdTestConnectionResult>(
-              "/api/v1/settings/moneybird/test",
-            ),
-          )
-        : null,
-      mapbox.probe
-        ? probeLive("mapbox", () =>
-            client.requestJson<MapboxTestConnectionResult>(
-              "/api/v1/settings/mapbox/test",
-            ),
-          )
-        : null,
-      brandfetch.probe
-        ? probeLive("brandfetch", () =>
-            client.requestJson<BrandfetchTestConnectionResult>(
-              "/api/v1/settings/brandfetch/test",
-            ),
-          )
-        : null,
-      chatwoot.probe
-        ? probeLive("chatwoot", () =>
-            client.requestJson<ChatwootTestConnectionResult>(
-              "/api/v1/settings/chatwoot/test",
-            ),
-          )
-        : null,
-      googleCalendar.probe
-        ? probeLive("google-calendar", () =>
-            client.requestJson<GoogleCalendarTestConnectionResult>(
-              "/api/v1/settings/google-calendar/test",
-            ),
-          )
-        : null,
-      email.probe
-        ? probeLive("email", () =>
-            client.requestJson<AgentMailTestConnectionResult>(
-              "/api/v1/settings/agentmail/test",
-            ),
-          )
-        : null,
-      social.probe
-        ? probeLive("social", () =>
-            client.requestJson<SocialTestConnectionResult>(
-              "/api/v1/settings/social/test",
-            ),
-          )
-        : null,
-    ]);
+      // 2) Live probes in parallel — same endpoints as each Settings "Test" button.
+      await Promise.all([
+        cursor.probe
+          ? probeLive("cursor", () =>
+              client.requestJson<CursorTestConnectionResult>(
+                "/api/v1/settings/cursor/test",
+              ),
+            )
+          : null,
+        github.probe
+          ? probeLive("github", () =>
+              client.requestJson<GithubTestConnectionResult>(
+                "/api/v1/settings/github/test",
+              ),
+            )
+          : null,
+        transip.probe
+          ? probeLive("transip", () =>
+              client.requestJson<TransipTestConnectionResult>(
+                "/api/v1/settings/transip/test",
+              ),
+            )
+          : null,
+        cloudflare.probe
+          ? probeLive("cloudflare", () =>
+              client.requestJson<CloudflareTestConnectionResult>(
+                "/api/v1/settings/cloudflare/test",
+              ),
+            )
+          : null,
+        moneybird.probe
+          ? probeLive("moneybird", () =>
+              client.requestJson<MoneybirdTestConnectionResult>(
+                "/api/v1/settings/moneybird/test",
+              ),
+            )
+          : null,
+        mapbox.probe
+          ? probeLive("mapbox", () =>
+              client.requestJson<MapboxTestConnectionResult>(
+                "/api/v1/settings/mapbox/test",
+              ),
+            )
+          : null,
+        brandfetch.probe
+          ? probeLive("brandfetch", () =>
+              client.requestJson<BrandfetchTestConnectionResult>(
+                "/api/v1/settings/brandfetch/test",
+              ),
+            )
+          : null,
+        chatwoot.probe
+          ? probeLive("chatwoot", () =>
+              client.requestJson<ChatwootTestConnectionResult>(
+                "/api/v1/settings/chatwoot/test",
+              ),
+            )
+          : null,
+        googleCalendar.probe
+          ? probeLive("google-calendar", () =>
+              client.requestJson<GoogleCalendarTestConnectionResult>(
+                "/api/v1/settings/google-calendar/test",
+              ),
+            )
+          : null,
+        email.probe
+          ? probeLive("email", () =>
+              client.requestJson<AgentMailTestConnectionResult>(
+                "/api/v1/settings/agentmail/test",
+              ),
+            )
+          : null,
+        social.probe
+          ? probeLive("social", () =>
+              client.requestJson<SocialTestConnectionResult>(
+                "/api/v1/settings/social/test",
+              ),
+            )
+          : null,
+      ]);
+    } finally {
+      setStatusesLoading(false);
+    }
   }, [client]);
 
   useEffect(() => {
