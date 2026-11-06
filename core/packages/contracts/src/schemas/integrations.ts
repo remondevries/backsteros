@@ -129,6 +129,9 @@ export const bunqSettingsSchema = z.object({
   permittedIps: z.array(z.string()),
   lastConnectedAt: z.string().nullable(),
   connected: z.boolean(),
+  /** Finance bank account ensured for sandbox testing (`bunq-personal`). */
+  bankAccountId: z.string().nullable(),
+  bankAccountName: z.string().nullable(),
 });
 
 export const updateBunqSettingsSchema = z

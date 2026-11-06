@@ -4,7 +4,7 @@
  * Sandbox-only; refuses live api.bunq.com and non-sandbox API keys.
  */
 
-import { eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 
 import type {
   BunqMonetaryAccountSummary,
@@ -15,7 +15,7 @@ import type {
 } from "@backsteros/contracts";
 
 import { db } from "../db/index.js";
-import { workspaceIntegrationSecrets } from "../db/schema.js";
+import { bankAccounts, workspaceIntegrationSecrets } from "../db/schema.js";
 import {
   assertBunqPermittedIps,
   assertBunqSandboxApiKey,
@@ -26,6 +26,10 @@ import {
   type BunqMonetaryAccount,
   type BunqPayment,
 } from "../lib/bunq-client.js";
+import {
+  BUNQ_PERSONAL_BANK_ACCOUNT_KEY,
+  ensureBunqPersonalBankAccount,
+} from "./bunq-personal-bank-account.js";
 import { previewCursorApiKey } from "./cursor-settings.js";
 
 export function previewBunqSecret(secret: string): string {
@@ -101,6 +105,24 @@ function mapPayment(payment: BunqPayment): BunqPaymentSummary {
   };
 }
 
+async function findBunqPersonalBankAccount(workspaceId: string) {
+  const [row] = await db
+    .select({
+      id: bankAccounts.id,
+      name: bankAccounts.name,
+    })
+    .from(bankAccounts)
+    .where(
+      and(
+        eq(bankAccounts.workspaceId, workspaceId),
+        eq(bankAccounts.key, BUNQ_PERSONAL_BANK_ACCOUNT_KEY),
+        isNull(bankAccounts.deletedAt),
+      ),
+    )
+    .limit(1);
+  return row ?? null;
+}
+
 export async function getBunqSettings(
   workspaceId: string,
 ): Promise<BunqSettings> {
@@ -110,6 +132,7 @@ export async function getBunqSettings(
   const installationToken = normalizeOptionalSecret(row?.bunqInstallationToken);
   const sessionToken = normalizeOptionalSecret(row?.bunqSessionToken);
   const permittedIps = row?.bunqPermittedIps ?? [];
+  const bankAccount = await findBunqPersonalBankAccount(workspaceId);
   return {
     environment: BUNQ_SANDBOX_ENVIRONMENT,
     apiKeyConfigured: Boolean(apiKey),
@@ -122,6 +145,8 @@ export async function getBunqSettings(
     permittedIps,
     lastConnectedAt: row?.bunqLastConnectedAt?.toISOString() ?? null,
     connected: Boolean(apiKey && privateKey && installationToken && sessionToken),
+    bankAccountId: bankAccount?.id ?? null,
+    bankAccountName: bankAccount?.name ?? null,
   };
 }
 
@@ -301,6 +326,7 @@ export async function connectBunqSandbox(
     forceNewSession: sessionStale || !row.bunqSessionToken,
   });
   await persistClientContext(workspaceId, client, context.expiresAt);
+  await ensureBunqPersonalBankAccount(workspaceId);
   return getBunqSettings(workspaceId);
 }
 
@@ -349,6 +375,7 @@ export async function provisionBunqSandboxUser(
     bunqLastConnectedAt: null,
     bunqEnvironment: BUNQ_SANDBOX_ENVIRONMENT,
   });
+  await ensureBunqPersonalBankAccount(workspaceId);
   return getBunqSettings(workspaceId);
 }
 
