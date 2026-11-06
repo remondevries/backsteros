@@ -12,6 +12,7 @@ import {
   BunqApiError,
   BunqClient,
   BunqLiveApiRefusedError,
+  BunqPaymentAmbiguousOutcomeError,
   generateBunqSigningKeyPair,
   mapBunqMonetaryAccount,
   mapBunqPayment,
@@ -144,6 +145,147 @@ describe("bunq-client production allowlist", () => {
       (error: unknown) =>
         error instanceof BunqLiveApiRefusedError &&
         /sandbox-only/i.test(error.message),
+    );
+  });
+
+  it("refuses createPayment unless allowPaymentWrites is set", async () => {
+    const { privateKeyPem } = generateBunqSigningKeyPair();
+    const client = new BunqClient({
+      environment: "sandbox",
+      apiKey: "sandbox_fake_key",
+      signingPrivateKeyPem: privateKeyPem,
+      permittedIps: ["127.0.0.1"],
+      sessionToken: "sess",
+      userId: "2",
+    });
+    await assert.rejects(
+      () =>
+        client.createPayment({
+          monetaryAccountId: "1",
+          amountValue: "1.00",
+          amountCurrency: "EUR",
+          recipientName: "Ada",
+          recipientIban: "NL91ABNA0417164300",
+          description: "test",
+          idempotencyKey: "11111111-1111-1111-1111-111111111111",
+        }),
+      (error: unknown) =>
+        error instanceof BunqLiveApiRefusedError &&
+        /payment writes are disabled/i.test(error.message),
+    );
+  });
+
+  it("refuses live production createPayment in test env even with allowPaymentWrites", async () => {
+    const { privateKeyPem } = generateBunqSigningKeyPair();
+    const client = new BunqClient({
+      environment: "production",
+      apiKey: "live-looking-production-key",
+      signingPrivateKeyPem: privateKeyPem,
+      permittedIps: ["188.34.196.92"],
+      sessionToken: "sess",
+      userId: "2",
+      allowPaymentWrites: true,
+    });
+    await assert.rejects(
+      () =>
+        client.createPayment({
+          monetaryAccountId: "1",
+          amountValue: "1.00",
+          amountCurrency: "EUR",
+          recipientName: "Ada",
+          recipientIban: "NL91ABNA0417164300",
+          description: "test",
+          idempotencyKey: "11111111-1111-1111-1111-111111111111",
+        }),
+      (error: unknown) =>
+        error instanceof BunqLiveApiRefusedError &&
+        /live bunq payment writes refused/i.test(error.message),
+    );
+  });
+
+  it("posts a single sandbox payment with X-Bunq-Client-Idempotency-Key via mocked fetch", async () => {
+    const { privateKeyPem } = generateBunqSigningKeyPair();
+    const idem = "22222222-2222-2222-2222-222222222222";
+    const calls: Array<{
+      method: string;
+      url: string;
+      body: string;
+      headers: HeadersInit | undefined;
+    }> = [];
+    const client = new BunqClient({
+      environment: "sandbox",
+      apiKey: "sandbox_fake_key",
+      signingPrivateKeyPem: privateKeyPem,
+      permittedIps: ["127.0.0.1"],
+      sessionToken: "sess",
+      userId: "2",
+      allowPaymentWrites: true,
+      fetchImpl: async (input, init) => {
+        const url = String(input);
+        const method = init?.method ?? "GET";
+        const body = typeof init?.body === "string" ? init.body : "";
+        calls.push({ method, url, body, headers: init?.headers });
+        assert.equal(method, "POST");
+        assert.match(url, /\/payment$/);
+        assert.doesNotMatch(url, /draft-payment|schedule|card|mandate|webhook/i);
+        assert.doesNotMatch(url, /api\.bunq\.com/);
+        const headers = new Headers(init?.headers);
+        assert.equal(headers.get("X-Bunq-Client-Idempotency-Key"), idem);
+        assert.ok(headers.get("X-Bunq-Client-Request-Id"));
+        assert.notEqual(headers.get("X-Bunq-Client-Request-Id"), idem);
+        return new Response(JSON.stringify({ Response: [{ Id: { id: 99 } }] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      },
+    });
+    const result = await client.createPayment({
+      monetaryAccountId: "10",
+      amountValue: "2.50",
+      amountCurrency: "EUR",
+      recipientName: "Ada Lovelace",
+      recipientIban: "NL91 ABNA 0417 1643 00",
+      description: "Books",
+      idempotencyKey: idem,
+    });
+    assert.equal(result.paymentId, "99");
+    assert.equal(calls.length, 1);
+    const parsed = JSON.parse(calls[0]!.body) as {
+      amount: { value: string; currency: string };
+      counterparty_alias: { type: string; value: string; name: string };
+      description: string;
+    };
+    assert.equal(parsed.amount.value, "2.50");
+    assert.equal(parsed.counterparty_alias.type, "IBAN");
+    assert.equal(parsed.counterparty_alias.value, "NL91ABNA0417164300");
+    assert.equal(parsed.description, "Books");
+  });
+
+  it("classifies 5xx payment responses as ambiguous outcome", async () => {
+    const { privateKeyPem } = generateBunqSigningKeyPair();
+    const client = new BunqClient({
+      environment: "sandbox",
+      apiKey: "sandbox_fake_key",
+      signingPrivateKeyPem: privateKeyPem,
+      permittedIps: ["127.0.0.1"],
+      sessionToken: "sess",
+      userId: "2",
+      allowPaymentWrites: true,
+      fetchImpl: async () =>
+        new Response("upstream", { status: 503 }),
+    });
+    await assert.rejects(
+      () =>
+        client.createPayment({
+          monetaryAccountId: "10",
+          amountValue: "1.00",
+          amountCurrency: "EUR",
+          recipientName: "Ada",
+          recipientIban: "NL91ABNA0417164300",
+          description: "x",
+          idempotencyKey: "33333333-3333-3333-3333-333333333333",
+        }),
+      (error: unknown) => error instanceof BunqPaymentAmbiguousOutcomeError,
     );
   });
 });

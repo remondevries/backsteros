@@ -1918,6 +1918,10 @@ export async function answerChatThreadMessageChoices(
 /**
  * Owner answers an assistant approval card once, then posts a normal user
  * message (`Approved: …` / `Rejected: …`) so the usual agent webhook fires.
+ *
+ * OS-167: when the card carries `paymentProposal`, Remon approval/rejection
+ * consumes the bunq proposal (exact hash, one-time) before the chat answer is
+ * recorded. Agents never reach this path (route 403).
  */
 export async function answerChatThreadMessageApproval(
   workspaceId: string,
@@ -1927,6 +1931,7 @@ export async function answerChatThreadMessageApproval(
   note: string | undefined,
   auth: PostMessageAuth,
   deps: DeliverDeps = {},
+  paymentApproverAuth?: import("../middleware/auth.js").AuthContext,
 ): Promise<AnswerChatThreadMessageResult> {
   const [row] = await db
     .select()
@@ -1954,6 +1959,25 @@ export async function answerChatThreadMessageApproval(
   }
 
   const trimmedNote = note?.trim() || undefined;
+
+  if (approval.paymentProposal) {
+    if (!paymentApproverAuth) {
+      throw badRequest(
+        "Authenticated Remon session is required to answer a payment proposal",
+      );
+    }
+    const { handleChatPaymentProposalAnswer } = await import(
+      "./bunq-payment-proposals.js"
+    );
+    await handleChatPaymentProposalAnswer({
+      workspaceId,
+      auth: paymentApproverAuth,
+      proposalId: approval.paymentProposal.proposalId,
+      proposalHash: approval.paymentProposal.proposalHash,
+      decision,
+      note: trimmedNote,
+    });
+  }
 
   const now = deps.now?.() ?? new Date();
   const answer: ChatThreadMessageApprovalAnswer = {

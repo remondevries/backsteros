@@ -683,4 +683,22 @@ Boot graph, gaps, risks, and the first implementation slice: [17-desktop-without
 
 ---
 
+## ADR-041 addendum: Ralph payment proposals with Remon approval (OS-167)
+
+**Status:** Accepted (2026-11-06)  
+**Context:** After OS-166 read-only live bunq, Remon wants Ralph to propose normal personal transfers using the existing workspace bunq key (no Ralph-specific key), with mandatory in-chat Remon approval before any outgoing payment.
+
+**Decision:**
+
+1. Add server-only `bunq_payment_proposals` (migration `0200`, never PowerSync). Ralph creates proposals via `POST /api/v1/finance/bunq/payment-proposals` after agent API-key → `agents.api_key_id` mapping, then stable `BUNQ_PAYMENT_PROPOSAL_AGENT_ID` match (not renameable display name).
+2. Canonical SHA-256 proposal hash covers recipient, IBAN, amount, currency, memo, and source monetary account. Remon **Approve & Pay** (chat `kind=payment` card and/or `…/approve`) must present the exact server hash; mismatch/tampering is refused. Confirmation card shows the **full canonical IBAN**. Approvals are one-time (`consumed_at`) with TTL, `FOR UPDATE` locks, and idempotent create. Approved amount may not exceed proposed. Approved+consumed does not allow free retry; modified payment data requires a new proposal/hash.
+3. Only authenticated workspace owner Remon may approve/reject; agent persona keys always 403. No auto/background approval. Execute is a narrowly validated single `POST …/payment` on the bunq client (`allowPaymentWrites`); drafts/schedule/bulk/card/mandate/webhook/account mutations stay refused.
+4. **Idempotency (bunq docs):** use official `X-Bunq-Client-Idempotency-Key` (server UUID persisted as `bunq_idempotency_key`, tied to the proposal hash). `X-Bunq-Client-Request-Id` is unique per attempt and is **not** idempotent. Same key may be reused only for the identical payment payload/hash. Timeout / 5xx / lost response / DB-update-after-accept → `needs_reconciliation` (never assume no payment; no auto-retry; no new key until Remon acknowledges and gives a fresh one-use Approve & Pay).
+5. Feature default OFF (`BUNQ_PAYMENT_PROPOSALS_ENABLED`). Live production payment HTTP additionally requires `BUNQ_ALLOW_LIVE_PAYMENT_WRITES` and is hard-refused when `NODE_ENV=test`. Tests use unit/mocks (+ integration with mocked bunq) — never call live payment endpoints from the suite. OS-166 read-only sync/list paths stay on the read-only client.
+6. Ralph transaction visibility remains BacksterOS finance bunq views / personal bank sync — not Moneybird.
+
+**Out of scope for this pass:** Desktop UI polish beyond API + chat approval payload; push/deploy; IP allowlist or key rotation.
+
+---
+
 

@@ -59,6 +59,14 @@ export const financeRoutes: AppRouter = c.router({
     }),
     body: z.object({
       locale: z.string().nullable().optional(),
+      /** Staff-chosen recipient; defaults to invoice contact on the portal. */
+      to: z.string().email().nullable().optional(),
+      /**
+       * Which email to send from the staff dropdown.
+       * `invoice` = portal invoice email; `1`/`2`/`3` = that reminder step.
+       * Omit to send the next reminder step (legacy).
+       */
+      kind: s.moneybirdInvoiceSendEmailKindSchema.optional(),
     }),
     responses: {
       200: s.moneybirdInvoiceSendReminderResponseSchema,
@@ -69,7 +77,7 @@ export const financeRoutes: AppRouter = c.router({
       502: badRequestSchema,
     },
     summary:
-      "Manually send the next portal payment reminder (steps 1–3) for an invoice",
+      "Manually send a portal invoice or payment reminder email for an invoice",
   },
   getMoneybirdInvoiceRevenue: {
     method: "GET",
@@ -122,6 +130,80 @@ export const financeRoutes: AppRouter = c.router({
       403: errorSchema,
     },
     summary: "List bunq sandbox payments for a monetary account (read-only)",
+  },
+  listBunqPaymentProposals: {
+    method: "GET",
+    path: "/api/v1/finance/bunq/payment-proposals",
+    responses: {
+      200: s.bunqPaymentProposalsListSchema,
+      401: errorSchema,
+      403: errorSchema,
+    },
+    summary:
+      "List Ralph bunq payment proposals (BacksterOS finance view; not Moneybird)",
+  },
+  createBunqPaymentProposal: {
+    method: "POST",
+    path: "/api/v1/finance/bunq/payment-proposals",
+    body: s.createBunqPaymentProposalInputSchema,
+    responses: {
+      201: s.createBunqPaymentProposalResultSchema,
+      400: badRequestSchema,
+      401: errorSchema,
+      403: errorSchema,
+      409: errorSchema,
+    },
+    summary:
+      "Ralph creates a bunq payment proposal (Remon must approve before transfer)",
+  },
+  getBunqPaymentProposal: {
+    method: "GET",
+    path: "/api/v1/finance/bunq/payment-proposals/:proposalId",
+    pathParams: z.object({
+      proposalId: z.string().min(1),
+    }),
+    responses: {
+      200: s.bunqPaymentProposalResponseSchema,
+      401: errorSchema,
+      403: errorSchema,
+      404: errorSchema,
+    },
+    summary: "Get a bunq payment proposal by id",
+  },
+  approveBunqPaymentProposal: {
+    method: "POST",
+    path: "/api/v1/finance/bunq/payment-proposals/:proposalId/approve",
+    pathParams: z.object({
+      proposalId: z.string().min(1),
+    }),
+    body: s.approveBunqPaymentProposalInputSchema,
+    responses: {
+      200: s.bunqPaymentProposalResponseSchema,
+      400: badRequestSchema,
+      401: errorSchema,
+      403: errorSchema,
+      404: errorSchema,
+      409: errorSchema,
+    },
+    summary:
+      "Remon approves a proposal (exact hash, one-time) and executes the transfer",
+  },
+  rejectBunqPaymentProposal: {
+    method: "POST",
+    path: "/api/v1/finance/bunq/payment-proposals/:proposalId/reject",
+    pathParams: z.object({
+      proposalId: z.string().min(1),
+    }),
+    body: s.rejectBunqPaymentProposalInputSchema,
+    responses: {
+      200: s.bunqPaymentProposalResponseSchema,
+      400: badRequestSchema,
+      401: errorSchema,
+      403: errorSchema,
+      404: errorSchema,
+      409: errorSchema,
+    },
+    summary: "Remon rejects a bunq payment proposal (exact hash, one-time)",
   },
   listBankAccounts: {
     method: "GET",

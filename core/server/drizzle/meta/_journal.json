@@ -1394,6 +1394,13 @@
       "when": 1796350000000,
       "tag": "0199_bunq_integration",
       "breakpoints": true
+    },
+    {
+      "idx": 199,
+      "version": "7",
+      "when": 1796360000000,
+      "tag": "0200_bunq_payment_proposals",
+      "breakpoints": true
     }
   ]
 }

@@ -1,5 +1,5 @@
 /**
- * Thin bunq REST client — read-only surface for OS-166.
+ * Thin bunq REST client — OS-166 read surface + OS-167 gated single payment.
  *
  * Auth sequence (official docs):
  * 1. POST /installation (client public key) → installation token + server public key
@@ -10,8 +10,11 @@
  * - sandbox → https://public-api.sandbox.bunq.com/v1 + sandbox_… keys only
  * - production → https://api.bunq.com/v1 + non-sandbox keys only
  *
- * Read-only GETs for monetary-account + payments. The only write is the
- * sandbox Sugar Daddy request-inquiry helper (hard-refused on production).
+ * Default client is read-only (monetary-account + payment GETs). Payment POSTs
+ * require `allowPaymentWrites: true` and still refuse drafts / schedule / bulk /
+ * card / mandate / webhook / account mutations. Live production payment HTTP is
+ * additionally refused in tests and unless BUNQ_ALLOW_LIVE_PAYMENT_WRITES=true.
+ * Sugar Daddy request-inquiry remains sandbox-only.
  *
  * @see https://doc.bunq.com/tutorials/your-first-payment/creating-the-api-context
  * @see https://doc.bunq.com/basics/getting-started
@@ -23,6 +26,16 @@ import {
   generateKeyPairSync,
   randomUUID,
 } from "node:crypto";
+
+import {
+  assertValidBunqIban,
+  isBunqLivePaymentWriteAllowed,
+  normalizeBunqAmountValue,
+  normalizeBunqCurrency,
+  normalizeBunqMemo,
+  normalizeBunqMonetaryAccountId,
+  normalizeBunqRecipientName,
+} from "./bunq-payment-proposal.js";
 
 export const BUNQ_SANDBOX_API_BASE = "https://public-api.sandbox.bunq.com/v1";
 export const BUNQ_PRODUCTION_API_BASE = "https://api.bunq.com/v1";
@@ -103,6 +116,49 @@ export class BunqLiveApiRefusedError extends Error {
 
 export type BunqFetch = typeof fetch;
 
+export type BunqCreatePaymentInput = {
+  monetaryAccountId: string;
+  amountValue: string;
+  amountCurrency: string;
+  recipientName: string;
+  recipientIban: string;
+  description: string;
+  /**
+   * Official X-Bunq-Client-Idempotency-Key (UUID recommended).
+   * NOT X-Bunq-Client-Request-Id — that header is not idempotent.
+   */
+  idempotencyKey: string;
+};
+
+/**
+ * Payment HTTP outcome is unknown (timeout, 5xx, connection drop). Callers must
+ * mark needs_reconciliation — never assume the transfer did not land.
+ */
+export class BunqPaymentAmbiguousOutcomeError extends Error {
+  readonly status: number | null;
+
+  constructor(message: string, status: number | null = null) {
+    super(message);
+    this.name = "BunqPaymentAmbiguousOutcomeError";
+    this.status = status;
+  }
+}
+
+/** 409 from bunq idempotency key — payment may already exist for this key. */
+export class BunqPaymentIdempotencyConflictError extends Error {
+  readonly status = 409;
+  readonly body: string;
+
+  constructor(body: string, message?: string) {
+    super(
+      message ??
+        "bunq payment idempotency conflict (409) — reconcile before a new key",
+    );
+    this.name = "BunqPaymentIdempotencyConflictError";
+    this.body = body;
+  }
+}
+
 export type BunqClientOptions = {
   /**
    * Explicit environment. Selects the allowed API host + key rules.
@@ -121,6 +177,11 @@ export type BunqClientOptions = {
   permittedIps: string[];
   /** Optional description registered on device-server. */
   deviceDescription?: string;
+  /**
+   * OS-167 — opt-in single-transfer POST /payment. Default false keeps the
+   * OS-166 read-only client behavior for sync / settings / list routes.
+   */
+  allowPaymentWrites?: boolean;
   fetchImpl?: BunqFetch;
 };
 
@@ -422,6 +483,7 @@ export class BunqClient {
   private readonly permittedIps: string[];
   private readonly deviceDescription: string;
   private readonly fetchImpl: BunqFetch;
+  private readonly allowPaymentWrites: boolean;
 
   installationToken: string | null;
   serverPublicKeyPem: string | null;
@@ -445,11 +507,16 @@ export class BunqClient {
     }
     this.publicKeyPem = publicKeyPemFromPrivateKeyPem(this.signingPrivateKeyPem);
     this.permittedIps = assertBunqPermittedIps(options.permittedIps);
+    this.allowPaymentWrites = options.allowPaymentWrites === true;
     this.deviceDescription =
       options.deviceDescription?.trim() ||
       (this.environment === BUNQ_PRODUCTION_ENVIRONMENT
-        ? "BacksterOS read-only finance"
-        : "BacksterOS bunq sandbox (read-only)");
+        ? this.allowPaymentWrites
+          ? "BacksterOS finance payments"
+          : "BacksterOS read-only finance"
+        : this.allowPaymentWrites
+          ? "BacksterOS bunq sandbox"
+          : "BacksterOS bunq sandbox (read-only)");
     this.fetchImpl = options.fetchImpl ?? fetch;
     this.installationToken = options.installationToken?.trim() || null;
     this.serverPublicKeyPem = options.serverPublicKeyPem?.trim() || null;
@@ -687,6 +754,105 @@ export class BunqClient {
   }
 
   /**
+   * OS-167 — narrowly validated single SEPA/bunq payment.
+   * Refuses unless `allowPaymentWrites` was set. Never creates drafts,
+   * schedules, bulk payments, cards, mandates, webhooks, or account changes.
+   * Production live HTTP additionally requires BUNQ_ALLOW_LIVE_PAYMENT_WRITES
+   * and is hard-refused when NODE_ENV=test.
+   */
+  async createPayment(
+    input: BunqCreatePaymentInput,
+  ): Promise<{ paymentId: string }> {
+    if (!this.allowPaymentWrites) {
+      throw new BunqLiveApiRefusedError(
+        "bunq payment writes are disabled on this client (read-only)",
+      );
+    }
+    assertBunqBaseUrl(this.baseUrl, this.environment);
+    if (this.environment === BUNQ_PRODUCTION_ENVIRONMENT) {
+      if (!isBunqLivePaymentWriteAllowed()) {
+        throw new BunqLiveApiRefusedError(
+          "live bunq payment writes refused (tests, or BUNQ_ALLOW_LIVE_PAYMENT_WRITES not set)",
+        );
+      }
+    }
+
+    const idempotencyKey = input.idempotencyKey.trim();
+    if (!idempotencyKey) {
+      throw new BunqApiError(
+        400,
+        "",
+        "bunq payment idempotency key (X-Bunq-Client-Idempotency-Key) is required",
+      );
+    }
+
+    const monetaryAccountId = normalizeBunqMonetaryAccountId(
+      input.monetaryAccountId,
+    );
+    const amountValue = normalizeBunqAmountValue(input.amountValue);
+    const amountCurrency = normalizeBunqCurrency(input.amountCurrency);
+    const recipientName = normalizeBunqRecipientName(input.recipientName);
+    const recipientIban = assertValidBunqIban(input.recipientIban);
+    const description = normalizeBunqMemo(input.description);
+
+    const userId = this.requireUserId();
+    const body = JSON.stringify({
+      amount: {
+        value: amountValue,
+        currency: amountCurrency,
+      },
+      counterparty_alias: {
+        type: "IBAN",
+        value: recipientIban,
+        name: recipientName,
+      },
+      description,
+    });
+    const path =
+      `/user/${encodeURIComponent(userId)}` +
+      `/monetary-account/${encodeURIComponent(monetaryAccountId)}` +
+      `/payment`;
+    let payload: unknown;
+    try {
+      payload = await this.requestJson("POST", path, body, {
+        auth: "session",
+        sign: true,
+        idempotencyKey,
+      });
+    } catch (error) {
+      if (
+        error instanceof BunqPaymentAmbiguousOutcomeError ||
+        error instanceof BunqPaymentIdempotencyConflictError ||
+        error instanceof BunqLiveApiRefusedError
+      ) {
+        throw error;
+      }
+      if (error instanceof BunqApiError) {
+        if (error.status === 409) {
+          throw new BunqPaymentIdempotencyConflictError(error.body, error.message);
+        }
+        if (error.status >= 500 || error.status === 408 || error.status === 429) {
+          throw new BunqPaymentAmbiguousOutcomeError(error.message, error.status);
+        }
+        throw error;
+      }
+      throw new BunqPaymentAmbiguousOutcomeError(
+        error instanceof Error ? error.message : "bunq payment transport failure",
+      );
+    }
+    const idObj = findResponseObject(payload, "Id");
+    const paymentId = asString(idObj?.id);
+    if (!paymentId) {
+      // HTTP looked OK but body unusable — treat as unknown outcome.
+      throw new BunqPaymentAmbiguousOutcomeError(
+        "bunq payment response missing Id after accepted HTTP",
+        502,
+      );
+    }
+    return { paymentId };
+  }
+
+  /**
    * Official sandbox funding path: request money from Sugar Daddy
    * (`sugardaddy@bunq.com`). Auto-approves up to €500 per request. Sandbox
    * host only — never a production payment write.
@@ -762,7 +928,12 @@ export class BunqClient {
     method: "GET" | "POST",
     path: string,
     body: string,
-    options: { auth: "none" | "installation" | "session"; sign: boolean },
+    options: {
+      auth: "none" | "installation" | "session";
+      sign: boolean;
+      /** Official payment idempotency — never reuse Request-Id for this. */
+      idempotencyKey?: string;
+    },
   ): Promise<unknown> {
     // Re-check on every request so environment/host can never drift.
     assertBunqBaseUrl(this.baseUrl, this.environment);
@@ -774,11 +945,16 @@ export class BunqClient {
         this.environment === BUNQ_PRODUCTION_ENVIRONMENT
           ? "BacksterOS-bunq-readonly/1.0"
           : "BacksterOS-bunq-sandbox/1.0",
+      // Per bunq docs: Request-Id is NOT idempotent — unique per attempt.
       "X-Bunq-Client-Request-Id": randomUUID(),
       "X-Bunq-Language": "en_US",
       "X-Bunq-Region": "nl_NL",
       "X-Bunq-Geolocation": "0 0 0 0 000",
     };
+
+    if (options.idempotencyKey?.trim()) {
+      headers["X-Bunq-Client-Idempotency-Key"] = options.idempotencyKey.trim();
+    }
 
     if (options.auth === "installation") {
       if (!this.installationToken) {
@@ -799,11 +975,23 @@ export class BunqClient {
       );
     }
 
-    const response = await this.fetchImpl(`${this.baseUrl}${path}`, {
-      method,
-      headers,
-      body: method === "GET" ? undefined : body,
-    });
+    let response: Response;
+    try {
+      response = await this.fetchImpl(`${this.baseUrl}${path}`, {
+        method,
+        headers,
+        body: method === "GET" ? undefined : body,
+      });
+    } catch (error) {
+      if (options.idempotencyKey) {
+        throw new BunqPaymentAmbiguousOutcomeError(
+          error instanceof Error
+            ? error.message
+            : "bunq payment fetch failed before response",
+        );
+      }
+      throw error;
+    }
     const text = await response.text();
     let payload: unknown = null;
     try {

@@ -3579,3 +3579,88 @@ export const moneybirdInvoiceReminderTracks = pgTable(
 
 export type DbMoneybirdInvoiceReminderTrack =
   typeof moneybirdInvoiceReminderTracks.$inferSelect;
+
+/**
+ * Ralph → Remon bunq payment proposals (OS-167).
+ * Twin/server-only — never PowerSync. Execute only after Remon chat approval.
+ */
+export const bunqPaymentProposals = pgTable(
+  "bunq_payment_proposals",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    proposedByAgentId: text("proposed_by_agent_id")
+      .notNull()
+      .references(() => agents.id, { onDelete: "restrict" }),
+    proposedByApiKeyId: text("proposed_by_api_key_id").references(
+      () => apiKeys.id,
+      { onDelete: "set null" },
+    ),
+    recipientName: text("recipient_name").notNull(),
+    recipientIban: text("recipient_iban").notNull(),
+    amountValue: text("amount_value").notNull(),
+    amountCurrency: text("amount_currency").notNull(),
+    memo: text("memo").notNull(),
+    sourceMonetaryAccountId: text("source_monetary_account_id").notNull(),
+    proposalHash: text("proposal_hash").notNull(),
+    status: text("status").notNull().default("pending"),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    chatThreadId: text("chat_thread_id").references(() => chatThreads.id, {
+      onDelete: "set null",
+    }),
+    chatMessageId: text("chat_message_id").references(
+      () => chatThreadMessages.id,
+      { onDelete: "set null" },
+    ),
+    approvedByUserId: text("approved_by_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    approvedAt: timestamp("approved_at", { withTimezone: true }),
+    consumedAt: timestamp("consumed_at", { withTimezone: true }),
+    approvedAmountValue: text("approved_amount_value"),
+    bunqPaymentId: text("bunq_payment_id"),
+    executionError: text("execution_error"),
+    paymentAttemptedAt: timestamp("payment_attempted_at", {
+      withTimezone: true,
+    }),
+    /** Client create dedupe — not sent to bunq. */
+    clientIdempotencyKey: text("client_idempotency_key").notNull(),
+    /**
+     * Official X-Bunq-Client-Idempotency-Key (UUID). Server-generated once per
+     * proposal hash; reused only for the identical payment payload.
+     */
+    bunqIdempotencyKey: text("bunq_idempotency_key").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("bunq_payment_proposals_workspace_client_idem_uidx").on(
+      table.workspaceId,
+      table.clientIdempotencyKey,
+    ),
+    uniqueIndex("bunq_payment_proposals_workspace_bunq_idem_uidx").on(
+      table.workspaceId,
+      table.bunqIdempotencyKey,
+    ),
+    index("bunq_payment_proposals_workspace_status_idx").on(
+      table.workspaceId,
+      table.status,
+    ),
+    index("bunq_payment_proposals_workspace_agent_idx").on(
+      table.workspaceId,
+      table.proposedByAgentId,
+    ),
+    index("bunq_payment_proposals_workspace_expires_idx").on(
+      table.workspaceId,
+      table.expiresAt,
+    ),
+  ],
+);
+
+export type DbBunqPaymentProposal = typeof bunqPaymentProposals.$inferSelect;

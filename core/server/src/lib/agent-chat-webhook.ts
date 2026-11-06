@@ -81,6 +81,11 @@ export type AgentChatWebhookApproval = {
   approveLabel?: string;
   rejectLabel?: string;
   destructive: boolean;
+  /** OS-167 — binds the card to a bunq payment proposal (hash-gated). */
+  paymentProposal?: {
+    proposalId: string;
+    proposalHash: string;
+  };
 };
 
 export type AgentChatWebhookApprovalAnswer = {

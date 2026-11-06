@@ -170,6 +170,12 @@ export const chatThreadMessageApprovalFieldSchema = z.object({
  * Interactive approve/reject card on an assistant message. Optional alongside
  * `choices`; desktop renders below the bubble.
  */
+export const chatThreadMessageApprovalPaymentProposalSchema = z.object({
+  proposalId: z.string().trim().min(1).max(64),
+  /** Exact SHA-256 hex — Remon approval must match server proposal hash. */
+  proposalHash: z.string().trim().length(64),
+});
+
 export const chatThreadMessageApprovalSchema = z.object({
   title: z.string().trim().min(1).max(120),
   kind: chatThreadMessageApprovalKindSchema.default("generic"),
@@ -181,6 +187,11 @@ export const chatThreadMessageApprovalSchema = z.object({
   rejectLabel: z.string().trim().min(1).max(40).optional(),
   /** When true, Approve uses the danger button style. */
   destructive: z.boolean().default(false),
+  /**
+   * OS-167 — when kind=payment, binds this card to a bunq payment proposal.
+   * Owner /answer approved|rejected consumes the proposal (agents cannot).
+   */
+  paymentProposal: chatThreadMessageApprovalPaymentProposalSchema.optional(),
 });
 
 export const chatThreadMessageApprovalDecisionSchema = z.enum([
@@ -1073,6 +1084,9 @@ export type ChatThreadMessageApprovalKind = z.infer<
 >;
 export type ChatThreadMessageApprovalField = z.infer<
   typeof chatThreadMessageApprovalFieldSchema
+>;
+export type ChatThreadMessageApprovalPaymentProposal = z.infer<
+  typeof chatThreadMessageApprovalPaymentProposalSchema
 >;
 export type ChatThreadMessageApproval = z.infer<
   typeof chatThreadMessageApprovalSchema

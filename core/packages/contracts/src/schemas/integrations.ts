@@ -134,6 +134,11 @@ export const bunqSettingsSchema = z.object({
   /** Finance bank account ensured for bunq testing (`bunq-personal`). */
   bankAccountId: z.string().nullable(),
   bankAccountName: z.string().nullable(),
+  /**
+   * OS-167 — Ralph payment proposals. Default false until
+   * BUNQ_PAYMENT_PROPOSALS_ENABLED=true on the core that holds the key.
+   */
+  paymentProposalsEnabled: z.boolean(),
 });
 
 export const updateBunqSettingsSchema = z
@@ -246,6 +251,126 @@ export const bunqPaymentsQuerySchema = z.object({
 
 export const bunqPaymentsResponseSchema = z.object({
   payments: z.array(bunqPaymentSummarySchema),
+});
+
+/**
+ * OS-167 — Ralph proposes; Remon must approve in chat before any transfer.
+ * Narrow single-transfer fields only (no draft/schedule/bulk).
+ */
+export const bunqPaymentProposalStatusSchema = z.enum([
+  "pending",
+  "approved",
+  "rejected",
+  "executed",
+  "failed",
+  "expired",
+  "needs_reconciliation",
+]);
+
+export const bunqPaymentProposalSchema = z.object({
+  id: z.string().min(1),
+  proposedByAgentId: z.string().min(1),
+  recipientName: z.string().min(1).max(100),
+  /** Normalized IBAN (no spaces). Never log / comment in tasks. */
+  recipientIban: z.string().min(15).max(34),
+  amountValue: z.string().min(1).max(32),
+  amountCurrency: z.string().length(3),
+  memo: z.string().min(1).max(140),
+  sourceMonetaryAccountId: z.string().min(1).max(32),
+  proposalHash: z.string().length(64),
+  status: bunqPaymentProposalStatusSchema,
+  expiresAt: z.string().datetime(),
+  chatThreadId: z.string().nullable(),
+  chatMessageId: z.string().nullable(),
+  approvedByUserId: z.string().nullable(),
+  approvedAt: z.string().datetime().nullable(),
+  consumedAt: z.string().datetime().nullable(),
+  approvedAmountValue: z.string().nullable(),
+  bunqPaymentId: z.string().nullable(),
+  executionError: z.string().nullable(),
+  paymentAttemptedAt: z.string().datetime().nullable(),
+  /** Client create dedupe key (not the bunq payment idempotency header). */
+  clientIdempotencyKey: z.string().min(1).max(128),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+
+export const createBunqPaymentProposalInputSchema = z.object({
+  recipientName: z.string().trim().min(1).max(100),
+  recipientIban: z.string().trim().min(15).max(42),
+  amountValue: z.string().trim().min(1).max(32),
+  amountCurrency: z.string().trim().min(3).max(3).default("EUR"),
+  memo: z.string().trim().min(1).max(140),
+  sourceMonetaryAccountId: z.string().trim().min(1).max(32),
+  /** Optional chat thread for the Remon approval card. */
+  chatThreadId: z.string().trim().min(1).max(64).optional(),
+  /**
+   * Client idempotency key (nanoid / uuid). Retries with the same key return
+   * the existing proposal instead of creating a duplicate.
+   */
+  idempotencyKey: z.string().trim().min(8).max(128),
+  /** Optional TTL override in seconds (max 7 days). Default 24h. */
+  ttlSeconds: z.number().int().min(60).max(604_800).optional(),
+});
+
+export const createBunqPaymentProposalResultSchema = z.object({
+  proposal: bunqPaymentProposalSchema,
+  /**
+   * Ready-to-post assistant approval card payload (kind=payment). Ralph posts
+   * this on the chat thread; Remon answers via the existing /answer route.
+   * Confirmation shows the full canonical IBAN; label is Approve & Pay.
+   */
+  approval: z.object({
+    title: z.string(),
+    kind: z.literal("payment"),
+    summary: z.string(),
+    fields: z
+      .array(
+        z.object({
+          label: z.string(),
+          value: z.string(),
+        }),
+      )
+      .optional(),
+    details: z.string().optional(),
+    approveLabel: z.string().optional(),
+    rejectLabel: z.string().optional(),
+    paymentProposal: z.object({
+      proposalId: z.string(),
+      /** Server-derived hash — clients must not invent/bypass. */
+      proposalHash: z.string().length(64),
+    }),
+  }),
+});
+
+export const approveBunqPaymentProposalInputSchema = z.object({
+  /**
+   * Exact SHA-256 hex of the canonical proposal fields (server-validated;
+   * client-supplied values that do not match are refused).
+   */
+  proposalHash: z.string().trim().length(64),
+  /**
+   * Optional amount ≤ proposed. Omit to transfer the full proposed amount.
+   */
+  amountValue: z.string().trim().min(1).max(32).optional(),
+  /**
+   * Required when status is needs_reconciliation — Remon acknowledges the
+   * unknown prior outcome before a fresh one-use Approve & Pay.
+   */
+  acknowledgeUnknownOutcome: z.boolean().optional(),
+});
+
+export const rejectBunqPaymentProposalInputSchema = z.object({
+  proposalHash: z.string().trim().length(64),
+  note: z.string().trim().min(1).max(500).optional(),
+});
+
+export const bunqPaymentProposalResponseSchema = z.object({
+  proposal: bunqPaymentProposalSchema,
+});
+
+export const bunqPaymentProposalsListSchema = z.object({
+  proposals: z.array(bunqPaymentProposalSchema),
 });
 
 /** Mapbox integration (access token for geocode + static maps). */
@@ -1067,6 +1192,28 @@ export type BunqMonetaryAccountSummary = z.infer<
 >;
 
 export type BunqPaymentSummary = z.infer<typeof bunqPaymentSummarySchema>;
+
+export type BunqPaymentProposalStatus = z.infer<
+  typeof bunqPaymentProposalStatusSchema
+>;
+
+export type BunqPaymentProposal = z.infer<typeof bunqPaymentProposalSchema>;
+
+export type CreateBunqPaymentProposalInput = z.infer<
+  typeof createBunqPaymentProposalInputSchema
+>;
+
+export type CreateBunqPaymentProposalResult = z.infer<
+  typeof createBunqPaymentProposalResultSchema
+>;
+
+export type ApproveBunqPaymentProposalInput = z.infer<
+  typeof approveBunqPaymentProposalInputSchema
+>;
+
+export type RejectBunqPaymentProposalInput = z.infer<
+  typeof rejectBunqPaymentProposalInputSchema
+>;
 
 export type MapboxSettings = z.infer<typeof mapboxSettingsSchema>;
 

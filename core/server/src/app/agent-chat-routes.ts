@@ -381,6 +381,8 @@ export function registerAgentChatRoutes(app: Hono) {
             parsed.data.decision,
             parsed.data.note,
             postAuth,
+            undefined,
+            auth,
           );
           return c.json(result, 201);
         }

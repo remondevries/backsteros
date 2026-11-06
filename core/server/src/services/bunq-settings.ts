@@ -34,6 +34,7 @@ import {
   type BunqMonetaryAccount,
   type BunqPayment,
 } from "../lib/bunq-client.js";
+import { isBunqPaymentProposalsEnabled } from "../lib/bunq-payment-proposal.js";
 import {
   BUNQ_PERSONAL_BANK_ACCOUNT_KEY,
   ensureBunqPersonalBankAccount,
@@ -166,6 +167,7 @@ export async function getBunqSettings(
     connected: Boolean(apiKey && privateKey && installationToken && sessionToken),
     bankAccountId: bankAccount?.id ?? null,
     bankAccountName: bankAccount?.name ?? null,
+    paymentProposalsEnabled: isBunqPaymentProposalsEnabled(),
   };
 }
 
@@ -284,7 +286,10 @@ export async function updateBunqSettings(
   return getBunqSettings(workspaceId);
 }
 
-function buildClientFromRow(row: BunqSecretRow): BunqClient {
+function buildClientFromRow(
+  row: BunqSecretRow,
+  options?: { allowPaymentWrites?: boolean },
+): BunqClient {
   const apiKey = normalizeOptionalSecret(row.bunqApiKey);
   const privateKey = normalizeOptionalSecret(row.bunqSigningPrivateKeyPem);
   if (!apiKey || !privateKey) {
@@ -296,6 +301,7 @@ function buildClientFromRow(row: BunqSecretRow): BunqClient {
   }
   const environment = environmentFromRow(row);
   const permittedIps = assertBunqPermittedIps(row.bunqPermittedIps ?? []);
+  const allowPaymentWrites = options?.allowPaymentWrites === true;
   return new BunqClient({
     environment,
     apiKey,
@@ -306,9 +312,12 @@ function buildClientFromRow(row: BunqSecretRow): BunqClient {
     sessionToken: row.bunqSessionToken,
     deviceId: row.bunqDeviceId,
     userId: row.bunqUserId,
+    allowPaymentWrites,
     deviceDescription:
       environment === BUNQ_PRODUCTION_ENVIRONMENT
-        ? "BacksterOS read-only finance"
+        ? allowPaymentWrites
+          ? "BacksterOS finance payments"
+          : "BacksterOS read-only finance"
         : undefined,
   });
 }
@@ -433,6 +442,7 @@ export async function provisionBunqSandboxUser(
 /** Connected client after ensureApiContext. Secrets never returned. */
 export async function getConnectedBunqClient(
   workspaceId: string,
+  options?: { allowPaymentWrites?: boolean },
 ): Promise<BunqClient> {
   const settings = await connectBunq(workspaceId);
   if (!settings.connected) {
@@ -442,7 +452,17 @@ export async function getConnectedBunqClient(
   if (!row) {
     throw new BunqApiError(400, "", "bunq credentials are not configured");
   }
-  return buildClientFromRow(row);
+  return buildClientFromRow(row, options);
+}
+
+/**
+ * OS-167 — payment-capable client. Still uses the workspace production/sandbox
+ * bunq key (no separate Ralph key). Call only after Remon approval consume.
+ */
+export async function getConnectedBunqPaymentClient(
+  workspaceId: string,
+): Promise<BunqClient> {
+  return getConnectedBunqClient(workspaceId, { allowPaymentWrites: true });
 }
 
 export async function listBunqMonetaryAccounts(

@@ -32,6 +32,9 @@ import {
   moneybirdInvoiceRevenueQuerySchema,
   moneybirdBankAccountSyncQuerySchema,
   bunqPaymentsQuerySchema,
+  createBunqPaymentProposalInputSchema,
+  approveBunqPaymentProposalInputSchema,
+  rejectBunqPaymentProposalInputSchema,
 } from "@backsteros/contracts";
 
 import {
@@ -52,6 +55,7 @@ import * as financeService from "../services/finance/finance.js";
 import * as moneybirdBankSyncService from "../services/finance/moneybird-sync.js";
 import * as moneybirdSettingsService from "../services/moneybird-settings.js";
 import * as bunqBankSyncService from "../services/finance/bunq-sync.js";
+import * as bunqPaymentProposalsService from "../services/bunq-payment-proposals.js";
 import * as bunqSettingsService from "../services/bunq-settings.js";
 import {
   recordBankAccountRestSyncEvent,
@@ -77,9 +81,36 @@ import {
   can,
   forbidden,
   getAuth,
+  isAgentPersonaAuth,
   notFound,
   nudgePeerEntityLive,
 } from "./route-helpers.js";
+
+function bunqProposalErrorStatus(
+  error: unknown,
+): 400 | 403 | 404 | 409 {
+  if (
+    error &&
+    typeof error === "object" &&
+    "status" in error &&
+    typeof (error as { status?: unknown }).status === "number"
+  ) {
+    const status = (error as { status: number }).status;
+    if (status === 404) return 404;
+    if (status === 403) return 403;
+    if (status === 409) return 409;
+  }
+  return 400;
+}
+
+function bunqProposalErrorCode(
+  status: 400 | 403 | 404 | 409,
+): "bad_request" | "forbidden" | "not_found" | "conflict" {
+  if (status === 404) return "not_found";
+  if (status === 403) return "forbidden";
+  if (status === 409) return "conflict";
+  return "bad_request";
+}
 
 export function registerFinanceRoutes(app: Hono) {
   app.get(
@@ -264,18 +295,59 @@ export function registerFinanceRoutes(app: Hono) {
       }
       const body = (await c.req.json().catch(() => ({}))) as {
         locale?: string | null;
+        to?: string | null;
+        kind?: "invoice" | 1 | 2 | 3;
       };
-      const { sendInvoiceReminderManually } = await import(
-        "../lib/moneybird-invoice-reminders.js"
-      );
+      const {
+        sendInvoiceReminderManually,
+        sendPortalInvoiceEmailManually,
+      } = await import("../lib/moneybird-invoice-reminders.js");
+
+      if (body.kind === "invoice") {
+        const result = await sendPortalInvoiceEmailManually({
+          invoiceId,
+          locale: body.locale ?? null,
+          to: body.to ?? null,
+        });
+        if (!result.ok) {
+          const status =
+            result.skipped === "invalid_to"
+              ? 400
+              : 502;
+          return c.json(
+            {
+              error: result.error || "Invoice email send failed",
+              code: result.skipped || "invoice_email_failed",
+            },
+            status,
+          );
+        }
+        return c.json({
+          ok: true as const,
+          invoiceId: result.invoiceId,
+          kind: "invoice" as const,
+          step: null,
+          to: result.to,
+          skipped: result.skipped,
+          message: result.message,
+        });
+      }
+
+      const explicitStep =
+        body.kind === 1 || body.kind === 2 || body.kind === 3
+          ? body.kind
+          : null;
       const result = await sendInvoiceReminderManually({
         invoiceId,
         locale: body.locale ?? null,
+        to: body.to ?? null,
+        step: explicitStep,
       });
       if (!result.ok || result.step == null) {
         const status =
           result.skipped === "all_reminders_sent" ||
-          result.skipped === "cancelled"
+          result.skipped === "cancelled" ||
+          result.skipped === "invalid_to"
             ? 400
             : 502;
         return c.json(
@@ -289,6 +361,7 @@ export function registerFinanceRoutes(app: Hono) {
       return c.json({
         ok: true as const,
         invoiceId: result.invoiceId,
+        kind: "reminder" as const,
         step: result.step,
         to: result.to,
         skipped: result.skipped,
@@ -406,6 +479,163 @@ export function registerFinanceRoutes(app: Hono) {
             ? error.message
             : "Could not list bunq sandbox payments";
         return c.json({ error: message, code: "bad_request" }, 400);
+      }
+    },
+  );
+  app.get("/api/v1/finance/bunq/payment-proposals", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "finance:read")) return c.json(forbidden(), 403);
+    try {
+      const proposals =
+        await bunqPaymentProposalsService.listBunqPaymentProposals(
+          auth.workspaceId,
+        );
+      return c.json({ proposals });
+    } catch (error) {
+      const status = bunqProposalErrorStatus(error);
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Could not list bunq payment proposals";
+      return c.json(
+        { error: message, code: bunqProposalErrorCode(status) },
+        status,
+      );
+    }
+  });
+  app.post(
+    "/api/v1/finance/bunq/payment-proposals",
+    zValidator("json", createBunqPaymentProposalInputSchema),
+    async (c) => {
+      const auth = getAuth(c);
+      if (!can(auth, "finance:write")) return c.json(forbidden(), 403);
+      if (!isAgentPersonaAuth(auth)) {
+        return c.json(
+          {
+            error: "Only the Ralph agent may create bunq payment proposals",
+            code: "forbidden",
+          },
+          403,
+        );
+      }
+      try {
+        const result =
+          await bunqPaymentProposalsService.createBunqPaymentProposal(
+            auth.workspaceId,
+            auth,
+            c.req.valid("json"),
+          );
+        return c.json(result, 201);
+      } catch (error) {
+        const status = bunqProposalErrorStatus(error);
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Could not create bunq payment proposal";
+        return c.json(
+          { error: message, code: bunqProposalErrorCode(status) },
+          status,
+        );
+      }
+    },
+  );
+  app.get("/api/v1/finance/bunq/payment-proposals/:proposalId", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "finance:read")) return c.json(forbidden(), 403);
+    try {
+      const proposal =
+        await bunqPaymentProposalsService.getBunqPaymentProposal(
+          auth.workspaceId,
+          c.req.param("proposalId"),
+        );
+      return c.json({ proposal });
+    } catch (error) {
+      const status = bunqProposalErrorStatus(error);
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Could not get bunq payment proposal";
+      return c.json(
+        { error: message, code: bunqProposalErrorCode(status) },
+        status,
+      );
+    }
+  });
+  app.post(
+    "/api/v1/finance/bunq/payment-proposals/:proposalId/approve",
+    zValidator("json", approveBunqPaymentProposalInputSchema),
+    async (c) => {
+      const auth = getAuth(c);
+      if (!can(auth, "finance:write") && auth.kind !== "local_shell") {
+        return c.json(forbidden(), 403);
+      }
+      if (isAgentPersonaAuth(auth)) {
+        return c.json(
+          {
+            error: "Ralph cannot approve bunq payment proposals",
+            code: "forbidden",
+          },
+          403,
+        );
+      }
+      try {
+        const proposal =
+          await bunqPaymentProposalsService.approveBunqPaymentProposal(
+            auth.workspaceId,
+            c.req.param("proposalId"),
+            auth,
+            c.req.valid("json"),
+          );
+        return c.json({ proposal });
+      } catch (error) {
+        const status = bunqProposalErrorStatus(error);
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Could not approve bunq payment proposal";
+        return c.json(
+          { error: message, code: bunqProposalErrorCode(status) },
+          status,
+        );
+      }
+    },
+  );
+  app.post(
+    "/api/v1/finance/bunq/payment-proposals/:proposalId/reject",
+    zValidator("json", rejectBunqPaymentProposalInputSchema),
+    async (c) => {
+      const auth = getAuth(c);
+      if (!can(auth, "finance:write") && auth.kind !== "local_shell") {
+        return c.json(forbidden(), 403);
+      }
+      if (isAgentPersonaAuth(auth)) {
+        return c.json(
+          {
+            error: "Ralph cannot reject bunq payment proposals",
+            code: "forbidden",
+          },
+          403,
+        );
+      }
+      try {
+        const proposal =
+          await bunqPaymentProposalsService.rejectBunqPaymentProposal(
+            auth.workspaceId,
+            c.req.param("proposalId"),
+            auth,
+            c.req.valid("json"),
+          );
+        return c.json({ proposal });
+      } catch (error) {
+        const status = bunqProposalErrorStatus(error);
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Could not reject bunq payment proposal";
+        return c.json(
+          { error: message, code: bunqProposalErrorCode(status) },
+          status,
+        );
       }
     },
   );
