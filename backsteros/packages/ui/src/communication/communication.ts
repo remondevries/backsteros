@@ -26,6 +26,61 @@ export const COMMUNICATION_INBOX_PARAM = "inbox";
 /** Query key for a status folder under a mailbox (`?status=in_progress`). */
 export const COMMUNICATION_STATUS_PARAM = "status";
 
+/**
+ * Messages vs notification emails toggle on the Communication list
+ * (`?mail=messages` default, `?mail=notifications`).
+ */
+export const COMMUNICATION_MAIL_PARAM = "mail";
+
+export const communicationMailFolders = ["messages", "notifications"] as const;
+
+export type CommunicationMailFolder =
+  (typeof communicationMailFolders)[number];
+
+export const DEFAULT_COMMUNICATION_MAIL_FOLDER: CommunicationMailFolder =
+  "messages";
+
+export function isCommunicationMailFolder(
+  value: string,
+): value is CommunicationMailFolder {
+  return (communicationMailFolders as readonly string[]).includes(value);
+}
+
+export function parseCommunicationMailFolder(
+  value: string | null | undefined,
+): CommunicationMailFolder {
+  const normalized = value?.trim().toLowerCase();
+  if (normalized && isCommunicationMailFolder(normalized)) {
+    return normalized;
+  }
+  return DEFAULT_COMMUNICATION_MAIL_FOLDER;
+}
+
+/** Read `?mail=` from a search string. */
+export function parseCommunicationMailFolderFromSearch(
+  search: string | null | undefined,
+): CommunicationMailFolder {
+  const raw = search?.trim() ?? "";
+  const params = new URLSearchParams(
+    raw.startsWith("?") ? raw.slice(1) : raw,
+  );
+  return parseCommunicationMailFolder(params.get(COMMUNICATION_MAIL_PARAM));
+}
+
+/** Append/replace `mail=` on any Communication href. */
+export function withCommunicationMailFolder(
+  href: string,
+  folder: CommunicationMailFolder,
+): string {
+  const url = new URL(href, "http://local.invalid");
+  if (folder === DEFAULT_COMMUNICATION_MAIL_FOLDER) {
+    url.searchParams.delete(COMMUNICATION_MAIL_PARAM);
+  } else {
+    url.searchParams.set(COMMUNICATION_MAIL_PARAM, folder);
+  }
+  return `${url.pathname}${url.search}${url.hash}`;
+}
+
 export const communicationListFilters = [
   "all",
   "email",
@@ -70,6 +125,8 @@ export type CommunicationListContextOptions = {
   inboxId?: string | null;
   /** Status folder under a mailbox — only applied with `inboxId` + email. */
   status?: TaskStatus | null;
+  /** Messages vs notification emails (`?mail=`). */
+  mailFolder?: CommunicationMailFolder | null;
 };
 
 /** True when `?channel=` is present (vs defaulting to Everything). */
@@ -83,7 +140,7 @@ export function hasCommunicationChannelParam(
   return params.has(COMMUNICATION_CHANNEL_PARAM);
 }
 
-/** Append/replace `channel` (+ optional `inbox` / `status`) on any href. */
+/** Append/replace `channel` (+ optional `inbox` / `status` / `mail`) on any href. */
 export function withCommunicationListContext(
   href: string,
   options: CommunicationListContextOptions = {},
@@ -109,6 +166,15 @@ export function withCommunicationListContext(
   } else {
     url.searchParams.delete(COMMUNICATION_INBOX_PARAM);
     url.searchParams.delete(COMMUNICATION_STATUS_PARAM);
+  }
+  const mailFolder =
+    options.mailFolder != null
+      ? parseCommunicationMailFolder(options.mailFolder)
+      : null;
+  if (mailFolder && mailFolder !== DEFAULT_COMMUNICATION_MAIL_FOLDER) {
+    url.searchParams.set(COMMUNICATION_MAIL_PARAM, mailFolder);
+  } else if (options.mailFolder != null) {
+    url.searchParams.delete(COMMUNICATION_MAIL_PARAM);
   }
   return `${url.pathname}${url.search}${url.hash}`;
 }
@@ -300,7 +366,11 @@ export function isCommunicationSectionPath(pathname: string): boolean {
 export function getCommunicationHref(
   itemId?: string | null,
   channel?: CommunicationListFilter | null,
-  options?: { inboxId?: string | null; status?: TaskStatus | null },
+  options?: {
+    inboxId?: string | null;
+    status?: TaskStatus | null;
+    mailFolder?: CommunicationMailFolder | null;
+  },
 ): string {
   const id = itemId?.trim();
   const resolvedChannel = channel ?? DEFAULT_COMMUNICATION_LIST_FILTER;
@@ -311,10 +381,14 @@ export function getCommunicationHref(
         channel: resolvedChannel,
         inboxId: options?.inboxId,
         status: options?.status,
+        mailFolder: options?.mailFolder,
       },
     );
   }
-  return getCommunicationChannelHref(resolvedChannel, options);
+  const listHref = getCommunicationChannelHref(resolvedChannel, options);
+  return options?.mailFolder != null
+    ? withCommunicationMailFolder(listHref, options.mailFolder)
+    : listHref;
 }
 
 export function getSelectedCommunicationSlugFromPathname(
@@ -365,7 +439,9 @@ export function getCommunicationItemHref(
   const status = listContext?.status;
   if (item.kind === "email") {
     // Embedded thread under `/communication/:emailId` (unified list).
-    return getCommunicationHref(item.id, "chat");
+    return getCommunicationHref(item.id, "chat", {
+      mailFolder: listContext?.mailFolder,
+    });
   }
   if (item.kind !== "task") {
     return getCommunicationChannelHref(channel, { inboxId, status });
@@ -412,13 +488,10 @@ export function getFirstCommunicationItemHref(
 }
 
 /**
- * After deleting/spam-removing a Communication row, open the neighbor (prefer
- * the item above). `null` means the list is empty — go to the channel root.
- */
-/**
  * Href for the row to open after removing one from the unified Communication
- * list (prefers the row above). `removedId` may be the row id, draft id or
- * message id. Rows not in `items` (chat conversations) open by id.
+ * list (prefers the next row below). `null` means the list is empty — go to the
+ * channel root. `removedId` may be the row id, draft id or message id. Rows not
+ * in `items` (chat conversations) open by id.
  */
 export function getCommunicationHrefAfterRemovingRow(input: {
   items: readonly InboxListItem[];

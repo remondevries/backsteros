@@ -4,6 +4,8 @@ import {
   buildInboxEmailListItem,
   buildInboxTaskListItem,
   sortInboxItemsByAttentionStatus,
+  type EmailListItem,
+  type InboxEmailListItem,
   type InboxListItem,
 } from "@backsteros/ui";
 
@@ -20,6 +22,54 @@ import {
 
 /** Survives keep-alive freeze so thaw never starts from an empty list. */
 let cachedCommunicationListItems: InboxListItem[] = [];
+
+function buildCommunicationEmailRows(input: {
+  messages: readonly EmailListItem[];
+  mailboxById: Map<
+    string,
+    { email?: string | null; displayName?: string | null }
+  >;
+  contactAvatarSrc: Record<string, string | null | undefined>;
+  organizationAvatarSrc: Record<string, string | null | undefined>;
+}): InboxEmailListItem[] {
+  return input.messages.map((item) => {
+    const mailbox = input.mailboxById.get(item.inboxId) ?? null;
+    return buildInboxEmailListItem({
+      inboxId: item.inboxId,
+      messageId: item.id,
+      draftId: item.draftId ?? (item.kind === "draft" ? item.id : null),
+      threadId: item.threadId,
+      title: item.subject,
+      from: item.from,
+      status: item.status,
+      inboxUpdatedAt: item.inboxUpdatedAt,
+      priority: item.priority,
+      dueDate: item.dueDate,
+      updatedAt: item.receivedAt,
+      assigneeId: item.assigneeId,
+      projectId: item.projectId,
+      projectKey: item.projectKey,
+      projectName: item.projectName,
+      organizationId: item.organizationId,
+      organizationName: item.organizationName,
+      contactId: item.contactId,
+      contactName: item.contactName,
+      partyContactIds: item.partyContactIds ?? null,
+      emailThreadId: item.emailThreadId,
+      number: item.number,
+      displayId: item.displayId,
+      direction: item.direction ?? null,
+      mailboxEmail: mailbox?.email ?? null,
+      mailboxLabel: mailbox?.displayName || mailbox?.email || null,
+      mailboxAvatarSrc: item.contactId
+        ? (input.contactAvatarSrc[item.contactId] ?? null)
+        : item.organizationId
+          ? (input.organizationAvatarSrc[item.organizationId] ?? null)
+          : null,
+      unread: item.unread === true,
+    });
+  });
+}
 
 /**
  * Communication list = support tasks + AgentMail messages (inbox-style rows).
@@ -119,42 +169,11 @@ export function useCommunicationListItems(): InboxListItem[] {
       });
 
     const mailboxById = buildMailboxByIdMap(agentMail.mailboxes);
-    const emails: InboxListItem[] = agentMail.messages.map((item) => {
-      const mailbox = mailboxById.get(item.inboxId) ?? null;
-      return buildInboxEmailListItem({
-        inboxId: item.inboxId,
-        messageId: item.id,
-        draftId: item.draftId ?? (item.kind === "draft" ? item.id : null),
-        threadId: item.threadId,
-        title: item.subject,
-        from: item.from,
-        status: item.status,
-        inboxUpdatedAt: item.inboxUpdatedAt,
-        priority: item.priority,
-        dueDate: item.dueDate,
-        updatedAt: item.receivedAt,
-        assigneeId: item.assigneeId,
-        projectId: item.projectId,
-        projectKey: item.projectKey,
-        projectName: item.projectName,
-        organizationId: item.organizationId,
-        organizationName: item.organizationName,
-        contactId: item.contactId,
-        contactName: item.contactName,
-        partyContactIds: item.partyContactIds ?? null,
-        emailThreadId: item.emailThreadId,
-        number: item.number,
-        displayId: item.displayId,
-        direction: item.direction ?? null,
-        mailboxEmail: mailbox?.email ?? null,
-        mailboxLabel: mailbox?.displayName || mailbox?.email || null,
-        mailboxAvatarSrc: item.contactId
-          ? (contactAvatarSrc[item.contactId] ?? null)
-          : item.organizationId
-            ? (organizationAvatarSrc[item.organizationId] ?? null)
-            : null,
-        unread: item.unread === true,
-      });
+    const emails: InboxListItem[] = buildCommunicationEmailRows({
+      messages: agentMail.messages,
+      mailboxById,
+      contactAvatarSrc,
+      organizationAvatarSrc,
     });
 
     const next = sortInboxItemsByAttentionStatus([...supportTasks, ...emails]);
@@ -173,5 +192,43 @@ export function useCommunicationListItems(): InboxListItem[] {
     frozen,
     organizationAvatarSrc,
     organizations,
+  ]);
+}
+
+/** Transactional notification emails (AgentMail `notifications` label). */
+export function useCommunicationNotificationEmails(): InboxEmailListItem[] {
+  const frozen = useKeepAliveFrozen();
+  const agentMail = useAgentMail();
+  const { contacts, organizations } = useDesktopWorkspacePeople();
+  const contactAvatarSrc = useDesktopAvatarSrcMap(
+    "contact",
+    frozen ? [] : contacts,
+  );
+  const organizationAvatarSrc = useDesktopAvatarSrcMap(
+    "organization",
+    frozen ? [] : organizations,
+  );
+  const notificationSignature = useMemo(
+    () => agentMailMessagesSignature(agentMail.notificationMessages),
+    [agentMail.notificationMessages],
+  );
+
+  return useMemo(() => {
+    const mailboxById = buildMailboxByIdMap(agentMail.mailboxes);
+    return sortInboxItemsByAttentionStatus(
+      buildCommunicationEmailRows({
+        messages: agentMail.notificationMessages,
+        mailboxById,
+        contactAvatarSrc,
+        organizationAvatarSrc,
+      }),
+    ) as InboxEmailListItem[];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    agentMail.mailboxes,
+    agentMail.notificationMessages.length,
+    notificationSignature,
+    contactAvatarSrc,
+    organizationAvatarSrc,
   ]);
 }

@@ -1,5 +1,6 @@
 "use client";
 
+import { BellIcon } from "@primer/octicons-react";
 import {
   useCallback,
   useEffect,
@@ -16,6 +17,13 @@ import type {
   ChatConversationDetail,
   ChatMessage,
 } from "@backsteros/contracts";
+import { chatConversationToTaskItemRowTask } from "../../communication/chat-conversation-list-item.js";
+import type { CommunicationMailFolder } from "../../communication/communication.js";
+import {
+  inboxListItemToTaskItemRowTask,
+  type InboxEmailListItem,
+  type InboxTaskListItem,
+} from "../../inbox/inbox-items.js";
 import {
   LIST_KEYBOARD_NAV_ZONE_CONTENT,
 } from "../../list-nav/list-keyboard-nav-zone.js";
@@ -23,23 +31,46 @@ import {
   keyboardNavItemClass,
   keyboardNavItemProps,
 } from "../../list-nav/keyboard-nav-item.js";
-import {
-  type InboxEmailListItem,
-  type InboxTaskListItem,
-} from "../../inbox/inbox-items.js";
+import { useListMultiSelect } from "../../list-nav/use-list-multi-select.js";
 import {
   useListKeyboardNavigation,
   useListKeyboardNavigationContainerProps,
 } from "../list-nav/list-keyboard-navigation-provider.js";
+import type { SearchableDropdownOption } from "../dropdowns/searchable-dropdown.js";
+import {
+  SegmentedPillToggle,
+  type SegmentedPillToggleOption,
+} from "../list-nav/list-board-view-shell.js";
+import { FloatingPillToggleDock } from "../shared/floating-pill-toggle-dock.js";
+import { CommunicationNavIcon } from "../shell/sidebar-nav-icons.js";
+import { SidePanelPlusIcon } from "../shell/side-panel-plus-icon.js";
+import {
+  TaskBulkEditBar,
+  type TaskBulkPatch,
+} from "../tasks/task-bulk-edit-bar.js";
+import type { TaskItemRowTask } from "../tasks/task-item-row.js";
 import {
   CommunicationCreateLauncher,
   type CommunicationCreateKind,
 } from "./communication-create-launcher.js";
 import { CommunicationMessagesList } from "./communication-messages-list.js";
-import type { SearchableDropdownOption } from "../dropdowns/searchable-dropdown.js";
-import { SidePanelPlusIcon } from "../shell/side-panel-plus-icon.js";
 
 const NEAR_BOTTOM_PX = 96;
+
+/** Stable options — inline arrays re-trigger SegmentedPillToggle layout effects. */
+const MAIL_FOLDER_TOGGLE_OPTIONS: readonly SegmentedPillToggleOption<CommunicationMailFolder>[] =
+  [
+    {
+      value: "messages",
+      label: "Messages",
+      icon: <CommunicationNavIcon size={14} />,
+    },
+    {
+      value: "notifications",
+      label: "Notifications",
+      icon: <BellIcon size={14} />,
+    },
+  ];
 
 /** Compact set matching Lemo’s “Frequently used” composer tray. */
 const COMPOSER_EMOJI = [
@@ -157,9 +188,22 @@ export type CommunicationChatViewProps = {
   contactFilterOptions?: readonly SearchableDropdownOption<string>[];
   organizationFilterOptions?: readonly SearchableDropdownOption<string>[];
   projectFilterOptions?: readonly SearchableDropdownOption<string>[];
+  assigneeOptions?: readonly SearchableDropdownOption<string>[];
   onSelect: (conversationId: string) => void;
   onSelectEmail?: (emailId: string) => void;
   onSelectSupport?: (supportId: string) => void;
+  /**
+   * Apply staged bulk property edits to the checked Messages rows (email /
+   * chat / support). Parent resolves each id to the right PATCH.
+   */
+  onBulkApply?: (
+    tasks: readonly TaskItemRowTask[],
+    patch: TaskBulkPatch,
+  ) => void | Promise<void>;
+  /** Soft-delete every checked Messages row after confirm. */
+  onBulkDelete?: (tasks: readonly TaskItemRowTask[]) => void | Promise<void>;
+  /** Fired when checkbox multi-select becomes active or empty. */
+  onBulkSelectionChange?: (hasSelection: boolean) => void;
   onSend: (content: string) => Promise<void> | void;
   /** Notify Chatwoot that the agent is typing (drives the website widget). */
   onTypingChange?: (typing: boolean) => void;
@@ -196,6 +240,9 @@ export type CommunicationChatViewProps = {
    * (contact/org Communication workspace embed).
    */
   pane?: "full" | "thread";
+  /** Messages vs notification-email folder toggle (bottom-left of the list). */
+  mailFolder?: CommunicationMailFolder;
+  onMailFolderChange?: (folder: CommunicationMailFolder) => void;
 };
 
 /** Compact clock under bubbles — matches Lemo `aui-message-timestamp`. */
@@ -508,9 +555,13 @@ export function CommunicationChatView({
   contactFilterOptions = [],
   organizationFilterOptions = [],
   projectFilterOptions = [],
+  assigneeOptions = [],
   onSelect,
   onSelectEmail,
   onSelectSupport,
+  onBulkApply,
+  onBulkDelete,
+  onBulkSelectionChange,
   onSend,
   onTypingChange,
   emailThreadSlot = null,
@@ -524,9 +575,12 @@ export function CommunicationChatView({
   threadNotice = null,
   onVisibleRowIdsChange,
   pane = "full",
+  mailFolder = "messages",
+  onMailFolderChange,
 }: CommunicationChatViewProps) {
   const [draft, setDraft] = useState("");
   const [showJumpToLatest, setShowJumpToLatest] = useState(false);
+  const [listItemIds, setListItemIds] = useState<readonly string[]>([]);
   const messagesRef = useRef<HTMLDivElement | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const stickToBottomRef = useRef(true);
@@ -534,6 +588,13 @@ export function CommunicationChatView({
   const threadMessagesContainerProps = useListKeyboardNavigationContainerProps(
     LIST_KEYBOARD_NAV_ZONE_CONTENT,
   );
+  const {
+    selectedIds,
+    hasBulkSelection,
+    toggleSelected,
+    selectAll,
+    clearSelection,
+  } = useListMultiSelect(listItemIds);
   const emailSelected = Boolean(selectedEmailId);
   const supportSelected = Boolean(selectedSupportId);
   const selectedIsTyping =
@@ -592,6 +653,47 @@ export function CommunicationChatView({
   useEffect(() => {
     setDraft("");
   }, [selectedId]);
+
+  useEffect(() => {
+    onBulkSelectionChange?.(hasBulkSelection);
+  }, [hasBulkSelection, onBulkSelectionChange]);
+
+  useEffect(() => {
+    if (!hasBulkSelection) return;
+    onCreateOpenChange?.(false);
+  }, [hasBulkSelection, onCreateOpenChange]);
+
+  const selectedBulkTasks = useMemo((): TaskItemRowTask[] => {
+    if (selectedIds.size === 0) return [];
+    const tasks: TaskItemRowTask[] = [];
+    for (const id of selectedIds) {
+      const email = emails.find((entry) => entry.id === id);
+      if (email) {
+        const task = inboxListItemToTaskItemRowTask(email);
+        if (task) tasks.push(task);
+        continue;
+      }
+      const support = supportTasks.find((entry) => entry.id === id);
+      if (support) {
+        const task = inboxListItemToTaskItemRowTask(support);
+        if (task) tasks.push(task);
+        continue;
+      }
+      const conversation = conversations.find((entry) => entry.id === id);
+      if (conversation) {
+        tasks.push(chatConversationToTaskItemRowTask(conversation));
+      }
+    }
+    return tasks;
+  }, [conversations, emails, selectedIds, supportTasks]);
+
+  const handleVisibleRowIdsChange = useCallback(
+    (rowIds: readonly string[]) => {
+      setListItemIds(rowIds);
+      onVisibleRowIdsChange?.(rowIds);
+    },
+    [onVisibleRowIdsChange],
+  );
 
   const onSubmit = (event: FormEvent) => {
     event.preventDefault();
@@ -653,6 +755,7 @@ export function CommunicationChatView({
         "communication-chat",
         createOpen ? "communication-chat--create" : null,
         threadOnly ? "communication-chat--thread-only" : null,
+        hasBulkSelection ? "has-bulk-selection" : null,
       ]
         .filter(Boolean)
         .join(" ")}
@@ -681,9 +784,23 @@ export function CommunicationChatView({
           onSelectChat={selectAndCloseCreate}
           onSelectEmail={selectEmailAndCloseCreate}
           onSelectSupport={selectSupportAndCloseCreate}
-          onVisibleRowIdsChange={onVisibleRowIdsChange}
+          onVisibleRowIdsChange={handleVisibleRowIdsChange}
+          checkedIds={selectedIds}
+          onToggleSelected={(itemId, _checked, event) =>
+            toggleSelected(itemId, Boolean(event.shiftKey))
+          }
         />
-        {onCreateOpenChange ? (
+        {onMailFolderChange && !hasBulkSelection ? (
+          <FloatingPillToggleDock className="communication-chat__mail-folder-dock">
+            <SegmentedPillToggle
+              value={mailFolder}
+              options={MAIL_FOLDER_TOGGLE_OPTIONS}
+              onChange={onMailFolderChange}
+              ariaLabel="Mail folder"
+            />
+          </FloatingPillToggleDock>
+        ) : null}
+        {onCreateOpenChange && !hasBulkSelection ? (
           <button
             type="button"
             className={[
@@ -706,7 +823,36 @@ export function CommunicationChatView({
       </aside>
       )}
 
-      <section className="communication-chat__thread">
+      {hasBulkSelection ? (
+        <TaskBulkEditBar
+          selectedTasks={selectedBulkTasks}
+          projectOptions={[...projectFilterOptions]}
+          assigneeOptions={[...assigneeOptions]}
+          onClear={clearSelection}
+          onSelectAll={
+            selectedIds.size < listItemIds.length ? selectAll : undefined
+          }
+          onApply={async (patch) => {
+            if (!onBulkApply) return;
+            await onBulkApply(selectedBulkTasks, patch);
+            clearSelection();
+          }}
+          onDelete={
+            onBulkDelete
+              ? async () => {
+                  await onBulkDelete(selectedBulkTasks);
+                  clearSelection();
+                }
+              : undefined
+          }
+        />
+      ) : null}
+
+      <section
+        className="communication-chat__thread"
+        aria-hidden={hasBulkSelection}
+        inert={hasBulkSelection ? true : undefined}
+      >
         {createOpen && createKind === "email" ? (
           emailComposeSlot ?? (
             <div className="communication-chat__empty">

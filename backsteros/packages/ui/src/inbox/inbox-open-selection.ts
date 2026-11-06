@@ -79,6 +79,7 @@ export type InboxOpenTarget = {
   reason:
     | "highlight"
     | "mode-mismatch"
+    | "stale-email"
     | "email-outside-messages"
     | "inbox-root"
     | "empty";
@@ -142,11 +143,25 @@ export function resolveInboxOpenTarget(input: {
     return { href: "/inbox", itemId: null, reason: "empty" };
   }
 
+  // Address bar still on a deleted/removed email while Messages has other rows.
+  // Prefer the keyboard highlight (delete hand-off); else the first remaining row.
+  if (onEmail && mode === "messages") {
+    const first = items[0];
+    if (first) {
+      return {
+        href: getInboxItemHref(first, items),
+        itemId: first.id,
+        reason: "stale-email",
+      };
+    }
+    return { href: "/inbox", itemId: null, reason: "empty" };
+  }
+
   const slug = getSelectedInboxSlugFromPathname(shellPathname);
   // Legacy chat hrefs pointed at Communication; Inbox owns those rows now.
   const onCommunicationItem = shellPathname.startsWith("/communication/");
   const pathClaimsInboxItem =
-    Boolean(slug) || (mode === "messages" && onEmail) || onCommunicationItem;
+    Boolean(slug) || onCommunicationItem;
   const atInboxRoot = shellPathname === "/inbox";
 
   if (!pathClaimsInboxItem && !atInboxRoot) {
@@ -168,7 +183,7 @@ export function resolveInboxOpenTarget(input: {
     };
   }
 
-  if (pathClaimsInboxItem || atInboxRoot || (onEmail && mode !== "messages")) {
+  if (pathClaimsInboxItem || atInboxRoot) {
     return { href: "/inbox", itemId: null, reason: "empty" };
   }
 

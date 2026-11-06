@@ -16,9 +16,11 @@ import {
   RegisterEntityDeleteAction,
   getInboxAttentionKeyboardItemIds,
   getInboxHrefAfterRemovingItem,
+  getInboxIdAfterRemovingItem,
   getInboxItemHref,
   inboxListModeLabel,
   isInboxEmailShellPath,
+  parseEmailMessagePath,
   resolveInboxListItemIdFromPathname,
   resolveInboxOpenTarget,
   resolveInboxPanelPathname,
@@ -36,13 +38,27 @@ import { useDesktopApi } from "../lib/api-context";
 import {
   deleteEmailMessage,
   emailDeleteEntityLabel,
+  reportEmailSpam,
 } from "../lib/delete-email-message";
+import { isEmailListItemPendingRemoval } from "../lib/email-list-pending-removals";
 import {
   prefetchEmailDraftDetail,
   prefetchEmailMessageDetail,
 } from "../lib/email-message-detail-cache";
+import { useEmailDetailListPrefetch } from "../lib/use-email-detail-list-prefetch";
+import { getBrandfetchClientId } from "../lib/brandfetch";
+import { resolveEmailListAvatarSrc } from "../lib/resolve-email-list-avatar-src";
+import {
+  inboxContentAlreadyShowsHref,
+  resolveInboxContentPathname,
+} from "../lib/inbox/inbox-content-pathname";
+import { useDesktopWorkspacePeople } from "../lib/workspace-data";
 import { useInboxListSessionPin } from "../lib/inbox/inbox-list-session-context";
 import { useInboxModeModel } from "../lib/inbox/inbox-mode-model";
+import {
+  consumeInboxOpenAfterRemoval,
+  queueInboxOpenAfterRemoval,
+} from "../lib/inbox/inbox-open-after-removal";
 import { rememberSectionEntryHrefs } from "../lib/section-entry-store";
 import {
   useKeepAliveActive,
@@ -118,6 +134,8 @@ export function DesktopInboxSidePanel({
   );
   const [messagesKeyboardIds, setMessagesKeyboardIds] =
     useState<readonly string[]>(NO_IDS);
+  const [messagesVisibleRowIds, setMessagesVisibleRowIds] =
+    useState<readonly string[]>(NO_IDS);
   const [messagesHighlightedId, setMessagesHighlightedId] = useState<
     string | null
   >(null);
@@ -127,11 +145,15 @@ export function DesktopInboxSidePanel({
     if (isMessages) return;
     setMessagesHighlightedId(null);
     setMessagesKeyboardIds(NO_IDS);
+    setMessagesVisibleRowIds(NO_IDS);
   }, [isMessages]);
   const { activeZone, setActiveZone } = useListKeyboardNavigationZone();
   const selectedId = resolveInboxListItemIdFromPathname(pathname, items);
+  // Keep-alive can mirror a neighbor email onto the panel before the outlet
+  // commits — open checks must follow the live content path instead.
+  const contentPathname = resolveInboxContentPathname(shellPathname);
   const shellSelectedId = resolveInboxListItemIdFromPathname(
-    shellPathname,
+    contentPathname,
     items,
   );
   const itemById = useMemo(
@@ -207,36 +229,96 @@ export function DesktopInboxSidePanel({
 
   // Structural open pipeline: mode switch, leave email outside Messages, and
   // inbox root. j/k highlight is handled separately so a stale ring cannot
-  // yank the content pane after a Link click.
+  // yank the content pane after a Link click — do not pass highlightedId here.
   const openTarget = useMemo(() => {
     // An in-flight list would send an empty pane to `/inbox`, or bounce a
     // deep-linked row that simply has not arrived yet.
     if (loading) return null;
     const target = resolveInboxOpenTarget({
       mode: listMode,
-      shellPathname,
+      shellPathname: contentPathname,
       items,
     });
+    // mode-mismatch while still loading sources — wait.
     if (pending && target?.reason === "mode-mismatch") return null;
+    // stale-email while pending: only recover when this URL was optimistically
+    // deleted — otherwise a still-loading deep link would yank to row 0.
+    if (pending && target?.reason === "stale-email") {
+      const emailPath = parseEmailMessagePath(contentPathname);
+      if (
+        !emailPath ||
+        !isEmailListItemPendingRemoval({
+          inboxId: emailPath.inboxId,
+          id: emailPath.messageId,
+        })
+      ) {
+        return null;
+      }
+    }
     return target;
-  }, [items, listMode, loading, pending, shellPathname]);
+  }, [contentPathname, items, listMode, loading, pending]);
   const lastOpenedHrefRef = useRef<string | null>(null);
   useEffect(() => {
     // Keep the dedupe key across freeze — clearing it made every thaw
     // re-navigate to openTarget (first row / mode seed) and yank content.
     if (!keepAliveActive) return;
     if (!openTarget) return;
-    if (lastOpenedHrefRef.current === openTarget.href) return;
+    if (
+      lastOpenedHrefRef.current === openTarget.href &&
+      inboxContentAlreadyShowsHref(openTarget.href)
+    ) {
+      return;
+    }
     lastOpenedHrefRef.current = openTarget.href;
     onNavigate(openTarget.href);
   }, [keepAliveActive, onNavigate, openTarget]);
 
-  // Clear the dedupe key once the shell matches so revisits can reopen.
+  // Clear the dedupe key once the live content matches so revisits can reopen.
   useEffect(() => {
     if (openTarget == null && shellSelectedId != null) {
       lastOpenedHrefRef.current = null;
     }
   }, [openTarget, shellSelectedId]);
+
+  // Detail-pane delete queues the neighbor; finish highlight + navigate here so
+  // an outlet race cannot leave the content pane blank on the deleted URL.
+  useEffect(() => {
+    if (!keepAliveActive) return;
+    const queued = consumeInboxOpenAfterRemoval();
+    if (!queued) return;
+    if (queued.itemId) {
+      setMessagesHighlightedId(queued.itemId);
+    }
+    if (
+      lastOpenedHrefRef.current === queued.href &&
+      inboxContentAlreadyShowsHref(queued.href)
+    ) {
+      return;
+    }
+    lastOpenedHrefRef.current = queued.href;
+    onNavigate(queued.href);
+  }, [keepAliveActive, items, onNavigate, contentPathname]);
+
+  // After delete/navigation, if j/k still points at a removed row, pull it onto
+  // the open Messages row so open-on-highlight cannot reopen the deleted id.
+  useEffect(() => {
+    if (!isMessages || !keepAliveActive) return;
+    if (shellSelectedId == null || !itemById.has(shellSelectedId)) return;
+    if (
+      messagesHighlightedId != null &&
+      itemById.has(messagesHighlightedId)
+    ) {
+      return;
+    }
+    if (messagesHighlightedId === shellSelectedId) return;
+    setMessagesHighlightedId(shellSelectedId);
+  }, [
+    isMessages,
+    itemById,
+    keepAliveActive,
+    messagesHighlightedId,
+    shellSelectedId,
+  ]);
 
   // j/k only moves the orange highlight — open that row in the content pane.
   useEffect(() => {
@@ -245,7 +327,12 @@ export function DesktopInboxSidePanel({
     const item = itemById.get(highlightedId);
     if (!item) return;
     const href = getInboxItemHref(item, items);
-    if (lastOpenedHrefRef.current === href) return;
+    if (
+      lastOpenedHrefRef.current === href &&
+      inboxContentAlreadyShowsHref(href)
+    ) {
+      return;
+    }
     lastOpenedHrefRef.current = href;
     onNavigate(href);
   }, [
@@ -274,7 +361,7 @@ export function DesktopInboxSidePanel({
   // When an email is open in the main pane, detail owns D — avoid stealing it.
   const highlightedEmailItem = (() => {
     if (
-      isInboxEmailShellPath(shellPathname) ||
+      isInboxEmailShellPath(contentPathname) ||
       !highlightedId ||
       activeZone !== LIST_KEYBOARD_NAV_ZONE_SIDE_PANEL
     ) {
@@ -285,41 +372,75 @@ export function DesktopInboxSidePanel({
     return item;
   })();
 
-  const handleHighlightedEmailDelete = useCallback(async () => {
+  const leaveHighlightedEmail = useCallback(() => {
     if (!highlightedEmailItem) {
-      return { ok: false as const, error: "Email is required." };
+      return { ok: false as const, error: "Email is required." as const };
     }
-    const nextHref = getInboxHrefAfterRemovingItem(
-      itemsRef.current,
+    const currentItems = itemsRef.current;
+    const nextId = getInboxIdAfterRemovingItem(
+      currentItems,
       highlightedEmailItem.id,
     );
+    const nextHref =
+      getInboxHrefAfterRemovingItem(currentItems, highlightedEmailItem.id) ??
+      "/inbox";
     unpinInboxListItem(highlightedEmailItem.id);
-    rememberSectionEntryHrefs({ inbox: nextHref ?? null });
-    const result = await deleteEmailMessage(client, {
-      inboxId: highlightedEmailItem.inboxId,
-      messageId: highlightedEmailItem.messageId,
-      threadId: highlightedEmailItem.threadId,
-    });
-    if (!result.ok) return result;
-    onNavigate(nextHref ?? "/inbox");
-    return { ok: true as const };
-  }, [client, highlightedEmailItem, onNavigate, unpinInboxListItem]);
+    rememberSectionEntryHrefs({ inbox: nextHref === "/inbox" ? null : nextHref });
+    setMessagesHighlightedId(nextId);
+    if (nextId) {
+      setActiveZone(LIST_KEYBOARD_NAV_ZONE_SIDE_PANEL, {
+        preferSidepanelForJk: true,
+        activate: true,
+        highlightItemId: nextId,
+      });
+    }
+    queueInboxOpenAfterRemoval({ href: nextHref, itemId: nextId });
+    // Do not stamp lastOpenedHrefRef until the outlet actually shows nextHref —
+    // otherwise open-on-highlight / queue consume skip the real navigate.
+    onNavigate(nextHref);
+    return {
+      ok: true as const,
+      target: {
+        inboxId: highlightedEmailItem.inboxId,
+        messageId: highlightedEmailItem.messageId,
+        threadId: highlightedEmailItem.threadId,
+      },
+    };
+  }, [
+    highlightedEmailItem,
+    onNavigate,
+    setActiveZone,
+    unpinInboxListItem,
+  ]);
 
+  const handleHighlightedEmailDelete = useCallback(async () => {
+    const left = leaveHighlightedEmail();
+    if (!left.ok) return left;
+    // Match detail delete: optimistic remove + navigate immediately. Waiting on
+    // the API left highlight on the deleted id and could reopen it.
+    void deleteEmailMessage(client, left.target);
+    return { ok: true as const };
+  }, [client, leaveHighlightedEmail]);
+
+  const handleHighlightedEmailReportSpam = useCallback(async () => {
+    const left = leaveHighlightedEmail();
+    if (!left.ok) return left;
+    void reportEmailSpam(client, left.target);
+    return { ok: true as const };
+  }, [client, leaveHighlightedEmail]);
+
+  const { contacts, organizations } = useDesktopWorkspacePeople();
   const resolveEmailAvatarSrc = useCallback(
-    (item: InboxEmailListItem) => {
-      const contactId = item.contactId?.trim();
-      if (contactId) {
-        return contactAvatarSrc[contactId] ?? item.mailboxAvatarSrc ?? null;
-      }
-      const organizationId = item.organizationId?.trim();
-      if (organizationId) {
-        return (
-          organizationAvatarSrc[organizationId] ?? item.mailboxAvatarSrc ?? null
-        );
-      }
-      return item.mailboxAvatarSrc ?? null;
-    },
-    [contactAvatarSrc, organizationAvatarSrc],
+    (item: InboxEmailListItem) =>
+      resolveEmailListAvatarSrc({
+        item,
+        contacts,
+        organizations,
+        contactAvatarSrc,
+        organizationUploadedSrc: organizationAvatarSrc,
+        brandfetchClientId: getBrandfetchClientId(),
+      }),
+    [contactAvatarSrc, contacts, organizationAvatarSrc, organizations],
   );
   const resolveContactAvatarSrc = useCallback(
     (contactId: string) => contactAvatarSrc[contactId] ?? null,
@@ -332,6 +453,14 @@ export function DesktopInboxSidePanel({
   const selectedEmailId = selectedItem?.kind === "email" ? selectedItem.id : null;
   const selectedSupportId =
     selectedItem?.kind === "task" && !selectedItem.chat ? selectedItem.id : null;
+
+  useEmailDetailListPrefetch({
+    enabled: keepAliveActive && isMessages,
+    client,
+    emails: messages.emails,
+    orderedRowIds: messagesVisibleRowIds,
+    focusRowId: messagesHighlightedId ?? selectedEmailId,
+  });
 
   const messagesBody = isMessages ? (
     <div className="inbox-side-panel__messages">
@@ -351,6 +480,7 @@ export function DesktopInboxSidePanel({
         onSelectEmail={openItem}
         onSelectSupport={openItem}
         onKeyboardItemIdsChange={setMessagesKeyboardIds}
+        onVisibleRowIdsChange={setMessagesVisibleRowIds}
         onHighlightChange={setMessagesHighlightedId}
         hiddenStatuses={INBOX_MESSAGES_HIDDEN_STATUSES}
         showToolbar={false}
@@ -373,6 +503,11 @@ export function DesktopInboxSidePanel({
           confirmLabel="Delete email"
           actionVerb="Delete"
           onDelete={handleHighlightedEmailDelete}
+          secondaryAction={{
+            label: "Report Spam",
+            shortcutKey: "s",
+            onConfirm: handleHighlightedEmailReportSpam,
+          }}
         />
       ) : null}
       <InboxSidePanelView

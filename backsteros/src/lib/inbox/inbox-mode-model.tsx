@@ -33,7 +33,10 @@ import { useAgentMail } from "../agentmail-context";
 import { agentMailMessagesSignature } from "../agentmail-list-cache";
 import { useDesktopAvatarSrcMap } from "../avatar-src";
 import { useChatInbox } from "../chat/use-chat-inbox";
-import { isEmailListItemPendingRemoval } from "../email-list-pending-removals";
+import {
+  filterOutPendingEmailListRemovals,
+  isEmailListItemPendingRemoval,
+} from "../email-list-pending-removals";
 import { buildMailboxByIdMap } from "../email-list-tasks";
 import {
   useDesktopWorkspaceInboxItems,
@@ -291,16 +294,18 @@ export function InboxModeModelProvider({
   agentMailMessagesRef.current = agentMail.messages;
 
   const emailItems = useMemo((): InboxEmailListItem[] => {
-    const live = agentMailMessagesRef.current;
+    const liveRaw = agentMailMessagesRef.current;
     // Freeze only protects against an empty flash while AgentMail is still
     // enabling. Optimistic delete must still drop rows without leave/return.
-    if (frozen && live.length === 0) {
+    if (frozen && liveRaw.length === 0) {
       const pruned = pruneFrozenInboxEmailItems(lastEmailItemsRef.current);
       lastEmailItemsRef.current = pruned;
       return pruned;
     }
+    // Defense in depth: tombstones hide rows even if AgentMail state lagged.
+    const live = filterOutPendingEmailListRemovals(liveRaw);
     const mailboxById = buildMailboxByIdMap(agentMail.mailboxes);
-    const next = live.map((item) => {
+    const mapped = live.map((item) => {
       const mailbox = mailboxById.get(item.inboxId) ?? null;
       return buildInboxEmailListItem({
         inboxId: item.inboxId,
@@ -346,6 +351,7 @@ export function InboxModeModelProvider({
         unread: item.unread === true,
       });
     });
+    const next = pruneFrozenInboxEmailItems(mapped);
     lastEmailItemsRef.current = next;
     return next;
     // `agentMailListSignature` stands in for the messages ref read above.

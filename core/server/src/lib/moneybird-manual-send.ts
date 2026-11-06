@@ -61,7 +61,11 @@ export async function handleMoneybirdManualSendWebhook(
   }
 
   triggeredInvoiceIds.add(invoiceId);
-  await registerManualPortalInvoiceForReminders(result.invoiceId, locale);
+  await registerManualPortalInvoiceForReminders(result.invoiceId, locale, {
+    messageId: result.messageId ?? null,
+    inboxId: result.inboxId ?? null,
+    to: result.email?.trim() || null,
+  });
 
   return {
     handled: true,

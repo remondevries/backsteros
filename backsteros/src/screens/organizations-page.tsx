@@ -89,6 +89,7 @@ import {
 
 import { isAgentPanelToggleShortcut } from "../lib/agent/agent-panel-toggle-shortcut";
 import { useDesktopApi } from "../lib/api-context";
+import { loadPortalInvoiceActivityEmail } from "../lib/load-portal-invoice-activity-email";
 import { useDesktopAvatarSrcMap } from "../lib/avatar-src";
 import { getBrandfetchClientId } from "../lib/brandfetch";
 import {
@@ -962,39 +963,61 @@ export function OrganizationsPage() {
     };
   }, [client, selectedOrgInvoiceId, workspaceTab]);
 
-  const sendOrgInvoiceReminder = useCallback(async () => {
-    if (!selectedOrgInvoiceId || orgSendInvoiceReminderPending) return;
-    setOrgSendInvoiceReminderPending(true);
-    try {
-      await client.requestJson<MoneybirdInvoiceSendReminderResult>(
-        `/api/v1/finance/moneybird/invoices/${encodeURIComponent(selectedOrgInvoiceId)}/send-reminder`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            locale: orgInvoiceDetail?.language ?? null,
-          }),
-        },
-      );
-      const activity = await client.requestJson<MoneybirdInvoiceActivity>(
-        `/api/v1/finance/moneybird/invoices/${encodeURIComponent(selectedOrgInvoiceId)}/activity`,
-      );
-      setOrgInvoiceActivityItems(activity.items);
-      setOrgInvoiceNextReminderStep(activity.nextReminderStep);
-      setOrgInvoiceActivityError(null);
-    } catch (error) {
-      setOrgInvoiceActivityError(
-        error instanceof Error ? error.message : "Failed to send reminder",
-      );
-    } finally {
-      setOrgSendInvoiceReminderPending(false);
-    }
-  }, [
-    client,
-    orgInvoiceDetail?.language,
-    orgSendInvoiceReminderPending,
-    selectedOrgInvoiceId,
-  ]);
+  const sendOrgInvoiceReminder = useCallback(
+    async (input: { to: string; kind: "invoice" | "1" | "2" | "3" }) => {
+      if (!selectedOrgInvoiceId || orgSendInvoiceReminderPending) return;
+      const recipient = input.to.trim();
+      if (!recipient) return;
+      const kind =
+        input.kind === "invoice"
+          ? "invoice"
+          : input.kind === "1"
+            ? 1
+            : input.kind === "2"
+              ? 2
+              : 3;
+      setOrgSendInvoiceReminderPending(true);
+      try {
+        await client.requestJson<MoneybirdInvoiceSendReminderResult>(
+          `/api/v1/finance/moneybird/invoices/${encodeURIComponent(selectedOrgInvoiceId)}/send-reminder`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              locale: orgInvoiceDetail?.language ?? null,
+              to: recipient,
+              kind,
+            }),
+          },
+        );
+        const activity = await client.requestJson<MoneybirdInvoiceActivity>(
+          `/api/v1/finance/moneybird/invoices/${encodeURIComponent(selectedOrgInvoiceId)}/activity`,
+        );
+        setOrgInvoiceActivityItems(activity.items);
+        setOrgInvoiceNextReminderStep(activity.nextReminderStep);
+        setOrgInvoiceActivityError(null);
+      } catch (error) {
+        setOrgInvoiceActivityError(
+          error instanceof Error ? error.message : "Failed to send email",
+        );
+        throw error;
+      } finally {
+        setOrgSendInvoiceReminderPending(false);
+      }
+    },
+    [
+      client,
+      orgInvoiceDetail?.language,
+      orgSendInvoiceReminderPending,
+      selectedOrgInvoiceId,
+    ],
+  );
+
+  const loadPortalInvoiceActivityEmailPreview = useCallback(
+    (input: { inboxId: string; messageId: string }) =>
+      loadPortalInvoiceActivityEmail(client, input),
+    [client],
+  );
 
   const patchOrgTransaction = useCallback(
     async (
@@ -1598,6 +1621,9 @@ export function OrganizationsPage() {
             invoiceActivityItems={orgInvoiceActivityItems}
             invoiceActivityLoading={orgInvoiceActivityLoading}
             invoiceActivityError={orgInvoiceActivityError}
+            onLoadPortalInvoiceActivityEmail={
+              loadPortalInvoiceActivityEmailPreview
+            }
             invoiceNextReminderStep={orgInvoiceNextReminderStep}
             sendInvoiceReminderPending={orgSendInvoiceReminderPending}
             onSendInvoiceReminder={sendOrgInvoiceReminder}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import {
   formatContactPhoneDisplay,
   getContactEmailAddresses,
@@ -24,6 +24,7 @@ import { CrmGroupLabel } from "../crm/crm-group-label.js";
 import { ContactSocialLabel } from "./contact-social-label.js";
 import { MeetingPhoneIcon } from "../meetings/meeting-format-icons.js";
 import { ProjectTypeGroupSection } from "../projects/project-type-group-section.js";
+import { AlphaLetterMinimap } from "../shared/alpha-letter-minimap.js";
 import { EmailNavIcon } from "../shell/sidebar-nav-icons.js";
 import { useListTypeToFilterItems } from "../../list-nav/use-list-type-to-filter.js";
 import { SidePanelPlusIcon } from "../shell/side-panel-plus-icon.js";
@@ -96,6 +97,18 @@ export function ContactsOverviewView({
     () => groupItemsByAlphaLetter(sortedContacts),
     [sortedContacts],
   );
+  const alphaLetters = useMemo(
+    () => grouped.map(([letter]) => letter),
+    [grouped],
+  );
+  const expandLetterSection = useCallback((letter: string) => {
+    setCollapsed((current) => {
+      if (!current.has(letter)) return current;
+      const next = new Set(current);
+      next.delete(letter);
+      return next;
+    });
+  }, []);
   const itemIds = useMemo(
     () => [
       ...pinnedContacts.map((entry) => entry.id),
@@ -169,7 +182,7 @@ export function ContactsOverviewView({
             }
           }}
         >
-          <EntityListAvatar src={contact.avatarSrc} size={20} />
+          <EntityListAvatar src={contact.avatarSrc} size={32} align="top" />
           <div className="contacts-overview__body">
             <div className="contacts-overview__title-row">
               <span className="contacts-overview__name">{contact.name}</span>
@@ -247,12 +260,19 @@ export function ContactsOverviewView({
           {typeToFilterQuery ? "No contacts match." : emptyMessage}
         </p>
       ) : (
-        <ul
-          className="contacts-overview__list"
-          role="list"
-          ref={listRef}
-          {...listContainerProps}
-        >
+        <>
+          <AlphaLetterMinimap
+            letters={alphaLetters}
+            scrollRootRef={listRef}
+            onBeforeSelect={expandLetterSection}
+            ariaLabel="Jump to contact letter"
+          />
+          <ul
+            className="contacts-overview__list"
+            role="list"
+            ref={listRef}
+            {...listContainerProps}
+          >
           {pinnedContacts.length > 0 ? (
             <li className="contacts-overview__pinned" aria-label="New contact">
               <ul className="contacts-overview__pinned-list" role="list">
@@ -270,7 +290,8 @@ export function ContactsOverviewView({
               {entries.map((contact) => renderContactRow(contact))}
             </ProjectTypeGroupSection>
           ))}
-        </ul>
+          </ul>
+        </>
       )}
     </div>
   );

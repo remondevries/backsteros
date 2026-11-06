@@ -54,6 +54,7 @@ import {
   ProjectStatusIcon,
   COMPOSE_NO_PROJECT_VALUE,
   DefaultProjectIcon,
+  projectTypeDropdownFilter,
   type EmailAgentActionCardId,
   type EmailComposerMeetingSubmit,
   type EmailComposerTaskSubmit,
@@ -405,12 +406,17 @@ export function EmailThreadDetail({
         searchTerms: "inbox triage none",
         icon: <DefaultProjectIcon size={14} />,
       },
-      ...filterProjectsForDefaultPicker(projects).map((project) => ({
-        value: project.id,
-        label: project.name,
-        searchTerms: `${project.key} ${project.name}`,
-        icon: <ProjectStatusIcon status={project.status} size={14} />,
-      })),
+      ...filterProjectsForDefaultPicker(projects).map((project) => {
+        const typeFilter = projectTypeDropdownFilter(project.type);
+        return {
+          value: project.id,
+          label: project.name,
+          searchTerms: `${project.key} ${project.name} ${typeFilter.filterLabel}`,
+          filterValue: typeFilter.filterValue,
+          filterLabel: typeFilter.filterLabel,
+          icon: <ProjectStatusIcon status={project.status} size={14} />,
+        };
+      }),
     ];
   }, [projects]);
 

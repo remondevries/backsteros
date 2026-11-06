@@ -28,6 +28,13 @@ import {
   type ClientEstimateStatus as UiEstimateStatus,
 } from "../../finance/estimate-status.js";
 import {
+  estimateTableDisplayLabel,
+  listEstimateMarkdownTables,
+  parseMarkdownTableToPlanComparison,
+  setEstimateTableDisplayMode,
+  type EstimateTableDisplayMode,
+} from "../../finance/estimate-table-display.js";
+import {
   estimateChartYears,
   parseEstimateDocumentDate,
 } from "../../finance/estimate-amount-chart-series.js";
@@ -64,6 +71,7 @@ import {
   DROPDOWN_NONE_VALUE,
   resolveDropdownNone,
 } from "../dropdowns/dropdown-options.js";
+import { projectTypeDropdownFilter } from "../../dropdowns/searchable-dropdown-option-filters.js";
 import { PropertyDropdown } from "../dropdowns/property-dropdown.js";
 import { SearchableDropdown } from "../dropdowns/searchable-dropdown.js";
 import type { SearchableDropdownOption } from "../dropdowns/searchable-dropdown.js";
@@ -208,6 +216,27 @@ function EstimateMarkdownPane({
     save,
   });
 
+  const comparisonTableBlocks = useMemo(
+    () =>
+      listEstimateMarkdownTables(value).filter(
+        (block) => parseMarkdownTableToPlanComparison(block.tableMarkdown) != null,
+      ),
+    [value],
+  );
+
+  const handleTableDisplayChange = useCallback(
+    (tableIndex: number, next: string) => {
+      const block = comparisonTableBlocks[tableIndex];
+      if (!block) return;
+      const modeValue =
+        next === "plan-comparison"
+          ? ("plan-comparison" as EstimateTableDisplayMode)
+          : null;
+      handleChange(setEstimateTableDisplayMode(value, block, modeValue));
+    },
+    [comparisonTableBlocks, handleChange, value],
+  );
+
   return children({
     mode,
     value,
@@ -234,6 +263,7 @@ function EstimateMarkdownPane({
                 <DocumentMarkdownPreview
                   body={value}
                   onChange={handleChange}
+                  allowHtml
                 />
               ) : (
                 <p className="content-markdown-empty-hint">
@@ -254,6 +284,33 @@ function EstimateMarkdownPane({
     ),
     dock: (
       <FloatingPillToggleDock className="finance-estimate-detail-view-toggle">
+        {mode === "edit" && comparisonTableBlocks.length > 0 ? (
+          <label className="finance-estimate-table-display">
+            <span className="finance-estimate-table-display__label">
+              Table display
+            </span>
+            <select
+              className="finance-estimate-table-display__select"
+              aria-label="Estimate table display mode"
+              value={comparisonTableBlocks[0]?.mode ?? ""}
+              onChange={(event) =>
+                handleTableDisplayChange(0, event.target.value)
+              }
+            >
+              <option value="">
+                {estimateTableDisplayLabel(null)}
+              </option>
+              <option value="plan-comparison">
+                {estimateTableDisplayLabel("plan-comparison")}
+              </option>
+            </select>
+            {comparisonTableBlocks.length > 1 ? (
+              <span className="finance-estimate-table-display__hint">
+                First comparison table · {comparisonTableBlocks.length} in doc
+              </span>
+            ) : null}
+          </label>
+        ) : null}
         <SegmentedPillToggle
           value={mode}
           options={[
@@ -282,7 +339,12 @@ function FinanceEstimateDetail({
   selected: ClientEstimate;
   error?: string | null;
   organizations: OrganizationListItem[];
-  projects: Array<{ id: string; name: string; key?: string | null }>;
+  projects: Array<{
+    id: string;
+    name: string;
+    key?: string | null;
+    type?: string | null;
+  }>;
   contactOptions: SearchableDropdownOption<string>[];
   contactOrganizationById: Readonly<
     Record<string, string | null | undefined>
@@ -403,14 +465,19 @@ function FinanceEstimateDetail({
           <DefaultProjectIcon size={14} className="text-foreground/70" />
         ),
       },
-      ...projects.map((project) => ({
-        value: project.id,
-        label: project.name,
-        searchTerms: project.key ?? undefined,
-        icon: (
-          <DefaultProjectIcon size={14} className="text-foreground/70" />
-        ),
-      })),
+      ...projects.map((project) => {
+        const typeFilter = projectTypeDropdownFilter(project.type);
+        return {
+          value: project.id,
+          label: project.name,
+          searchTerms: `${project.key ?? ""} ${typeFilter.filterLabel}`.trim(),
+          filterValue: typeFilter.filterValue,
+          filterLabel: typeFilter.filterLabel,
+          icon: (
+            <DefaultProjectIcon size={14} className="text-foreground/70" />
+          ),
+        };
+      }),
     ],
     [projects],
   );

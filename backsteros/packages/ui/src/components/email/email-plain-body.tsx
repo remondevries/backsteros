@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 
 import { splitPlainTextEmailQuotes } from "../../email/email-quote-collapse.js";
+import { LinkifiedPlainText } from "../text/linkified-plain-text.js";
 
 export type EmailPlainBodyProps = {
   text: string;
@@ -30,12 +31,12 @@ export function EmailPlainBody({
   }
 
   if (!quoted) {
-    return <>{text}</>;
+    return <LinkifiedPlainText text={text} />;
   }
 
   return (
     <>
-      {visible}
+      <LinkifiedPlainText text={visible} />
       {visible ? "\n\n" : null}
       <button
         type="button"
@@ -48,7 +49,7 @@ export function EmailPlainBody({
       </button>
       {expanded ? (
         <div className="email-quote-block" data-email-quote>
-          {quoted}
+          <LinkifiedPlainText text={quoted} />
         </div>
       ) : null}
     </>

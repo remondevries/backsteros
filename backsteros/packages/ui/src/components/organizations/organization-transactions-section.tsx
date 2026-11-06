@@ -15,6 +15,7 @@ import {
 } from "react";
 
 import { useFinancePanelResize } from "../../finance/use-finance-panel-resize.js";
+import { projectTypeDropdownFilter } from "../../dropdowns/searchable-dropdown-option-filters.js";
 import { DefaultProjectIcon } from "../projects/default-project-icon.js";
 import {
   DROPDOWN_NO_GOAL_VALUE,
@@ -46,7 +47,12 @@ export type OrganizationTransactionsSectionProps = {
   accounts: BankAccount[];
   accountAvatarSrcById: Record<string, string>;
   organizations: FinanceCategoryOrganization[];
-  projects?: Array<{ id: string; name: string; key?: string | null }>;
+  projects?: Array<{
+    id: string;
+    name: string;
+    key?: string | null;
+    type?: string | null;
+  }>;
   goals?: FinancialGoal[];
   recurrings?: FinancialRecurring[];
   emptyLabel?: string;
@@ -138,11 +144,16 @@ export function OrganizationTransactionsSection({
         searchTerms: "no project unassigned",
         icon: <DefaultProjectIcon size={14} className="text-foreground/70" />,
       },
-      ...projects.map((project) => ({
-        value: project.id,
-        label: project.name,
-        searchTerms: `${project.key ?? ""} ${project.name}`,
-      })),
+      ...projects.map((project) => {
+        const typeFilter = projectTypeDropdownFilter(project.type);
+        return {
+          value: project.id,
+          label: project.name,
+          searchTerms: `${project.key ?? ""} ${project.name} ${typeFilter.filterLabel}`,
+          filterValue: typeFilter.filterValue,
+          filterLabel: typeFilter.filterLabel,
+        };
+      }),
     ],
     [projects],
   );

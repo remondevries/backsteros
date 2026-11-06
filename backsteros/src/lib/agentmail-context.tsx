@@ -28,6 +28,8 @@ import { useAgentMailMailboxes } from "./use-agentmail-mailboxes";
 type AgentMailContextValue = {
   mailboxes: EmailMailbox[];
   messages: EmailListItem[];
+  /** Transactional mail labeled `notifications` (invite / reset / meeting). */
+  notificationMessages: EmailListItem[];
   apiKeyConfigured: boolean;
   /** Workspace reply greeting/sign-off templates for compose preview. */
   replyTemplates: EmailComposeReplyTemplates | null;
@@ -47,6 +49,7 @@ function agentMailStub(degraded: boolean): AgentMailContextValue {
   return {
     mailboxes: [],
     messages: [],
+    notificationMessages: [],
     apiKeyConfigured: false,
     replyTemplates: null,
     loading: false,

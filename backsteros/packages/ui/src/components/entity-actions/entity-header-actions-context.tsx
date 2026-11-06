@@ -17,6 +17,17 @@ export type EntityDeleteResult =
   | { ok: true }
   | { ok: false; error: string };
 
+export type EntityDeleteSecondaryAction = {
+  /** Confirm button label (e.g. "Report Spam"). */
+  label: string;
+  /**
+   * Plain key while the modal is open (e.g. `"s"`). Shown as a hint and
+   * confirms this action instead of the primary delete.
+   */
+  shortcutKey: string;
+  onConfirm: () => Promise<EntityDeleteResult>;
+};
+
 export type EntityDeleteConfig = {
   entityLabel: string;
   /** Shown on the confirm button when the delete modal is open. */
@@ -27,6 +38,11 @@ export type EntityDeleteConfig = {
    */
   actionVerb?: string;
   onDelete: () => Promise<EntityDeleteResult>;
+  /**
+   * Optional extra confirm to the right of the primary delete button
+   * (email: Report Spam + `S`).
+   */
+  secondaryAction?: EntityDeleteSecondaryAction;
 };
 
 export type EntityDuplicateOptions = {
@@ -86,6 +102,7 @@ type EntityHeaderActionsContextValue = {
   openDeleteModal: (configOverride?: EntityDeleteConfig | null) => void;
   closeDeleteModal: () => void;
   confirmDelete: () => void;
+  confirmDeleteSecondary: () => void;
   isDeletePending: boolean;
   deleteError: string | null;
   duplicateConfig: EntityDuplicateConfig | null;
@@ -281,6 +298,26 @@ export function EntityHeaderActionsProvider({
     });
   }, [deleteConfig, modalDeleteConfig]);
 
+  const confirmDeleteSecondary = useCallback(() => {
+    const config = modalDeleteConfig ?? deleteConfig;
+    const secondary = config?.secondaryAction;
+    if (!secondary) {
+      return;
+    }
+
+    startDeleteTransition(async () => {
+      setDeleteError(null);
+      const result = await secondary.onConfirm();
+      if (result.ok) {
+        setDeleteModalOpen(false);
+        setModalDeleteConfig(null);
+        return;
+      }
+
+      setDeleteError(result.error);
+    });
+  }, [deleteConfig, modalDeleteConfig]);
+
   const closeDuplicateModal = useCallback(() => {
     setDuplicateModalOpen(false);
     setModalDuplicateConfig(null);
@@ -358,6 +395,7 @@ export function EntityHeaderActionsProvider({
       openDeleteModal,
       closeDeleteModal,
       confirmDelete,
+      confirmDeleteSecondary,
       isDeletePending,
       deleteError,
       duplicateConfig,
@@ -383,6 +421,7 @@ export function EntityHeaderActionsProvider({
       closeDeleteModal,
       closeDuplicateModal,
       confirmDelete,
+      confirmDeleteSecondary,
       confirmDuplicate,
       deleteConfig,
       deleteError,

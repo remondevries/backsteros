@@ -533,7 +533,8 @@ export function buildTaskListEmailItem(input: {
     emailInboxId: email.inboxId,
     emailMessageId: email.messageId,
     emailDraftId: email.draftId ?? null,
-    emailThreadId: email.emailThreadId ?? email.threadId,
+    emailThreadId: email.emailThreadId ?? null,
+    emailThreadKey: email.threadId ?? null,
     emailPartyLabel: email.partyLabel,
     emailMailboxLabel: email.mailboxLabel,
     emailMailboxAvatarSrc: email.mailboxAvatarSrc,
@@ -573,7 +574,8 @@ export function inboxListItemToTaskItemRowTask(
       emailInboxId: item.inboxId,
       emailMessageId: item.messageId,
       emailDraftId: item.draftId ?? null,
-      emailThreadId: item.emailThreadId ?? item.threadId,
+      emailThreadId: item.emailThreadId ?? null,
+      emailThreadKey: item.threadId ?? null,
       emailPartyLabel: item.partyLabel,
       emailMailboxLabel: item.mailboxLabel ?? null,
       emailMailboxAvatarSrc: item.mailboxAvatarSrc ?? null,
@@ -792,8 +794,8 @@ export function getFirstInboxItemHref(
 }
 
 /**
- * After dismissing an inbox row (e.g. agent Approve), pick the neighbor to open:
- * prefer the item above, else the next item, else none (empty inbox).
+ * After dismissing an inbox row (e.g. delete / agent Approve), pick the neighbor
+ * to open: prefer the next item below, else the item above, else none.
  */
 export function pickIdAfterRemoving(
   orderedIds: readonly string[],
@@ -803,13 +805,48 @@ export function pickIdAfterRemoving(
   if (index === -1) {
     return orderedIds.find((id) => id !== removedId) ?? null;
   }
-  if (index > 0) {
-    return orderedIds[index - 1] ?? null;
-  }
   if (index + 1 < orderedIds.length) {
     return orderedIds[index + 1] ?? null;
   }
+  if (index > 0) {
+    return orderedIds[index - 1] ?? null;
+  }
   return null;
+}
+
+/**
+ * Resolve a list row id from a row id, email `messageId`, or `draftId`.
+ */
+export function resolveInboxRemovedRowId(
+  items: readonly InboxListItem[],
+  removedId: string,
+): string {
+  const needle = removedId.trim();
+  if (!needle) return needle;
+  const orderedIds = items.map((item) => item.id);
+  if (orderedIds.includes(needle)) return needle;
+  return (
+    items.find(
+      (item) =>
+        item.kind === "email" &&
+        (item.messageId === needle || item.draftId?.trim() === needle),
+    )?.id ?? needle
+  );
+}
+
+/**
+ * Neighbor list row id after removing `removedId` (row / message / draft id).
+ * `null` means the list is empty.
+ */
+export function getInboxIdAfterRemovingItem(
+  items: readonly InboxListItem[],
+  removedId: string,
+): string | null {
+  const needle = removedId.trim();
+  if (!needle) return null;
+  const orderedIds = items.map((item) => item.id);
+  const removedRowId = resolveInboxRemovedRowId(items, needle);
+  return pickIdAfterRemoving(orderedIds, removedRowId);
 }
 
 /**
@@ -824,15 +861,8 @@ export function getInboxHrefAfterRemovingItem(
 ): string | undefined {
   const needle = removedId.trim();
   if (!needle) return undefined;
-  const orderedIds = items.map((item) => item.id);
-  const removedRowId = orderedIds.includes(needle)
-    ? needle
-    : (items.find(
-        (item) =>
-          item.kind === "email" &&
-          (item.messageId === needle || item.draftId?.trim() === needle),
-      )?.id ?? needle);
-  const nextId = pickIdAfterRemoving(orderedIds, removedRowId);
+  const removedRowId = resolveInboxRemovedRowId(items, needle);
+  const nextId = getInboxIdAfterRemovingItem(items, removedRowId);
   if (!nextId) return undefined;
   const remaining = items.filter((item) => item.id !== removedRowId);
   const nextItem = remaining.find((item) => item.id === nextId);

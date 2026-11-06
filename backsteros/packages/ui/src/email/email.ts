@@ -783,6 +783,31 @@ export function firstReceivedEmailAtMs(
 }
 
 /**
+ * Keep list party identity (`from` / `to` / `direction`) on the earliest
+ * message when a newer reply replaces the thread row.
+ */
+export function mergeEmailListItemKeepingFirstParty(
+  existing: EmailListItem,
+  next: EmailListItem,
+): EmailListItem {
+  if (existing.kind === "draft" || next.kind === "draft") return next;
+  const existingFirst = existing.firstReceivedAt ?? existing.receivedAt;
+  const nextFirst = next.firstReceivedAt ?? next.receivedAt;
+  const first = existingFirst <= nextFirst ? existing : next;
+  return {
+    ...next,
+    from: first.from,
+    to: first.to ?? next.to,
+    direction: first.direction ?? next.direction,
+    firstReceivedAt: Math.min(existingFirst, nextFirst),
+    receivedAt: Math.max(existing.receivedAt, next.receivedAt),
+    preview:
+      next.receivedAt >= existing.receivedAt ? next.preview : existing.preview,
+    unread: existing.unread === true || next.unread === true,
+  };
+}
+
+/**
  * One sidebar row per AgentMail thread. Concept replies stay attached to the
  * parent message — they must not appear as a second inbox item.
  */
@@ -825,6 +850,11 @@ export function collapseEmailListItemsByThread(
       preview: newest.preview ?? preferred.preview,
       receivedAt: newest.receivedAt,
       firstReceivedAt,
+      // List avatar / party line follow the first message in the thread, not
+      // whoever emailed last (outbound replies would otherwise show our face).
+      from: oldest.from,
+      to: oldest.to ?? preferred.to,
+      direction: oldest.direction ?? preferred.direction,
       // Any unread message in the thread keeps the list badge on.
       unread: bucket.some((item) => item.unread === true),
       conceptDraftId:

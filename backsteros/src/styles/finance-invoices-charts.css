@@ -24,6 +24,39 @@
   height: 240px;
 }
 
+/*
+ * Estimates’ chart+widgets row ends up taller because the page scrollport
+ * lets max-content win. Invoices nest that row in a height-constrained
+ * scroller, so the shared `height: 0` plot fill can leave the block a few
+ * px short. Floor the row (and beat `height: 0 !important`) so widgets +
+ * chart get the same breathing room.
+ */
+.finance-invoices-view__scroll > .finance-doc-chart-with-summary {
+  flex: 0 0 auto;
+  min-height: 340px;
+  padding-bottom: 4px;
+  box-sizing: border-box;
+}
+
+@media (min-width: 1100px) {
+  .finance-invoices-view
+    .finance-doc-chart-with-summary__chart
+    > .finance-invoices-view__chart {
+    min-height: 300px !important;
+  }
+
+  .finance-invoices-view
+    .finance-doc-chart-with-summary__chart
+    .finance-accounts-view__chart-plot,
+  .finance-invoices-view
+    .finance-doc-chart-with-summary__chart
+    .finance-accounts-view__chart-empty {
+    /* Beat finance-shell `height: 0 !important` so the floor actually sticks. */
+    height: auto !important;
+    min-height: 260px !important;
+  }
+}
+
 .finance-invoices-view__toolbar {
   display: flex;
   flex-wrap: wrap;

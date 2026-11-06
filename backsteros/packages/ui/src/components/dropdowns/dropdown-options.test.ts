@@ -55,3 +55,24 @@ test("buildProjectDropdownOptions keeps a closed assigned project", () => {
     ["OS", "DONE"],
   );
 });
+
+test("buildProjectDropdownOptions tags project type filters", () => {
+  const options = buildProjectDropdownOptions(
+    [
+      { key: "OS", name: "Open", status: "active", type: "codebase" },
+      {
+        key: "DOM",
+        name: "Domain",
+        status: "active",
+        type: "domeinname",
+      },
+    ],
+    { includeNone: true },
+  );
+
+  assert.equal(options[0]?.filterValue, undefined);
+  assert.equal(options[1]?.filterValue, "codebase");
+  assert.equal(options[1]?.filterLabel, "Codebase");
+  assert.equal(options[2]?.filterValue, "domeinname");
+  assert.equal(options[2]?.filterLabel, "Domains");
+});

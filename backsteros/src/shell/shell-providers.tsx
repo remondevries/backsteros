@@ -19,6 +19,7 @@ import { SyncingIssuesProvider } from "../lib/use-syncing-issues";
 import { MeetingSchedulingSettingsProvider } from "../lib/use-meeting-scheduling-settings";
 import { DesktopOverlayComposeContextPublisher } from "../components/desktop-overlay-compose-context-publisher";
 import { DesktopOverlayMainNavigationListener } from "../components/desktop-overlay-main-navigation-listener";
+import { ExternalLinkClickListener } from "../components/external-link-click-listener";
 import { ExternalOpenHrefListener } from "../components/external-open-href-listener";
 import { ModClickNewTabListener } from "../components/mod-click-new-tab-listener";
 import { SyncEventResyncHost } from "../components/sync-event-resync-host";
@@ -95,6 +96,7 @@ export function ShellRuntimeProviders({
                   <DesktopOverlayMainNavigationListener />
                   <DesktopOverlayComposeContextPublisher />
                   <ExternalOpenHrefListener />
+                  <ExternalLinkClickListener />
                   <ModClickNewTabListener onOpenHrefInNewTab={openHrefInNewTab} />
                   <RegisterPageTitleProvider
                     pathname={pathname}

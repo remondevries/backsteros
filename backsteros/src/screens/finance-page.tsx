@@ -36,6 +36,7 @@ import {
   withAvatarSrc,
   withOrganizationAvatarSrc,
 } from "../lib/avatar-src";
+import { loadPortalInvoiceActivityEmail } from "../lib/load-portal-invoice-activity-email";
 import {
   useKeepAliveActive,
   useRoutePathActive,
@@ -253,6 +254,12 @@ function FinancePageBody() {
     sendMoneybirdInvoiceReminder,
     loadMoneybirdInvoicesPage,
   } = useFinanceMoneybirdInvoices({ client, navId });
+
+  const loadPortalInvoiceActivityEmailPreview = useCallback(
+    (input: { inboxId: string; messageId: string }) =>
+      loadPortalInvoiceActivityEmail(client, input),
+    [client],
+  );
 
   const {
     estimates,
@@ -589,6 +596,7 @@ function FinancePageBody() {
         invoiceActivityItems={moneybirdInvoiceActivityItems}
         invoiceActivityLoading={moneybirdInvoiceActivityLoading}
         invoiceActivityError={moneybirdInvoiceActivityError}
+        onLoadPortalInvoiceActivityEmail={loadPortalInvoiceActivityEmailPreview}
         invoiceNextReminderStep={moneybirdInvoiceNextReminderStep}
         sendInvoiceReminderPending={moneybirdSendInvoiceReminderPending}
         onSendInvoiceReminder={sendMoneybirdInvoiceReminder}

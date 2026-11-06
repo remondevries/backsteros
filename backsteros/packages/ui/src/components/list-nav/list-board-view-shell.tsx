@@ -62,30 +62,43 @@ export function SegmentedPillToggle<T extends string>({
         activeIndex >= 0 ? buttonRefs.current[activeIndex] : null;
 
       if (!container || !activeButton) {
-        setIndicator(INITIAL_INDICATOR);
+        setIndicator((current) =>
+          current.width === 0 && current.height === 0 && !current.ready
+            ? current
+            : INITIAL_INDICATOR,
+        );
         return;
       }
 
+      let left: number;
+      let top: number;
+      let width: number;
+      let height: number;
       if (activeButton.offsetParent === container) {
-        setIndicator({
-          left: activeButton.offsetLeft,
-          top: activeButton.offsetTop,
-          width: activeButton.offsetWidth,
-          height: activeButton.offsetHeight,
-          ready: true,
-        });
-        return;
+        left = activeButton.offsetLeft;
+        top = activeButton.offsetTop;
+        width = activeButton.offsetWidth;
+        height = activeButton.offsetHeight;
+      } else {
+        const containerRect = container.getBoundingClientRect();
+        const buttonRect = activeButton.getBoundingClientRect();
+        left = buttonRect.left - containerRect.left;
+        top = buttonRect.top - containerRect.top;
+        width = buttonRect.width;
+        height = buttonRect.height;
       }
 
-      const containerRect = container.getBoundingClientRect();
-      const buttonRect = activeButton.getBoundingClientRect();
-      setIndicator({
-        left: buttonRect.left - containerRect.left,
-        top: buttonRect.top - containerRect.top,
-        width: buttonRect.width,
-        height: buttonRect.height,
-        ready: true,
-      });
+      // Skip identical writes — ResizeObserver + indicator style can otherwise
+      // loop (Communication mail-folder dock hit max update depth).
+      setIndicator((current) =>
+        current.left === left &&
+        current.top === top &&
+        current.width === width &&
+        current.height === height &&
+        current.ready
+          ? current
+          : { left, top, width, height, ready: true },
+      );
     }
 
     updateIndicator();
@@ -103,7 +116,7 @@ export function SegmentedPillToggle<T extends string>({
       resizeObserver.disconnect();
       window.removeEventListener("resize", updateIndicator);
     };
-  }, [activeIndex, options, value]);
+  }, [activeIndex, options.length, value]);
 
   const indicatorStyle: CSSProperties = {
     width: indicator.width,

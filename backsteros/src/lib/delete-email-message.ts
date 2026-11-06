@@ -63,3 +63,42 @@ export function emailDeleteEntityLabel(
   const trimmed = subject?.trim() || "";
   return trimmed ? `${trimmed} (entire thread)` : "this conversation";
 }
+
+/**
+ * Optimistic list remove + POST report-spam (same as email detail menu).
+ * Does not navigate — callers leave detail when needed.
+ */
+export async function reportEmailSpam(
+  client: EmailDeleteClient,
+  target: DeleteEmailMessageTarget,
+): Promise<EntityDeleteResult> {
+  const inboxId = target.inboxId.trim();
+  const messageId = target.messageId.trim();
+  if (!inboxId || !messageId) {
+    return { ok: false, error: "Message is required." };
+  }
+
+  const removeDetail: EmailListRemoveDetail = {
+    inboxId,
+    messageId,
+    threadId: target.threadId?.trim() || null,
+  };
+  dispatchEmailListRemove(removeDetail);
+
+  try {
+    await client.requestJson(
+      `/api/v1/email/inboxes/${encodeURIComponent(inboxId)}/messages/${encodeURIComponent(messageId)}/report-spam`,
+      { method: "POST" },
+    );
+    return { ok: true };
+  } catch (error) {
+    console.warn("[email] report spam failed:", error);
+    forgetEmailListRemoval(removeDetail);
+    requestMailboxReload();
+    return {
+      ok: false,
+      error:
+        error instanceof Error ? error.message : "Could not report spam.",
+    };
+  }
+}

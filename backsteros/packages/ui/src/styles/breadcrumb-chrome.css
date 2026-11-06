@@ -567,7 +567,10 @@
 }
 
 .entity-delete-modal-confirm {
+  display: inline-flex;
   max-width: 16rem;
+  align-items: center;
+  gap: 8px;
   border: none;
   border-radius: 6px;
   padding: 6px 12px;
@@ -583,6 +586,22 @@
 
 .entity-delete-modal-confirm:hover:not(:disabled) {
   background: color-mix(in srgb, #ef4444 25%, transparent);
+}
+
+.entity-delete-modal-confirm-kbd {
+  display: inline-flex;
+  min-width: 1.1rem;
+  height: 1.1rem;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  background: color-mix(in srgb, #ef4444 22%, transparent);
+  color: inherit;
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
 }
 
 .entity-delete-modal-cancel:disabled,

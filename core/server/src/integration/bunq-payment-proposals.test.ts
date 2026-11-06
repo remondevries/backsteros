@@ -200,7 +200,7 @@ test("OS-167: concurrent Approve & Pay → exactly one bunq payment execution", 
   );
   assert.equal(created.proposal.status, "pending");
   assert.equal(created.proposal.proposalHash, proposalHash);
-  assert.equal(created.approval.approveLabel, "Approve & Pay");
+  assert.equal(created.approval.approveLabel, "Approve");
   assert.equal(
     created.approval.fields?.find((f) => f.label === "IBAN")?.value,
     "NL91ABNA0417164300",

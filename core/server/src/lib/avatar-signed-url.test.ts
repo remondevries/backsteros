@@ -36,6 +36,28 @@ describe("avatar-signed-url", () => {
     );
   });
 
+  it("signs portal avatars (avatar_portal)", () => {
+    const now = 1_700_000_000;
+    const built = buildAvatarSignedUrl({
+      origin: "https://api.example.com",
+      workspaceId: "ws_1",
+      entityType: "avatar_portal",
+      entityId: "contact_1",
+      secret: SECRET,
+      nowSeconds: now,
+      ttlSeconds: 3600,
+    });
+
+    assert.match(
+      built.url,
+      /^https:\/\/api\.example\.com\/api\/v1\/public\/avatars\/avatar_portal\/contact_1\?/,
+    );
+    assert.equal(
+      verifyAvatarSignature(built.payload, built.signature, SECRET, now),
+      true,
+    );
+  });
+
   it("rejects expired signatures", () => {
     const payload = {
       workspaceId: "ws_1",

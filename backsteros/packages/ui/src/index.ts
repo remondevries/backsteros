@@ -406,6 +406,7 @@ export {
   getInboxAttentionGroupKey,
   getInboxAttentionGroupLabel,
   getInboxHrefAfterRemovingItem,
+  getInboxIdAfterRemovingItem,
   getInboxItemDisplayId,
   getInboxItemHref,
   buildInboxItemHrefById,
@@ -419,6 +420,7 @@ export {
   isEmailTaskListItem,
   isInboxOverdueTask,
   pickIdAfterRemoving,
+  resolveInboxRemovedRowId,
   resolveInboxEmailIconColor,
   sortInboxItemsByAttentionStatus,
   taskBelongsInInbox,
@@ -472,6 +474,7 @@ export {
   groupEmailItemsByStatus,
   filterEmailListItems,
   collapseEmailListItemsByThread,
+  mergeEmailListItemKeepingFirstParty,
   firstReceivedEmailAtMs,
   getEmailStatusLabel,
   isEmailComposePath,
@@ -1963,6 +1966,19 @@ export {
   type EstimateStatusChartSeries,
 } from "./finance/estimate-amount-chart-series.js";
 export {
+  ESTIMATE_TABLE_DISPLAY_MODES,
+  estimateTableDisplayLabel,
+  isEstimateTableDisplayMode,
+  listEstimateMarkdownTables,
+  normalizeEstimateTableDisplayMarkdown,
+  parseMarkdownTableToPlanComparison,
+  setEstimateTableDisplayMode,
+  type EstimateMarkdownTableBlock,
+  type EstimatePlanComparisonData,
+  type EstimateTableDisplayMode,
+} from "./finance/estimate-table-display.js";
+export { EstimatePlanComparison } from "./components/finance/estimate-plan-comparison.js";
+export {
   EstimateStatusAmountChart,
   type EstimateStatusAmountChartProps,
 } from "./components/finance/estimate-status-amount-chart.js";
@@ -1972,8 +1988,14 @@ export {
 } from "./components/finance/finance-invoice-detail-document.js";
 export {
   FinanceInvoiceActivityTimeline,
+  type FinanceInvoiceActivityEmailPreview,
   type FinanceInvoiceActivityTimelineProps,
 } from "./components/finance/finance-invoice-activity-timeline.js";
+export {
+  FinanceInvoiceSendReminderMenu,
+  type FinanceInvoiceSendEmailKind,
+  type FinanceInvoiceSendReminderMenuProps,
+} from "./components/finance/finance-invoice-send-reminder-menu.js";
 export {
   FinanceSyncIcon,
   type FinanceSyncIconProps,
@@ -3747,6 +3769,7 @@ export {
   EntityHeaderActionsProvider,
   useEntityHeaderActionsContext,
   type EntityDeleteConfig,
+  type EntityDeleteSecondaryAction,
   type EntityDeleteResult,
   type EntityDuplicateConfig,
   type EntityDuplicateOptions,
@@ -4189,12 +4212,15 @@ export {
   COMMUNICATION_CHANNEL_PARAM,
   COMMUNICATION_INBOX_PARAM,
   COMMUNICATION_STATUS_PARAM,
+  COMMUNICATION_MAIL_PARAM,
   COMMUNICATION_LIST_FILTER_OPTIONS,
   DEFAULT_COMMUNICATION_LIST_FILTER,
+  DEFAULT_COMMUNICATION_MAIL_FOLDER,
   buildCommunicationItemHrefById,
   communicationChannelLabel,
   communicationListFilterEmptyLabel,
   communicationListFilters,
+  communicationMailFolders,
   filterCommunicationListItems,
   findCommunicationItemBySlugOrId,
   getCommunicationChannelHref,
@@ -4206,18 +4232,23 @@ export {
   getSelectedCommunicationSlugFromPathname,
   hasCommunicationChannelParam,
   isCommunicationListFilter,
+  isCommunicationMailFolder,
   isCommunicationSectionPath,
   parseCommunicationChannelFromSearch,
   parseCommunicationInboxIdFromSearch,
+  parseCommunicationMailFolder,
+  parseCommunicationMailFolderFromSearch,
   parseCommunicationStatusFromSearch,
   parseCommunicationListFilter,
   resolveActiveCommunicationChannel,
   resolveActiveCommunicationInboxId,
   resolveActiveCommunicationStatus,
   withCommunicationListContext,
+  withCommunicationMailFolder,
   type CommunicationChannel,
   type CommunicationListContextOptions,
   type CommunicationListFilter,
+  type CommunicationMailFolder,
 } from "./communication/communication.js";
 
 export {
@@ -4234,6 +4265,11 @@ export {
   CommunicationChatListCard,
   type CommunicationChatListCardProps,
 } from "./components/communication/communication-chat-list-card.js";
+
+export {
+  CommunicationListCardSelect,
+  type CommunicationListCardSelectProps,
+} from "./components/communication/communication-list-card-select.js";
 
 export {
   CommunicationMessagesList,
@@ -4420,6 +4456,11 @@ export {
 } from "./components/contacts/contacts-overview-view.js";
 
 export {
+  AlphaLetterMinimap,
+  type AlphaLetterMinimapProps,
+} from "./components/shared/alpha-letter-minimap.js";
+
+export {
   ContactDetailOverlay,
   type ContactDetailOverlayProps,
 } from "./components/contacts/contact-detail-overlay.js";
@@ -4584,6 +4625,7 @@ export {
 
 export {
   brandfetchLogoUrl,
+  brandfetchLogoUrlFromEmailAddress,
   brandfetchLogoUrlFromWebsite,
   registrableDomainFromWebsite,
   resolveOrganizationAvatarSrc,
@@ -4760,6 +4802,14 @@ export {
   SEARCHABLE_DROPDOWN_REQUEST_CLOSE,
   requestCloseSearchableDropdowns,
 } from "./dropdowns/searchable-dropdown-events.js";
+
+export {
+  SEARCHABLE_DROPDOWN_FILTER_ALL,
+  collectSearchableDropdownOptionFilters,
+  filterSearchableDropdownOptionsByFilter,
+  projectTypeDropdownFilter,
+  type SearchableDropdownOptionFilter,
+} from "./dropdowns/searchable-dropdown-option-filters.js";
 
 export {
   SEARCHABLE_DROPDOWN_OPEN_PLACEMENT_ATTRIBUTE,

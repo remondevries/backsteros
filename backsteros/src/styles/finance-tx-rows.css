@@ -682,8 +682,8 @@
   gap: 16px;
   overflow-x: hidden;
   overflow-y: auto;
-  /* Top/side inset + clearance for the floating filter dock. */
-  padding: 1rem 2px 5.5rem 1rem;
+  /* Extra top inset vs old 1rem so chart/widgets match estimates spacing. */
+  padding: 1.25rem 2px 5.5rem 1rem;
 }
 
 .finance-invoices-view.has-selection .finance-categories-view__list-pane {

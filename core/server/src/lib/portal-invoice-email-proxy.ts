@@ -30,6 +30,8 @@ export type SendPortalInvoiceEmailResult =
       email: string;
       message: string;
       invoiceId: string;
+      messageId?: string;
+      inboxId?: string;
       skipped?: "already_sent";
     }
   | { ok: false; error: string; status: number };
@@ -37,6 +39,8 @@ export type SendPortalInvoiceEmailResult =
 export async function sendPortalInvoiceEmailViaPortal(input: {
   invoiceId: string;
   locale?: string | null;
+  /** Staff-chosen recipient; forwarded to the portal (bypasses dry-run override). */
+  to?: string | null;
 }): Promise<SendPortalInvoiceEmailResult> {
   const secret = portalHookSecret();
   if (!secret) {
@@ -60,6 +64,7 @@ export async function sendPortalInvoiceEmailViaPortal(input: {
       body: JSON.stringify({
         invoiceId: input.invoiceId,
         locale: input.locale ?? null,
+        ...(input.to?.trim() ? { to: input.to.trim() } : {}),
       }),
     });
   } catch (error) {
@@ -78,6 +83,9 @@ export async function sendPortalInvoiceEmailViaPortal(input: {
     message?: string;
     email?: string;
     invoiceId?: string;
+    emailId?: string;
+    messageId?: string;
+    inboxId?: string;
     skipped?: string;
   } | null;
 
@@ -99,6 +107,9 @@ export async function sendPortalInvoiceEmailViaPortal(input: {
     ok: true,
     email: payload?.email?.trim() || "",
     invoiceId: payload?.invoiceId?.trim() || input.invoiceId,
+    messageId:
+      payload?.messageId?.trim() || payload?.emailId?.trim() || undefined,
+    inboxId: payload?.inboxId?.trim() || undefined,
     skipped:
       payload?.skipped === "already_sent" ? "already_sent" : undefined,
     message:

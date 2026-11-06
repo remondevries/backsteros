@@ -1930,6 +1930,13 @@
   opacity: 1;
 }
 
+/* bunq mark already carries brand colors — don’t wash it out. */
+.chat-ui-approval-card[data-kind="payment"] .chat-ui-approval-card__kind-icon--bunq {
+  opacity: 1;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
 .chat-ui-approval-card__title {
   margin: 0;
   font-size: 0.875rem;
@@ -2050,6 +2057,18 @@
   color: var(--foreground, #fff);
 }
 
+/* Payment Approve — bunq-adjacent green. */
+.chat-ui-approval-card[data-kind="payment"] .chat-ui-approval-card__btn.is-primary {
+  border-color: transparent;
+  background: #16a34a;
+  color: #fff;
+}
+
+.chat-ui-approval-card[data-kind="payment"] .chat-ui-approval-card__btn.is-primary:hover:not(:disabled) {
+  background: color-mix(in oklab, #16a34a 88%, #111);
+  color: #fff;
+}
+
 .chat-ui-approval-card__btn.is-danger {
   border-color: var(--danger, #ef4444);
   background: #1a1a1a;
@@ -2112,8 +2131,8 @@
   padding: 6px 12px;
   border-radius: 10px;
   border: 0;
-  background: #e9c141;
-  color: #111;
+  background: var(--danger, #ef4444);
+  color: #fff;
   font: inherit;
   font-size: 0.8125rem;
   font-weight: 600;
@@ -2122,7 +2141,7 @@
 }
 
 .chat-ui-approval-card__note-submit:hover:not(:disabled) {
-  background: color-mix(in oklab, #e9c141 88%, #111);
+  background: color-mix(in oklab, var(--danger, #ef4444) 88%, #111);
 }
 
 .chat-ui-approval-card__note-submit:disabled {

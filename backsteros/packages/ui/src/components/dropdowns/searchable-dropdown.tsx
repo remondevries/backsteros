@@ -24,6 +24,11 @@ import {
   markSearchableDropdownOpenPlacement,
 } from "../../dropdowns/searchable-dropdown-open-placement.js";
 import {
+  collectSearchableDropdownOptionFilters,
+  filterSearchableDropdownOptionsByFilter,
+  SEARCHABLE_DROPDOWN_FILTER_ALL,
+} from "../../dropdowns/searchable-dropdown-option-filters.js";
+import {
   searchableDropdownShortcut,
   searchableDropdownShortcutIndex,
 } from "../../dropdowns/searchable-dropdown-shortcuts.js";
@@ -55,6 +60,13 @@ export type SearchableDropdownOption<T extends string = string> = {
   group?: string;
   /** Indentation level for hierarchical options (e.g. subcategories). */
   depth?: number;
+  /**
+   * Optional type/category key for the panel filter strip below search
+   * (e.g. project type: codebase, domeinname). Untyped options always show.
+   */
+  filterValue?: string;
+  /** Display label for `filterValue` in the filter strip. */
+  filterLabel?: string;
   /**
    * Optional row action (e.g. edit).
    * - `trailing` (default): button to the right of the option
@@ -250,6 +262,9 @@ export function SearchableDropdown<T extends string>({
   const listboxRef = useRef<HTMLUListElement>(null);
   const [open, setOpen] = useState(defaultOpen);
   const [query, setQuery] = useState("");
+  const [optionFilter, setOptionFilter] = useState<string>(
+    SEARCHABLE_DROPDOWN_FILTER_ALL,
+  );
   const [activeIndex, setActiveIndex] = useState(0);
   const [listFocusActive, setListFocusActive] = useState(false);
   const [panelStyle, setPanelStyle] = useState<CSSProperties>({
@@ -289,9 +304,28 @@ export function SearchableDropdown<T extends string>({
     return `${selectedOptions.length} selected`;
   }, [emptySelectionLabel, multiple, selected, selectedOptions]);
 
+  const optionFilters = useMemo(
+    () => collectSearchableDropdownOptionFilters(options),
+    [options],
+  );
+
+  const activeOptionFilter = useMemo(() => {
+    if (
+      optionFilters.some((entry) => entry.value === optionFilter)
+    ) {
+      return optionFilter;
+    }
+    return SEARCHABLE_DROPDOWN_FILTER_ALL;
+  }, [optionFilter, optionFilters]);
+
+  const typeFilteredOptions = useMemo(
+    () => filterSearchableDropdownOptionsByFilter(options, activeOptionFilter),
+    [activeOptionFilter, options],
+  );
+
   const filteredOptions = useMemo(
-    () => filterOptions(options, query),
-    [options, query],
+    () => filterOptions(typeFilteredOptions, query),
+    [query, typeFilteredOptions],
   );
 
   const pinSelectedToTop = multiple || (allowDeselect && Boolean(onClear));
@@ -336,8 +370,30 @@ export function SearchableDropdown<T extends string>({
     [createFromQueryLabel, filteredOptions.length, query],
   );
 
+  /**
+   * Due-date / schedule NL: when typing yields a preview but no list matches,
+   * expose the same clickable row create-from-query uses so mouse users are
+   * not stuck on “Press Enter to apply”.
+   */
+  const queryApplyLabel = useMemo(() => {
+    if (createQueryLabel) return null;
+    if (!query.trim() || filteredOptions.length > 0 || !onQuerySubmit) {
+      return null;
+    }
+    return queryPreview;
+  }, [
+    createQueryLabel,
+    filteredOptions.length,
+    onQuerySubmit,
+    query,
+    queryPreview,
+  ]);
+
   const hasCreateOption = Boolean(createQueryLabel && onCreateFromQuery);
-  const navigableOptionCount = hasCreateOption
+  const hasQueryApplyOption = Boolean(queryApplyLabel && onQuerySubmit);
+  const hasSyntheticOption = hasCreateOption || hasQueryApplyOption;
+  const syntheticOptionLabel = createQueryLabel ?? queryApplyLabel;
+  const navigableOptionCount = hasSyntheticOption
     ? 1
     : filteredOptions.length;
 
@@ -349,6 +405,7 @@ export function SearchableDropdown<T extends string>({
   const close = useCallback(() => {
     setOpen(false);
     setQuery("");
+    setOptionFilter(SEARCHABLE_DROPDOWN_FILTER_ALL);
     setActiveIndex(0);
     setListFocusActive(false);
     setPanelStyle({ visibility: "hidden" });
@@ -365,6 +422,31 @@ export function SearchableDropdown<T extends string>({
       close();
     });
   }, [close, onCreateFromQuery, query]);
+
+  const selectQueryApply = useCallback(() => {
+    const trimmed = query.trim();
+    if (!trimmed || !onQuerySubmit?.(trimmed)) {
+      return;
+    }
+    window.requestAnimationFrame(() => {
+      close();
+    });
+  }, [close, onQuerySubmit, query]);
+
+  const selectSyntheticOption = useCallback(() => {
+    if (hasCreateOption) {
+      selectCreateFromQuery();
+      return;
+    }
+    if (hasQueryApplyOption) {
+      selectQueryApply();
+    }
+  }, [
+    hasCreateOption,
+    hasQueryApplyOption,
+    selectCreateFromQuery,
+    selectQueryApply,
+  ]);
 
   const selectOption = useCallback(
     (option: SearchableDropdownOption<T>) => {
@@ -414,6 +496,7 @@ export function SearchableDropdown<T extends string>({
       defaultOpenPlacementRef.current = placement;
       setOpen(true);
       setQuery("");
+      setOptionFilter(SEARCHABLE_DROPDOWN_FILTER_ALL);
       setActiveIndex(0);
       setListFocusActive(false);
     },
@@ -789,8 +872,8 @@ export function SearchableDropdown<T extends string>({
         close();
         return;
       }
-      if (hasCreateOption && safeActiveIndex === 0) {
-        selectCreateFromQuery();
+      if (hasSyntheticOption && safeActiveIndex === 0) {
+        selectSyntheticOption();
         return;
       }
       const option = orderedOptions[safeActiveIndex];
@@ -836,8 +919,8 @@ export function SearchableDropdown<T extends string>({
     if (isListKeyboardActivateKey(event)) {
       event.preventDefault();
       event.stopPropagation();
-      if (hasCreateOption && safeActiveIndex === 0) {
-        selectCreateFromQuery();
+      if (hasSyntheticOption && safeActiveIndex === 0) {
+        selectSyntheticOption();
         return;
       }
       const option = orderedOptions[safeActiveIndex];
@@ -977,12 +1060,62 @@ export function SearchableDropdown<T extends string>({
                 ) : null}
               </div>
 
-              {queryPreview ? (
+              {queryPreview && !hasSyntheticOption ? (
+                onQuerySubmit ? (
+                  <button
+                    type="button"
+                    className="searchable-dropdown-panel__preview searchable-dropdown-panel__preview--action"
+                    aria-label={queryPreview}
+                    onMouseDown={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      selectQueryApply();
+                    }}
+                  >
+                    {queryPreview}
+                  </button>
+                ) : (
+                  <div
+                    className="searchable-dropdown-panel__preview"
+                    aria-live="polite"
+                  >
+                    {queryPreview}
+                  </div>
+                )
+              ) : null}
+
+              {optionFilters.length > 0 ? (
                 <div
-                  className="searchable-dropdown-panel__preview"
-                  aria-live="polite"
+                  className="searchable-dropdown-panel__filters"
+                  role="group"
+                  aria-label="Filter by type"
                 >
-                  {queryPreview}
+                  {optionFilters.map((filter) => {
+                    const isActive = filter.value === activeOptionFilter;
+                    return (
+                      <button
+                        key={filter.value}
+                        type="button"
+                        className={[
+                          "searchable-dropdown-panel__filter",
+                          isActive
+                            ? "searchable-dropdown-panel__filter--active"
+                            : null,
+                        ]
+                          .filter(Boolean)
+                          .join(" ")}
+                        aria-pressed={isActive}
+                        onMouseDown={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          setOptionFilter(filter.value);
+                          setActiveIndex(0);
+                        }}
+                      >
+                        {filter.label}
+                      </button>
+                    );
+                  })}
                 </div>
               ) : null}
 
@@ -994,7 +1127,7 @@ export function SearchableDropdown<T extends string>({
                 aria-labelledby={triggerId}
                 aria-activedescendant={
                   listFocusActive && navigableOptionCount > 0
-                    ? hasCreateOption
+                    ? hasSyntheticOption
                       ? `${triggerId}-option-create`
                       : orderedOptions[safeActiveIndex]
                         ? `${triggerId}-option-${orderedOptions[safeActiveIndex]!.value}`
@@ -1030,7 +1163,7 @@ export function SearchableDropdown<T extends string>({
                     />
                   </>
                 ) : null}
-                {hasCreateOption ? (
+                {hasSyntheticOption ? (
                   <li key="__create__" role="presentation">
                     <button
                       type="button"
@@ -1057,11 +1190,11 @@ export function SearchableDropdown<T extends string>({
                       onMouseDown={(event) => {
                         event.preventDefault();
                         event.stopPropagation();
-                        selectCreateFromQuery();
+                        selectSyntheticOption();
                       }}
                     >
                       <span className="searchable-dropdown-panel__option-label searchable-dropdown-panel__option-label--muted">
-                        {createQueryLabel}
+                        {syntheticOptionLabel}
                       </span>
                     </button>
                   </li>
@@ -1070,7 +1203,7 @@ export function SearchableDropdown<T extends string>({
                     className="searchable-dropdown-panel__empty"
                     role="presentation"
                   >
-                    {queryPreview ? "Press Enter to apply" : "No matches"}
+                    No matches
                   </li>
                 ) : (
                   orderedOptions.map((option, index) => {

@@ -11,9 +11,13 @@ export function EntityDeleteConfirmModal() {
     deleteModalOpen,
     closeDeleteModal,
     confirmDelete,
+    confirmDeleteSecondary,
     isDeletePending,
     deleteError,
   } = useEntityHeaderActionsContext();
+
+  const secondaryAction = activeDeleteConfig?.secondaryAction ?? null;
+  const secondaryShortcut = secondaryAction?.shortcutKey.trim().toUpperCase() || null;
 
   useEffect(() => {
     if (!deleteModalOpen) {
@@ -64,8 +68,15 @@ export function EntityDeleteConfirmModal() {
         <p className="entity-delete-modal-body">
           This action cannot be undone. Press{" "}
           <kbd className="entity-delete-modal-kbd">D</kbd> or{" "}
-          <kbd className="entity-delete-modal-kbd">Enter</kbd> to confirm, or{" "}
-          <kbd className="entity-delete-modal-kbd">Esc</kbd> to cancel.
+          <kbd className="entity-delete-modal-kbd">Enter</kbd> to confirm
+          {secondaryShortcut ? (
+            <>
+              ,{" "}
+              <kbd className="entity-delete-modal-kbd">{secondaryShortcut}</kbd>{" "}
+              to {secondaryAction?.label ?? "confirm"}
+            </>
+          ) : null}
+          , or <kbd className="entity-delete-modal-kbd">Esc</kbd> to cancel.
         </p>
         {deleteError ? (
           <p className="entity-delete-modal-error" role="alert">
@@ -91,6 +102,22 @@ export function EntityDeleteConfirmModal() {
               ? "Working…"
               : (activeDeleteConfig.confirmLabel ?? "Delete")}
           </button>
+          {secondaryAction ? (
+            <button
+              type="button"
+              disabled={isDeletePending}
+              onClick={confirmDeleteSecondary}
+              className="entity-delete-modal-confirm"
+              aria-keyshortcuts={secondaryShortcut ?? undefined}
+            >
+              {isDeletePending ? "Working…" : secondaryAction.label}
+              {secondaryShortcut ? (
+                <kbd className="entity-delete-modal-confirm-kbd">
+                  {secondaryShortcut}
+                </kbd>
+              ) : null}
+            </button>
+          ) : null}
         </div>
       </div>
     </div>,

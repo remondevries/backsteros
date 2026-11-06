@@ -8,6 +8,7 @@ import {
   EntityAvatarIcon,
   getCreateEntityFromQueryLabel,
   OrganizationIcon,
+  PropertyDropdownNavigateRow,
   resolveDropdownNone,
   SearchableDropdown,
   SegmentedPillToggle,
@@ -21,6 +22,8 @@ type DesktopCommunicationEmailPartyCardProps = {
   organizationId: string | null;
   organizationName: string | null;
   organizationAvatarSrc: string | null;
+  /** Open this organization in Organizations (hover arrow next to the name). */
+  organizationNavigateHref?: string | null;
   contactId: string | null;
   contactName: string | null;
   contactAvatarSrc: string | null;
@@ -76,6 +79,7 @@ export function DesktopCommunicationEmailPartyCard({
   organizationId,
   organizationName,
   organizationAvatarSrc,
+  organizationNavigateHref = null,
   contactId,
   contactName,
   contactAvatarSrc,
@@ -336,67 +340,92 @@ export function DesktopCommunicationEmailPartyCard({
           <div className="contact-overview__chrome">
             <header className="entity-overview__header contact-overview__header">
               <div className="contact-overview__identity">
-                <SearchableDropdown
-                  className="communication-email-party__org-dropdown"
-                  value={organizationId}
-                  options={orgPickerOptions}
-                  onChange={(next) => {
-                    const nextId = resolveDropdownNone(next);
-                    if (nextId) onSelectOrganization(nextId);
-                  }}
-                  allowDeselect={Boolean(onClearOrganization)}
-                  onClear={onClearOrganization}
-                  deselectLabel={
-                    onClearOrganization ? "Remove organisation" : undefined
-                  }
-                  disabled={linking}
-                  searchPlaceholder="Search organizations…"
-                  ariaLabel="Select organization"
-                  emptySelectionLabel="Select organization"
-                  panelWidth={280}
-                  panelAlign="start"
-                  createFromQueryLabel={
-                    onCreateOrganizationFromQuery
-                      ? (query) =>
-                          getCreateEntityFromQueryLabel("organization", query)
-                      : undefined
-                  }
-                  onCreateFromQuery={onCreateOrganizationFromQuery}
-                  renderTrigger={({
-                    open,
-                    disabled,
-                    triggerId,
-                    onToggle,
-                  }) => (
-                    <button
-                      type="button"
-                      id={triggerId}
-                      disabled={disabled}
-                      aria-haspopup="listbox"
-                      aria-expanded={open}
-                      aria-label={
-                        organizationName?.trim()
-                          ? `Organization: ${organizationName}`
-                          : "Select organization"
-                      }
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        onToggle();
+                <div
+                  className={[
+                    "communication-email-party__org-title-row",
+                    organizationNavigateHref
+                      ? "communication-email-party__org-title-row--navigable"
+                      : null,
+                  ]
+                    .filter(Boolean)
+                    .join(" ")}
+                >
+                  <PropertyDropdownNavigateRow
+                    navigateHref={organizationNavigateHref}
+                    navigateLabel={
+                      organizationName?.trim()
+                        ? `Open organization ${organizationName}`
+                        : "Open organization"
+                    }
+                  >
+                    <SearchableDropdown
+                      className="communication-email-party__org-dropdown"
+                      value={organizationId}
+                      options={orgPickerOptions}
+                      onChange={(next) => {
+                        const nextId = resolveDropdownNone(next);
+                        if (nextId) onSelectOrganization(nextId);
                       }}
-                      className={[
-                        "communication-email-party__name",
-                        organizationId
-                          ? "communication-email-party__name--linked"
-                          : "communication-email-party__name--unlinked",
-                        open ? "is-open" : null,
-                      ]
-                        .filter(Boolean)
-                        .join(" ")}
-                    >
-                      {orgTitle}
-                    </button>
-                  )}
-                />
+                      allowDeselect={Boolean(onClearOrganization)}
+                      onClear={onClearOrganization}
+                      deselectLabel={
+                        onClearOrganization
+                          ? "Remove organisation"
+                          : undefined
+                      }
+                      disabled={linking}
+                      searchPlaceholder="Search organizations…"
+                      ariaLabel="Select organization"
+                      emptySelectionLabel="Select organization"
+                      panelWidth={280}
+                      panelAlign="start"
+                      createFromQueryLabel={
+                        onCreateOrganizationFromQuery
+                          ? (query) =>
+                              getCreateEntityFromQueryLabel(
+                                "organization",
+                                query,
+                              )
+                          : undefined
+                      }
+                      onCreateFromQuery={onCreateOrganizationFromQuery}
+                      renderTrigger={({
+                        open,
+                        disabled,
+                        triggerId,
+                        onToggle,
+                      }) => (
+                        <button
+                          type="button"
+                          id={triggerId}
+                          disabled={disabled}
+                          aria-haspopup="listbox"
+                          aria-expanded={open}
+                          aria-label={
+                            organizationName?.trim()
+                              ? `Organization: ${organizationName}`
+                              : "Select organization"
+                          }
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            onToggle();
+                          }}
+                          className={[
+                            "communication-email-party__name",
+                            organizationId
+                              ? "communication-email-party__name--linked"
+                              : "communication-email-party__name--unlinked",
+                            open ? "is-open" : null,
+                          ]
+                            .filter(Boolean)
+                            .join(" ")}
+                        >
+                          {orgTitle}
+                        </button>
+                      )}
+                    />
+                  </PropertyDropdownNavigateRow>
+                </div>
                 {partySecondary}
               </div>
             </header>

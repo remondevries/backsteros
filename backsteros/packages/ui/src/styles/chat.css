@@ -1,6 +1,7 @@
 /* Communication → Chat (Chatwoot mirror). */
 
 .communication-chat {
+  position: relative;
   display: flex;
   box-sizing: border-box;
   min-height: 0;
@@ -12,6 +13,16 @@
   overflow: hidden;
   background: var(--background, #0a0a0a);
   color: var(--foreground, #f5f5f5);
+}
+
+/* Checkbox multi-select: hide thread + create FAB; bulk island takes the dock. */
+.communication-chat.has-bulk-selection .communication-chat__thread {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.communication-chat.has-bulk-selection .communication-chat__create-fab {
+  display: none;
 }
 
 .communication-chat--thread-only .communication-chat__thread {
@@ -376,6 +387,18 @@
   min-height: 0;
   align-self: stretch;
   overflow: hidden;
+}
+
+/* Messages / Notifications toggle — bottom-left of the list (mirrors FAB). */
+.communication-chat__mail-folder-dock.content-view-mode-toggle {
+  right: auto;
+  left: 1rem;
+  bottom: 1rem;
+  z-index: 30;
+}
+
+.communication-chat.has-bulk-selection .communication-chat__mail-folder-dock {
+  display: none;
 }
 
 /* Orange create FAB — bottom-right of the left list (Inbox compose pattern).
@@ -918,6 +941,37 @@
   z-index: 0;
   padding-left: 0;
   padding-right: 0;
+}
+
+/* Top-left multi-select — fades in on hover / while checked / any selection. */
+.communication-chat__card-select {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 140ms ease;
+}
+
+.communication-chat__card-select .md-task-checkbox--interactive {
+  border-radius: 999px;
+}
+
+.communication-chat__card-select .md-task-checkbox__box {
+  border-radius: 999px;
+}
+
+.communication-chat__card-item--selectable:hover .communication-chat__card-select,
+.communication-chat__card-item--selectable:focus-within
+  .communication-chat__card-select,
+.communication-chat__card-item--checked .communication-chat__card-select,
+.communication-chat__task-list.has-selection .communication-chat__card-select {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 /*
@@ -1631,6 +1685,56 @@
 }
 
 /* Email party card — org name is the org picker; contact chip below. */
+.communication-email-party__org-title-row {
+  display: flex;
+  width: fit-content;
+  max-width: 100%;
+  min-width: 0;
+  align-items: center;
+  margin: 0 0 0.35rem;
+}
+
+.communication-email-party__org-title-row .communication-email-party__org-dropdown {
+  display: block;
+  margin: 0;
+  max-width: 100%;
+}
+
+/* Hover-only open-org chevron (rounded outline) next to the org name. */
+.communication-email-party__org-title-row--navigable
+  .property-dropdown-navigate-row__link {
+  width: 22px;
+  height: 22px;
+  border: 1px solid color-mix(in srgb, var(--foreground) 22%, transparent);
+  border-radius: 999px;
+  background: transparent;
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity 120ms ease,
+    color 120ms ease,
+    background 120ms ease,
+    border-color 120ms ease;
+}
+
+.communication-email-party__org-title-row--navigable:hover
+  .property-dropdown-navigate-row__link,
+.communication-email-party__org-title-row--navigable:focus-within
+  .property-dropdown-navigate-row__link,
+.communication-email-party__org-title-row--navigable
+  .property-dropdown-navigate-row__link:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.communication-email-party__org-title-row--navigable
+  .property-dropdown-navigate-row__link:hover {
+  border-color: color-mix(in srgb, var(--foreground) 40%, transparent);
+  background: color-mix(in srgb, var(--foreground) 8%, transparent);
+  color: color-mix(in srgb, var(--foreground) 78%, transparent);
+}
+
 .communication-email-party__org-dropdown {
   display: block;
   margin: 0 0 0.35rem;

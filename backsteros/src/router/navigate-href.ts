@@ -1,5 +1,6 @@
 import type { NavigateOptions } from "@tanstack/react-router";
 
+import { parseNavigationPathname } from "../lib/pending-navigation-routes";
 import {
   formatResolvedAppHref,
   resolveAppHref,
@@ -69,8 +70,16 @@ export function navigateToHref(
     return;
   }
   rememberSectionEntryFromNav(target);
-  rememberInboxPanelSelectionHref(target);
-  rememberCommunicationPanelSelectionHref(target);
+  // Email is an Outlet, not a keep-alive surface. Mirroring `/email/…` onto the
+  // inbox/communication pane *before* TanStack commits makes the side panel
+  // think the neighbor is already open while the outlet is still on the
+  // deleted thread (empty "Select an email…" pane). ShellRouteContent syncs
+  // the mirror from the router once the outlet lands.
+  const isEmailOutlet = parseNavigationPathname(target).startsWith("/email/");
+  if (!isEmailOutlet) {
+    rememberInboxPanelSelectionHref(target);
+    rememberCommunicationPanelSelectionHref(target);
+  }
   dismissKeepAliveForOutletNavigation(target);
   const { pathname, search, hash } = parseAppHref(target);
   navigate({

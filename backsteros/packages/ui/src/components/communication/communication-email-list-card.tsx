@@ -1,5 +1,7 @@
 "use client";
 
+import type { MouseEvent } from "react";
+
 import {
   emailListItemPartyName,
 } from "../../communication/communication-chat-list-row.js";
@@ -17,6 +19,7 @@ import { EntityAvatarIcon } from "../entity/entity-avatar-icon.js";
 import { InboxItemTypeIcon } from "../inbox/inbox-item-type-icon.js";
 import { OrganizationIcon } from "../organizations/organization-icon.js";
 import { TaskBoardCard } from "../tasks/task-board-card.js";
+import { CommunicationListCardSelect } from "./communication-list-card-select.js";
 
 const CHAT_CARD_AVATAR_SIZE = 40;
 /** Small overlapping faces on multi-contact email cards. */
@@ -87,9 +90,15 @@ export type CommunicationEmailListCardProps = {
   item: InboxEmailListItem;
   selectedEmailId?: string | null;
   keyboardHighlighted?: boolean;
+  checked?: boolean;
   resolveEmailAvatarSrc?: (item: InboxEmailListItem) => string | null | undefined;
   resolveContactAvatarSrc?: (contactId: string) => string | null | undefined;
   onOpen: (emailId: string) => void;
+  onToggleSelected?: (
+    itemId: string,
+    checked: boolean,
+    event: MouseEvent<HTMLButtonElement>,
+  ) => void;
 };
 
 /**
@@ -99,17 +108,16 @@ export function CommunicationEmailListCard({
   item,
   selectedEmailId,
   keyboardHighlighted = false,
+  checked = false,
   resolveEmailAvatarSrc,
   resolveContactAvatarSrc,
   onOpen,
+  onToggleSelected,
 }: CommunicationEmailListCardProps) {
   const task = inboxListItemToTaskItemRowTask(item);
   if (!task) return null;
   const personLabel = emailListItemPartyName(item);
-  const avatarSrc =
-    resolveEmailAvatarSrc?.(item)?.trim() ||
-    item.mailboxAvatarSrc?.trim() ||
-    null;
+  const avatarSrc = resolveEmailAvatarSrc?.(item)?.trim() || null;
   const avatarKind = item.contactId?.trim()
     ? "contact"
     : item.organizationId?.trim()
@@ -130,6 +138,8 @@ export function CommunicationEmailListCard({
         active ? "communication-chat__card-item--active" : null,
         item.unread ? "communication-chat__card-item--unread" : null,
         isDraft ? "communication-chat__card-item--draft" : null,
+        checked ? "communication-chat__card-item--checked" : null,
+        onToggleSelected ? "communication-chat__card-item--selectable" : null,
       ]
         .filter(Boolean)
         .join(" ")}
@@ -205,6 +215,12 @@ export function CommunicationEmailListCard({
             />
           ) : null
         }
+      />
+      <CommunicationListCardSelect
+        itemId={item.id}
+        checked={checked}
+        ariaLabel={`Select ${personLabel}`}
+        onToggleSelected={onToggleSelected}
       />
     </li>
   );

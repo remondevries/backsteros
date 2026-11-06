@@ -62,6 +62,7 @@ import {
   findLinkPreviewsCardPart,
 } from "./chat-link-previews-card.js";
 import { ChatMessageHoverActions } from "./chat-message-hover-actions.js";
+import { LinkifiedPlainText } from "../text/linkified-plain-text.js";
 
 function formatJson(value: unknown): string {
   if (value == null) return "";
@@ -177,7 +178,11 @@ function ChatTextPartView({
       </div>
     );
   }
-  return <div className="chat-ui-text">{part.text}</div>;
+  return (
+    <div className="chat-ui-text">
+      <LinkifiedPlainText text={part.text} />
+    </div>
+  );
 }
 
 export function ChatUiPartView({

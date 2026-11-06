@@ -29,7 +29,21 @@ export type InvoiceActivityItem = {
   label: string;
   source: "moneybird" | "portal";
   action: string | null;
+  agentMailMessageId: string | null;
+  agentMailInboxId: string | null;
+  to: string | null;
 };
+
+function withRecipient(base: string, to: string | null | undefined): string {
+  const email = to?.trim();
+  return email ? `${base}: ${email}` : base;
+}
+
+function reminderStepLabel(step: 1 | 2 | 3): string {
+  if (step === 1) return "1st reminder sent";
+  if (step === 2) return "2nd reminder sent";
+  return "3rd reminder sent";
+}
 
 export type InvoiceActivityResponse = {
   invoiceId: string;
@@ -128,6 +142,9 @@ function mapMoneybirdEvent(
     label,
     source: "moneybird",
     action,
+    agentMailMessageId: null,
+    agentMailInboxId: null,
+    to: null,
   };
 }
 
@@ -137,27 +154,35 @@ function portalTrackItems(
 ): InvoiceActivityItem[] {
   const items: InvoiceActivityItem[] = [];
   if (track.eligibleFromManualSend && track.portalInvoiceSentAt) {
+    const to = track.portalInvoiceTo;
     items.push({
       id: `portal:invoice_sent:${invoiceId}`,
       at: track.portalInvoiceSentAt,
       kind: "invoice_sent",
       channel: "portal_email",
       step: null,
-      label: "Invoice sent via BacksterOS / portal email",
+      label: withRecipient("Invoice sent", to),
       source: "portal",
       action: "portal_invoice_sent",
+      agentMailMessageId: track.portalInvoiceMessageId,
+      agentMailInboxId: track.portalInvoiceInboxId,
+      to,
     });
   }
   for (const reminder of track.reminders) {
+    const to = reminder.to;
     items.push({
       id: `portal:reminder:${reminder.step}:${reminder.sentAt}`,
       at: reminder.sentAt,
       kind: "reminder_sent",
       channel: "portal_email",
       step: reminder.step,
-      label: `Payment reminder ${reminder.step} sent via portal email`,
+      label: withRecipient(reminderStepLabel(reminder.step), to),
       source: "portal",
       action: `portal_reminder_${reminder.step}`,
+      agentMailMessageId: reminder.messageId,
+      agentMailInboxId: reminder.inboxId,
+      to,
     });
   }
   if (track.cancelledAt) {
@@ -167,9 +192,12 @@ function portalTrackItems(
       kind: "cancelled",
       channel: "system",
       step: null,
-      label: "Pending portal reminders cancelled",
+      label: "Pending reminders cancelled",
       source: "portal",
       action: "portal_reminders_cancelled",
+      agentMailMessageId: null,
+      agentMailInboxId: null,
+      to: null,
     });
   }
   return items;

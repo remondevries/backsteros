@@ -1,11 +1,16 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type {
-  MoneybirdInvoiceParty,
-  MoneybirdSalesInvoiceDetail,
-  MoneybirdSalesInvoiceSummary,
+import {
+  getLemoFinanceEmail,
+  LEMO_BANK_ACCOUNT,
+  LEMO_COMPANY_NAME,
+  type MoneybirdInvoiceParty,
+  type MoneybirdSalesInvoiceDetail,
+  type MoneybirdSalesInvoiceSummary,
 } from "@backsteros/contracts";
+
+import { LemoDesignMarkIcon } from "../icons/lemo-design-mark-icon.js";
 
 const LOADER_FADE_OUT_MS = 200;
 
@@ -141,41 +146,33 @@ function RecipientAddress({
 
   return (
     <div className="finance-invoice-doc__party finance-invoice-doc__recipient">
-      {lines.map((line) => (
-        <div key={line}>{line}</div>
+      {lines.map((line, index) => (
+        <div
+          key={`${index}-${line}`}
+          className={
+            index === 0 && name
+              ? "finance-invoice-doc__party-name"
+              : undefined
+          }
+        >
+          {line}
+        </div>
       ))}
     </div>
-  );
-}
-
-function InvoiceSenderLogo() {
-  return (
-    <svg
-      className="finance-invoice-doc__logo"
-      width="392"
-      height="567"
-      viewBox="0 0 392 567"
-      fill="none"
-      xmlns="http://www.w3.org/2000/svg"
-      role="img"
-      aria-label="Logo"
-    >
-      <path
-        d="M65.3691 255.859C178.684 377.557 242.205 441.311 255.934 447.122C269.675 452.933 295.598 426.914 333.706 369.066L388.409 423.969C310.251 523.318 262.956 570.787 246.511 566.387C221.853 559.778 11.5114 337.821 1.24264 320.22C-5.59386 308.492 15.7779 287.042 65.3691 255.859ZM2.36121 144.507L97.3779 49.1423C114.175 32.2835 133.29 19.8417 154.735 11.8169C176.18 3.78091 197.994 -0.15281 220.177 0.00453882C242.361 0.161887 264.041 4.51146 285.216 13.0757C306.274 21.5535 325.387 34.2543 341.387 50.4011C357.333 66.3526 369.926 85.3552 378.419 106.282C386.967 126.991 391.497 149.146 391.767 171.56C392.025 193.937 388.161 215.887 380.16 237.404C372.159 258.933 359.651 278.231 342.641 295.303L247.624 390.668L2.36121 144.507ZM257.59 272.139L272.316 257.359C283.436 246.199 291.627 234.493 296.879 222.254C302.131 210.014 304.729 197.842 304.651 185.727C304.578 173.616 301.952 161.776 296.762 150.228C291.577 138.674 283.99 127.89 274.013 117.876C264.259 108.086 253.514 100.584 241.784 95.3747C230.06 90.1709 218.162 87.5354 206.09 87.4567C194.018 87.3892 181.891 89.9855 169.69 95.2623C157.495 100.533 145.95 108.637 135.043 119.584L120.317 134.363C112.691 156.269 241.09 278.394 257.59 272.139Z"
-        fill="#D4D4D4"
-      />
-    </svg>
   );
 }
 
 function SenderLetterhead({
   party,
   copy,
+  language,
 }: {
   party: MoneybirdInvoiceParty | null | undefined;
   copy: InvoiceCopy;
+  language: string | null | undefined;
 }) {
-  const name = partyDisplayName(party);
+  // Portal parity: mark above company name; force finance inbox + Adyen IBAN.
+  const name = partyDisplayName(party) || LEMO_COMPANY_NAME;
   const cityLine = [party?.zipcode, party?.city]
     .filter(Boolean)
     .join(" ")
@@ -187,19 +184,26 @@ function SenderLetterhead({
   ].filter((line): line is string => Boolean(line?.trim()));
 
   const phone = party?.phone?.trim() || null;
-  const email = party?.email?.trim() || null;
+  const email = getLemoFinanceEmail(language);
   const kvk = party?.chamberOfCommerce?.trim() || null;
   const tax = party?.taxNumber?.trim() || null;
-  const bank = party?.bankAccountNumber?.trim() || null;
+  const bank = LEMO_BANK_ACCOUNT;
   const hasContact = Boolean(phone || email);
   const hasLegal = Boolean(kvk || tax || bank);
 
   return (
     <div className="finance-invoice-doc__letterhead">
-      <InvoiceSenderLogo />
-      {name ? (
-        <div className="finance-invoice-doc__letterhead-name">{name}</div>
-      ) : null}
+      <div
+        className="finance-invoice-doc__brand"
+        role="img"
+        aria-label={name}
+      >
+        <LemoDesignMarkIcon
+          className="finance-invoice-doc__logo"
+          aria-hidden="true"
+        />
+      </div>
+      <div className="finance-invoice-doc__letterhead-name">{name}</div>
       {addressLines.length > 0 ? (
         <div className="finance-invoice-doc__letterhead-block">
           {addressLines.map((line) => (
@@ -300,7 +304,7 @@ function InvoiceDetailSheet({
     >
       <header className="finance-invoice-doc__header">
         <RecipientAddress party={recipient} />
-        <SenderLetterhead party={sender} copy={copy} />
+        <SenderLetterhead party={sender} copy={copy} language={language} />
       </header>
 
       <div className="finance-invoice-doc__title-block">
@@ -330,12 +334,17 @@ function InvoiceDetailSheet({
       <table className="finance-invoice-doc__lines">
         <thead>
           <tr>
-            <th scope="col">{copy.description}</th>
-            <th scope="col" className="finance-invoice-doc__col--num">
+            <th scope="col" className="finance-invoice-doc__col--qty">
               {copy.amount}
             </th>
+            <th scope="col" className="finance-invoice-doc__col--desc">
+              {copy.description}
+            </th>
             {dutch ? (
-              <th scope="col" className="finance-invoice-doc__col--num">
+              <th
+                scope="col"
+                className="finance-invoice-doc__col--num finance-invoice-doc__col--vat"
+              >
                 {copy.vat}
               </th>
             ) : null}
@@ -347,14 +356,18 @@ function InvoiceDetailSheet({
         <tbody>
           {detail.lines.map((line) => {
             const pct = formatTaxPercentage(line.taxPercentage);
+            const qty = line.amount?.trim() || "—";
             return (
               <tr key={line.id}>
-                <td>{line.description || "—"}</td>
-                <td className="finance-invoice-doc__col--num">
-                  {line.amount?.trim() || "—"}
+                <td className="finance-invoice-doc__col--qty">{qty}</td>
+                <td className="finance-invoice-doc__desc">
+                  <span className="finance-invoice-doc__line-qty">{qty}</span>{" "}
+                  <span className="finance-invoice-doc__line-desc">
+                    {line.description.length > 0 ? line.description : "\u00a0"}
+                  </span>
                 </td>
                 {dutch ? (
-                  <td className="finance-invoice-doc__col--num">
+                  <td className="finance-invoice-doc__col--num finance-invoice-doc__col--vat">
                     {pct != null ? `${pct}%` : "—"}
                   </td>
                 ) : null}

@@ -224,37 +224,53 @@ export function useFinanceMoneybirdInvoices({
     };
   }, [client, loadInvoiceActivity, navId, selectedMoneybirdInvoiceId]);
 
-  const sendMoneybirdInvoiceReminder = useCallback(async () => {
-    if (!selectedMoneybirdInvoiceId || moneybirdSendInvoiceReminderPending) {
-      return;
-    }
-    setMoneybirdSendInvoiceReminderPending(true);
-    try {
-      await client.requestJson<MoneybirdInvoiceSendReminderResult>(
-        `/api/v1/finance/moneybird/invoices/${encodeURIComponent(selectedMoneybirdInvoiceId)}/send-reminder`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            locale: moneybirdInvoiceDetail?.language ?? null,
-          }),
-        },
-      );
-      await loadInvoiceActivity(selectedMoneybirdInvoiceId);
-    } catch (error) {
-      setMoneybirdInvoiceActivityError(
-        error instanceof Error ? error.message : "Failed to send reminder",
-      );
-    } finally {
-      setMoneybirdSendInvoiceReminderPending(false);
-    }
-  }, [
-    client,
-    loadInvoiceActivity,
-    moneybirdInvoiceDetail?.language,
-    moneybirdSendInvoiceReminderPending,
-    selectedMoneybirdInvoiceId,
-  ]);
+  const sendMoneybirdInvoiceReminder = useCallback(
+    async (input: { to: string; kind: "invoice" | "1" | "2" | "3" }) => {
+      if (!selectedMoneybirdInvoiceId || moneybirdSendInvoiceReminderPending) {
+        return;
+      }
+      const recipient = input.to.trim();
+      if (!recipient) return;
+      const kind =
+        input.kind === "invoice"
+          ? "invoice"
+          : input.kind === "1"
+            ? 1
+            : input.kind === "2"
+              ? 2
+              : 3;
+      setMoneybirdSendInvoiceReminderPending(true);
+      try {
+        await client.requestJson<MoneybirdInvoiceSendReminderResult>(
+          `/api/v1/finance/moneybird/invoices/${encodeURIComponent(selectedMoneybirdInvoiceId)}/send-reminder`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              locale: moneybirdInvoiceDetail?.language ?? null,
+              to: recipient,
+              kind,
+            }),
+          },
+        );
+        await loadInvoiceActivity(selectedMoneybirdInvoiceId);
+      } catch (error) {
+        setMoneybirdInvoiceActivityError(
+          error instanceof Error ? error.message : "Failed to send email",
+        );
+        throw error;
+      } finally {
+        setMoneybirdSendInvoiceReminderPending(false);
+      }
+    },
+    [
+      client,
+      loadInvoiceActivity,
+      moneybirdInvoiceDetail?.language,
+      moneybirdSendInvoiceReminderPending,
+      selectedMoneybirdInvoiceId,
+    ],
+  );
 
   useEffect(() => {
     if (navId !== "invoices") return;

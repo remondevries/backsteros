@@ -1,5 +1,7 @@
 "use client";
 
+import type { MouseEvent } from "react";
+
 import { supportListItemPartyName } from "../../communication/communication-chat-list-row.js";
 import {
   inboxListItemToTaskItemRowTask,
@@ -15,6 +17,7 @@ import { EntityAvatarIcon } from "../entity/entity-avatar-icon.js";
 import { OrganizationIcon } from "../organizations/organization-icon.js";
 import { TaskBoardCard } from "../tasks/task-board-card.js";
 import { CommunicationSupportKindIcon } from "./communication-kind-icons.js";
+import { CommunicationListCardSelect } from "./communication-list-card-select.js";
 
 const CHAT_CARD_AVATAR_SIZE = 40;
 
@@ -35,7 +38,13 @@ export type CommunicationSupportListCardProps = {
   item: InboxTaskListItem;
   selectedSupportId?: string | null;
   keyboardHighlighted?: boolean;
+  checked?: boolean;
   onOpen: (supportId: string) => void;
+  onToggleSelected?: (
+    itemId: string,
+    checked: boolean,
+    event: MouseEvent<HTMLButtonElement>,
+  ) => void;
 };
 
 /**
@@ -46,7 +55,9 @@ export function CommunicationSupportListCard({
   item,
   selectedSupportId,
   keyboardHighlighted = false,
+  checked = false,
   onOpen,
+  onToggleSelected,
 }: CommunicationSupportListCardProps) {
   const task = inboxListItemToTaskItemRowTask(item);
   if (!task) return null;
@@ -67,6 +78,8 @@ export function CommunicationSupportListCard({
         "communication-chat__card-item",
         keyboardNavItemClass(keyboardHighlighted),
         active ? "communication-chat__card-item--active" : null,
+        checked ? "communication-chat__card-item--checked" : null,
+        onToggleSelected ? "communication-chat__card-item--selectable" : null,
       ]
         .filter(Boolean)
         .join(" ")}
@@ -127,6 +140,12 @@ export function CommunicationSupportListCard({
             </span>
           ) : null
         }
+      />
+      <CommunicationListCardSelect
+        itemId={item.id}
+        checked={checked}
+        ariaLabel={`Select ${personLabel}`}
+        onToggleSelected={onToggleSelected}
       />
     </li>
   );

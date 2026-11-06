@@ -1,4 +1,5 @@
 export * from "./schemas.js";
+export * from "./lemo-company-contact.js";
 export * from "./contract.js";
 export * from "./cloudflare-contract.js";
 export * from "./social-contract.js";

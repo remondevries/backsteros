@@ -3,7 +3,11 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 export const AVATAR_SIGNED_URL_DEFAULT_TTL_SECONDS = 7 * 24 * 60 * 60;
 export const AVATAR_SIGNED_URL_MAX_TTL_SECONDS = 30 * 24 * 60 * 60;
 
-export type AvatarSignedEntityType = "contact" | "organization" | "bank_account";
+export type AvatarSignedEntityType =
+  | "contact"
+  | "avatar_portal"
+  | "organization"
+  | "bank_account";
 
 export type AvatarSignedPayload = {
   workspaceId: string;
@@ -14,6 +18,7 @@ export type AvatarSignedPayload = {
 
 const ENTITY_TYPES = new Set<AvatarSignedEntityType>([
   "contact",
+  "avatar_portal",
   "organization",
   "bank_account",
 ]);

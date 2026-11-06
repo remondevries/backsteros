@@ -9,12 +9,14 @@ import {
   getCommunicationItemHref,
   parseCommunicationChannelFromSearch,
   parseCommunicationInboxIdFromSearch,
+  parseCommunicationMailFolderFromSearch,
   parseCommunicationStatusFromSearch,
   parseCommunicationListFilter,
   communicationListFilterEmptyLabel,
   resolveActiveCommunicationChannel,
   resolveActiveCommunicationInboxId,
   resolveActiveCommunicationStatus,
+  withCommunicationMailFolder,
 } from "./communication.js";
 import type { InboxListItem } from "../inbox/inbox-items.js";
 
@@ -76,6 +78,32 @@ test("parseCommunicationStatusFromSearch reads ?status=", () => {
       "?channel=email&inbox=box-1&status=nope",
     ),
     null,
+  );
+});
+
+test("parseCommunicationMailFolderFromSearch reads ?mail=", () => {
+  assert.equal(parseCommunicationMailFolderFromSearch(""), "messages");
+  assert.equal(
+    parseCommunicationMailFolderFromSearch("?mail=notifications"),
+    "notifications",
+  );
+  assert.equal(
+    parseCommunicationMailFolderFromSearch("?channel=email&mail=Messages"),
+    "messages",
+  );
+});
+
+test("withCommunicationMailFolder toggles the mail query", () => {
+  assert.equal(
+    withCommunicationMailFolder("/communication?channel=email", "notifications"),
+    "/communication?channel=email&mail=notifications",
+  );
+  assert.equal(
+    withCommunicationMailFolder(
+      "/communication?channel=email&mail=notifications",
+      "messages",
+    ),
+    "/communication?channel=email",
   );
 });
 
@@ -205,7 +233,7 @@ test("resolveActiveCommunicationChannel prefers email/support detail", () => {
   );
 });
 
-test("getCommunicationHrefAfterRemovingRow prefers the row above", () => {
+test("getCommunicationHrefAfterRemovingRow prefers the next row below", () => {
   const items = [
     {
       kind: "email",
@@ -228,10 +256,14 @@ test("getCommunicationHrefAfterRemovingRow prefers the row above", () => {
   ] as InboxListItem[];
   assert.equal(
     getCommunicationHrefAfterRemovingRow({ items, removedId: "email:box:b" }),
-    getCommunicationHref("email:box:a", "chat"),
+    getCommunicationHref("email:box:c", "chat"),
   );
   assert.equal(
     getCommunicationHrefAfterRemovingRow({ items, removedId: "email:box:a" }),
+    getCommunicationHref("email:box:b", "chat"),
+  );
+  assert.equal(
+    getCommunicationHrefAfterRemovingRow({ items, removedId: "email:box:c" }),
     getCommunicationHref("email:box:b", "chat"),
   );
   assert.equal(
@@ -270,14 +302,14 @@ test("getCommunicationHrefAfterRemovingRow follows on-screen order", () => {
     }),
     getCommunicationHref("chat-uuid", "chat"),
   );
-  // Resolved by message id; row above is a chat conversation.
+  // Resolved by message id; next below is the last email row.
   assert.equal(
     getCommunicationHrefAfterRemovingRow({
       items,
       removedId: "c",
       visibleRowIds,
     }),
-    getCommunicationHref("chat-uuid", "chat"),
+    getCommunicationHref("email:box:a", "chat"),
   );
   assert.equal(
     getCommunicationHrefAfterRemovingRow({
@@ -286,6 +318,15 @@ test("getCommunicationHrefAfterRemovingRow follows on-screen order", () => {
       visibleRowIds,
     }),
     getCommunicationHref("email:box:c", "chat"),
+  );
+});
+
+test("getCommunicationHref keeps mail=notifications on item open", () => {
+  assert.equal(
+    getCommunicationHref("email:box:msg", "chat", {
+      mailFolder: "notifications",
+    }),
+    "/communication/email%3Abox%3Amsg?channel=chat&mail=notifications",
   );
 });
 

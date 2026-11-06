@@ -1,7 +1,10 @@
-import type {
-  MoneybirdInvoiceParty,
-  MoneybirdSalesInvoiceDetail,
-  MoneybirdSalesInvoiceSummary,
+import {
+  getLemoFinanceEmail,
+  LEMO_BANK_ACCOUNT,
+  LEMO_COMPANY_NAME,
+  type MoneybirdInvoiceParty,
+  type MoneybirdSalesInvoiceDetail,
+  type MoneybirdSalesInvoiceSummary,
 } from "@backsteros/contracts";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -181,11 +184,13 @@ function InvoiceSenderLogo() {
 function SenderLetterhead({
   party,
   copy,
+  language,
 }: {
   party: MoneybirdInvoiceParty | null | undefined;
   copy: InvoiceCopy;
+  language: string | null | undefined;
 }) {
-  const name = partyDisplayName(party);
+  const name = partyDisplayName(party) || LEMO_COMPANY_NAME;
   const cityLine = [party?.zipcode, party?.city]
     .filter(Boolean)
     .join(" ")
@@ -197,17 +202,17 @@ function SenderLetterhead({
   ].filter((line): line is string => Boolean(line?.trim()));
 
   const phone = party?.phone?.trim() || null;
-  const email = party?.email?.trim() || null;
+  const email = getLemoFinanceEmail(language);
   const kvk = party?.chamberOfCommerce?.trim() || null;
   const tax = party?.taxNumber?.trim() || null;
-  const bank = party?.bankAccountNumber?.trim() || null;
+  const bank = LEMO_BANK_ACCOUNT;
   const hasContact = Boolean(phone || email);
   const hasLegal = Boolean(kvk || tax || bank);
 
   return (
     <View style={styles.letterhead}>
       <InvoiceSenderLogo />
-      {name ? <Text style={styles.letterheadName}>{name}</Text> : null}
+      <Text style={styles.letterheadName}>{name}</Text>
       {addressLines.length > 0 ? (
         <View style={styles.letterheadBlock}>
           {addressLines.map((line) => (
@@ -279,7 +284,7 @@ function InvoiceDetailSheet({
     <View style={styles.sheet}>
       <View style={styles.header}>
         <RecipientAddress party={recipient} />
-        <SenderLetterhead party={sender} copy={copy} />
+        <SenderLetterhead party={sender} copy={copy} language={language} />
       </View>
 
       <View style={styles.titleBlock}>

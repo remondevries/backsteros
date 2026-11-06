@@ -13,6 +13,7 @@ import type {
 } from "@backsteros/contracts";
 import {
   collapseEmailListItemsByThread,
+  mergeEmailListItemKeepingFirstParty,
   isAgentMailMessageUnread,
   resolveEmailMessageDirection,
   type EmailListItem,
@@ -252,13 +253,23 @@ function upsertListItem(
   next: EmailListItem,
 ): EmailListItem[] {
   const threadId = next.threadId?.trim() || null;
+  let existing: EmailListItem | undefined;
   const without = items.filter((item) => {
     if (item.inboxId !== next.inboxId) return true;
-    if (item.id === next.id) return false;
-    if (threadId && item.threadId === threadId) return false;
+    if (item.id === next.id) {
+      existing = item;
+      return false;
+    }
+    if (threadId && item.threadId === threadId) {
+      existing = item;
+      return false;
+    }
     return true;
   });
-  return [next, ...without];
+  if (!existing) return [next, ...without];
+  // Keep list avatar / party identity on the earliest message in the thread
+  // when a newer reply replaces the row (otherwise our outbound `from` wins).
+  return [mergeEmailListItemKeepingFirstParty(existing, next), ...without];
 }
 
 function detailToListItem(
@@ -314,6 +325,9 @@ export function useAgentMailMailboxes(
   const [messages, setMessages] = useState<EmailListItem[]>(
     () => cachedSnapshot?.messages ?? [],
   );
+  const [notificationMessages, setNotificationMessages] = useState<
+    EmailListItem[]
+  >([]);
   const [apiKeyConfigured, setApiKeyConfigured] = useState(
     () => cachedSnapshot?.apiKeyConfigured ?? false,
   );
@@ -386,6 +400,7 @@ export function useAgentMailMailboxes(
       });
       if (!body.apiKeyConfigured || (body.inboxes ?? []).length === 0) {
         setMessages([]);
+        setNotificationMessages([]);
         setMessagesLoading(false);
         hydratedRef.current = true;
         writeAgentMailListCache({
@@ -397,28 +412,40 @@ export function useAgentMailMailboxes(
         return;
       }
       try {
-        const listed = await client.requestJson<{ messages: AgentMailMessage[] }>(
-          "/api/v1/email/messages",
-          { signal },
+        const mailboxEmails = new Set(
+          (body.inboxes ?? [])
+            .map((inbox) => inbox.email?.trim().toLowerCase())
+            .filter((email): email is string => Boolean(email)),
         );
+        const toEmailList = (listed: AgentMailMessage[]) =>
+          filterOutPendingEmailListRemovals(
+            collapseEmailListItemsByThread(
+              listed
+                .map((entry) => toListItem(entry, mailboxEmails))
+                .filter((item): item is EmailListItem => item != null),
+            ),
+          );
+        const [listed, notificationListed] = await Promise.all([
+          client.requestJson<{ messages: AgentMailMessage[] }>(
+            "/api/v1/email/messages",
+            { signal },
+          ),
+          client.requestJson<{ messages: AgentMailMessage[] }>(
+            "/api/v1/email/messages?notifications=only",
+            { signal },
+          ),
+        ]);
         if (signal.aborted || generation !== reloadGenerationRef.current) {
           return;
         }
         if (!mountedRef.current) return;
         startTransition(() => {
-          const mailboxEmails = new Set(
-            (body.inboxes ?? [])
-              .map((inbox) => inbox.email?.trim().toLowerCase())
-              .filter((email): email is string => Boolean(email)),
-          );
-          const nextMessages = filterOutPendingEmailListRemovals(
-            collapseEmailListItemsByThread(
-              (listed.messages ?? [])
-                .map((entry) => toListItem(entry, mailboxEmails))
-                .filter((item): item is EmailListItem => item != null),
-            ),
+          const nextMessages = toEmailList(listed.messages ?? []);
+          const nextNotifications = toEmailList(
+            notificationListed.messages ?? [],
           );
           setMessages(nextMessages);
+          setNotificationMessages(nextNotifications);
           writeAgentMailListCache({
             mailboxes: nextMailboxes,
             messages: nextMessages,
@@ -430,7 +457,10 @@ export function useAgentMailMailboxes(
         if (signal.aborted || generation !== reloadGenerationRef.current) {
           return;
         }
-        if (!silent) setMessages([]);
+        if (!silent) {
+          setMessages([]);
+          setNotificationMessages([]);
+        }
       }
     } catch {
       if (signal.aborted || generation !== reloadGenerationRef.current) return;
@@ -439,6 +469,7 @@ export function useAgentMailMailboxes(
       if (!silent) {
         setMailboxes([]);
         setMessages([]);
+        setNotificationMessages([]);
         setReplyTemplates(null);
       }
     } finally {
@@ -649,6 +680,7 @@ export function useAgentMailMailboxes(
     () => ({
       mailboxes,
       messages,
+      notificationMessages,
       apiKeyConfigured,
       replyTemplates,
       loading,
@@ -658,6 +690,7 @@ export function useAgentMailMailboxes(
     [
       mailboxes,
       messages,
+      notificationMessages,
       apiKeyConfigured,
       replyTemplates,
       loading,

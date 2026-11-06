@@ -10,6 +10,7 @@ import { EntityAvatarIcon } from "../entity/entity-avatar-icon.js";
 import { OrganizationIcon } from "../organizations/organization-icon.js";
 import { ProjectStatusIcon } from "../projects/project-status-icon.js";
 import { EmailNavIcon } from "../shell/sidebar-nav-icons.js";
+import { projectTypeDropdownFilter } from "../../dropdowns/searchable-dropdown-option-filters.js";
 import type { SearchableDropdownOption } from "./searchable-dropdown.js";
 import type { EmailMailbox } from "../../email/email.js";
 import { emailMailboxFromParts } from "../../email/email.js";
@@ -206,12 +207,17 @@ export function buildProjectDropdownOptions(
     : filterProjectsForDefaultPicker(projects, {
         keepKeys: options?.keepKeys,
       });
-  const rows = visible.map((project) => ({
-    value: project.key,
-    label: project.name,
-    searchTerms: `${project.key} ${project.name} ${project.status ?? ""}`,
-    icon: projectStatusGlyph(iconSize, project.status),
-  }));
+  const rows = visible.map((project) => {
+    const typeFilter = projectTypeDropdownFilter(project.type);
+    return {
+      value: project.key,
+      label: project.name,
+      searchTerms: `${project.key} ${project.name} ${project.status ?? ""} ${typeFilter.filterLabel}`,
+      icon: projectStatusGlyph(iconSize, project.status),
+      filterValue: typeFilter.filterValue,
+      filterLabel: typeFilter.filterLabel,
+    };
+  });
   if (!includeNone) return rows;
   return [
     {

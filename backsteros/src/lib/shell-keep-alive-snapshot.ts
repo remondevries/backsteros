@@ -11,6 +11,15 @@ export type RouteSnapshot = {
  * TanStack route tree — warm flips never rematch the router, so nested params
  * like `letterSlug` only exist if we parse them here.
  */
+function decodeRouteParam(value: string | undefined): string | undefined {
+  if (value == null || value === "") return value;
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
 export function snapshotFor(
   surface: PendingPageSurface,
   pathname: string,
@@ -19,13 +28,19 @@ export function snapshotFor(
   const parts = pathname.split("/").filter(Boolean);
   const params: Record<string, string | undefined> = {};
   if (surface === "inbox") {
-    params.itemId = parts[0] === "inbox" ? parts[1] : undefined;
+    // Decode like TanStack — email ids are `email:inbox:msg` in the list but
+    // `/inbox/email%3A…` in the path. Warm flips never rematch the router.
+    params.itemId =
+      parts[0] === "inbox" ? decodeRouteParam(parts[1]) : undefined;
   }
   if (surface === "communication") {
     // Same shape as inbox: /communication/$itemId. Warm flips never rematch
     // the router, so without this parse CommunicationPage always sees a
     // missing itemId and replace-navigates back to the first list item.
-    params.itemId = parts[0] === "communication" ? parts[1] : undefined;
+    // Encoded email row ids (`email%3A…`) must decode to `email:…` or the
+    // neighbor after delete stays selected in the URL but never resolves.
+    params.itemId =
+      parts[0] === "communication" ? decodeRouteParam(parts[1]) : undefined;
   }
   if (surface === "journal-habits") {
     params.habitId = parts[2];

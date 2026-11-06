@@ -40,8 +40,8 @@ export function useEmailMessageActions({
   messageId,
   message,
   setMessage,
-  setDraft,
-  setThreadComments,
+  setDraft: _setDraft,
+  setThreadComments: _setThreadComments,
   setConceptError,
   reloadMessageDetail,
   toEmailDetailHref,
@@ -74,6 +74,10 @@ export function useEmailMessageActions({
 }) {
   const { client } = useDesktopApi();
   const routerNavigate = useNavigate();
+  // Kept in the hook signature for callers; delete/spam no longer blank the
+  // pane before the neighbor route commits.
+  void _setDraft;
+  void _setThreadComments;
   const navigate = useCallback(
     (to: string, options?: { replace?: boolean; state?: unknown }) => {
       navigateToHref(routerNavigate, to, options);
@@ -82,38 +86,26 @@ export function useEmailMessageActions({
   );
 
   const leaveMessageAfterRemoval = useCallback(() => {
-    setMessage(null);
-    setDraft(null);
-    setThreadComments([]);
-    // Neighbor (or list root) so delete/spam does not dump on an empty pane
-    // while the removed row is still settling out of the list.
+    // Keep the current thread painted until the neighbor route commits —
+    // setMessage(null) here left a sticky "Select an email…" empty pane.
     navigate(resolveEmailListReturnHref(listReturnHref, messageId), {
       replace: true,
     });
-  }, [
-    listReturnHref,
-    messageId,
-    navigate,
-    setDraft,
-    setMessage,
-    setThreadComments,
-  ]);
+  }, [listReturnHref, messageId, navigate]);
 
   const handleDeleteMessage = useCallback(async () => {
     if (!inboxId || !messageId) {
       return { ok: false as const, error: "Message is required." };
     }
-    // Resolve neighbor while the row is still in the list, remove first, then
-    // navigate — avoids a flash of the deleted row and unstable reordering.
+    // Resolve neighbor while the row is still in the list, then navigate.
+    // Do not clear `message` here — that paints "Select an email…" on the
+    // deleted URL and can stick if the outlet lags the list highlight.
     const nextHref = resolveEmailListReturnHref(listReturnHref, messageId);
     void deleteEmailMessage(client, {
       inboxId,
       messageId,
       threadId: message?.threadId ?? null,
     });
-    setMessage(null);
-    setDraft(null);
-    setThreadComments([]);
     navigate(nextHref, { replace: true });
     return { ok: true as const };
   }, [
@@ -123,9 +115,6 @@ export function useEmailMessageActions({
     message?.threadId,
     messageId,
     navigate,
-    setDraft,
-    setMessage,
-    setThreadComments,
   ]);
 
   const handleReportSpamMessage = useCallback(
@@ -141,9 +130,6 @@ export function useEmailMessageActions({
         messageId: targetMessageId,
         threadId,
       });
-      setMessage(null);
-      setDraft(null);
-      setThreadComments([]);
       navigate(nextHref, { replace: true });
 
       void client
@@ -169,9 +155,6 @@ export function useEmailMessageActions({
       listReturnHref,
       message?.threadId,
       navigate,
-      setDraft,
-      setMessage,
-      setThreadComments,
     ],
   );
 
@@ -455,6 +438,7 @@ export function useEmailMessageActions({
 
   return {
     handleDeleteMessage,
+    handleReportSpam,
     handleReportSpamMessage,
     markMessagesUnread,
     loadMessageSource,

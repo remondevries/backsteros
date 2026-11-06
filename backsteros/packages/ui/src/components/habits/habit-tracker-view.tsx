@@ -53,6 +53,7 @@ import {
   FinanceYearNavigator,
   localCalendarYear,
 } from "../finance/finance-month-navigator.js";
+import { projectTypeDropdownFilter } from "../../dropdowns/searchable-dropdown-option-filters.js";
 import { DefaultProjectIcon } from "../projects/default-project-icon.js";
 import { OverviewNameEditor } from "../content/overview-name-editor.js";
 import { ProjectOcticon } from "../projects/project-octicon.js";
@@ -931,19 +932,24 @@ export function HabitTrackerView({
   const selectedProject = habit ? resolveHabitProject(habit, projects) : null;
   const projectOptions = useMemo(
     () =>
-      projects.map((project) => ({
-        value: project.id,
-        label: project.name,
-        searchTerms: project.name,
-        icon: (
-          <ProjectOcticon
-            icon={project.icon}
-            type={project.type}
-            size={14}
-            className="text-foreground/70"
-          />
-        ),
-      })),
+      projects.map((project) => {
+        const typeFilter = projectTypeDropdownFilter(project.type);
+        return {
+          value: project.id,
+          label: project.name,
+          searchTerms: `${project.name} ${typeFilter.filterLabel}`,
+          filterValue: typeFilter.filterValue,
+          filterLabel: typeFilter.filterLabel,
+          icon: (
+            <ProjectOcticon
+              icon={project.icon}
+              type={project.type}
+              size={14}
+              className="text-foreground/70"
+            />
+          ),
+        };
+      }),
     [projects],
   );
 

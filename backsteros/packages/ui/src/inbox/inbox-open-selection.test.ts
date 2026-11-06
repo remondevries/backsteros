@@ -114,6 +114,23 @@ test("resolveInboxOpenTarget opens first row at inbox root", () => {
   assert.equal(target?.itemId, "task-triage");
 });
 
+test("resolveInboxOpenTarget recovers a deleted Messages email URL", () => {
+  const remaining = buildInboxEmailListItem({
+    inboxId: "box",
+    messageId: "msg-2",
+    title: "Next",
+    status: "triage",
+  });
+  const target = resolveInboxOpenTarget({
+    mode: "messages",
+    shellPathname: "/email/box/msg-gone",
+    items: [remaining],
+  });
+  assert.equal(target?.reason, "stale-email");
+  assert.equal(target?.itemId, remaining.id);
+  assert.match(target?.href ?? "", /msg-2/);
+});
+
 test("resolveInboxPanelPathname drops email seed outside Messages", () => {
   const items = resolveInboxModeListItems(all, "notifications");
   const path = resolveInboxPanelPathname({

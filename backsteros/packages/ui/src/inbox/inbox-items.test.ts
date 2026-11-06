@@ -4,6 +4,7 @@ import { test } from "node:test";
 import {
   buildInboxEmailListItem,
   buildInboxTaskListItem,
+  buildTaskListEmailItem,
   emailBelongsInInbox,
   getInboxAttentionGroupKey,
   getInboxAttentionKeyboardItemIds,
@@ -12,8 +13,10 @@ import {
   getInboxItemDisplayId,
   getInboxItemHref,
   groupInboxItemsByAttentionStatus,
+  inboxListItemToTaskItemRowTask,
   isAgentInboxPending,
   isInboxOverdueTask,
+  getInboxIdAfterRemovingItem,
   pickIdAfterRemoving,
   resolveInboxEmailIconColor,
   taskBelongsInInbox,
@@ -273,14 +276,37 @@ test("isAgentInboxPending requires created timestamp and no approval", () => {
   assert.equal(isAgentInboxPending({}), false);
 });
 
-test("pickIdAfterRemoving prefers the item above, else the next, else null", () => {
-  assert.equal(pickIdAfterRemoving(["a", "b", "c"], "b"), "a");
+test("pickIdAfterRemoving prefers the next item below, else above, else null", () => {
+  assert.equal(pickIdAfterRemoving(["a", "b", "c"], "b"), "c");
   assert.equal(pickIdAfterRemoving(["a", "b", "c"], "a"), "b");
+  assert.equal(pickIdAfterRemoving(["a", "b", "c"], "c"), "b");
   assert.equal(pickIdAfterRemoving(["a"], "a"), null);
   assert.equal(pickIdAfterRemoving(["a", "b"], "missing"), "a");
 });
 
-test("getInboxHrefAfterRemovingItem returns previous href or undefined when empty", () => {
+test("getInboxIdAfterRemovingItem resolves messageId and prefers next below", () => {
+  const emailA = buildInboxEmailListItem({
+    inboxId: "box",
+    messageId: "msg-a",
+    title: "A",
+  });
+  const emailB = buildInboxEmailListItem({
+    inboxId: "box",
+    messageId: "msg-b",
+    title: "B",
+  });
+  const emailC = buildInboxEmailListItem({
+    inboxId: "box",
+    messageId: "msg-c",
+    title: "C",
+  });
+  const items = [emailA, emailB, emailC];
+  assert.equal(getInboxIdAfterRemovingItem(items, "msg-b"), emailC.id);
+  assert.equal(getInboxIdAfterRemovingItem(items, emailC.id), emailB.id);
+  assert.equal(getInboxIdAfterRemovingItem([emailA], "msg-a"), null);
+});
+
+test("getInboxHrefAfterRemovingItem returns next-below href or undefined when empty", () => {
   const items = [
     task({ id: "t1", status: "triage", inbox: true }),
     task({ id: "t2", status: "triage", inbox: true }),
@@ -310,14 +336,15 @@ test("getInboxHrefAfterRemovingItem resolves email messageId to the list row", (
     title: "B",
   });
   const items = [emailA, emailB];
-  const remaining = [emailA];
+  const remainingAfterA = [emailB];
+  const remainingAfterB = [emailA];
   assert.equal(
-    getInboxHrefAfterRemovingItem(items, "msg-b"),
-    getInboxItemHref(emailA, remaining),
+    getInboxHrefAfterRemovingItem(items, "msg-a"),
+    getInboxItemHref(emailB, remainingAfterA),
   );
   assert.equal(
     getInboxHrefAfterRemovingItem(items, emailB.id),
-    getInboxItemHref(emailA, remaining),
+    getInboxItemHref(emailA, remainingAfterB),
   );
   assert.equal(getInboxHrefAfterRemovingItem([emailA], "msg-a"), undefined);
 });
@@ -585,4 +612,31 @@ test("getInboxItemDisplayId omits fake zero numbers pending server assign", () =
     projectKey: "BOD",
   });
   assert.equal(getInboxItemDisplayId(item), "BOD");
+});
+
+test("email task rows keep AgentMail thread key separate from workspace row id", () => {
+  const built = buildTaskListEmailItem({
+    inboxId: "in_1",
+    messageId: "msg_1",
+    threadId: "708ae6d6-1d9d-4874-933e-3547d4a34833",
+    emailThreadId: "Q_g9gl_X6i9NbjcHBFaWF",
+    title: "Invoice",
+  });
+  assert.equal(built.emailThreadKey, "708ae6d6-1d9d-4874-933e-3547d4a34833");
+  assert.equal(built.emailThreadId, "Q_g9gl_X6i9NbjcHBFaWF");
+
+  const fromInbox = inboxListItemToTaskItemRowTask(
+    buildInboxEmailListItem({
+      inboxId: "in_1",
+      messageId: "msg_1",
+      threadId: "708ae6d6-1d9d-4874-933e-3547d4a34833",
+      emailThreadId: "Q_g9gl_X6i9NbjcHBFaWF",
+      title: "Invoice",
+    }),
+  );
+  assert.equal(
+    fromInbox?.emailThreadKey,
+    "708ae6d6-1d9d-4874-933e-3547d4a34833",
+  );
+  assert.equal(fromInbox?.emailThreadId, "Q_g9gl_X6i9NbjcHBFaWF");
 });

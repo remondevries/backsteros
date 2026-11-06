@@ -1,5 +1,6 @@
 "use client";
 
+import type { MouseEvent } from "react";
 import type { ChatConversation } from "@backsteros/contracts";
 
 import { chatConversationToTaskItemRowTask } from "../../communication/chat-conversation-list-item.js";
@@ -16,6 +17,7 @@ import {
   communicationChannelKindClass,
   communicationChannelKindTitle,
 } from "./communication-kind-icons.js";
+import { CommunicationListCardSelect } from "./communication-list-card-select.js";
 
 export const CHAT_CARD_AVATAR_SIZE = 40;
 
@@ -55,7 +57,13 @@ export type CommunicationChatListCardProps = {
   keyboardHighlighted: boolean;
   typing: boolean;
   avatarSrc?: string | null;
+  checked?: boolean;
   onOpen: (conversationId: string) => void;
+  onToggleSelected?: (
+    itemId: string,
+    checked: boolean,
+    event: MouseEvent<HTMLButtonElement>,
+  ) => void;
 };
 
 /** Chatwoot conversation card for the unified Messages list. */
@@ -65,7 +73,9 @@ export function CommunicationChatListCard({
   keyboardHighlighted,
   typing,
   avatarSrc: avatarSrcProp,
+  checked = false,
   onOpen,
+  onToggleSelected,
 }: CommunicationChatListCardProps) {
   const task = chatConversationToTaskItemRowTask(conversation);
   const preview = conversation.lastMessagePreview?.trim() || "";
@@ -87,6 +97,8 @@ export function CommunicationChatListCard({
         active ? "communication-chat__card-item--active" : null,
         conversation.unread ? "communication-chat__card-item--unread" : null,
         typing ? "communication-chat__card-item--typing" : null,
+        checked ? "communication-chat__card-item--checked" : null,
+        onToggleSelected ? "communication-chat__card-item--selectable" : null,
       ]
         .filter(Boolean)
         .join(" ")}
@@ -172,6 +184,12 @@ export function CommunicationChatListCard({
             </span>
           ) : null
         }
+      />
+      <CommunicationListCardSelect
+        itemId={conversation.id}
+        checked={checked}
+        ariaLabel={`Select ${personLabel}`}
+        onToggleSelected={onToggleSelected}
       />
     </li>
   );

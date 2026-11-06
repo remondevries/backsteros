@@ -67,6 +67,19 @@ export function brandfetchLogoUrlFromWebsite(
   return brandfetchLogoUrl(domain, id, options);
 }
 
+/** Brandfetch icon for an email address’s domain (`ada@acme.com` → acme.com). */
+export function brandfetchLogoUrlFromEmailAddress(
+  email: string | null | undefined,
+  clientId: string | null | undefined,
+  options?: BrandfetchLogoUrlOptions,
+): string | null {
+  const trimmed = email?.trim();
+  if (!trimmed) return null;
+  const at = trimmed.lastIndexOf("@");
+  if (at < 0 || at === trimmed.length - 1) return null;
+  return brandfetchLogoUrlFromWebsite(trimmed.slice(at + 1), clientId, options);
+}
+
 /**
  * Resolve the display avatar for an organization:
  * 1. Manual / stored upload (caller passes the resolved blob URL)

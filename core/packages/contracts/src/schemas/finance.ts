@@ -651,6 +651,12 @@ export const moneybirdInvoiceActivityItemSchema = z.object({
   label: z.string(),
   source: z.enum(["moneybird", "portal"]),
   action: z.string().nullable(),
+  /** AgentMail message id when this row is a portal email send. */
+  agentMailMessageId: z.string().nullable(),
+  /** AgentMail inbox id for `agentMailMessageId`. */
+  agentMailInboxId: z.string().nullable(),
+  /** Recipient email when known (portal invoice / reminder sends). */
+  to: z.string().nullable().optional(),
 });
 
 export const moneybirdInvoiceActivityResponseSchema = z.object({
@@ -672,7 +678,9 @@ export const moneybirdInvoiceSendEmailKindSchema = z.union([
 export const moneybirdInvoiceSendReminderResponseSchema = z.object({
   ok: z.literal(true),
   invoiceId: z.string(),
-  step: z.union([z.literal(1), z.literal(2), z.literal(3)]),
+  /** Which email was sent from the staff dropdown. */
+  kind: z.enum(["invoice", "reminder"]).optional(),
+  step: z.union([z.literal(1), z.literal(2), z.literal(3)]).nullable().optional(),
   to: z.string().optional(),
   skipped: z.string().optional(),
   message: z.string().optional(),

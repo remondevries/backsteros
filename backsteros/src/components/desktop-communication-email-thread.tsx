@@ -37,6 +37,7 @@ import {
   buildEmailMessagePartyAutoLinks,
   buildOrganizationDropdownOptions,
   buildProjectDropdownOptions,
+  projectTypeDropdownFilter,
   buildReplyRecipients,
   emailMessageBody,
   emailMessageHtmlBody,
@@ -66,6 +67,7 @@ import {
   type EmailMessagePartyMap,
 } from "@backsteros/ui";
 import { emailDeleteEntityLabel } from "../lib/delete-email-message";
+import { isEmailListItemPendingRemoval } from "../lib/email-list-pending-removals";
 import { useEmailMessageActions } from "../screens/email/use-email-message-actions";
 
 import {
@@ -396,6 +398,7 @@ function DesktopCommunicationEmailThreadView({
   const {
     handleDeleteMessage,
     handleDeleteThreadMessage,
+    handleReportSpam,
     emailExtraMenuItems,
   } = useEmailMessageActions({
     inboxId,
@@ -801,12 +804,17 @@ function DesktopCommunicationEmailThreadView({
         searchTerms: "inbox triage none",
         icon: <DefaultProjectIcon size={14} />,
       },
-      ...filterProjectsForDefaultPicker(projects).map((project) => ({
-        value: project.id,
-        label: project.name,
-        searchTerms: `${project.key} ${project.name}`,
-        icon: <ProjectStatusIcon status={project.status} size={14} />,
-      })),
+      ...filterProjectsForDefaultPicker(projects).map((project) => {
+        const typeFilter = projectTypeDropdownFilter(project.type);
+        return {
+          value: project.id,
+          label: project.name,
+          searchTerms: `${project.key} ${project.name} ${typeFilter.filterLabel}`,
+          filterValue: typeFilter.filterValue,
+          filterLabel: typeFilter.filterLabel,
+          icon: <ProjectStatusIcon status={project.status} size={14} />,
+        };
+      }),
     ],
     [projects],
   );
@@ -1137,9 +1145,18 @@ function DesktopCommunicationEmailThreadView({
   }
 
   if (!message) {
+    // Pending delete leaves a list stub mounted on the deleted URL until the
+    // neighbor route commits — never paint the idle empty state there.
+    const leavingDeleted = isEmailListItemPendingRemoval({
+      inboxId: item.inboxId,
+      id: item.messageId,
+      threadId: item.threadId ?? null,
+    });
     return (
       <div className="communication-chat__empty">
-        Select an email to read the thread.
+        {leavingDeleted
+          ? "Opening next conversation…"
+          : "Select an email to read the thread."}
       </div>
     );
   }
@@ -1604,6 +1621,11 @@ function DesktopCommunicationEmailThreadView({
             confirmLabel="Delete thread"
             actionVerb="Delete"
             onDelete={handleDeleteMessage}
+            secondaryAction={{
+              label: "Report Spam",
+              shortcutKey: "s",
+              onConfirm: handleReportSpam,
+            }}
           />
           <RegisterEntityMenuItems items={emailExtraMenuItems} />
         </>

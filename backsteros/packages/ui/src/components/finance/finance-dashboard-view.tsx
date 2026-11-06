@@ -27,6 +27,7 @@ import {
 
 import { AccountIncomeExpenseChart } from "./account-income-expense-chart.js";
 import { AssetsDebtChart } from "./assets-debt-chart.js";
+import { projectTypeDropdownFilter } from "../../dropdowns/searchable-dropdown-option-filters.js";
 import { DefaultProjectIcon } from "../projects/default-project-icon.js";
 import {
   DROPDOWN_NO_GOAL_VALUE,
@@ -955,11 +956,16 @@ export function FinanceDashboardView({
         searchTerms: "no project unassigned",
         icon: <DefaultProjectIcon size={14} className="text-foreground/70" />,
       },
-      ...projects.map((project) => ({
-        value: project.id,
-        label: project.name,
-        searchTerms: `${project.key} ${project.name}`,
-      })),
+      ...projects.map((project) => {
+        const typeFilter = projectTypeDropdownFilter(project.type);
+        return {
+          value: project.id,
+          label: project.name,
+          searchTerms: `${project.key} ${project.name} ${typeFilter.filterLabel}`,
+          filterValue: typeFilter.filterValue,
+          filterLabel: typeFilter.filterLabel,
+        };
+      }),
     ],
     [projects],
   );

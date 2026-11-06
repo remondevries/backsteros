@@ -3837,13 +3837,141 @@ button.entity-overview-subgroup__header:focus-visible {
 }
 
 .contacts-overview {
+  position: relative;
   display: flex;
   min-height: 0;
   flex: 1;
   flex-direction: column;
   overflow: hidden;
-  padding: 12px 16px 24px;
+  /* Extra left padding leaves room for the letter scrubber ticks. */
+  padding: 12px 16px 24px 28px;
   box-sizing: border-box;
+}
+
+/* Letter scrubber — thin ticks on the left; hover expands the letter. */
+.alpha-letter-minimap {
+  position: absolute;
+  top: 44px;
+  bottom: 24px;
+  left: 0;
+  z-index: 4;
+  display: none;
+  width: 28px;
+  pointer-events: none;
+}
+
+@media (pointer: fine) {
+  .alpha-letter-minimap {
+    display: block;
+  }
+}
+
+.alpha-letter-minimap__sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.alpha-letter-minimap__rail {
+  position: relative;
+  display: flex;
+  height: 100%;
+  width: 100%;
+  align-items: center;
+  justify-content: flex-start;
+  padding-left: 6px;
+  box-sizing: border-box;
+}
+
+.alpha-letter-minimap__hit {
+  position: relative;
+  display: block;
+  /* Height comes from letter count (~11px spacing); rail centers it. */
+  width: 100%;
+  max-height: 100%;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  pointer-events: auto;
+  opacity: 0.55;
+  transition: opacity 140ms ease;
+}
+
+.alpha-letter-minimap__hit:hover,
+.alpha-letter-minimap__hit:focus-visible {
+  opacity: 1;
+  outline: none;
+}
+
+.alpha-letter-minimap__line {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 10px;
+  width: 1px;
+  background: color-mix(in srgb, var(--foreground) 12%, transparent);
+}
+
+.alpha-letter-minimap__tick {
+  position: absolute;
+  left: 4px;
+  width: 14px;
+  height: 2px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--foreground) 28%, transparent);
+  transform: translateY(-50%) scaleX(0.35);
+  transform-origin: left center;
+  transition:
+    transform 140ms ease,
+    background 140ms ease;
+}
+
+.alpha-letter-minimap__tick--near {
+  transform: translateY(-50%) scaleX(0.65);
+  background: color-mix(in srgb, var(--foreground) 42%, transparent);
+}
+
+.alpha-letter-minimap__tick--active {
+  transform: translateY(-50%) scaleX(1);
+  background: color-mix(in srgb, var(--foreground) 72%, transparent);
+}
+
+.alpha-letter-minimap__tick--in-view {
+  background: color-mix(in srgb, var(--foreground) 88%, transparent);
+}
+
+.alpha-letter-minimap__tick--in-view:not(.alpha-letter-minimap__tick--active) {
+  transform: translateY(-50%) scaleX(0.55);
+}
+
+.alpha-letter-minimap__preview {
+  position: absolute;
+  left: 24px;
+  z-index: 1;
+  display: inline-flex;
+  min-width: 1.5rem;
+  height: 1.5rem;
+  align-items: center;
+  justify-content: center;
+  padding: 0 0.45rem;
+  border: 1px solid color-mix(in srgb, var(--foreground) 14%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--background, #0a0a0a) 88%, transparent);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.28);
+  color: var(--foreground);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  line-height: 1;
+  pointer-events: none;
 }
 
 .contacts-overview__toolbar {
@@ -3909,8 +4037,9 @@ button.entity-overview-subgroup__header:focus-visible {
 .contacts-overview__row > .entity-list-avatar-wrap,
 .contacts-overview__row > [class*="entity-list-avatar"] {
   flex-shrink: 0;
+  /* Span name + email/phone rows (~32px), top-aligned with the body. */
   align-self: flex-start;
-  margin-top: 2px;
+  margin-top: 0;
 }
 
 .contacts-overview__body {

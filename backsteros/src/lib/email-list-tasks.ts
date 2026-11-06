@@ -113,24 +113,25 @@ export async function patchEmailTaskListItem(
 ): Promise<void> {
   if (!isEmailTaskListItem(task) || !task.emailInboxId) return;
   const messageId = task.emailMessageId?.trim() || "";
+  // Metadata API :threadKey is AgentMail thread id (`email_threads.thread_key`),
+  // never the workspace row id (`email_threads.id` / emailThreadId). Using the
+  // DB id wrote a forked row; list reload still joined the AgentMail key and
+  // snapped project/priority back.
+  const agentMailThreadId = task.emailThreadKey?.trim() || null;
   const threadKey = resolveEmailThreadMetadataKey({
     kind: task.emailDraftId ? "draft" : "message",
     draftId: task.emailDraftId,
-    threadId: task.emailThreadId,
+    threadId: agentMailThreadId,
     messageId,
   });
   if (!threadKey || !messageId) return;
-  await client.requestJson(
-    `/api/v1/email/inboxes/${encodeURIComponent(task.emailInboxId)}/threads/${encodeURIComponent(threadKey)}/metadata`,
-    {
-      method: "PATCH",
-      body: JSON.stringify(patch),
-    },
-  );
-  dispatchEmailListPatch({
+
+  // Optimistic list update first — Communication / Inbox rails bind property
+  // dropdowns to list rows; waiting on the API made project/priority snap back.
+  const listPatch = {
     inboxId: task.emailInboxId,
     messageId,
-    threadId: task.emailThreadId ?? null,
+    threadId: agentMailThreadId,
     ...(patch.status !== undefined ? { status: patch.status } : {}),
     ...(patch.priority !== undefined ? { priority: patch.priority } : {}),
     ...(patch.dueDate !== undefined ? { dueDate: patch.dueDate } : {}),
@@ -145,5 +146,22 @@ export async function patchEmailTaskListItem(
     ...(listExtras?.assigneeName !== undefined
       ? { assigneeName: listExtras.assigneeName }
       : {}),
-  });
+  };
+  dispatchEmailListPatch(listPatch);
+
+  try {
+    await client.requestJson(
+      `/api/v1/email/inboxes/${encodeURIComponent(task.emailInboxId)}/threads/${encodeURIComponent(threadKey)}/metadata`,
+      {
+        method: "PATCH",
+        body: JSON.stringify(patch),
+      },
+    );
+  } catch (error) {
+    // Re-assert the optimistic values after a failed request so a concurrent
+    // list reload cannot leave the UI on a half-applied server row forever.
+    // Callers may still surface the error; the rail keeps the user's choice.
+    dispatchEmailListPatch(listPatch);
+    throw error;
+  }
 }

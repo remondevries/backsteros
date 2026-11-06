@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 
 import { groupItemsByAlphaLetter } from "../../shared/alpha-group.js";
 import { LIST_KEYBOARD_NAV_ZONE_MAIN } from "../../list-nav/list-keyboard-nav-zone.js";
@@ -16,6 +16,7 @@ import {
 } from "../list-nav/list-keyboard-navigation-provider.js";
 import { EntityListAvatar } from "../entity/entity-list-avatar.js";
 import { ProjectTypeGroupSection } from "../projects/project-type-group-section.js";
+import { AlphaLetterMinimap } from "../shared/alpha-letter-minimap.js";
 import { useListTypeToFilterItems } from "../../list-nav/use-list-type-to-filter.js";
 import { SidePanelPlusIcon } from "../shell/side-panel-plus-icon.js";
 
@@ -94,6 +95,18 @@ export function OrganizationsOverviewView({
     () => groupItemsByAlphaLetter(sortedOrganizations),
     [sortedOrganizations],
   );
+  const alphaLetters = useMemo(
+    () => grouped.map(([letter]) => letter),
+    [grouped],
+  );
+  const expandLetterSection = useCallback((letter: string) => {
+    setCollapsed((current) => {
+      if (!current.has(letter)) return current;
+      const next = new Set(current);
+      next.delete(letter);
+      return next;
+    });
+  }, []);
   const itemIds = useMemo(
     () => [
       ...pinnedOrganizations.map((entry) => entry.id),
@@ -193,37 +206,45 @@ export function OrganizationsOverviewView({
           {typeToFilterQuery ? "No organizations match." : emptyMessage}
         </p>
       ) : (
-        <ul
-          className="contacts-overview__list"
-          role="list"
-          ref={listRef}
-          {...listContainerProps}
-        >
-          {pinnedOrganizations.length > 0 ? (
-            <li
-              className="contacts-overview__pinned"
-              aria-label="New organization"
-            >
-              <ul className="contacts-overview__pinned-list" role="list">
-                {pinnedOrganizations.map((organization) =>
+        <>
+          <AlphaLetterMinimap
+            letters={alphaLetters}
+            scrollRootRef={listRef}
+            onBeforeSelect={expandLetterSection}
+            ariaLabel="Jump to organization letter"
+          />
+          <ul
+            className="contacts-overview__list"
+            role="list"
+            ref={listRef}
+            {...listContainerProps}
+          >
+            {pinnedOrganizations.length > 0 ? (
+              <li
+                className="contacts-overview__pinned"
+                aria-label="New organization"
+              >
+                <ul className="contacts-overview__pinned-list" role="list">
+                  {pinnedOrganizations.map((organization) =>
+                    renderOrganizationRow(organization),
+                  )}
+                </ul>
+              </li>
+            ) : null}
+            {grouped.map(([letter, entries]) => (
+              <ProjectTypeGroupSection
+                key={letter}
+                title={letter}
+                collapsed={collapsed.has(letter)}
+                onToggle={() => toggleLetter(letter)}
+              >
+                {entries.map((organization) =>
                   renderOrganizationRow(organization),
                 )}
-              </ul>
-            </li>
-          ) : null}
-          {grouped.map(([letter, entries]) => (
-            <ProjectTypeGroupSection
-              key={letter}
-              title={letter}
-              collapsed={collapsed.has(letter)}
-              onToggle={() => toggleLetter(letter)}
-            >
-              {entries.map((organization) =>
-                renderOrganizationRow(organization),
-              )}
-            </ProjectTypeGroupSection>
-          ))}
-        </ul>
+              </ProjectTypeGroupSection>
+            ))}
+          </ul>
+        </>
       )}
     </div>
   );

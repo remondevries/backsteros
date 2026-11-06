@@ -26,7 +26,10 @@ import {
 } from "../../list-nav/keyboard-nav-item.js";
 import { LIST_KEYBOARD_NAV_ZONE_MAIN } from "../../list-nav/list-keyboard-nav-zone.js";
 import { useListDismissDetailShortcut } from "../../list-nav/use-list-clear-selection-shortcut.js";
-import { isDirectRoleButtonActivationKey } from "../../shortcuts/shortcut-guards.js";
+import {
+  isDirectRoleButtonActivationKey,
+  shouldHandleGlobalShortcut,
+} from "../../shortcuts/shortcut-guards.js";
 import { getTaskStatusHeaderGradientStyle } from "../../tasks/task-status-header-gradient.js";
 import { useFinancePanelResize } from "../../finance/use-finance-panel-resize.js";
 import {
@@ -54,6 +57,7 @@ import {
 } from "./finance-document-summary-widgets.js";
 import { FinanceInvoiceActivityTimeline } from "./finance-invoice-activity-timeline.js";
 import { FinanceInvoiceDetailDocument } from "./finance-invoice-detail-document.js";
+import { FinanceInvoiceSendReminderMenu } from "./finance-invoice-send-reminder-menu.js";
 import { FinanceInvoicesFilterBar } from "./finance-invoices-filter-bar.js";
 import { FINANCE_FILTER_ALL_VALUE } from "./finance-transactions-filter-bar.js";
 import {
@@ -66,8 +70,8 @@ type InvoiceDetailTab = "invoice" | "activity";
 
 const INVOICE_DETAIL_TAB_OPTIONS: readonly SegmentedPillToggleOption<InvoiceDetailTab>[] =
   [
-    { value: "invoice", label: "Invoice" },
-    { value: "activity", label: "Activity" },
+    { value: "invoice", label: "Invoice", shortcut: "1" },
+    { value: "activity", label: "Activity", shortcut: "2" },
   ];
 
 const INVOICE_COLUMN_HEADERS = [
@@ -134,9 +138,22 @@ export type FinanceInvoicesViewProps = {
   invoiceActivityItems?: MoneybirdInvoiceActivityItem[];
   invoiceActivityLoading?: boolean;
   invoiceActivityError?: string | null;
+  onLoadPortalInvoiceActivityEmail?: (input: {
+    inboxId: string;
+    messageId: string;
+  }) => Promise<{
+    subject: string;
+    html: string | null;
+    text: string | null;
+    from?: string | null;
+    to?: string[] | null;
+  }>;
   /** Next portal reminder step available to send (null when none). */
   invoiceNextReminderStep?: 1 | 2 | 3 | null;
-  onSendInvoiceReminder?: () => void | Promise<void>;
+  onSendInvoiceReminder?: (input: {
+    to: string;
+    kind: "invoice" | "1" | "2" | "3";
+  }) => void | Promise<void>;
   sendInvoiceReminderPending?: boolean;
   /**
    * When true, skip EntityDetailLayout and the revenue chart — for embedding
@@ -245,6 +262,7 @@ export function FinanceInvoicesView({
   invoiceActivityItems = [],
   invoiceActivityLoading = false,
   invoiceActivityError = null,
+  onLoadPortalInvoiceActivityEmail,
   invoiceNextReminderStep = null,
   onSendInvoiceReminder,
   sendInvoiceReminderPending = false,
@@ -265,6 +283,7 @@ export function FinanceInvoicesView({
   const [localYear, setLocalYear] = useState(() => localCalendarYear());
   const [localSelectedId, setLocalSelectedId] = useState<string | null>(null);
   const [detailTab, setDetailTab] = useState<InvoiceDetailTab>("invoice");
+  const [sendEmailMenuOpen, setSendEmailMenuOpen] = useState(false);
 
   const latestYear = latestYearProp ?? localCalendarYear();
   const year = yearProp ?? revenueYear ?? localYear;
@@ -367,22 +386,47 @@ export function FinanceInvoicesView({
   }, [invoices, selectedInvoiceId, setSelectedInvoiceId]);
 
   useEffect(() => {
+    if (!selectedInvoiceId) {
+      setSendEmailMenuOpen(false);
+    }
+  }, [selectedInvoiceId]);
+
+  useEffect(() => {
     if (!selectedInvoiceId) return;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      if (
-        event.target instanceof HTMLElement &&
-        (event.target.closest("input, textarea, [contenteditable=true]") ||
-          event.target.closest("[role='listbox']"))
-      ) {
+
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) {
         return;
       }
+      if (!shouldHandleGlobalShortcut(event)) return;
+
+      // Send-email menu owns 1–4 while open (see FinanceInvoiceSendReminderMenu).
+      if (sendEmailMenuOpen) return;
+
+      if (event.key === "3") {
+        if (!onSendInvoiceReminder) return;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        setSendEmailMenuOpen(true);
+        return;
+      }
+
+      const nextTab: InvoiceDetailTab | null =
+        event.key === "1"
+          ? "invoice"
+          : event.key === "2"
+            ? "activity"
+            : null;
+      if (!nextTab) return;
+
       event.preventDefault();
-      setSelectedInvoiceId(null);
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [selectedInvoiceId, setSelectedInvoiceId]);
+      event.stopImmediatePropagation();
+      setDetailTab(nextTab);
+    }
+
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
+  }, [onSendInvoiceReminder, selectedInvoiceId, sendEmailMenuOpen]);
 
   const createOrganizationFromQueryLabel = onCreateOrganizationFromQuery
     ? (query: string) => `Create “${query.trim()}”`
@@ -469,17 +513,23 @@ export function FinanceInvoicesView({
   );
 
   const closeInvoiceDetail = useCallback(() => {
+    setSendEmailMenuOpen(false);
     setSelectedInvoiceId(null);
   }, [setSelectedInvoiceId]);
 
+  const dismissInvoiceDetailShortcut = useCallback(() => {
+    // First Escape closes the send-email dropdown; second closes the panel.
+    if (sendEmailMenuOpen) {
+      setSendEmailMenuOpen(false);
+      return;
+    }
+    closeInvoiceDetail();
+  }, [closeInvoiceDetail, sendEmailMenuOpen]);
+
   useListDismissDetailShortcut({
     enabled: selectedInvoiceId != null,
-    onDismiss: closeInvoiceDetail,
+    onDismiss: dismissInvoiceDetailShortcut,
   });
-
-  useEffect(() => {
-    setDetailTab("invoice");
-  }, [selectedInvoiceId]);
 
   const { highlightedId } = useListKeyboardNavigation({
     containerRef: listRef,
@@ -855,27 +905,20 @@ export function FinanceInvoicesView({
                     ariaLabel="Invoice detail view"
                   />
                 </div>
-                <button
-                  type="button"
-                  className="finance-invoice-detail-toolbar__reminder"
-                  disabled={
-                    sendInvoiceReminderPending || !onSendInvoiceReminder
-                  }
-                  title={
-                    invoiceNextReminderStep != null
-                      ? `Send payment reminder ${invoiceNextReminderStep}`
-                      : "Send the next payment reminder"
-                  }
-                  onClick={() => {
-                    void onSendInvoiceReminder?.();
-                  }}
-                >
-                  {sendInvoiceReminderPending
-                    ? "Sending…"
-                    : invoiceNextReminderStep != null
-                      ? `Send reminder ${invoiceNextReminderStep}`
-                      : "Send reminder"}
-                </button>
+                {onSendInvoiceReminder ? (
+                  <FinanceInvoiceSendReminderMenu
+                    defaultEmail={
+                      invoiceDetail && invoiceDetail.id === selectedInvoiceId
+                        ? invoiceDetail.recipient.email
+                        : null
+                    }
+                    nextStep={invoiceNextReminderStep}
+                    pending={sendInvoiceReminderPending}
+                    open={sendEmailMenuOpen}
+                    onOpenChange={setSendEmailMenuOpen}
+                    onSend={onSendInvoiceReminder}
+                  />
+                ) : null}
               </header>
               <div className="finance-invoice-detail-pane__body">
                 {detailTab === "invoice" ? (
@@ -894,6 +937,7 @@ export function FinanceInvoicesView({
                     items={invoiceActivityItems}
                     loading={invoiceActivityLoading}
                     error={invoiceActivityError}
+                    onLoadPortalEmail={onLoadPortalInvoiceActivityEmail}
                   />
                 )}
               </div>

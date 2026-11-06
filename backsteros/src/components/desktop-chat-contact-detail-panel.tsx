@@ -36,6 +36,7 @@ import {
   getCreateEntityFromQueryLabel,
   getEmailComposeHref,
   getEmailDetailHref,
+  getOrganizationOverlayHref,
   getUniqueListItemRouteParam,
   isHabitLinkedTask,
   normalizeContactSocialAccounts,
@@ -1174,6 +1175,15 @@ function DesktopChatContactDetailPanelView({
   // Only the focused message party’s org — never thread-level emailItem.organizationName
   // (that sticks “Lemo-Design” on the rail while another From is selected).
   const emailOrganizationName = emailOrganization?.name?.trim() || null;
+  const emailOrganizationNavigateHref = emailOrganization
+    ? getOrganizationOverlayHref(
+        getUniqueListItemRouteParam(
+          emailOrganization,
+          workspace.organizations,
+        ),
+        { layout: "page" },
+      )
+    : null;
   const emailOrganizationAvatar =
     emailOrganizationId != null
       ? resolveOrganizationAvatarSrc({
@@ -1848,6 +1858,7 @@ function DesktopChatContactDetailPanelView({
           organizationId={emailOrganizationId}
           organizationName={emailOrganizationName}
           organizationAvatarSrc={emailOrganizationAvatar}
+          organizationNavigateHref={emailOrganizationNavigateHref}
           contactId={emailContactId}
           contactName={emailContactName}
           contactAvatarSrc={emailContactAvatar}

@@ -12,10 +12,14 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import ReactMarkdown, { type Components } from "react-markdown";
+import ReactMarkdown, { type Components, type Options } from "react-markdown";
 import remarkGfm from "remark-gfm";
 
 import { ClientLink } from "../../shared/client-link.js";
+import {
+  markdownHtmlRehypePlugins,
+  markdownHtmlRemarkRehypeOptions,
+} from "../../documents/markdown-html-rehype.js";
 import { isInternalAppHref } from "../../navigation/is-internal-app-href.js";
 import { documentHeadingMinimapSectionId } from "../../documents/document-heading-minimap.js";
 import {
@@ -23,6 +27,12 @@ import {
   isMermaidCodeClassName,
   normalizeDocDiagramMarkdown,
 } from "../../documents/markdown-doc-diagrams.js";
+import {
+  isEstimatePlanComparisonFenceClassName,
+  normalizeEstimateTableDisplayMarkdown,
+  parseEstimatePlanComparisonFenceSource,
+} from "../../finance/estimate-table-display.js";
+import { EstimatePlanComparison } from "../finance/estimate-plan-comparison.js";
 import { hasBlockMarkdown } from "../../documents/markdown-preview-blocks.js";
 import {
   normalizeMarkdownTaskLists,
@@ -257,9 +267,26 @@ const markdownPreviewComponents: Components = {
           "";
         return <MermaidDiagram source={source} />;
       }
+      if (
+        isEstimatePlanComparisonFenceClassName(preClassName) ||
+        isEstimatePlanComparisonFenceClassName(childClassName)
+      ) {
+        const source =
+          extractMermaidSourceFromCodeChildren(
+            (child.props as { children?: unknown }).children,
+          ) ??
+          extractMermaidSourceFromCodeChildren(children) ??
+          "";
+        const data = parseEstimatePlanComparisonFenceSource(source);
+        if (data) return <EstimatePlanComparison data={data} />;
+      }
     } else if (isMermaidCodeClassName(preClassName)) {
       const source = extractMermaidSourceFromCodeChildren(children) ?? "";
       return <MermaidDiagram source={source} />;
+    } else if (isEstimatePlanComparisonFenceClassName(preClassName)) {
+      const source = extractMermaidSourceFromCodeChildren(children) ?? "";
+      const data = parseEstimatePlanComparisonFenceSource(source);
+      if (data) return <EstimatePlanComparison data={data} />;
     }
     return (
       <MarkdownCodeBlock className={preClassName}>{children}</MarkdownCodeBlock>
@@ -308,6 +335,11 @@ const markdownPreviewComponents: Components = {
 
 const markdownRemarkPlugins = [remarkGfm];
 
+const MarkdownHtmlRehypeContext = createContext<{
+  rehypePlugins: Options["rehypePlugins"];
+  remarkRehypeOptions: Options["remarkRehypeOptions"];
+}>({ rehypePlugins: undefined, remarkRehypeOptions: undefined });
+
 export type DocumentMarkdownPreviewProps = {
   body: string;
   /** Override catalog; defaults to MentionCatalogProvider. */
@@ -328,6 +360,12 @@ export type DocumentMarkdownPreviewProps = {
    * Own-line task/project mentions otherwise render as full-width block cards.
    */
   forceInlineMentions?: boolean;
+  /**
+   * Parse raw HTML embedded in markdown (estimates). Does not change layout —
+   * only renders HTML that was previously shown as escaped text.
+   * Off by default for chat / task / project previews.
+   */
+  allowHtml?: boolean;
 };
 
 /**
@@ -437,6 +475,9 @@ const inlineMarkdownComponents: Components = {
 };
 
 function InlineMarkdownSegment({ content }: { content: string }) {
+  const { rehypePlugins, remarkRehypeOptions } = useContext(
+    MarkdownHtmlRehypeContext,
+  );
   if (!content) {
     return null;
   }
@@ -446,6 +487,8 @@ function InlineMarkdownSegment({ content }: { content: string }) {
   return (
     <ReactMarkdown
       remarkPlugins={markdownRemarkPlugins}
+      rehypePlugins={rehypePlugins}
+      remarkRehypeOptions={remarkRehypeOptions}
       components={inlineMarkdownComponents}
     >
       {withSoftLineHardBreaks(normalizeMarkdownTaskLists(content))}
@@ -454,6 +497,9 @@ function InlineMarkdownSegment({ content }: { content: string }) {
 }
 
 function MarkdownBlockSegment({ content }: { content: string }) {
+  const { rehypePlugins, remarkRehypeOptions } = useContext(
+    MarkdownHtmlRehypeContext,
+  );
   if (!content) {
     return null;
   }
@@ -461,6 +507,8 @@ function MarkdownBlockSegment({ content }: { content: string }) {
   return (
     <ReactMarkdown
       remarkPlugins={markdownRemarkPlugins}
+      rehypePlugins={rehypePlugins}
+      remarkRehypeOptions={remarkRehypeOptions}
       components={markdownPreviewComponents}
     >
       {normalizeMarkdownTaskLists(content)}
@@ -1728,6 +1776,7 @@ export function DocumentMarkdownPreview({
   onChange,
   resolveImageSrc,
   forceInlineMentions = false,
+  allowHtml = false,
 }: DocumentMarkdownPreviewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const catalogFromContext = useMentionCatalogOptional()?.catalog;
@@ -1748,8 +1797,22 @@ export function DocumentMarkdownPreview({
   useResolveMentionTokensInContent(mentionTokens);
 
   const normalizedBody = useMemo(
-    () => normalizeDocDiagramMarkdown(body),
+    () =>
+      normalizeEstimateTableDisplayMarkdown(
+        normalizeDocDiagramMarkdown(body),
+      ),
     [body],
+  );
+
+  const htmlRehype = useMemo(
+    () =>
+      allowHtml
+        ? {
+            rehypePlugins: markdownHtmlRehypePlugins,
+            remarkRehypeOptions: markdownHtmlRemarkRehypeOptions,
+          }
+        : { rehypePlugins: undefined, remarkRehypeOptions: undefined },
+    [allowHtml],
   );
 
   useContentPreviewLinkNavigation({ containerRef, body: normalizedBody });
@@ -1776,26 +1839,28 @@ export function DocumentMarkdownPreview({
   const paragraphs = splitParagraphs(normalizedBody);
 
   return (
-    <MarkdownImageResolveContext.Provider value={resolveImageSrc ?? null}>
-      <MarkdownTaskListInteractProvider body={body} onChange={onChange}>
-        <div
-          ref={containerRef}
-          data-content-preview-links=""
-          data-markdown-task-list-root=""
-          tabIndex={-1}
-          className="content-markdown-preview-body content-markdown-preview-body--rendered"
-        >
-          {paragraphs.map((paragraph, index) => (
-            <ParagraphPreview
-              key={`paragraph-${index}`}
-              paragraph={paragraph}
-              catalog={catalog}
-              paragraphIndex={index}
-              forceInlineMentions={forceInlineMentions}
-            />
-          ))}
-        </div>
-      </MarkdownTaskListInteractProvider>
-    </MarkdownImageResolveContext.Provider>
+    <MarkdownHtmlRehypeContext.Provider value={htmlRehype}>
+      <MarkdownImageResolveContext.Provider value={resolveImageSrc ?? null}>
+        <MarkdownTaskListInteractProvider body={body} onChange={onChange}>
+          <div
+            ref={containerRef}
+            data-content-preview-links=""
+            data-markdown-task-list-root=""
+            tabIndex={-1}
+            className="content-markdown-preview-body content-markdown-preview-body--rendered"
+          >
+            {paragraphs.map((paragraph, index) => (
+              <ParagraphPreview
+                key={`paragraph-${index}`}
+                paragraph={paragraph}
+                catalog={catalog}
+                paragraphIndex={index}
+                forceInlineMentions={forceInlineMentions}
+              />
+            ))}
+          </div>
+        </MarkdownTaskListInteractProvider>
+      </MarkdownImageResolveContext.Provider>
+    </MarkdownHtmlRehypeContext.Provider>
   );
 }

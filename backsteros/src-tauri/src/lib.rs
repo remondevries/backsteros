@@ -74,8 +74,14 @@ fn is_app_origin(url: &tauri::Url) -> bool {
     }
 }
 
+/// http(s)/mailto/tel that are not the SPA origin — open with the system opener.
+fn is_system_browser_url(url: &tauri::Url) -> bool {
+    matches!(url.scheme(), "http" | "https" | "mailto" | "tel") && !is_app_origin(url)
+}
+
 /// Keep the main shell on the app origin. External links use the system opener
-/// via `on_new_window` — never navigate the main webview away from the SPA.
+/// via `on_new_window` / `on_navigation` — never navigate the main webview away
+/// from the SPA.
 fn allow_main_navigation(url: &tauri::Url) -> bool {
     is_app_origin(url)
 }
@@ -367,6 +373,7 @@ pub fn run() {
             install_app_menu(app)?;
 
             let handle = app.handle().clone();
+            let nav_handle = app.handle().clone();
             let config = app
                 .config()
                 .app
@@ -384,7 +391,17 @@ pub fn run() {
             // Tauri's native file-drop handler is mutually exclusive with DOM drops.
             main_builder = main_builder.disable_drag_drop_handler();
             main_builder
-                .on_navigation(|url| allow_main_navigation(url))
+                .on_navigation(move |url| {
+                    if allow_main_navigation(&url) {
+                        return true;
+                    }
+                    // Same-window external navigations (email HTML without
+                    // target=_blank, etc.): open in the system browser, then cancel.
+                    if is_system_browser_url(&url) {
+                        let _ = nav_handle.opener().open_url(url.as_str(), None::<&str>);
+                    }
+                    false
+                })
                 .on_new_window(move |url, _features| {
                     // Attachments / external links: open in the system browser.
                     let _ = handle.opener().open_url(url.as_str(), None::<&str>);

@@ -1,0 +1,171 @@
+/* Estimate markdown → plan-comparison display (UIARC-inspired matrix).
+ * Uses BacksterOS shell tokens (--surface / --foreground / --border / --muted). */
+
+.finance-estimate-table-display {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem 0.55rem;
+  margin-right: 0.35rem;
+  padding: 0.2rem 0.55rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 0.75rem;
+  line-height: 1.2;
+}
+
+.finance-estimate-table-display__label {
+  white-space: nowrap;
+}
+
+.finance-estimate-table-display__select {
+  max-width: 11rem;
+  border: 0;
+  background: transparent;
+  color: var(--foreground);
+  font: inherit;
+}
+
+.finance-estimate-table-display__hint {
+  opacity: 0.75;
+  white-space: nowrap;
+}
+
+.estimate-plan-comparison {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  margin: 1.25rem 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  background: var(--surface);
+  color: var(--foreground);
+  font-size: 0.875rem;
+  line-height: 1.45;
+}
+
+.estimate-plan-comparison *,
+.estimate-plan-comparison *::before,
+.estimate-plan-comparison *::after {
+  box-sizing: border-box;
+}
+
+.estimate-plan-comparison__matrix {
+  min-width: 0;
+}
+
+.estimate-plan-comparison__plan-header,
+.estimate-plan-comparison__feature-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr) minmax(0, 1fr);
+}
+
+.estimate-plan-comparison__feature-header {
+  display: flex;
+  align-items: end;
+  padding: 1.25rem 1rem 1.25rem 1.25rem;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.estimate-plan-comparison__plan-cell {
+  min-width: 0;
+  border-left: 1px solid var(--border);
+  padding: 1.25rem 1rem;
+  background: color-mix(in srgb, var(--foreground) 4%, var(--surface));
+}
+
+.estimate-plan-comparison__plan-name {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.3;
+  color: var(--foreground);
+}
+
+.estimate-plan-comparison__rows {
+  border-top: 1px solid var(--border);
+}
+
+.estimate-plan-comparison__feature-row {
+  border-bottom: 1px solid var(--border);
+}
+
+.estimate-plan-comparison__feature-row:last-child {
+  border-bottom: 0;
+}
+
+.estimate-plan-comparison__feature-row:nth-child(even) {
+  background: var(--faint, color-mix(in srgb, var(--foreground) 4%, transparent));
+}
+
+.estimate-plan-comparison__feature-name,
+.estimate-plan-comparison__feature-value {
+  display: flex;
+  min-width: 0;
+  min-height: 2.75rem;
+  align-items: center;
+  padding: 0.625rem 1rem;
+}
+
+.estimate-plan-comparison__feature-name {
+  padding-left: 1.25rem;
+  font-weight: 500;
+  color: var(--foreground);
+}
+
+.estimate-plan-comparison__feature-value {
+  border-left: 1px solid var(--border);
+  color: var(--muted);
+}
+
+.estimate-plan-comparison__mobile-plan {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+@media (max-width: 640px) {
+  .estimate-plan-comparison__plan-header,
+  .estimate-plan-comparison__feature-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .estimate-plan-comparison__feature-header {
+    display: none;
+  }
+
+  .estimate-plan-comparison__plan-cell {
+    border-left: 0;
+  }
+
+  .estimate-plan-comparison__plan-cell + .estimate-plan-comparison__plan-cell {
+    border-left: 1px solid var(--border);
+  }
+
+  .estimate-plan-comparison__feature-name {
+    grid-column: 1 / -1;
+    min-height: 0;
+    padding: 0.625rem 1rem 0;
+    color: var(--muted);
+    font-size: 0.75rem;
+    font-weight: 500;
+  }
+
+  .estimate-plan-comparison__feature-value {
+    min-height: 0;
+    border-left: 0;
+    padding: 0.25rem 0.875rem 0.625rem;
+  }
+
+  .estimate-plan-comparison__feature-value
+    + .estimate-plan-comparison__feature-value {
+    border-left: 1px solid var(--border);
+  }
+}

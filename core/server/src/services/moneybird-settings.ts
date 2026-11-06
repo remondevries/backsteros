@@ -1,14 +1,15 @@
 import { eq } from "drizzle-orm";
 
-import type {
-  MoneybirdAdministrationSummary,
-  MoneybirdInvoiceActivity,
-  MoneybirdInvoiceRevenue,
-  MoneybirdSalesInvoiceDetail,
-  MoneybirdSalesInvoiceSummary,
-  MoneybirdSettings,
-  MoneybirdTestConnectionResult,
-  UpdateMoneybirdSettingsInput,
+import {
+  withLemoInvoiceSenderOverrides,
+  type MoneybirdAdministrationSummary,
+  type MoneybirdInvoiceActivity,
+  type MoneybirdInvoiceRevenue,
+  type MoneybirdSalesInvoiceDetail,
+  type MoneybirdSalesInvoiceSummary,
+  type MoneybirdSettings,
+  type MoneybirdTestConnectionResult,
+  type UpdateMoneybirdSettingsInput,
 } from "@backsteros/contracts";
 
 import { db } from "../db/index.js";
@@ -521,22 +522,25 @@ export async function getMoneybirdSalesInvoiceDetail(
   if (detail.identityId) {
     try {
       const identity = await client.getIdentity(detail.identityId);
-      sender = {
-        companyName: identity.companyName,
-        firstName: identity.firstName,
-        lastName: identity.lastName,
-        address1: identity.address1,
-        address2: identity.address2,
-        zipcode: identity.zipcode,
-        city: identity.city,
-        country: identity.country,
-        customerId: identity.customerId,
-        phone: identity.phone,
-        email: identity.email,
-        chamberOfCommerce: identity.chamberOfCommerce,
-        taxNumber: identity.taxNumber,
-        bankAccountNumber: identity.bankAccountNumber,
-      };
+      sender = withLemoInvoiceSenderOverrides(
+        {
+          companyName: identity.companyName,
+          firstName: identity.firstName,
+          lastName: identity.lastName,
+          address1: identity.address1,
+          address2: identity.address2,
+          zipcode: identity.zipcode,
+          city: identity.city,
+          country: identity.country,
+          customerId: identity.customerId,
+          phone: identity.phone,
+          email: identity.email,
+          chamberOfCommerce: identity.chamberOfCommerce,
+          taxNumber: identity.taxNumber,
+          bankAccountNumber: identity.bankAccountNumber,
+        },
+        withTax.language,
+      );
     } catch {
       sender = null;
     }

@@ -111,6 +111,7 @@ function fallbackTitleForEntityPath(normalized: string): string {
 
   // Avoid flashing UUID / opaque ids in the tab before RegisterPageTitle runs.
   if (looksLikeRawEntityId(decodeURIComponent(last))) {
+    if (segments[0] === "communication") return "Messages";
     if (segments[0] === "inbox") return "Task";
     if (segments[0] === "letters") return "Letter";
     if (segments.includes("tasks")) return "Task";
@@ -120,6 +121,7 @@ function fallbackTitleForEntityPath(normalized: string): string {
     return "Page";
   }
 
+  if (segments[0] === "communication") return "Messages";
   if (segments.includes("tasks")) {
     return "Task";
   }
@@ -137,6 +139,15 @@ export function getTabTitleForHref(href: string): string {
 
   if (normalized === "/calendar") {
     return "Calendar";
+  }
+
+  // Keep the Messages section label for conversation / email rows — opaque
+  // ids like `email:…` used to flash the generic "Page" tab title.
+  if (
+    normalized === "/communication" ||
+    normalized.startsWith("/communication/")
+  ) {
+    return "Messages";
   }
 
   const navMatch = navigation.find((item) => item.href === normalized);

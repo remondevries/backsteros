@@ -143,8 +143,8 @@ function buildApprovalCard(
     : "";
   return {
     title: simulating
-      ? "Approve & Pay bunq payment (SIMULATION)"
-      : "Approve & Pay bunq payment",
+      ? "Approve bunq payment (SIMULATION)"
+      : "Approve bunq payment",
     kind: "payment",
     summary: simulating
       ? `[SIMULATION] Pay ${proposal.amountValue} ${proposal.amountCurrency} to ${proposal.recipientName}`
@@ -164,7 +164,7 @@ function buildApprovalCard(
         : []),
     ],
     details: `${simBanner}${unknown}Proposal ${proposal.id}\nHash ${proposal.proposalHash}`,
-    approveLabel: "Approve & Pay",
+    approveLabel: "Approve",
     rejectLabel: "Reject",
     paymentProposal: {
       proposalId: proposal.id,

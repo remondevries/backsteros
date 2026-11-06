@@ -5,6 +5,7 @@ import {
   moneybirdInvoiceReminderTracks,
   type DbMoneybirdInvoiceReminderTrack,
 } from "../db/schema.js";
+import { sendPortalInvoiceEmailViaPortal } from "./portal-invoice-email-proxy.js";
 import { sendPortalInvoiceReminderEmailViaPortal } from "./portal-invoice-reminder-email-proxy.js";
 import type { MoneybirdWebhookPayload } from "./moneybird-manual-send.js";
 
@@ -13,19 +14,58 @@ export const MONEYBIRD_PAID_ACTION = "sales_invoice_state_changed_to_paid";
 
 type ReminderStep = 1 | 2 | 3;
 
+type PortalMailRef = {
+  messageId: string | null;
+  inboxId: string | null;
+  /** Recipient email address for activity labels. */
+  to: string | null;
+};
+
 type ReminderTrack = {
   /** Only invoices that received the Manual → portal invoice email. */
   eligibleFromManualSend: boolean;
   /** When the portal invoice email was first marked eligible (ISO). */
   portalInvoiceSentAt: string | null;
+  portalInvoiceMail: PortalMailRef;
   lastStep: 0 | ReminderStep;
   /** ISO times when each step was successfully emailed (or skipped paid). */
   sentAt: Partial<Record<ReminderStep, string>>;
+  reminderMail: Partial<Record<ReminderStep, PortalMailRef>>;
   /** When step 2 / 3 should fire (ms epoch). Cleared when sent or cancelled. */
   dueAt: Partial<Record<2 | 3, number>>;
   locale: string | null;
   cancelledAt: string | null;
 };
+
+function emptyMailRef(): PortalMailRef {
+  return { messageId: null, inboxId: null, to: null };
+}
+
+function normalizeMailRef(input?: {
+  messageId?: string | null;
+  inboxId?: string | null;
+  to?: string | null;
+} | null): PortalMailRef {
+  const messageId = input?.messageId?.trim() || null;
+  const inboxId = input?.inboxId?.trim() || null;
+  const to = input?.to?.trim() || null;
+  return { messageId, inboxId, to };
+}
+
+function mergeMailRef(
+  existing: PortalMailRef | undefined,
+  next: PortalMailRef,
+): PortalMailRef {
+  return {
+    messageId: next.messageId ?? existing?.messageId ?? null,
+    inboxId: next.inboxId ?? existing?.inboxId ?? null,
+    to: next.to ?? existing?.to ?? null,
+  };
+}
+
+function mailRefHasValue(ref: PortalMailRef): boolean {
+  return Boolean(ref.messageId || ref.inboxId || ref.to);
+}
 
 /** In-process cache; Postgres is the source of truth after persistence is enabled. */
 const tracks = new Map<string, ReminderTrack>();
@@ -60,8 +100,10 @@ function emptyTrack(locale: string | null): ReminderTrack {
   return {
     eligibleFromManualSend: false,
     portalInvoiceSentAt: null,
+    portalInvoiceMail: emptyMailRef(),
     lastStep: 0,
     sentAt: {},
+    reminderMail: {},
     dueAt: {},
     locale,
     cancelledAt: null,
@@ -73,6 +115,28 @@ function rowToTrack(row: DbMoneybirdInvoiceReminderTrack): ReminderTrack {
   if (row.sentAt1) sentAt[1] = row.sentAt1.toISOString();
   if (row.sentAt2) sentAt[2] = row.sentAt2.toISOString();
   if (row.sentAt3) sentAt[3] = row.sentAt3.toISOString();
+  const reminderMail: ReminderTrack["reminderMail"] = {};
+  if (row.reminderMessageId1 || row.reminderInboxId1 || row.reminderTo1) {
+    reminderMail[1] = {
+      messageId: row.reminderMessageId1,
+      inboxId: row.reminderInboxId1,
+      to: row.reminderTo1,
+    };
+  }
+  if (row.reminderMessageId2 || row.reminderInboxId2 || row.reminderTo2) {
+    reminderMail[2] = {
+      messageId: row.reminderMessageId2,
+      inboxId: row.reminderInboxId2,
+      to: row.reminderTo2,
+    };
+  }
+  if (row.reminderMessageId3 || row.reminderInboxId3 || row.reminderTo3) {
+    reminderMail[3] = {
+      messageId: row.reminderMessageId3,
+      inboxId: row.reminderInboxId3,
+      to: row.reminderTo3,
+    };
+  }
   const dueAt: ReminderTrack["dueAt"] = {};
   if (row.dueAt2) dueAt[2] = row.dueAt2.getTime();
   if (row.dueAt3) dueAt[3] = row.dueAt3.getTime();
@@ -80,14 +144,22 @@ function rowToTrack(row: DbMoneybirdInvoiceReminderTrack): ReminderTrack {
     row.lastStep === 1 || row.lastStep === 2 || row.lastStep === 3
       ? row.lastStep
       : 0;
+  const portalInvoiceSentAt =
+    row.portalInvoiceSentAt?.toISOString() ??
+    (row.eligibleFromManualSend && row.createdAt
+      ? row.createdAt.toISOString()
+      : null);
   return {
     eligibleFromManualSend: row.eligibleFromManualSend,
-    portalInvoiceSentAt:
-      row.eligibleFromManualSend && row.createdAt
-        ? row.createdAt.toISOString()
-        : null,
+    portalInvoiceSentAt,
+    portalInvoiceMail: {
+      messageId: row.portalInvoiceMessageId,
+      inboxId: row.portalInvoiceInboxId,
+      to: row.portalInvoiceTo,
+    },
     lastStep,
     sentAt,
+    reminderMail,
     dueAt,
     locale: row.locale,
     cancelledAt: row.cancelledAt ? row.cancelledAt.toISOString() : null,
@@ -124,6 +196,19 @@ async function persistTrack(
       dueAt3: msToDate(track.dueAt[3]),
       locale: track.locale,
       cancelledAt: isoToDate(track.cancelledAt ?? undefined),
+      portalInvoiceSentAt: isoToDate(track.portalInvoiceSentAt ?? undefined),
+      portalInvoiceMessageId: track.portalInvoiceMail.messageId,
+      portalInvoiceInboxId: track.portalInvoiceMail.inboxId,
+      portalInvoiceTo: track.portalInvoiceMail.to,
+      reminderMessageId1: track.reminderMail[1]?.messageId ?? null,
+      reminderInboxId1: track.reminderMail[1]?.inboxId ?? null,
+      reminderTo1: track.reminderMail[1]?.to ?? null,
+      reminderMessageId2: track.reminderMail[2]?.messageId ?? null,
+      reminderInboxId2: track.reminderMail[2]?.inboxId ?? null,
+      reminderTo2: track.reminderMail[2]?.to ?? null,
+      reminderMessageId3: track.reminderMail[3]?.messageId ?? null,
+      reminderInboxId3: track.reminderMail[3]?.inboxId ?? null,
+      reminderTo3: track.reminderMail[3]?.to ?? null,
       createdAt: now,
       updatedAt: now,
     })
@@ -139,6 +224,19 @@ async function persistTrack(
         dueAt3: msToDate(track.dueAt[3]),
         locale: track.locale,
         cancelledAt: isoToDate(track.cancelledAt ?? undefined),
+        portalInvoiceSentAt: isoToDate(track.portalInvoiceSentAt ?? undefined),
+        portalInvoiceMessageId: track.portalInvoiceMail.messageId,
+        portalInvoiceInboxId: track.portalInvoiceMail.inboxId,
+        portalInvoiceTo: track.portalInvoiceMail.to,
+        reminderMessageId1: track.reminderMail[1]?.messageId ?? null,
+        reminderInboxId1: track.reminderMail[1]?.inboxId ?? null,
+        reminderTo1: track.reminderMail[1]?.to ?? null,
+        reminderMessageId2: track.reminderMail[2]?.messageId ?? null,
+        reminderInboxId2: track.reminderMail[2]?.inboxId ?? null,
+        reminderTo2: track.reminderMail[2]?.to ?? null,
+        reminderMessageId3: track.reminderMail[3]?.messageId ?? null,
+        reminderInboxId3: track.reminderMail[3]?.inboxId ?? null,
+        reminderTo3: track.reminderMail[3]?.to ?? null,
         updatedAt: now,
       },
     });
@@ -191,6 +289,11 @@ async function hydrateTracksFromDb(): Promise<void> {
 export async function registerManualPortalInvoiceForReminders(
   invoiceId: string,
   locale?: string | null,
+  mail?: {
+    messageId?: string | null;
+    inboxId?: string | null;
+    to?: string | null;
+  } | null,
 ): Promise<void> {
   const id = invoiceId.trim();
   if (!id) return;
@@ -199,6 +302,10 @@ export async function registerManualPortalInvoiceForReminders(
   track.cancelledAt = null;
   if (!track.portalInvoiceSentAt) {
     track.portalInvoiceSentAt = new Date().toISOString();
+  }
+  const mailRef = normalizeMailRef(mail);
+  if (mailRefHasValue(mailRef)) {
+    track.portalInvoiceMail = mergeMailRef(track.portalInvoiceMail, mailRef);
   }
   if (locale?.trim()) track.locale = locale.trim();
   await persistTrack(id, track);
@@ -214,11 +321,20 @@ function nextReminderStep(track: ReminderTrack): ReminderStep | null {
 export type InvoiceReminderTrackSnapshot = {
   eligibleFromManualSend: boolean;
   portalInvoiceSentAt: string | null;
+  portalInvoiceMessageId: string | null;
+  portalInvoiceInboxId: string | null;
+  portalInvoiceTo: string | null;
   locale: string | null;
   cancelledAt: string | null;
   lastStep: 0 | ReminderStep;
   nextStep: ReminderStep | null;
-  reminders: Array<{ step: ReminderStep; sentAt: string }>;
+  reminders: Array<{
+    step: ReminderStep;
+    sentAt: string;
+    messageId: string | null;
+    inboxId: string | null;
+    to: string | null;
+  }>;
   dueAt: Partial<Record<2 | 3, string>>;
 };
 
@@ -237,14 +353,31 @@ export async function getInvoiceReminderTrackSnapshot(
     track = fromDb;
   }
 
-  const reminders: Array<{ step: ReminderStep; sentAt: string }> = [];
+  const reminders: Array<{
+    step: ReminderStep;
+    sentAt: string;
+    messageId: string | null;
+    inboxId: string | null;
+    to: string | null;
+  }> = [];
   for (const step of [1, 2, 3] as const) {
     const sentAt = track.sentAt[step];
-    if (sentAt) reminders.push({ step, sentAt });
+    if (sentAt) {
+      reminders.push({
+        step,
+        sentAt,
+        messageId: track.reminderMail[step]?.messageId ?? null,
+        inboxId: track.reminderMail[step]?.inboxId ?? null,
+        to: track.reminderMail[step]?.to ?? null,
+      });
+    }
   }
   return {
     eligibleFromManualSend: track.eligibleFromManualSend,
     portalInvoiceSentAt: track.portalInvoiceSentAt,
+    portalInvoiceMessageId: track.portalInvoiceMail.messageId,
+    portalInvoiceInboxId: track.portalInvoiceMail.inboxId,
+    portalInvoiceTo: track.portalInvoiceMail.to,
     locale: track.locale,
     cancelledAt: track.cancelledAt,
     lastStep: track.lastStep,
@@ -261,16 +394,101 @@ export async function getInvoiceReminderTrackSnapshot(
   };
 }
 
+export type PortalInvoiceEmailKind = "invoice" | ReminderStep;
+
+function validateStaffTo(
+  invoiceId: string,
+  to: string | null | undefined,
+):
+  | { ok: true; staffTo: string | null }
+  | { ok: false; invoiceId: string; error: string; skipped: string } {
+  const staffTo = to?.trim() || null;
+  if (staffTo && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(staffTo)) {
+    return {
+      ok: false,
+      invoiceId,
+      error: "Recipient email is invalid",
+      skipped: "invalid_to",
+    };
+  }
+  return { ok: true, staffTo };
+}
+
 /**
- * Staff-triggered reminder: send the next ladder step via the portal.
- * Marks the invoice eligible (portal channel) if it was not already.
+ * Staff-triggered portal invoice email (Manual send equivalent) with optional To.
+ */
+export async function sendPortalInvoiceEmailManually(input: {
+  invoiceId: string;
+  locale?: string | null;
+  to?: string | null;
+}): Promise<{
+  ok: boolean;
+  invoiceId: string;
+  kind: "invoice";
+  to?: string;
+  skipped?: string;
+  message?: string;
+  error?: string;
+}> {
+  const invoiceId = input.invoiceId.trim();
+  if (!invoiceId) {
+    return {
+      ok: false,
+      invoiceId: "",
+      kind: "invoice",
+      error: "Invoice id is required",
+    };
+  }
+  const toCheck = validateStaffTo(invoiceId, input.to);
+  if (!toCheck.ok) {
+    return { ...toCheck, kind: "invoice" };
+  }
+
+  const result = await sendPortalInvoiceEmailViaPortal({
+    invoiceId,
+    locale: input.locale ?? null,
+    to: toCheck.staffTo,
+  });
+  if (!result.ok) {
+    return {
+      ok: false,
+      invoiceId,
+      kind: "invoice",
+      error: result.error || "Invoice email send failed",
+    };
+  }
+
+  await registerManualPortalInvoiceForReminders(invoiceId, input.locale, {
+    messageId: result.messageId ?? null,
+    inboxId: result.inboxId ?? null,
+    to: result.email?.trim() || toCheck.staffTo,
+  });
+
+  return {
+    ok: true,
+    invoiceId: result.invoiceId,
+    kind: "invoice",
+    to: result.email || toCheck.staffTo || undefined,
+    skipped: result.skipped,
+    message: result.message,
+  };
+}
+
+/**
+ * Staff-triggered reminder: send the next ladder step (or an explicit step)
+ * via the portal. Marks the invoice eligible if it was not already.
  */
 export async function sendInvoiceReminderManually(input: {
   invoiceId: string;
   locale?: string | null;
+  /** Staff-chosen recipient email (optional override of invoice contact). */
+  to?: string | null;
+  /** Explicit reminder step; when set, allows resending that step. */
+  step?: ReminderStep | null;
 }): Promise<{
   ok: boolean;
   invoiceId: string;
+  kind: "reminder";
   step?: ReminderStep;
   to?: string;
   skipped?: string;
@@ -279,26 +497,40 @@ export async function sendInvoiceReminderManually(input: {
 }> {
   const invoiceId = input.invoiceId.trim();
   if (!invoiceId) {
-    return { ok: false, invoiceId: "", error: "Invoice id is required" };
+    return {
+      ok: false,
+      invoiceId: "",
+      kind: "reminder",
+      error: "Invoice id is required",
+    };
   }
+
+  const toCheck = validateStaffTo(invoiceId, input.to);
+  if (!toCheck.ok) {
+    return { ...toCheck, kind: "reminder" };
+  }
+  const staffTo = toCheck.staffTo;
 
   await registerManualPortalInvoiceForReminders(invoiceId, input.locale);
   const track = await getOrCreateTrack(invoiceId, input.locale?.trim() || null);
 
-  if (track.cancelledAt) {
+  if (track.cancelledAt && input.step == null) {
     return {
       ok: false,
       invoiceId,
+      kind: "reminder",
       skipped: "cancelled",
       error: "Reminders were cancelled for this invoice (paid or stopped)",
     };
   }
 
-  const step = nextReminderStep(track);
+  const explicitStep = input.step ?? null;
+  const step = explicitStep ?? nextReminderStep(track);
   if (step == null) {
     return {
       ok: false,
       invoiceId,
+      kind: "reminder",
       skipped: "all_reminders_sent",
       error: "All reminder steps (1–3) have already been sent",
     };
@@ -309,12 +541,15 @@ export async function sendInvoiceReminderManually(input: {
     invoiceId,
     step,
     locale: input.locale?.trim() || track.locale,
+    to: staffTo,
+    force: explicitStep != null,
   });
 
   if (!result.ok) {
     return {
       ok: false,
       invoiceId,
+      kind: "reminder",
       step,
       error: result.error || "Reminder send failed",
     };
@@ -323,6 +558,7 @@ export async function sendInvoiceReminderManually(input: {
   return {
     ok: true,
     invoiceId,
+    kind: "reminder",
     step,
     to: result.to,
     skipped: result.skipped,
@@ -344,6 +580,9 @@ async function sendStep(input: {
   invoiceId: string;
   step: ReminderStep;
   locale: string | null;
+  to?: string | null;
+  /** Staff override: resend even when this step was already recorded. */
+  force?: boolean;
 }): Promise<{
   ok: boolean;
   skipped?: string;
@@ -352,17 +591,21 @@ async function sendStep(input: {
   error?: string;
 }> {
   const track = await getOrCreateTrack(input.invoiceId, input.locale);
-  if (track.cancelledAt) {
+  if (track.cancelledAt && !input.force) {
     return { ok: true, skipped: "cancelled" };
   }
-  if (track.sentAt[input.step]) {
+  if (track.sentAt[input.step] && !input.force) {
     return { ok: true, skipped: "already_sent" };
+  }
+  if (input.force && track.cancelledAt) {
+    track.cancelledAt = null;
   }
 
   const result = await sendPortalInvoiceReminderEmailViaPortal({
     invoiceId: input.invoiceId,
     step: input.step,
     locale: input.locale ?? track.locale,
+    to: input.to ?? null,
   });
 
   if (!result.ok) {
@@ -372,6 +615,19 @@ async function sendStep(input: {
   track.sentAt[input.step] = new Date().toISOString();
   track.lastStep = input.step;
   delete track.dueAt[input.step as 2 | 3];
+  if (!result.skipped) {
+    const mailRef = normalizeMailRef({
+      messageId: result.messageId,
+      inboxId: result.inboxId,
+      to: result.email,
+    });
+    if (mailRefHasValue(mailRef)) {
+      track.reminderMail[input.step] = mergeMailRef(
+        track.reminderMail[input.step],
+        mailRef,
+      );
+    }
+  }
 
   if (result.skipped === "already_paid") {
     track.dueAt = {};

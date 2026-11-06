@@ -72,13 +72,15 @@ export function NamedLinkChip({ token }: { token: ParsedNamedLinkToken }) {
     );
   }
 
+  const openInBrowser = /^(https?|mailto|tel):/i.test(token.url);
+
   return (
     <a
       href={token.url}
       className={className}
       title={token.url}
-      target={/^https?:/i.test(token.url) ? "_blank" : undefined}
-      rel={/^https?:/i.test(token.url) ? "noreferrer" : undefined}
+      target={openInBrowser ? "_blank" : undefined}
+      rel={openInBrowser ? "noreferrer noopener" : undefined}
     >
       {body}
     </a>

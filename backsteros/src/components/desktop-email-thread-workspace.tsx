@@ -5,6 +5,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { useNavigate } from "@tanstack/react-router";
 
 import {
   buildAssigneeDropdownOptions,
@@ -14,7 +15,9 @@ import {
   buildProjectDropdownOptions,
   emailListItemPartyEmail,
   emailListItemPartyName,
+  getCommunicationHrefAfterRemovingRow,
   getInboxHrefAfterRemovingItem,
+  getInboxIdAfterRemovingItem,
   resolveCommunicationEmailParty,
   type CommunicationEmailActiveParty,
   type EmailMessagePartyLink,
@@ -30,10 +33,15 @@ import { DesktopCommunicationEmailThread } from "./desktop-communication-email-t
 import { useAgentMail } from "../lib/agentmail-context";
 import { useDesktopApi } from "../lib/api-context";
 import { useDesktopAvatarSrcMap, withOrganizationAvatarSrc } from "../lib/avatar-src";
+import { useCommunicationListItems } from "../lib/communication/use-communication-list-items";
 import { normalizeContactEmails } from "../lib/contact-row-normalizers";
+import { isEmailListItemPendingRemoval } from "../lib/email-list-pending-removals";
+import { inboxContentAlreadyShowsHref } from "../lib/inbox/inbox-content-pathname";
 import { useInboxListSessionPin } from "../lib/inbox/inbox-list-session-context";
 import { useInboxModeModel } from "../lib/inbox/inbox-mode-model";
+import { queueInboxOpenAfterRemoval } from "../lib/inbox/inbox-open-after-removal";
 import { rememberSectionEntryHrefs } from "../lib/section-entry-store";
+import { navigateToHref } from "../router/navigate-href";
 import { useDesktopWorkspaceData } from "../lib/workspace-data";
 import {
   EMPTY_COMPOSE_EMAIL_META,
@@ -60,10 +68,14 @@ export function DesktopEmailThreadWorkspace({
   const { client } = useDesktopApi();
   const agentMail = useAgentMail();
   const workspace = useDesktopWorkspaceData();
+  const routerNavigate = useNavigate();
   const { modeItems } = useInboxModeModel();
+  const communicationItems = useCommunicationListItems();
   const { unpinInboxListItem } = useInboxListSessionPin();
   const modeItemsRef = useRef(modeItems);
   modeItemsRef.current = modeItems;
+  const communicationItemsRef = useRef(communicationItems);
+  communicationItemsRef.current = communicationItems;
   const contactAvatarSrc = useDesktopAvatarSrcMap(
     "contact",
     workspace.contacts,
@@ -166,17 +178,24 @@ export function DesktopEmailThreadWorkspace({
         unread: listEntry.unread === true,
       });
     }
-    // After optimistic delete the row is gone — do not fabricate a placeholder
-    // that keeps the deleted thread on screen while navigation catches up.
-    if (!agentMail.loading) {
-      return null;
+    // Optimistic delete removes the list row before the neighbor route lands.
+    // Keep a stub so the pane does not unmount into a blank content area.
+    if (
+      agentMail.loading ||
+      isEmailListItemPendingRemoval({
+        inboxId,
+        id: messageId,
+        threadId: null,
+      })
+    ) {
+      return buildInboxEmailListItem({
+        inboxId,
+        messageId,
+        title: "(no subject)",
+        status: "triage",
+      });
     }
-    return buildInboxEmailListItem({
-      inboxId,
-      messageId,
-      title: "(no subject)",
-      status: "triage",
-    });
+    return null;
   }, [
     agentMail.loading,
     agentMail.messages,
@@ -375,12 +394,30 @@ export function DesktopEmailThreadWorkspace({
 
   const resolveRemovalHref = useCallback(
     (removedId: string) => {
-      // Communication owns its own neighbor resolver; Tasks has no inbox list.
-      if (listReturnHref !== "/inbox") {
+      // Tasks has no unified neighbor list — leave to the section root.
+      if (
+        listReturnHref !== "/inbox" &&
+        !listReturnHref.startsWith("/communication")
+      ) {
         return listReturnHref;
       }
+
+      if (listReturnHref.startsWith("/communication")) {
+        const items = communicationItemsRef.current;
+        const nextHref = getCommunicationHrefAfterRemovingRow({
+          items,
+          removedId,
+        });
+        const nextId = getInboxIdAfterRemovingItem(items, removedId);
+        rememberSectionEntryHrefs({ communication: nextHref ?? null });
+        const href = nextHref ?? "/communication";
+        queueInboxOpenAfterRemoval({ href, itemId: nextId });
+        return href;
+      }
+
       const items = modeItemsRef.current;
       const nextHref = getInboxHrefAfterRemovingItem(items, removedId);
+      const nextId = getInboxIdAfterRemovingItem(items, removedId);
       const removedRow =
         items.find((item) => item.id === removedId) ??
         items.find(
@@ -395,10 +432,33 @@ export function DesktopEmailThreadWorkspace({
       // Seed must move with the selection — bare `/inbox` otherwise expands
       // back onto the deleted (or previous) email via resolveAppHref.
       rememberSectionEntryHrefs({ inbox: nextHref ?? null });
-      return nextHref ?? "/inbox";
+      const href = nextHref ?? "/inbox";
+      queueInboxOpenAfterRemoval({ href, itemId: nextId });
+      return href;
     },
     [listReturnHref, unpinInboxListItem],
   );
+
+  // Safety net: if the outlet is still on an optimistically deleted message,
+  // force the neighbor open here. List highlight can race ahead of TanStack.
+  const pendingRemovalLeaveRef = useRef<string | null>(null);
+  useEffect(() => {
+    const pending = isEmailListItemPendingRemoval({
+      inboxId,
+      id: messageId,
+      threadId: null,
+    });
+    if (!pending) {
+      pendingRemovalLeaveRef.current = null;
+      return;
+    }
+    const leaveKey = `${inboxId}\0${messageId}`;
+    if (pendingRemovalLeaveRef.current === leaveKey) return;
+    const href = resolveRemovalHref(messageId);
+    if (!href || inboxContentAlreadyShowsHref(href)) return;
+    pendingRemovalLeaveRef.current = leaveKey;
+    navigateToHref(routerNavigate, href, { replace: true });
+  }, [inboxId, messageId, resolveRemovalHref, routerNavigate]);
 
   const hideContactPanel = useCallback(() => setContactCollapsed(true), []);
   const showContactPanel = useCallback(() => setContactCollapsed(false), []);
@@ -431,6 +491,7 @@ export function DesktopEmailThreadWorkspace({
         <div className="communication-chat communication-chat--thread-only">
           <section className="communication-chat__thread">
             <DesktopCommunicationEmailThread
+              key={openEmailKey}
               item={selectedEmail}
               selectedMessageId={selectedMessageId}
               onSelectMessage={setSelectedMessageId}

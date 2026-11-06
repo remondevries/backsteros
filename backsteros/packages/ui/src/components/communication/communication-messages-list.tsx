@@ -1,6 +1,14 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent,
+  type ReactNode,
+} from "react";
 import type { ChatConversation } from "@backsteros/contracts";
 import { SearchIcon, XCircleFillIcon } from "@primer/octicons-react";
 
@@ -82,6 +90,16 @@ export type CommunicationMessagesListProps = {
   keyboardEnabled?: boolean;
   /** Replaces the default empty copy when there are no rows at all. */
   emptyState?: ReactNode;
+  /**
+   * Controlled multi-select (Communication bulk island). When omitted, the
+   * list keeps its own checkbox set for embeds that do not host a bulk bar.
+   */
+  checkedIds?: ReadonlySet<string>;
+  onToggleSelected?: (
+    itemId: string,
+    checked: boolean,
+    event: MouseEvent<HTMLButtonElement>,
+  ) => void;
 };
 
 /**
@@ -118,6 +136,8 @@ export function CommunicationMessagesList({
   keyboardZone = LIST_KEYBOARD_NAV_ZONE_MAIN,
   keyboardEnabled = true,
   emptyState,
+  checkedIds: checkedIdsProp,
+  onToggleSelected: onToggleSelectedProp,
 }: CommunicationMessagesListProps) {
   const [listQuery, setListQuery] = useState("");
   const [listFilters, setListFilters] = useState<CommunicationChatListFilters>(
@@ -126,8 +146,33 @@ export function CommunicationMessagesList({
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(
     () => new Set(),
   );
+  const [internalCheckedIds, setInternalCheckedIds] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const selectionControlled = checkedIdsProp != null;
+  const checkedIds = checkedIdsProp ?? internalCheckedIds;
   const listSearchRef = useRef<HTMLInputElement | null>(null);
   const listRef = useRef<HTMLUListElement | null>(null);
+  const handleToggleSelected = useCallback(
+    (
+      itemId: string,
+      checked: boolean,
+      event: MouseEvent<HTMLButtonElement>,
+    ) => {
+      if (onToggleSelectedProp) {
+        onToggleSelectedProp(itemId, checked, event);
+        return;
+      }
+      setInternalCheckedIds((current) => {
+        const next = new Set(current);
+        if (checked) next.add(itemId);
+        else next.delete(itemId);
+        return next;
+      });
+    },
+    [onToggleSelectedProp],
+  );
+  const hasSelection = checkedIds.size > 0;
   const filterContext = useMemo(
     () => ({
       resolveConversationContactId,
@@ -197,6 +242,20 @@ export function CommunicationMessagesList({
     return kinds;
   }, [draftEmailRows, statusGroups]);
 
+  useEffect(() => {
+    if (selectionControlled) return;
+    setInternalCheckedIds((current) => {
+      if (current.size === 0) return current;
+      let changed = false;
+      const next = new Set<string>();
+      for (const id of current) {
+        if (rowKindById.has(id)) next.add(id);
+        else changed = true;
+      }
+      return changed ? next : current;
+    });
+  }, [rowKindById, selectionControlled]);
+
   const selectedListId =
     selectedEmailId ?? selectedSupportId ?? selectedChatId ?? null;
   const listEmpty =
@@ -234,11 +293,35 @@ export function CommunicationMessagesList({
     onSelectChat(itemId);
   }
 
+  /** With any checkbox checked, card clicks toggle selection instead of opening. */
+  function openOrToggleRow(itemId: string) {
+    if (hasSelection) {
+      const nextChecked = !checkedIds.has(itemId);
+      if (onToggleSelectedProp) {
+        onToggleSelectedProp(
+          itemId,
+          nextChecked,
+          // Card click — no real checkbox event; shift-range uses checkbox path.
+          { shiftKey: false } as MouseEvent<HTMLButtonElement>,
+        );
+        return;
+      }
+      setInternalCheckedIds((current) => {
+        const next = new Set(current);
+        if (next.has(itemId)) next.delete(itemId);
+        else next.add(itemId);
+        return next;
+      });
+      return;
+    }
+    openRow(itemId);
+  }
+
   const { highlightedId } = useListKeyboardNavigation({
     containerRef: listRef,
     itemIds: keyboardItemIds,
     selectedId: selectedListId,
-    onNavigate: openRow,
+    onNavigate: openOrToggleRow,
     zone: keyboardZone,
     enabled: keyboardEnabled && keyboardItemIds.length > 0,
   });
@@ -327,7 +410,13 @@ export function CommunicationMessagesList({
         ) : (
           <ul
             ref={listRef}
-            className="overview-grouped-list communication-chat__task-list"
+            className={[
+              "overview-grouped-list",
+              "communication-chat__task-list",
+              hasSelection ? "has-selection" : null,
+            ]
+              .filter(Boolean)
+              .join(" ")}
             aria-label="Chats, emails, WhatsApp, and support"
             {...listContainerProps}
           >
@@ -337,9 +426,11 @@ export function CommunicationMessagesList({
                 item={row.item}
                 selectedEmailId={selectedEmailId}
                 keyboardHighlighted={highlightedId === row.item.id}
+                checked={checkedIds.has(row.item.id)}
                 resolveEmailAvatarSrc={resolveEmailAvatarSrc}
                 resolveContactAvatarSrc={resolveContactAvatarSrc}
-                onOpen={(emailId) => onSelectEmail?.(emailId)}
+                onOpen={openOrToggleRow}
+                onToggleSelected={handleToggleSelected}
               />
             ))}
             {statusGroups.map((group) => (
@@ -365,9 +456,11 @@ export function CommunicationMessagesList({
                         item={row.item}
                         selectedEmailId={selectedEmailId}
                         keyboardHighlighted={highlightedId === row.item.id}
+                        checked={checkedIds.has(row.item.id)}
                         resolveEmailAvatarSrc={resolveEmailAvatarSrc}
                         resolveContactAvatarSrc={resolveContactAvatarSrc}
-                        onOpen={(emailId) => onSelectEmail?.(emailId)}
+                        onOpen={openOrToggleRow}
+                        onToggleSelected={handleToggleSelected}
                       />
                     );
                   }
@@ -378,7 +471,9 @@ export function CommunicationMessagesList({
                         item={row.item}
                         selectedSupportId={selectedSupportId}
                         keyboardHighlighted={highlightedId === row.item.id}
-                        onOpen={(supportId) => onSelectSupport?.(supportId)}
+                        checked={checkedIds.has(row.item.id)}
+                        onOpen={openOrToggleRow}
+                        onToggleSelected={handleToggleSelected}
                       />
                     );
                   }
@@ -395,7 +490,9 @@ export function CommunicationMessagesList({
                       keyboardHighlighted={highlightedId === conversation.id}
                       typing={typingIds?.has(conversation.id) === true}
                       avatarSrc={resolveAvatarSrc?.(conversation) ?? null}
-                      onOpen={onSelectChat}
+                      checked={checkedIds.has(conversation.id)}
+                      onOpen={openOrToggleRow}
+                      onToggleSelected={handleToggleSelected}
                     />
                   );
                 })}

@@ -32,6 +32,21 @@ describe("primed tab titles", () => {
     );
   });
 
+  test("Messages section keeps Messages title for conversation rows", () => {
+    clearPrimedTabTitles();
+    assert.equal(getTabTitleForHref("/communication"), "Messages");
+    assert.equal(
+      getTabTitleForHref(
+        "/communication/email%3Aremon%40lemo-design.com%3A708ae6d6-1d9d-4874-933e-3547d4a34833",
+      ),
+      "Messages",
+    );
+    assert.equal(
+      getTabTitleForHref("/communication/01234567-89ab-4def-8123-456789abcdef"),
+      "Messages",
+    );
+  });
+
   test("syncActiveTabToPath uses primed titles when navigating", () => {
     clearPrimedTabTitles();
     primeTabTitle("/projects/bos", "Backsteros");

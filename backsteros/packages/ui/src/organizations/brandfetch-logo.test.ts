@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 
 import {
   brandfetchLogoUrl,
+  brandfetchLogoUrlFromEmailAddress,
   brandfetchLogoUrlFromWebsite,
   registrableDomainFromWebsite,
   resolveOrganizationAvatarSrc,
@@ -55,5 +56,14 @@ describe("brandfetch-logo", () => {
       brandfetchLogoUrlFromWebsite("https://acme.com", null),
       null,
     );
+  });
+
+  it("builds a logo url from an email address domain", () => {
+    const url = brandfetchLogoUrlFromEmailAddress(
+      "alerts@google.com",
+      "client_test",
+    );
+    assert.ok(url?.includes("google.com"));
+    assert.equal(brandfetchLogoUrlFromEmailAddress("not-an-email", "c"), null);
   });
 });

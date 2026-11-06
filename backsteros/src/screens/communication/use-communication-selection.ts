@@ -81,6 +81,8 @@ function findSupportTask(
 export function useCommunicationSelection(input: {
   routeItemId: string | undefined;
   communicationItems: readonly InboxListItem[];
+  /** Transactional notification emails (not in the main Communication list). */
+  notificationEmails?: readonly InboxEmailListItem[];
   conversations: readonly ChatConversation[];
   chatLoading: boolean;
   chatSelectedId: string | null;
@@ -91,6 +93,7 @@ export function useCommunicationSelection(input: {
   const {
     routeItemId,
     communicationItems,
+    notificationEmails = [],
     conversations,
     chatLoading,
     chatSelectedId,
@@ -136,8 +139,15 @@ export function useCommunicationSelection(input: {
   const selectedChatListItem = useMemo(() => {
     if (!chatItemId) return null;
     if (conversations.some((row) => row.id === chatItemId)) return null;
-    return findCommunicationItemBySlugOrId(communicationItems, chatItemId);
-  }, [chatItemId, conversations, communicationItems]);
+    const fromMain = findCommunicationItemBySlugOrId(
+      communicationItems,
+      chatItemId,
+    );
+    if (fromMain) return fromMain;
+    return (
+      findCommunicationItemBySlugOrId(notificationEmails, chatItemId) ?? null
+    );
+  }, [chatItemId, conversations, communicationItems, notificationEmails]);
 
   const selectedEmailId = useMemo(() => {
     if (!chatItemId) return null;
@@ -165,7 +175,9 @@ export function useCommunicationSelection(input: {
   useEffect(() => {
     if (selectedEmailId) {
       if (chatSelectedId != null) selectConversation(null);
-      const emailItem = chatEmails.find((entry) => entry.id === selectedEmailId);
+      const emailItem =
+        chatEmails.find((entry) => entry.id === selectedEmailId) ??
+        notificationEmails.find((entry) => entry.id === selectedEmailId);
       if (emailItem) {
         if (emailItem.draftId?.trim()) {
           prefetchEmailDraftDetail(client, emailItem.inboxId, emailItem.draftId);
@@ -212,6 +224,7 @@ export function useCommunicationSelection(input: {
     client,
     communicationItems,
     conversations,
+    notificationEmails,
     selectConversation,
     selectedChatConversationId,
     selectedEmailId,
@@ -238,8 +251,10 @@ export function useCommunicationSelection(input: {
     () =>
       selectedEmailId == null
         ? null
-        : (chatEmails.find((entry) => entry.id === selectedEmailId) ?? null),
-    [chatEmails, selectedEmailId],
+        : (chatEmails.find((entry) => entry.id === selectedEmailId) ??
+          notificationEmails.find((entry) => entry.id === selectedEmailId) ??
+          null),
+    [chatEmails, notificationEmails, selectedEmailId],
   );
   const selectedSupport = useMemo(
     () =>

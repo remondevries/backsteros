@@ -9,6 +9,7 @@ import {
   emailMailboxLabel,
   filterEmailListItems,
   collapseEmailListItemsByThread,
+  mergeEmailListItemKeepingFirstParty,
   firstReceivedEmailAtMs,
   formatEmailPersonWithAddress,
   formatEmailListPartyLabel,
@@ -309,6 +310,7 @@ test("collapseEmailListItemsByThread keeps one row and prefers concept parent", 
       receivedAt: 200,
       threadId: "thread_1",
       status: "triage" as const,
+      direction: "sent" as const,
     },
     {
       kind: "message" as const,
@@ -320,6 +322,7 @@ test("collapseEmailListItemsByThread keeps one row and prefers concept parent", 
       threadId: "thread_1",
       conceptDraftId: "draft_1",
       status: "triage" as const,
+      direction: "received" as const,
     },
   ];
   const collapsed = collapseEmailListItemsByThread(items);
@@ -329,6 +332,73 @@ test("collapseEmailListItemsByThread keeps one row and prefers concept parent", 
   assert.equal(collapsed[0]?.receivedAt, 200);
   assert.equal(collapsed[0]?.firstReceivedAt, 100);
   assert.equal(collapsed[0]?.subject, "Factuur 8959599");
+  // Avatar / party line stay on the first message even after we reply.
+  assert.equal(collapsed[0]?.from, "Ralph");
+  assert.equal(collapsed[0]?.direction, "received");
+});
+
+test("collapseEmailListItemsByThread keeps first-message from after our reply", () => {
+  const collapsed = collapseEmailListItemsByThread([
+    {
+      kind: "message",
+      id: "msg_reply",
+      inboxId: "in_1",
+      subject: "Re: Hello",
+      from: "Remon de Vries <remon@lemo-design.com>",
+      receivedAt: 200,
+      threadId: "thread_1",
+      status: "triage",
+      direction: "sent",
+    },
+    {
+      kind: "message",
+      id: "msg_root",
+      inboxId: "in_1",
+      subject: "Hello",
+      from: "Ada <ada@example.com>",
+      receivedAt: 100,
+      threadId: "thread_1",
+      status: "triage",
+      direction: "received",
+    },
+  ]);
+  assert.equal(collapsed.length, 1);
+  assert.equal(collapsed[0]?.from, "Ada <ada@example.com>");
+  assert.equal(collapsed[0]?.direction, "received");
+  assert.equal(collapsed[0]?.receivedAt, 200);
+  assert.equal(collapsed[0]?.preview, undefined);
+});
+
+test("mergeEmailListItemKeepingFirstParty keeps first from when reply upserts", () => {
+  const merged = mergeEmailListItemKeepingFirstParty(
+    {
+      kind: "message",
+      id: "msg_root",
+      inboxId: "in_1",
+      subject: "Hello",
+      from: "Ada <ada@example.com>",
+      receivedAt: 100,
+      threadId: "thread_1",
+      direction: "received",
+    },
+    {
+      kind: "message",
+      id: "msg_reply",
+      inboxId: "in_1",
+      subject: "Re: Hello",
+      from: "Remon de Vries <remon@lemo-design.com>",
+      preview: "Thanks!",
+      receivedAt: 200,
+      threadId: "thread_1",
+      direction: "sent",
+    },
+  );
+  assert.equal(merged.id, "msg_reply");
+  assert.equal(merged.from, "Ada <ada@example.com>");
+  assert.equal(merged.direction, "received");
+  assert.equal(merged.preview, "Thanks!");
+  assert.equal(merged.receivedAt, 200);
+  assert.equal(merged.firstReceivedAt, 100);
 });
 
 test("collapseEmailListItemsByThread keeps draft rows as list items", () => {

@@ -72,3 +72,13 @@ test("snapshotFor parses communication itemId like inbox", () => {
   const inbox = snapshotFor("inbox", "/inbox/in-9", "");
   assert.equal(inbox.params.itemId, "in-9");
 });
+
+test("snapshotFor decodes encoded communication email item ids", () => {
+  const encoded =
+    "/communication/email%3Aaccounts%40lemo-design.com%3A2f1c1eab-40bc-45d3-987d-885f792181b5";
+  const snapshot = snapshotFor("communication", encoded, "?channel=chat");
+  assert.equal(
+    snapshot.params.itemId,
+    "email:accounts@lemo-design.com:2f1c1eab-40bc-45d3-987d-885f792181b5",
+  );
+});

@@ -43,6 +43,7 @@ import {
   resolveComposeContextKind,
   resolveComposeContextProjectId,
 } from "../../compose/compose-task.js";
+import { projectTypeDropdownFilter } from "../../dropdowns/searchable-dropdown-option-filters.js";
 import { requestCloseSearchableDropdowns } from "../../dropdowns/searchable-dropdown-events.js";
 import type { SearchableDropdownMenuApi } from "../../dropdowns/searchable-dropdown-menu-api.js";
 import { formatDueDateInputValue } from "../../tasks/task-due-date.js";
@@ -857,12 +858,19 @@ export function ComposeModal({
           ]),
       ...filterProjectsForDefaultPicker(projects, {
         keepIds: [taskProjectId],
-      }).map((project) => ({
-        value: project.id,
-        label: project.name,
-        searchTerms: `${project.key} ${project.name}`,
-        icon: <ProjectStatusIcon status={project.status ?? "backlog"} size={14} />,
-      })),
+      }).map((project) => {
+        const typeFilter = projectTypeDropdownFilter(project.type);
+        return {
+          value: project.id,
+          label: project.name,
+          searchTerms: `${project.key} ${project.name} ${typeFilter.filterLabel}`,
+          icon: (
+            <ProjectStatusIcon status={project.status ?? "backlog"} size={14} />
+          ),
+          filterValue: typeFilter.filterValue,
+          filterLabel: typeFilter.filterLabel,
+        };
+      }),
     ],
     [projects, requireProject, taskProjectId],
   );
@@ -877,12 +885,19 @@ export function ComposeModal({
       },
       ...filterProjectsForDefaultPicker(projects, {
         keepIds: [documentProjectId],
-      }).map((project) => ({
-        value: project.id,
-        label: project.name,
-        searchTerms: `${project.key} ${project.name}`,
-        icon: <ProjectStatusIcon status={project.status ?? "backlog"} size={14} />,
-      })),
+      }).map((project) => {
+        const typeFilter = projectTypeDropdownFilter(project.type);
+        return {
+          value: project.id,
+          label: project.name,
+          searchTerms: `${project.key} ${project.name} ${typeFilter.filterLabel}`,
+          icon: (
+            <ProjectStatusIcon status={project.status ?? "backlog"} size={14} />
+          ),
+          filterValue: typeFilter.filterValue,
+          filterLabel: typeFilter.filterLabel,
+        };
+      }),
     ],
     [documentProjectId, projects],
   );

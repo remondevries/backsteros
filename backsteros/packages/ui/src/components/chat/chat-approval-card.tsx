@@ -17,6 +17,7 @@ import { chatUiApprovalCardDataSchema } from "@backsteros/contracts";
 import { BorderBeam } from "border-beam";
 
 import { DocumentMarkdownPreview } from "../documents/document-markdown-preview.js";
+import { BunqIcon } from "../icons/bunq-icon.js";
 import { SocialComposerPlainEditor } from "../social/social-composer-plain-editor.js";
 
 const APPROVAL_NOTE_MAX = 500;
@@ -97,13 +98,12 @@ function ApprovalKindIcon({
         </svg>
       );
     case "payment":
+      // bunq brand mark (same as Finance bank-account avatar) — not a generic card.
       return (
-        <svg {...common}>
-          <path
-            fill="currentColor"
-            d="M1.5 4.5A1.5 1.5 0 0 1 3 3h10a1.5 1.5 0 0 1 1.5 1.5v7A1.5 1.5 0 0 1 13 13H3A1.5 1.5 0 0 1 1.5 11.5v-7ZM3 5v1.5h10V5H3Zm0 4v1.5h4V9H3Z"
-          />
-        </svg>
+        <BunqIcon
+          className="chat-ui-approval-card__kind-icon chat-ui-approval-card__kind-icon--bunq"
+          size={16}
+        />
       );
     case "delete":
       return (

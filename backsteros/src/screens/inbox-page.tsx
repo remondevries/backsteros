@@ -455,6 +455,32 @@ function InboxPageBody() {
     workspace,
   ]);
 
+  const handleDeleteChatConversation = useCallback(async () => {
+    if (!selectedChat) {
+      return { ok: false as const, error: "Conversation is required." };
+    }
+    const nextHref = getInboxHrefAfterRemovingItem(
+      modeInboxItems,
+      selectedChat.id,
+    );
+    unpinInboxListItem(selectedChat.id);
+    rememberSectionEntryHrefs({ inbox: nextHref ?? null });
+    navigateToHref(navigate, nextHref ?? "/inbox", { replace: true });
+    return chat.deleteConversation(selectedChat.id);
+  }, [
+    chat,
+    modeInboxItems,
+    navigate,
+    selectedChat,
+    unpinInboxListItem,
+  ]);
+
+  const chatDeleteEntityLabel =
+    selectedChat?.contactName?.trim() ||
+    selectedChat?.contactEmail?.trim() ||
+    selectedChat?.contactPhone?.trim() ||
+    "this conversation";
+
   const handleDuplicateTask = useCallback(async () => {
     if (!selectedTask) {
       return { ok: false as const, error: "Task is required." };
@@ -532,20 +558,30 @@ function InboxPageBody() {
   // Keep rendering when the moved-to-project banner is up.
   if (selectedChat && inList) {
     return (
-      <div className="inbox-detail-layout inbox-chat-detail" data-content-detail>
-        <CommunicationChatView
-          pane="thread"
-          conversations={messages.conversations}
-          selectedId={selectedChat.id}
-          detail={chat.detail?.id === selectedChat.id ? chat.detail : null}
-          detailLoading={chat.detailLoading}
-          error={chat.error}
-          typingIds={chat.typingIds}
-          onSelect={selectConversation}
-          onSend={chat.sendMessage}
-          onTypingChange={chat.setTyping}
-        />
-      </div>
+      <>
+        {keepAliveActive ? (
+          <RegisterEntityDeleteAction
+            entityLabel={chatDeleteEntityLabel}
+            confirmLabel="Delete conversation"
+            actionVerb="Delete"
+            onDelete={handleDeleteChatConversation}
+          />
+        ) : null}
+        <div className="inbox-detail-layout inbox-chat-detail" data-content-detail>
+          <CommunicationChatView
+            pane="thread"
+            conversations={messages.conversations}
+            selectedId={selectedChat.id}
+            detail={chat.detail?.id === selectedChat.id ? chat.detail : null}
+            detailLoading={chat.detailLoading}
+            error={chat.error}
+            typingIds={chat.typingIds}
+            onSelect={selectConversation}
+            onSend={chat.sendMessage}
+            onTypingChange={chat.setTyping}
+          />
+        </div>
+      </>
     );
   }
 

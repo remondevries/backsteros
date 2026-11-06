@@ -115,6 +115,7 @@ const TOP_LEVEL_NAV: Record<
   "/letters": { navId: "letters", badgeLabel: "Letters" },
   "/letters-v2": { navId: "letters", badgeLabel: "Letters" },
   "/social": { navId: "social", badgeLabel: "Network" },
+  "/communication": { navId: "communication", badgeLabel: "Messages" },
   "/contacts": { navId: "contacts", badgeLabel: "Contacts" },
   "/organizations": { navId: "organizations", badgeLabel: "Organization" },
 };
@@ -239,6 +240,18 @@ export function resolveHistoryEntryDisplay(
     };
   }
 
+  if (
+    pathname === "/communication" ||
+    pathname.startsWith("/communication/")
+  ) {
+    return {
+      kind: "navigate",
+      navId: "communication",
+      badgeLabel: "Messages",
+      title,
+    };
+  }
+
   const emailDetailMatch = pathname.match(/^\/email\/([^/]+)\/([^/]+)$/);
   if (emailDetailMatch) {
     const queryIndex = href.indexOf("?");
@@ -249,6 +262,14 @@ export function resolveHistoryEntryDisplay(
         kind: "navigate",
         navId: "inbox",
         badgeLabel: "Inbox",
+        title,
+      };
+    }
+    if (list === "communication") {
+      return {
+        kind: "navigate",
+        navId: "communication",
+        badgeLabel: "Messages",
         title,
       };
     }

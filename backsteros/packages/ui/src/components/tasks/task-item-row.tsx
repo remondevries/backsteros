@@ -122,7 +122,13 @@ export type TaskItemRowTask = {
   emailMessageId?: string | null;
   /** Set when the row is an AgentMail draft (metadata key `draft:<id>`). */
   emailDraftId?: string | null;
+  /**
+   * Workspace `email_threads.id` (for related-task links).
+   * Not the AgentMail thread key — use `emailThreadKey` for metadata PATCH.
+   */
   emailThreadId?: string | null;
+  /** AgentMail thread id (`email_threads.thread_key`) for metadata API paths. */
+  emailThreadKey?: string | null;
   /** `Name (email@domain)` shown beside the subject on email rows. */
   emailPartyLabel?: string | null;
   /** Incoming vs outgoing — party-line direction arrow. */
