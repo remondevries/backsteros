@@ -1,7 +1,10 @@
 import type { BacksterosApiClient } from "@backsteros/api-client";
 import type {
   BankAccountCashflowMonth,
+  MoneybirdInvoiceActivity,
+  MoneybirdInvoiceActivityItem,
   MoneybirdInvoiceRevenue,
+  MoneybirdInvoiceSendReminderResult,
   MoneybirdSalesInvoiceDetail,
   MoneybirdSalesInvoiceSummary,
   MoneybirdSettings,
@@ -59,6 +62,18 @@ export function useFinanceMoneybirdInvoices({
   const [moneybirdInvoiceDetailError, setMoneybirdInvoiceDetailError] = useState<
     string | null
   >(null);
+  const [moneybirdInvoiceActivityItems, setMoneybirdInvoiceActivityItems] =
+    useState<MoneybirdInvoiceActivityItem[]>([]);
+  const [moneybirdInvoiceActivityLoading, setMoneybirdInvoiceActivityLoading] =
+    useState(false);
+  const [moneybirdInvoiceActivityError, setMoneybirdInvoiceActivityError] =
+    useState<string | null>(null);
+  const [moneybirdInvoiceNextReminderStep, setMoneybirdInvoiceNextReminderStep] =
+    useState<1 | 2 | 3 | null>(null);
+  const [
+    moneybirdSendInvoiceReminderPending,
+    setMoneybirdSendInvoiceReminderPending,
+  ] = useState(false);
 
   useEffect(() => {
     if (navId !== "invoices") return;
@@ -130,6 +145,10 @@ export function useFinanceMoneybirdInvoices({
       setMoneybirdInvoiceDetail(null);
       setMoneybirdInvoiceDetailError(null);
       setMoneybirdInvoiceDetailLoading(false);
+      setMoneybirdInvoiceActivityItems([]);
+      setMoneybirdInvoiceActivityError(null);
+      setMoneybirdInvoiceActivityLoading(false);
+      setMoneybirdInvoiceNextReminderStep(null);
     }
   }, [navId]);
 
@@ -137,21 +156,52 @@ export function useFinanceMoneybirdInvoices({
     setSelectedMoneybirdInvoiceId(null);
   }, [moneybirdInvoicesPage, moneybirdInvoicesYear, moneybirdInvoiceStatusIds]);
 
+  const loadInvoiceActivity = useCallback(
+    async (invoiceId: string) => {
+      const activity = await client.requestJson<MoneybirdInvoiceActivity>(
+        `/api/v1/finance/moneybird/invoices/${encodeURIComponent(invoiceId)}/activity`,
+      );
+      setMoneybirdInvoiceActivityItems(activity.items);
+      setMoneybirdInvoiceNextReminderStep(activity.nextReminderStep);
+      setMoneybirdInvoiceActivityError(null);
+      return activity;
+    },
+    [client],
+  );
+
   useEffect(() => {
     if (navId !== "invoices" || !selectedMoneybirdInvoiceId) {
       setMoneybirdInvoiceDetail(null);
       setMoneybirdInvoiceDetailError(null);
       setMoneybirdInvoiceDetailLoading(false);
+      setMoneybirdInvoiceActivityItems([]);
+      setMoneybirdInvoiceActivityError(null);
+      setMoneybirdInvoiceActivityLoading(false);
+      setMoneybirdInvoiceNextReminderStep(null);
       return;
     }
     let cancelled = false;
     setMoneybirdInvoiceDetailLoading(true);
     setMoneybirdInvoiceDetailError(null);
+    setMoneybirdInvoiceActivityLoading(true);
+    setMoneybirdInvoiceActivityError(null);
     void (async () => {
       try {
-        const detail = await client.requestJson<MoneybirdSalesInvoiceDetail>(
-          `/api/v1/finance/moneybird/invoices/${encodeURIComponent(selectedMoneybirdInvoiceId)}`,
-        );
+        const [detail] = await Promise.all([
+          client.requestJson<MoneybirdSalesInvoiceDetail>(
+            `/api/v1/finance/moneybird/invoices/${encodeURIComponent(selectedMoneybirdInvoiceId)}`,
+          ),
+          loadInvoiceActivity(selectedMoneybirdInvoiceId).catch((error) => {
+            if (cancelled) return;
+            setMoneybirdInvoiceActivityItems([]);
+            setMoneybirdInvoiceNextReminderStep(null);
+            setMoneybirdInvoiceActivityError(
+              error instanceof Error
+                ? error.message
+                : "Failed to load invoice activity",
+            );
+          }),
+        ]);
         if (cancelled) return;
         setMoneybirdInvoiceDetail(detail);
       } catch (error) {
@@ -163,13 +213,48 @@ export function useFinanceMoneybirdInvoices({
             : "Failed to load invoice detail",
         );
       } finally {
-        if (!cancelled) setMoneybirdInvoiceDetailLoading(false);
+        if (!cancelled) {
+          setMoneybirdInvoiceDetailLoading(false);
+          setMoneybirdInvoiceActivityLoading(false);
+        }
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [client, navId, selectedMoneybirdInvoiceId]);
+  }, [client, loadInvoiceActivity, navId, selectedMoneybirdInvoiceId]);
+
+  const sendMoneybirdInvoiceReminder = useCallback(async () => {
+    if (!selectedMoneybirdInvoiceId || moneybirdSendInvoiceReminderPending) {
+      return;
+    }
+    setMoneybirdSendInvoiceReminderPending(true);
+    try {
+      await client.requestJson<MoneybirdInvoiceSendReminderResult>(
+        `/api/v1/finance/moneybird/invoices/${encodeURIComponent(selectedMoneybirdInvoiceId)}/send-reminder`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            locale: moneybirdInvoiceDetail?.language ?? null,
+          }),
+        },
+      );
+      await loadInvoiceActivity(selectedMoneybirdInvoiceId);
+    } catch (error) {
+      setMoneybirdInvoiceActivityError(
+        error instanceof Error ? error.message : "Failed to send reminder",
+      );
+    } finally {
+      setMoneybirdSendInvoiceReminderPending(false);
+    }
+  }, [
+    client,
+    loadInvoiceActivity,
+    moneybirdInvoiceDetail?.language,
+    moneybirdSendInvoiceReminderPending,
+    selectedMoneybirdInvoiceId,
+  ]);
 
   useEffect(() => {
     if (navId !== "invoices") return;
@@ -314,6 +399,12 @@ export function useFinanceMoneybirdInvoices({
     moneybirdInvoiceDetail,
     moneybirdInvoiceDetailLoading,
     moneybirdInvoiceDetailError,
+    moneybirdInvoiceActivityItems,
+    moneybirdInvoiceActivityLoading,
+    moneybirdInvoiceActivityError,
+    moneybirdInvoiceNextReminderStep,
+    moneybirdSendInvoiceReminderPending,
+    sendMoneybirdInvoiceReminder,
     loadMoneybirdInvoicesPage,
   };
 }

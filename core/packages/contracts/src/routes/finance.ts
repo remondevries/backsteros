@@ -35,6 +35,42 @@ export const financeRoutes: AppRouter = c.router({
     summary:
       "Get a Moneybird sales invoice detail (lines, parties, tax totals)",
   },
+  getMoneybirdSalesInvoiceActivity: {
+    method: "GET",
+    path: "/api/v1/finance/moneybird/invoices/:invoiceId/activity",
+    pathParams: z.object({
+      invoiceId: z.string().min(1),
+    }),
+    responses: {
+      200: s.moneybirdInvoiceActivityResponseSchema,
+      400: badRequestSchema,
+      401: errorSchema,
+      403: errorSchema,
+      404: errorSchema,
+    },
+    summary:
+      "Invoice send/reminder activity timeline (Moneybird events + portal ladder)",
+  },
+  sendMoneybirdSalesInvoiceReminder: {
+    method: "POST",
+    path: "/api/v1/finance/moneybird/invoices/:invoiceId/send-reminder",
+    pathParams: z.object({
+      invoiceId: z.string().min(1),
+    }),
+    body: z.object({
+      locale: z.string().nullable().optional(),
+    }),
+    responses: {
+      200: s.moneybirdInvoiceSendReminderResponseSchema,
+      400: badRequestSchema,
+      401: errorSchema,
+      403: errorSchema,
+      404: errorSchema,
+      502: badRequestSchema,
+    },
+    summary:
+      "Manually send the next portal payment reminder (steps 1–3) for an invoice",
+  },
   getMoneybirdInvoiceRevenue: {
     method: "GET",
     path: "/api/v1/finance/moneybird/invoice-revenue",

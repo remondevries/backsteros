@@ -624,6 +624,53 @@ export const moneybirdSalesInvoiceDetailSchema = z.object({
   taxTotals: z.array(moneybirdInvoiceTaxTotalSchema),
 });
 
+export const moneybirdInvoiceActivityChannelSchema = z.enum([
+  "portal_email",
+  "moneybird_email",
+  "moneybird_post",
+  "moneybird_manual",
+  "moneybird_peppol",
+  "system",
+]);
+
+export const moneybirdInvoiceActivityKindSchema = z.enum([
+  "invoice_sent",
+  "reminder_sent",
+  "marked_late",
+  "marked_paid",
+  "cancelled",
+  "other",
+]);
+
+export const moneybirdInvoiceActivityItemSchema = z.object({
+  id: z.string(),
+  at: z.string(),
+  kind: moneybirdInvoiceActivityKindSchema,
+  channel: moneybirdInvoiceActivityChannelSchema.nullable(),
+  step: z.union([z.literal(1), z.literal(2), z.literal(3)]).nullable(),
+  label: z.string(),
+  source: z.enum(["moneybird", "portal"]),
+  action: z.string().nullable(),
+});
+
+export const moneybirdInvoiceActivityResponseSchema = z.object({
+  invoiceId: z.string(),
+  items: z.array(moneybirdInvoiceActivityItemSchema),
+  nextReminderStep: z
+    .union([z.literal(1), z.literal(2), z.literal(3)])
+    .nullable(),
+  eligibleFromManualSend: z.boolean(),
+});
+
+export const moneybirdInvoiceSendReminderResponseSchema = z.object({
+  ok: z.literal(true),
+  invoiceId: z.string(),
+  step: z.union([z.literal(1), z.literal(2), z.literal(3)]),
+  to: z.string().optional(),
+  skipped: z.string().optional(),
+  message: z.string().optional(),
+});
+
 export const moneybirdInvoiceRevenueQuerySchema = z.object({
   year: z.coerce.number().int().min(1970).max(2100).optional(),
 });
@@ -767,6 +814,18 @@ export type MoneybirdInvoiceTaxTotal = z.infer<
 
 export type MoneybirdSalesInvoiceDetail = z.infer<
   typeof moneybirdSalesInvoiceDetailSchema
+>;
+
+export type MoneybirdInvoiceActivityItem = z.infer<
+  typeof moneybirdInvoiceActivityItemSchema
+>;
+
+export type MoneybirdInvoiceActivity = z.infer<
+  typeof moneybirdInvoiceActivityResponseSchema
+>;
+
+export type MoneybirdInvoiceSendReminderResult = z.infer<
+  typeof moneybirdInvoiceSendReminderResponseSchema
 >;
 
 export type MoneybirdInvoiceRevenue = z.infer<

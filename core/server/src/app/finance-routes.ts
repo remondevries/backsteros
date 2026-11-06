@@ -215,6 +215,83 @@ export function registerFinanceRoutes(app: Hono) {
       return c.json({ error: message, code: "bad_request" }, 400);
     }
   });
+  app.get(
+    "/api/v1/finance/moneybird/invoices/:invoiceId/activity",
+    async (c) => {
+      const auth = getAuth(c);
+      if (!can(auth, "finance:read")) return c.json(forbidden(), 403);
+      const invoiceId = c.req.param("invoiceId")?.trim() ?? "";
+      if (!invoiceId) {
+        return c.json(
+          { error: "Invoice id is required", code: "bad_request" },
+          400,
+        );
+      }
+      try {
+        return c.json(
+          await moneybirdSettingsService.getMoneybirdSalesInvoiceActivity(
+            auth.workspaceId,
+            invoiceId,
+          ),
+        );
+      } catch (error) {
+        if (error instanceof MoneybirdApiError && error.status === 404) {
+          return c.json({ error: "Invoice not found", code: "not_found" }, 404);
+        }
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Could not load invoice activity";
+        return c.json({ error: message, code: "bad_request" }, 400);
+      }
+    },
+  );
+  app.post(
+    "/api/v1/finance/moneybird/invoices/:invoiceId/send-reminder",
+    async (c) => {
+      const auth = getAuth(c);
+      if (!can(auth, "finance:write")) return c.json(forbidden(), 403);
+      const invoiceId = c.req.param("invoiceId")?.trim() ?? "";
+      if (!invoiceId) {
+        return c.json(
+          { error: "Invoice id is required", code: "bad_request" },
+          400,
+        );
+      }
+      const body = (await c.req.json().catch(() => ({}))) as {
+        locale?: string | null;
+      };
+      const { sendInvoiceReminderManually } = await import(
+        "../lib/moneybird-invoice-reminders.js"
+      );
+      const result = await sendInvoiceReminderManually({
+        invoiceId,
+        locale: body.locale ?? null,
+      });
+      if (!result.ok || result.step == null) {
+        const status =
+          result.skipped === "all_reminders_sent" ||
+          result.skipped === "cancelled"
+            ? 400
+            : 502;
+        return c.json(
+          {
+            error: result.error || "Reminder send failed",
+            code: result.skipped || "reminder_failed",
+          },
+          status,
+        );
+      }
+      return c.json({
+        ok: true as const,
+        invoiceId: result.invoiceId,
+        step: result.step,
+        to: result.to,
+        skipped: result.skipped,
+        message: result.message,
+      });
+    },
+  );
   app.get("/api/v1/finance/moneybird/contacts/:contactId", async (c) => {
     const auth = getAuth(c);
     if (!can(auth, "finance:read") && !can(auth, "organizations:read")) {

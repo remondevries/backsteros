@@ -82,6 +82,13 @@ export type MoneybirdSalesInvoiceDetail = {
   taxTotals: MoneybirdInvoiceTaxTotal[];
 };
 
+/** History row from Moneybird `sales_invoices.events`. */
+export type MoneybirdSalesInvoiceEvent = {
+  action: string;
+  createdAt: string | null;
+  userId: string | null;
+};
+
 export type MoneybirdIdentity = MoneybirdInvoiceParty & {
   id: string;
 };
@@ -443,6 +450,27 @@ export function mapMoneybirdSalesInvoiceDetail(
   };
 }
 
+export function mapMoneybirdSalesInvoiceEvents(
+  raw: Record<string, unknown>,
+): MoneybirdSalesInvoiceEvent[] {
+  const events = Array.isArray(raw.events) ? raw.events : [];
+  const out: MoneybirdSalesInvoiceEvent[] = [];
+  for (const row of events) {
+    if (!row || typeof row !== "object" || Array.isArray(row)) continue;
+    const record = row as Record<string, unknown>;
+    const action = asOptionalString(record.action);
+    if (!action) continue;
+    out.push({
+      action,
+      createdAt:
+        asOptionalString(record.created_at) ??
+        asOptionalString(record.updated_at),
+      userId: asStringId(record.user_id),
+    });
+  }
+  return out;
+}
+
 export function applyTaxPercentagesToDetail(
   detail: MoneybirdSalesInvoiceDetail,
   taxPercentageByRateId: Map<string, string | null>,
@@ -595,14 +623,28 @@ export class MoneybirdClient {
     };
   }
 
-  async getSalesInvoice(invoiceId: string): Promise<MoneybirdSalesInvoiceDetail> {
+  private async fetchSalesInvoiceRaw(
+    invoiceId: string,
+  ): Promise<Record<string, unknown>> {
     const administrationId = this.requireAdministrationId();
     const path = `/${encodeURIComponent(administrationId)}/sales_invoices/${encodeURIComponent(invoiceId)}.json`;
     const raw = await this.requestJson<Record<string, unknown>>(path);
     if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
       throw new MoneybirdApiError(404, "", "Moneybird sales invoice not found");
     }
-    return mapMoneybirdSalesInvoiceDetail(raw);
+    return raw;
+  }
+
+  async getSalesInvoice(invoiceId: string): Promise<MoneybirdSalesInvoiceDetail> {
+    return mapMoneybirdSalesInvoiceDetail(await this.fetchSalesInvoiceRaw(invoiceId));
+  }
+
+  async getSalesInvoiceEvents(
+    invoiceId: string,
+  ): Promise<MoneybirdSalesInvoiceEvent[]> {
+    return mapMoneybirdSalesInvoiceEvents(
+      await this.fetchSalesInvoiceRaw(invoiceId),
+    );
   }
 
   async getIdentity(identityId: string): Promise<MoneybirdIdentity> {

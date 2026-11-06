@@ -2,12 +2,14 @@ import assert from "node:assert/strict";
 import { describe, it, beforeEach } from "node:test";
 
 import {
+  getInvoiceReminderTrackSnapshot,
   handleMoneybirdLateReminderWebhook,
   handleMoneybirdPaidCancelReminders,
   MONEYBIRD_LATE_ACTION,
   MONEYBIRD_PAID_ACTION,
   registerManualPortalInvoiceForReminders,
   resetInvoiceReminderStateForTests,
+  sendInvoiceReminderManually,
 } from "./moneybird-invoice-reminders.js";
 
 describe("moneybird invoice reminders", () => {
@@ -77,5 +79,24 @@ describe("moneybird invoice reminders", () => {
       entity_id: "inv_1",
     });
     assert.equal(late.skipped, "cancelled");
+  });
+
+  it("exposes portal track snapshot after Manual registration", async () => {
+    await registerManualPortalInvoiceForReminders("inv_snap", "nl");
+    const snap = await getInvoiceReminderTrackSnapshot("inv_snap");
+    assert.ok(snap);
+    assert.equal(snap?.eligibleFromManualSend, true);
+    assert.equal(snap?.nextStep, 1);
+    assert.ok(snap?.portalInvoiceSentAt);
+  });
+
+  it("manual reminder send reports transport failure after eligibility", async () => {
+    const result = await sendInvoiceReminderManually({
+      invoiceId: "inv_manual_send",
+      locale: "nl",
+    });
+    assert.equal(result.ok, false);
+    assert.equal(result.step, 1);
+    assert.ok(result.error);
   });
 });

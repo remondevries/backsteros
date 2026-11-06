@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 
 import type {
   MoneybirdAdministrationSummary,
+  MoneybirdInvoiceActivity,
   MoneybirdInvoiceRevenue,
   MoneybirdSalesInvoiceDetail,
   MoneybirdSalesInvoiceSummary,
@@ -12,6 +13,7 @@ import type {
 
 import { db } from "../db/index.js";
 import { workspaceIntegrationSecrets } from "../db/schema.js";
+import { buildInvoiceActivityResponse } from "../lib/moneybird-invoice-activity.js";
 import {
   applyTaxPercentagesToDetail,
   findLastInvoicePageNumber,
@@ -558,6 +560,22 @@ export async function getMoneybirdSalesInvoiceDetail(
     lines: withTax.lines,
     taxTotals: withTax.taxTotals,
   };
+}
+
+export async function getMoneybirdSalesInvoiceActivity(
+  workspaceId: string,
+  invoiceId: string,
+): Promise<MoneybirdInvoiceActivity> {
+  const id = invoiceId.trim();
+  if (!id) {
+    throw new MoneybirdApiError(400, "", "Invoice id is required");
+  }
+  const { client } = await requireMoneybirdClient(workspaceId);
+  const moneybirdEvents = await client.getSalesInvoiceEvents(id);
+  return buildInvoiceActivityResponse({
+    invoiceId: id,
+    moneybirdEvents,
+  });
 }
 
 export async function listMoneybirdFinancialAccounts(workspaceId: string) {

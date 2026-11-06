@@ -1,0 +1,43 @@
+import assert from "node:assert/strict";
+import { describe, it } from "node:test";
+
+import { buildInvoiceActivityItems } from "./moneybird-invoice-activity.js";
+
+describe("moneybird invoice activity", () => {
+  it("merges Moneybird send events with portal reminder track", () => {
+    const items = buildInvoiceActivityItems({
+      invoiceId: "inv_1",
+      moneybirdEvents: [
+        {
+          action: "sales_invoice_send_email",
+          createdAt: "2026-01-01T10:00:00.000Z",
+          userId: "u1",
+        },
+        {
+          action: "sales_invoice_updated",
+          createdAt: "2026-01-01T09:00:00.000Z",
+          userId: null,
+        },
+      ],
+      track: {
+        eligibleFromManualSend: true,
+        portalInvoiceSentAt: "2026-01-02T10:00:00.000Z",
+        locale: "nl",
+        cancelledAt: null,
+        lastStep: 1,
+        nextStep: 2,
+        reminders: [{ step: 1, sentAt: "2026-01-12T10:00:00.000Z" }],
+        dueAt: { 2: "2026-01-22T10:00:00.000Z" },
+      },
+    });
+
+    assert.equal(items.length, 3);
+    assert.equal(items[0]?.kind, "reminder_sent");
+    assert.equal(items[0]?.channel, "portal_email");
+    assert.equal(items[0]?.step, 1);
+    assert.equal(items[1]?.kind, "invoice_sent");
+    assert.equal(items[1]?.channel, "portal_email");
+    assert.equal(items[2]?.kind, "invoice_sent");
+    assert.equal(items[2]?.channel, "moneybird_email");
+  });
+});

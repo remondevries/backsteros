@@ -2,6 +2,7 @@
 
 import type {
   BankAccountCashflowMonth,
+  MoneybirdInvoiceActivityItem,
   MoneybirdSalesInvoiceDetail,
   MoneybirdSalesInvoiceSummary,
 } from "@backsteros/contracts";
@@ -33,6 +34,7 @@ import {
   type DocumentSummaryLine,
 } from "../../finance/document-summary-stats.js";
 import { AccountIncomeExpenseChart } from "./account-income-expense-chart.js";
+import { ProjectsSidePanelIcon } from "../codebase/projects-side-panel-icon.js";
 import {
   DROPDOWN_NONE_VALUE,
   buildOrganizationDropdownOptions,
@@ -43,9 +45,14 @@ import {
   useListKeyboardNavigationContainerProps,
 } from "../list-nav/list-keyboard-navigation-provider.js";
 import {
+  SegmentedPillToggle,
+  type SegmentedPillToggleOption,
+} from "../list-nav/list-board-view-shell.js";
+import {
   FinanceDocumentChartWithSummary,
   FinanceDocumentSummaryWidgets,
 } from "./finance-document-summary-widgets.js";
+import { FinanceInvoiceActivityTimeline } from "./finance-invoice-activity-timeline.js";
 import { FinanceInvoiceDetailDocument } from "./finance-invoice-detail-document.js";
 import { FinanceInvoicesFilterBar } from "./finance-invoices-filter-bar.js";
 import { FINANCE_FILTER_ALL_VALUE } from "./finance-transactions-filter-bar.js";
@@ -54,6 +61,14 @@ import {
   localCalendarYear,
 } from "./finance-month-navigator.js";
 import { SearchableDropdown } from "../dropdowns/searchable-dropdown.js";
+
+type InvoiceDetailTab = "invoice" | "activity";
+
+const INVOICE_DETAIL_TAB_OPTIONS: readonly SegmentedPillToggleOption<InvoiceDetailTab>[] =
+  [
+    { value: "invoice", label: "Invoice" },
+    { value: "activity", label: "Activity" },
+  ];
 
 const INVOICE_COLUMN_HEADERS = [
   { id: "id", label: "Invoice ID" },
@@ -115,6 +130,14 @@ export type FinanceInvoicesViewProps = {
   invoiceDetail?: MoneybirdSalesInvoiceDetail | null;
   invoiceDetailLoading?: boolean;
   invoiceDetailError?: string | null;
+  /** Activity timeline for the selected invoice (loaded when Activity is open). */
+  invoiceActivityItems?: MoneybirdInvoiceActivityItem[];
+  invoiceActivityLoading?: boolean;
+  invoiceActivityError?: string | null;
+  /** Next portal reminder step available to send (null when none). */
+  invoiceNextReminderStep?: 1 | 2 | 3 | null;
+  onSendInvoiceReminder?: () => void | Promise<void>;
+  sendInvoiceReminderPending?: boolean;
   /**
    * When true, skip EntityDetailLayout and the revenue chart — for embedding
    * under organization (or similar) section tabs.
@@ -219,6 +242,12 @@ export function FinanceInvoicesView({
   invoiceDetail = null,
   invoiceDetailLoading = false,
   invoiceDetailError = null,
+  invoiceActivityItems = [],
+  invoiceActivityLoading = false,
+  invoiceActivityError = null,
+  invoiceNextReminderStep = null,
+  onSendInvoiceReminder,
+  sendInvoiceReminderPending = false,
   embedded = false,
   hideOrganizationFilter = false,
 }: FinanceInvoicesViewProps) {
@@ -235,6 +264,7 @@ export function FinanceInvoicesView({
   );
   const [localYear, setLocalYear] = useState(() => localCalendarYear());
   const [localSelectedId, setLocalSelectedId] = useState<string | null>(null);
+  const [detailTab, setDetailTab] = useState<InvoiceDetailTab>("invoice");
 
   const latestYear = latestYearProp ?? localCalendarYear();
   const year = yearProp ?? revenueYear ?? localYear;
@@ -446,6 +476,10 @@ export function FinanceInvoicesView({
     enabled: selectedInvoiceId != null,
     onDismiss: closeInvoiceDetail,
   });
+
+  useEffect(() => {
+    setDetailTab("invoice");
+  }, [selectedInvoiceId]);
 
   const { highlightedId } = useListKeyboardNavigation({
     containerRef: listRef,
@@ -801,16 +835,77 @@ export function FinanceInvoicesView({
           className="finance-categories-view__detail-pane"
           ref={detailPaneRef}
         >
-          <FinanceInvoiceDetailDocument
-            summary={selectedSummary}
-            detail={
-              invoiceDetail && invoiceDetail.id === selectedInvoiceId
-                ? invoiceDetail
-                : null
-            }
-            loading={invoiceDetailLoading}
-            error={invoiceDetailError}
-          />
+          {selectedSummary ? (
+            <div className="finance-invoice-detail-pane">
+              <header className="finance-invoice-detail-toolbar">
+                <button
+                  type="button"
+                  className="finance-invoice-detail-toolbar__close"
+                  title="Hide invoice panel"
+                  aria-label="Hide invoice panel"
+                  onClick={closeInvoiceDetail}
+                >
+                  <ProjectsSidePanelIcon size={16} rail="end" />
+                </button>
+                <div className="finance-invoice-detail-toolbar__toggle">
+                  <SegmentedPillToggle
+                    value={detailTab}
+                    options={INVOICE_DETAIL_TAB_OPTIONS}
+                    onChange={setDetailTab}
+                    ariaLabel="Invoice detail view"
+                  />
+                </div>
+                <button
+                  type="button"
+                  className="finance-invoice-detail-toolbar__reminder"
+                  disabled={
+                    sendInvoiceReminderPending || !onSendInvoiceReminder
+                  }
+                  title={
+                    invoiceNextReminderStep != null
+                      ? `Send payment reminder ${invoiceNextReminderStep}`
+                      : "Send the next payment reminder"
+                  }
+                  onClick={() => {
+                    void onSendInvoiceReminder?.();
+                  }}
+                >
+                  {sendInvoiceReminderPending
+                    ? "Sending…"
+                    : invoiceNextReminderStep != null
+                      ? `Send reminder ${invoiceNextReminderStep}`
+                      : "Send reminder"}
+                </button>
+              </header>
+              <div className="finance-invoice-detail-pane__body">
+                {detailTab === "invoice" ? (
+                  <FinanceInvoiceDetailDocument
+                    summary={selectedSummary}
+                    detail={
+                      invoiceDetail && invoiceDetail.id === selectedInvoiceId
+                        ? invoiceDetail
+                        : null
+                    }
+                    loading={invoiceDetailLoading}
+                    error={invoiceDetailError}
+                  />
+                ) : (
+                  <FinanceInvoiceActivityTimeline
+                    items={invoiceActivityItems}
+                    loading={invoiceActivityLoading}
+                    error={invoiceActivityError}
+                  />
+                )}
+              </div>
+            </div>
+          ) : (
+            <FinanceInvoiceDetailDocument
+              summary={null}
+              detail={null}
+              loading={false}
+              error={null}
+            />
+          )}
         </div>
       </div>
   );

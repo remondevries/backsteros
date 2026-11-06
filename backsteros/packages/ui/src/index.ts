@@ -1970,6 +1970,10 @@ export {
   type FinanceInvoiceDetailDocumentProps,
 } from "./components/finance/finance-invoice-detail-document.js";
 export {
+  FinanceInvoiceActivityTimeline,
+  type FinanceInvoiceActivityTimelineProps,
+} from "./components/finance/finance-invoice-activity-timeline.js";
+export {
   FinanceSyncIcon,
   type FinanceSyncIconProps,
 } from "./components/finance/finance-sync-icon.js";

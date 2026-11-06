@@ -4,6 +4,9 @@ import type {
   FinancialGoal,
   FinancialRecurring,
   FinancialTransaction,
+  MoneybirdInvoiceActivity,
+  MoneybirdInvoiceActivityItem,
+  MoneybirdInvoiceSendReminderResult,
   MoneybirdSalesInvoiceDetail,
   MoneybirdSalesInvoiceSummary,
   MoneybirdSettings,
@@ -391,6 +394,19 @@ export function OrganizationsPage() {
   const [orgInvoiceDetailError, setOrgInvoiceDetailError] = useState<
     string | null
   >(null);
+  const [orgInvoiceActivityItems, setOrgInvoiceActivityItems] = useState<
+    MoneybirdInvoiceActivityItem[]
+  >([]);
+  const [orgInvoiceActivityLoading, setOrgInvoiceActivityLoading] =
+    useState(false);
+  const [orgInvoiceActivityError, setOrgInvoiceActivityError] = useState<
+    string | null
+  >(null);
+  const [orgInvoiceNextReminderStep, setOrgInvoiceNextReminderStep] = useState<
+    1 | 2 | 3 | null
+  >(null);
+  const [orgSendInvoiceReminderPending, setOrgSendInvoiceReminderPending] =
+    useState(false);
 
   const orgProjectsListView = useMemo(
     () =>
@@ -886,18 +902,46 @@ export function OrganizationsPage() {
       setOrgInvoiceDetail(null);
       setOrgInvoiceDetailError(null);
       setOrgInvoiceDetailLoading(false);
+      setOrgInvoiceActivityItems([]);
+      setOrgInvoiceActivityError(null);
+      setOrgInvoiceActivityLoading(false);
+      setOrgInvoiceNextReminderStep(null);
       return;
     }
     let cancelled = false;
     setOrgInvoiceDetailLoading(true);
     setOrgInvoiceDetailError(null);
+    setOrgInvoiceActivityLoading(true);
+    setOrgInvoiceActivityError(null);
     void (async () => {
       try {
-        const detail = await client.requestJson<MoneybirdSalesInvoiceDetail>(
-          `/api/v1/finance/moneybird/invoices/${encodeURIComponent(selectedOrgInvoiceId)}`,
-        );
+        const [detail, activity] = await Promise.all([
+          client.requestJson<MoneybirdSalesInvoiceDetail>(
+            `/api/v1/finance/moneybird/invoices/${encodeURIComponent(selectedOrgInvoiceId)}`,
+          ),
+          client
+            .requestJson<MoneybirdInvoiceActivity>(
+              `/api/v1/finance/moneybird/invoices/${encodeURIComponent(selectedOrgInvoiceId)}/activity`,
+            )
+            .catch((error) => {
+              if (cancelled) return null;
+              setOrgInvoiceActivityItems([]);
+              setOrgInvoiceNextReminderStep(null);
+              setOrgInvoiceActivityError(
+                error instanceof Error
+                  ? error.message
+                  : "Failed to load invoice activity",
+              );
+              return null;
+            }),
+        ]);
         if (cancelled) return;
         setOrgInvoiceDetail(detail);
+        if (activity) {
+          setOrgInvoiceActivityItems(activity.items);
+          setOrgInvoiceNextReminderStep(activity.nextReminderStep);
+          setOrgInvoiceActivityError(null);
+        }
       } catch (error) {
         if (cancelled) return;
         setOrgInvoiceDetail(null);
@@ -907,13 +951,50 @@ export function OrganizationsPage() {
             : "Failed to load invoice detail",
         );
       } finally {
-        if (!cancelled) setOrgInvoiceDetailLoading(false);
+        if (!cancelled) {
+          setOrgInvoiceDetailLoading(false);
+          setOrgInvoiceActivityLoading(false);
+        }
       }
     })();
     return () => {
       cancelled = true;
     };
   }, [client, selectedOrgInvoiceId, workspaceTab]);
+
+  const sendOrgInvoiceReminder = useCallback(async () => {
+    if (!selectedOrgInvoiceId || orgSendInvoiceReminderPending) return;
+    setOrgSendInvoiceReminderPending(true);
+    try {
+      await client.requestJson<MoneybirdInvoiceSendReminderResult>(
+        `/api/v1/finance/moneybird/invoices/${encodeURIComponent(selectedOrgInvoiceId)}/send-reminder`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            locale: orgInvoiceDetail?.language ?? null,
+          }),
+        },
+      );
+      const activity = await client.requestJson<MoneybirdInvoiceActivity>(
+        `/api/v1/finance/moneybird/invoices/${encodeURIComponent(selectedOrgInvoiceId)}/activity`,
+      );
+      setOrgInvoiceActivityItems(activity.items);
+      setOrgInvoiceNextReminderStep(activity.nextReminderStep);
+      setOrgInvoiceActivityError(null);
+    } catch (error) {
+      setOrgInvoiceActivityError(
+        error instanceof Error ? error.message : "Failed to send reminder",
+      );
+    } finally {
+      setOrgSendInvoiceReminderPending(false);
+    }
+  }, [
+    client,
+    orgInvoiceDetail?.language,
+    orgSendInvoiceReminderPending,
+    selectedOrgInvoiceId,
+  ]);
 
   const patchOrgTransaction = useCallback(
     async (
@@ -1514,6 +1595,12 @@ export function OrganizationsPage() {
             invoiceDetail={orgInvoiceDetail}
             invoiceDetailLoading={orgInvoiceDetailLoading}
             invoiceDetailError={orgInvoiceDetailError}
+            invoiceActivityItems={orgInvoiceActivityItems}
+            invoiceActivityLoading={orgInvoiceActivityLoading}
+            invoiceActivityError={orgInvoiceActivityError}
+            invoiceNextReminderStep={orgInvoiceNextReminderStep}
+            sendInvoiceReminderPending={orgSendInvoiceReminderPending}
+            onSendInvoiceReminder={sendOrgInvoiceReminder}
           />
         </div>
       );

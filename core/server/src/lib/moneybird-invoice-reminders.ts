@@ -16,6 +16,8 @@ type ReminderStep = 1 | 2 | 3;
 type ReminderTrack = {
   /** Only invoices that received the Manual → portal invoice email. */
   eligibleFromManualSend: boolean;
+  /** When the portal invoice email was first marked eligible (ISO). */
+  portalInvoiceSentAt: string | null;
   lastStep: 0 | ReminderStep;
   /** ISO times when each step was successfully emailed (or skipped paid). */
   sentAt: Partial<Record<ReminderStep, string>>;
@@ -57,6 +59,7 @@ export function reminderStep3DelayDays(): number {
 function emptyTrack(locale: string | null): ReminderTrack {
   return {
     eligibleFromManualSend: false,
+    portalInvoiceSentAt: null,
     lastStep: 0,
     sentAt: {},
     dueAt: {},
@@ -79,6 +82,10 @@ function rowToTrack(row: DbMoneybirdInvoiceReminderTrack): ReminderTrack {
       : 0;
   return {
     eligibleFromManualSend: row.eligibleFromManualSend,
+    portalInvoiceSentAt:
+      row.eligibleFromManualSend && row.createdAt
+        ? row.createdAt.toISOString()
+        : null,
     lastStep,
     sentAt,
     dueAt,
@@ -190,8 +197,137 @@ export async function registerManualPortalInvoiceForReminders(
   const track = await getOrCreateTrack(id, locale?.trim() || null);
   track.eligibleFromManualSend = true;
   track.cancelledAt = null;
+  if (!track.portalInvoiceSentAt) {
+    track.portalInvoiceSentAt = new Date().toISOString();
+  }
   if (locale?.trim()) track.locale = locale.trim();
   await persistTrack(id, track);
+}
+
+function nextReminderStep(track: ReminderTrack): ReminderStep | null {
+  if (!track.sentAt[1]) return 1;
+  if (!track.sentAt[2]) return 2;
+  if (!track.sentAt[3]) return 3;
+  return null;
+}
+
+export type InvoiceReminderTrackSnapshot = {
+  eligibleFromManualSend: boolean;
+  portalInvoiceSentAt: string | null;
+  locale: string | null;
+  cancelledAt: string | null;
+  lastStep: 0 | ReminderStep;
+  nextStep: ReminderStep | null;
+  reminders: Array<{ step: ReminderStep; sentAt: string }>;
+  dueAt: Partial<Record<2 | 3, string>>;
+};
+
+/** Snapshot used by the finance invoice Activity timeline. */
+export async function getInvoiceReminderTrackSnapshot(
+  invoiceId: string,
+): Promise<InvoiceReminderTrackSnapshot | null> {
+  const id = invoiceId.trim();
+  if (!id) return null;
+
+  let track = tracks.get(id);
+  if (!track) {
+    const fromDb = await loadTrackFromDb(id);
+    if (!fromDb) return null;
+    tracks.set(id, fromDb);
+    track = fromDb;
+  }
+
+  const reminders: Array<{ step: ReminderStep; sentAt: string }> = [];
+  for (const step of [1, 2, 3] as const) {
+    const sentAt = track.sentAt[step];
+    if (sentAt) reminders.push({ step, sentAt });
+  }
+  return {
+    eligibleFromManualSend: track.eligibleFromManualSend,
+    portalInvoiceSentAt: track.portalInvoiceSentAt,
+    locale: track.locale,
+    cancelledAt: track.cancelledAt,
+    lastStep: track.lastStep,
+    nextStep: track.cancelledAt ? null : nextReminderStep(track),
+    reminders,
+    dueAt: {
+      ...(track.dueAt[2] != null
+        ? { 2: new Date(track.dueAt[2]).toISOString() }
+        : {}),
+      ...(track.dueAt[3] != null
+        ? { 3: new Date(track.dueAt[3]).toISOString() }
+        : {}),
+    },
+  };
+}
+
+/**
+ * Staff-triggered reminder: send the next ladder step via the portal.
+ * Marks the invoice eligible (portal channel) if it was not already.
+ */
+export async function sendInvoiceReminderManually(input: {
+  invoiceId: string;
+  locale?: string | null;
+}): Promise<{
+  ok: boolean;
+  invoiceId: string;
+  step?: ReminderStep;
+  to?: string;
+  skipped?: string;
+  message?: string;
+  error?: string;
+}> {
+  const invoiceId = input.invoiceId.trim();
+  if (!invoiceId) {
+    return { ok: false, invoiceId: "", error: "Invoice id is required" };
+  }
+
+  await registerManualPortalInvoiceForReminders(invoiceId, input.locale);
+  const track = await getOrCreateTrack(invoiceId, input.locale?.trim() || null);
+
+  if (track.cancelledAt) {
+    return {
+      ok: false,
+      invoiceId,
+      skipped: "cancelled",
+      error: "Reminders were cancelled for this invoice (paid or stopped)",
+    };
+  }
+
+  const step = nextReminderStep(track);
+  if (step == null) {
+    return {
+      ok: false,
+      invoiceId,
+      skipped: "all_reminders_sent",
+      error: "All reminder steps (1–3) have already been sent",
+    };
+  }
+
+  ensureReminderScheduler();
+  const result = await sendStep({
+    invoiceId,
+    step,
+    locale: input.locale?.trim() || track.locale,
+  });
+
+  if (!result.ok) {
+    return {
+      ok: false,
+      invoiceId,
+      step,
+      error: result.error || "Reminder send failed",
+    };
+  }
+
+  return {
+    ok: true,
+    invoiceId,
+    step,
+    to: result.to,
+    skipped: result.skipped,
+    message: result.message,
+  };
 }
 
 function scheduleFollowUps(track: ReminderTrack, fromStep: ReminderStep): void {

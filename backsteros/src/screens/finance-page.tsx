@@ -245,6 +245,12 @@ function FinancePageBody() {
     moneybirdInvoiceDetail,
     moneybirdInvoiceDetailLoading,
     moneybirdInvoiceDetailError,
+    moneybirdInvoiceActivityItems,
+    moneybirdInvoiceActivityLoading,
+    moneybirdInvoiceActivityError,
+    moneybirdInvoiceNextReminderStep,
+    moneybirdSendInvoiceReminderPending,
+    sendMoneybirdInvoiceReminder,
     loadMoneybirdInvoicesPage,
   } = useFinanceMoneybirdInvoices({ client, navId });
 
@@ -575,6 +581,12 @@ function FinancePageBody() {
         invoiceDetail={moneybirdInvoiceDetail}
         invoiceDetailLoading={moneybirdInvoiceDetailLoading}
         invoiceDetailError={moneybirdInvoiceDetailError}
+        invoiceActivityItems={moneybirdInvoiceActivityItems}
+        invoiceActivityLoading={moneybirdInvoiceActivityLoading}
+        invoiceActivityError={moneybirdInvoiceActivityError}
+        invoiceNextReminderStep={moneybirdInvoiceNextReminderStep}
+        sendInvoiceReminderPending={moneybirdSendInvoiceReminderPending}
+        onSendInvoiceReminder={sendMoneybirdInvoiceReminder}
         onLinkMoneybirdContact={async (moneybirdContactId, organizationId) => {
           const linked = organizations.filter(
             (org) => org.moneybirdContactId === moneybirdContactId);
