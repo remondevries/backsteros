@@ -662,6 +662,13 @@ export const moneybirdInvoiceActivityResponseSchema = z.object({
   eligibleFromManualSend: z.boolean(),
 });
 
+export const moneybirdInvoiceSendEmailKindSchema = z.union([
+  z.literal("invoice"),
+  z.literal(1),
+  z.literal(2),
+  z.literal(3),
+]);
+
 export const moneybirdInvoiceSendReminderResponseSchema = z.object({
   ok: z.literal(true),
   invoiceId: z.string(),
