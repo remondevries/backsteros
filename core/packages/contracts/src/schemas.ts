@@ -803,6 +803,8 @@ export type {
   UpdateBunqSettingsInput,
   BunqTestConnectionResult,
   ProvisionBunqSandboxUserInput,
+  BunqSandboxFundInput,
+  BunqSandboxFundResult,
   BunqMonetaryAccountSummary,
   BunqPaymentSummary,
   MapboxSettings,
