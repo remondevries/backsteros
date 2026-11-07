@@ -9,6 +9,7 @@ import {
   type ProjectArea,
 } from "../../projects/project-areas.js";
 import {
+  getProjectEmailCategoryDefaultIcon,
   getProjectEmailCategoryLabel,
   parseProjectEmailCategory,
   PROJECT_EMAIL_CATEGORY_ORDER,
@@ -38,6 +39,7 @@ import { getCreateEntityFromQueryLabel } from "../../dropdowns/searchable-dropdo
 import { PropertyDropdown } from "../dropdowns/property-dropdown.js";
 import type { SearchableDropdownOption } from "../dropdowns/searchable-dropdown.js";
 import { TransipIcon } from "../icons/transip-icon.js";
+import { ProjectOcticon } from "./project-octicon.js";
 import { OrganizationIcon } from "../organizations/organization-icon.js";
 import { TaskDueDateDropdown } from "../tasks/task-due-date-dropdown.js";
 import { TaskPriorityIcon } from "../tasks/task-priority-icon.js";
@@ -151,7 +153,12 @@ export function ProjectPropertiesInlineChips({
         value,
         label: getProjectEmailCategoryLabel(value),
         searchTerms: `${value} ${getProjectEmailCategoryLabel(value)}`,
-        icon: <MailIcon size={14} />,
+        icon: (
+          <ProjectOcticon
+            icon={getProjectEmailCategoryDefaultIcon(value)}
+            size={14}
+          />
+        ),
       })),
     ],
     [],
@@ -410,7 +417,16 @@ export function ProjectPropertiesInlineChips({
                 disabled={!onCategoryChange}
                 searchPlaceholder="Change category…"
                 ariaLabel="Category"
-                fallbackIcon={<MailIcon size={14} />}
+                fallbackIcon={
+                  projectCategory ? (
+                    <ProjectOcticon
+                      icon={getProjectEmailCategoryDefaultIcon(projectCategory)}
+                      size={14}
+                    />
+                  ) : (
+                    <MailIcon size={14} />
+                  )
+                }
                 fallbackLabel={
                   projectCategory
                     ? getProjectEmailCategoryLabel(projectCategory)

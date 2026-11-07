@@ -126,7 +126,6 @@ import {
 import { deleteEmailMessage } from "../lib/delete-email-message";
 import { useEnsureProjectVault } from "../lib/use-ensure-project-vault";
 import { uploadLetterPdfFile } from "../lib/letter-pdf-upload";
-import { writeDocumentContentCache } from "../lib/document-content-cache";
 import { useDesktopDocumentContent } from "../lib/use-document-content";
 import { useCodebaseRepoDocs } from "../lib/codebase-repo-docs";
 import { useDesktopSectionBreadcrumb } from "../lib/use-desktop-breadcrumb";
@@ -2111,10 +2110,7 @@ function ProjectDetailScreen({
                 current.some((entry) => entry.id === created.id)
                   ? current
                   : [...current, item]);
-              writeDocumentContentCache(created.id, {
-                content,
-                contentVersion: created.contentVersion,
-              });
+              // Content cache is seeded inside createProjectDocument (with checksum).
               setPendingEditDocumentId(created.id);
               setOmittedDocumentIds([]);
               setComposingDocument(false);
@@ -2346,10 +2342,7 @@ function ProjectDetailScreen({
                           ? current
                           : [...current, item],
                       );
-                      writeDocumentContentCache(created.id, {
-                        content,
-                        contentVersion: created.contentVersion,
-                      });
+                      // Content cache is seeded inside createProjectDocument (with checksum).
                       setPendingEditDocumentId(created.id);
                       setOmittedDocumentIds([]);
                       setComposingDocument(false);
@@ -2825,6 +2818,17 @@ function ProjectDetailScreen({
     path: string,
     init?: RequestInit,
   ): Promise<T> => desktopApiClient.requestJson<T>(path, init);
+  const repositoryField = (
+    <PropertyFieldGroup label="Repository">
+      <ProjectGithubRepositoryField
+        project={codebaseLocationProject as never}
+        onProjectUpdated={syncCodebaseLocationProject}
+        requestJson={codebaseRequestJson}
+      />
+    </PropertyFieldGroup>
+  );
+  // Domains may bind a GitHub repo for the site under the vault; Dev/Prod stay
+  // codebase-only.
   const locationsExtra = isCodebaseProject ? (
     <EntityPropertiesSection title="Codebase">
       <PropertyFieldGroup label="Health">
@@ -2834,13 +2838,7 @@ function ProjectDetailScreen({
           onChange={projectPropertyHandlers.onHealthCheckChange}
         />
       </PropertyFieldGroup>
-      <PropertyFieldGroup label="Repository">
-        <ProjectGithubRepositoryField
-          project={codebaseLocationProject as never}
-          onProjectUpdated={syncCodebaseLocationProject}
-          requestJson={codebaseRequestJson}
-        />
-      </PropertyFieldGroup>
+      {repositoryField}
       <div className="project-properties-field-row">
         <PropertyFieldGroup label="Development">
           <ProjectDevelopmentField
@@ -2857,6 +2855,10 @@ function ProjectDetailScreen({
           />
         </PropertyFieldGroup>
       </div>
+    </EntityPropertiesSection>
+  ) : isDomainProject ? (
+    <EntityPropertiesSection title="Codebase">
+      {repositoryField}
     </EntityPropertiesSection>
   ) : null;
 
@@ -2911,56 +2913,59 @@ function ProjectDetailScreen({
     </>
   );
 
+  const domainOverviewBeforeDescription = isDomainProject ? (
+    <DomainOverviewView
+      variant="panelSections"
+      project={{
+        ...project,
+        organizationId: project.organizationId ?? null,
+        type: "domeinname",
+        provider: project.provider ?? null,
+        summary: workspace.projectSummaries[project.id] ?? "",
+        description: workspace.projectDescriptions[project.id] ?? "",
+        taskProgress,
+      }}
+      organizationOptions={domainOrganizationOptions}
+      nestedAreas={mapWorkspaceNestedAreas(workspace.areas)}
+      knownTags={knownDomainTags}
+      loadDetail={loadDomainRegistrarDetail}
+      copyIdShortcutEnabled={keepAliveActive}
+      onTagsChange={async (tags: string[]) => {
+        try {
+          const result = await updateDomainTags(project.name, tags);
+          await workspace.patchProject(project.id, {
+            icon: buildTransipDomainProjectIcon(result.tags),
+          });
+          return { ok: true as const, tags: result.tags };
+        } catch (error) {
+          return {
+            ok: false as const,
+            error:
+              error instanceof Error
+                ? error.message
+                : "Could not update tags",
+          };
+        }
+      }}
+      onContactsChange={async (contacts: DomainRegistrarContact[]) => {
+        try {
+          const result = await updateDomainContacts(project.name, contacts);
+          return { ok: true as const, contacts: result.contacts };
+        } catch (error) {
+          return {
+            ok: false as const,
+            error:
+              error instanceof Error
+                ? error.message
+                : "Could not update WHOIS contacts",
+          };
+        }
+      }}
+    />
+  ) : null;
+
   const domainBelowProperties = isDomainProject ? (
     <>
-      <DomainOverviewView
-        variant="panelSections"
-        project={{
-          ...project,
-          organizationId: project.organizationId ?? null,
-          type: "domeinname",
-          provider: project.provider ?? null,
-          summary: workspace.projectSummaries[project.id] ?? "",
-          description: workspace.projectDescriptions[project.id] ?? "",
-          taskProgress,
-        }}
-        organizationOptions={domainOrganizationOptions}
-        nestedAreas={mapWorkspaceNestedAreas(workspace.areas)}
-        knownTags={knownDomainTags}
-        loadDetail={loadDomainRegistrarDetail}
-        copyIdShortcutEnabled={keepAliveActive}
-        onTagsChange={async (tags: string[]) => {
-          try {
-            const result = await updateDomainTags(project.name, tags);
-            await workspace.patchProject(project.id, {
-              icon: buildTransipDomainProjectIcon(result.tags),
-            });
-            return { ok: true as const, tags: result.tags };
-          } catch (error) {
-            return {
-              ok: false as const,
-              error:
-                error instanceof Error
-                  ? error.message
-                  : "Could not update tags",
-            };
-          }
-        }}
-        onContactsChange={async (contacts: DomainRegistrarContact[]) => {
-          try {
-            const result = await updateDomainContacts(project.name, contacts);
-            return { ok: true as const, contacts: result.contacts };
-          } catch (error) {
-            return {
-              ok: false as const,
-              error:
-                error instanceof Error
-                  ? error.message
-                  : "Could not update WHOIS contacts",
-            };
-          }
-        }}
-      />
       {domainZoneId ? (
         <EntityPropertiesSection title="Cloudflare" defaultCollapsed>
           <DomainCloudflarePanel
@@ -3028,6 +3033,7 @@ function ProjectDetailScreen({
         propertiesExtra={locationsExtra}
         agentsExtra={agentsExtra}
         agentsHeaderEnd={agentsHeaderEnd}
+        overviewBeforeDescription={domainOverviewBeforeDescription}
         belowProperties={domainBelowProperties}
         descriptionEmptyHint={
           isCodebaseProject

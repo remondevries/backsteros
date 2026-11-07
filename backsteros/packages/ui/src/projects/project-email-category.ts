@@ -28,9 +28,9 @@ export const PROJECT_EMAIL_CATEGORY_ICON_KEYS: Record<
   string
 > = {
   lemo_hosting: "mail",
-  google_workspaces: "mail",
-  office365: "mail",
-  proton: "mail",
+  google_workspaces: "google",
+  office365: "office365",
+  proton: "proton",
 };
 
 /** Default paint color baked into the entity-icon JSON payload. */

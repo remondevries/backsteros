@@ -17,6 +17,20 @@ export type HelpArticlePlacementFolder = {
   path: string;
 };
 
+/**
+ * Short path for “Appears in” labels — drops the Support/portal prefix so
+ * language roots stay visible (`en/…` vs `nl/…`).
+ */
+export function formatHelpArticlePlacementPath(path: string): string {
+  const normalized = path.trim().replace(/^\/+|\/+$/g, "");
+  if (!normalized) return "";
+  const withoutSpacesPrefix = normalized.replace(
+    /^(?:support\/)?portal\//i,
+    "",
+  );
+  return withoutSpacesPrefix || normalized;
+}
+
 function sortFoldersByPath(
   folders: readonly KnowledgeListItem[],
 ): HelpArticlePlacementFolder[] {

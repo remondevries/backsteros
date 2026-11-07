@@ -67,6 +67,7 @@ import {
   organizationKeys,
   parseOptionalDate,
   parseOptionalNullableDate,
+  parseStringIdArray,
   recurringTaskKeys,
   taskActivityKeys,
   taskCommentKeys,
@@ -503,6 +504,38 @@ export async function applySyncChange(
         const audience = asString(
           change.payload.audience,
         ) as "group" | "individual" | undefined;
+        const publishStatus = asString(
+          change.payload.publish_status ?? change.payload.publishStatus,
+        ) as "concept" | "published" | "offline" | undefined;
+        const hasPublishSlug =
+          Object.prototype.hasOwnProperty.call(change.payload, "publish_slug") ||
+          Object.prototype.hasOwnProperty.call(change.payload, "publishSlug");
+        const hasSeoTitle =
+          Object.prototype.hasOwnProperty.call(change.payload, "seo_title") ||
+          Object.prototype.hasOwnProperty.call(change.payload, "seoTitle");
+        const hasSeoDescription =
+          Object.prototype.hasOwnProperty.call(
+            change.payload,
+            "seo_description",
+          ) ||
+          Object.prototype.hasOwnProperty.call(change.payload, "seoDescription");
+        const hasContactIds =
+          Object.prototype.hasOwnProperty.call(change.payload, "contact_ids") ||
+          Object.prototype.hasOwnProperty.call(change.payload, "contactIds");
+        const hasPlacementFolderId =
+          Object.prototype.hasOwnProperty.call(
+            change.payload,
+            "placement_folder_id",
+          ) ||
+          Object.prototype.hasOwnProperty.call(
+            change.payload,
+            "placementFolderId",
+          );
+        const contactIds = hasContactIds
+          ? (parseStringIdArray(
+              change.payload.contact_ids ?? change.payload.contactIds,
+            ) ?? [])
+          : undefined;
         const row = await documentService.updateDocument(
           workspaceId,
           change.entity_id,
@@ -514,6 +547,38 @@ export async function applySyncChange(
             sortOrder,
             journalDate,
             ...(audience !== undefined ? { audience } : {}),
+            ...(publishStatus !== undefined ? { publishStatus } : {}),
+            ...(hasPublishSlug
+              ? {
+                  publishSlug: asNullableString(
+                    change.payload.publish_slug ?? change.payload.publishSlug,
+                  ),
+                }
+              : {}),
+            ...(hasSeoTitle
+              ? {
+                  seoTitle: asNullableString(
+                    change.payload.seo_title ?? change.payload.seoTitle,
+                  ),
+                }
+              : {}),
+            ...(hasSeoDescription
+              ? {
+                  seoDescription: asNullableString(
+                    change.payload.seo_description ??
+                      change.payload.seoDescription,
+                  ),
+                }
+              : {}),
+            ...(contactIds !== undefined ? { contactIds } : {}),
+            ...(hasPlacementFolderId
+              ? {
+                  placementFolderId: asNullableString(
+                    change.payload.placement_folder_id ??
+                      change.payload.placementFolderId,
+                  ),
+                }
+              : {}),
             ...(change.payload.project_id !== undefined ||
             change.payload.projectId !== undefined
               ? { projectId: projectId ?? null }

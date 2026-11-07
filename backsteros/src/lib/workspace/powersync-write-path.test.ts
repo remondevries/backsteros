@@ -91,6 +91,27 @@ test("mustDualWriteRestAfterCrudFlush for due-date clears and health checks", ()
     mustDualWriteRestAfterCrudFlush("organizations", { website: null }),
     true,
   );
+  assert.equal(
+    mustDualWriteRestAfterCrudFlush("documents", { title: "Code Project v2" }),
+    true,
+  );
+  assert.equal(
+    mustDualWriteRestAfterCrudFlush("documents", { icon: "code" }),
+    false,
+  );
+  assert.equal(
+    mustDualWriteRestAfterCrudFlush("documents", {
+      contactIds: ["contact-1"],
+    }),
+    true,
+  );
+  assert.equal(
+    mustDualWriteRestAfterCrudFlush("documents", {
+      publishStatus: "published",
+      audience: "individual",
+    }),
+    true,
+  );
 });
 
 test("connected PowerSync still RESTs due-date clears after flush", () => {

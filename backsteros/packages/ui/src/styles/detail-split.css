@@ -25,22 +25,57 @@
   flex: 1;
 }
 
+/*
+ * Project overview: one scroll for the full main column (header, domain
+ * cards, description) — not a nested description-only scroller.
+ */
 .project-detail-split .project-detail__overview-main {
   display: flex;
   min-width: 0;
   min-height: 0;
   flex: 1;
   flex-direction: column;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 .project-detail-split .project-detail__overview-top {
   flex-shrink: 0;
 }
 
+.project-detail-split .project-detail__overview-before-description {
+  flex-shrink: 0;
+}
+
 .project-detail-split .project-detail__description--expanded {
-  min-height: 0;
-  flex: 1;
+  flex: 0 0 auto;
+  min-height: auto;
+}
+
+.project-detail-split .project-detail__description-body {
+  flex: 0 0 auto;
+  min-height: auto;
+  overflow: visible;
+}
+
+.project-detail-split
+  .project-detail__description
+  .content-markdown-view-layout,
+.project-detail-split
+  .project-detail__description
+  .content-markdown-view-layout__edit,
+.project-detail-split
+  .project-detail__description
+  .content-markdown-view-layout__preview {
+  flex: 0 0 auto;
+  min-height: auto;
+  overflow: visible;
+}
+
+.project-detail-split
+  .project-detail__description
+  .content-markdown-preview-column {
+  overflow: visible;
 }
 
 .finance-estimate-detail-split > .finance-estimate-detail-scroll-shell {

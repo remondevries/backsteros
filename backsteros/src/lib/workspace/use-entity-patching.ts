@@ -98,6 +98,8 @@ export function useWorkspaceEntityPatching({
   setApiOrganizations,
   setApiMeetings,
   setApiDocuments,
+  setLiveDocumentsById,
+  getDocumentById,
   setLiveProjectsById,
   getProjectById,
   setLiveMeetingsById,
@@ -122,6 +124,10 @@ export function useWorkspaceEntityPatching({
   setApiOrganizations: ApiRowsSetter<ApiOrganization>;
   setApiMeetings: ApiRowsSetter<ApiMeeting>;
   setApiDocuments: ApiRowsSetter<ApiDocument>;
+  setLiveDocumentsById?: (
+    updater: (current: Map<string, ApiDocument>) => Map<string, ApiDocument>,
+  ) => void;
+  getDocumentById?: (id: string) => ApiDocument | null | undefined;
   setLiveProjectsById?: (
     updater: (current: Map<string, ApiProject>) => Map<string, ApiProject>,
   ) => void;
@@ -509,6 +515,33 @@ export function useWorkspaceEntityPatching({
     [setApiDocuments],
   );
 
+  /**
+   * Spaces tree reads SQLite via resolveLocalOrApiRows (apiDocuments ignored).
+   * Push title/icon edits into liveDocumentsById so renames stick before watch
+   * / upload catch up — same pattern as meetings.
+   */
+  const applyLiveDocumentOptimisticPatch = useCallback(
+    (id: string, values: Record<string, unknown>) => {
+      const nextUpdatedAt = new Date().toISOString();
+      if (setLiveDocumentsById) {
+        const base = getDocumentById?.(id) ?? null;
+        setLiveDocumentsById((current) => {
+          const previous = current.get(id) ?? base;
+          if (!previous) return current;
+          const next = new Map(current);
+          next.set(id, {
+            ...previous,
+            ...values,
+            updatedAt: nextUpdatedAt,
+          } as ApiDocument);
+          return next;
+        });
+      }
+      applyApiDocumentPatch(id, values);
+    },
+    [applyApiDocumentPatch, getDocumentById, setLiveDocumentsById],
+  );
+
   const applyOptimisticEntityPatch = useCallback(
     (table: string, id: string, values: Record<string, unknown>) => {
       const localValues =
@@ -531,7 +564,7 @@ export function useWorkspaceEntityPatching({
         applyLiveProjectOptimisticPatch(id, values);
       }
       if (table === "documents") {
-        applyApiDocumentPatch(id, values);
+        applyLiveDocumentOptimisticPatch(id, values);
       }
       if (table === "tasks") {
         applyLiveTaskOptimisticPatch(id, localValues);
@@ -542,7 +575,7 @@ export function useWorkspaceEntityPatching({
     },
     [
       applyLiveContactOptimisticPatch,
-      applyApiDocumentPatch,
+      applyLiveDocumentOptimisticPatch,
       applyApiLetterPatch,
       applyLiveMeetingOptimisticPatch,
       applyLiveOrganizationOptimisticPatch,
@@ -925,6 +958,9 @@ export function useWorkspaceEntityPatching({
           if (table === "projects" && updated && typeof updated === "object") {
             applyLiveProjectOptimisticPatch(id, updated as ApiProject);
           }
+          if (table === "documents" && updated && typeof updated === "object") {
+            applyLiveDocumentOptimisticPatch(id, updated as ApiDocument);
+          }
         } catch (error) {
           // Local write + upload queue remain the source of truth if REST fails —
           // except agent chat binding, which must land in Postgres.
@@ -948,13 +984,21 @@ export function useWorkspaceEntityPatching({
               ? error
               : new Error("Could not link Moneybird contact on the organization.");
           }
+          // Document title REST is a dual-write reinforcement after PowerSync
+          // upload — do not fail the rename if the CRUD queue already drained.
+          if (
+            table === "documents" &&
+            Object.prototype.hasOwnProperty.call(values, "title")
+          ) {
+            console.warn("[desktop] document title REST dual-write failed", error);
+          }
         }
       };
 
       // Optimistic local SQLite is authoritative for Tier A/B lists. Skip
       // bumping the REST api* cache for those tables when PowerSync is ready —
-      // resolveLocalOrApiRows ignores newer API overlays. Documents still warm
-      // apiDocuments for pending shell creates (SSE uses liveDocumentsById).
+      // resolveLocalOrApiRows ignores newer API overlays. Document renames use
+      // liveDocumentsById (same pattern as meetings) plus REST dual-write.
       if (powerSync.ready) {
         // Non-status task patches (due date, priority, …) must not re-base the
         // API cache onto a stale REST row whose status still says backlog while
@@ -1010,6 +1054,8 @@ export function useWorkspaceEntityPatching({
             "healthCheckDomain" in values ||
             "hourlyRateCents" in values ||
             "budgets" in values ||
+            (table === "documents" &&
+              Object.prototype.hasOwnProperty.call(values, "title")) ||
             (table === "tasks" && typeof values.status === "string") ||
             (table === "tasks" && taskPatchChangesTaskScope(values)) ||
             (table === "letters" && letterPatchRequiresVaultRelocate(values)));
@@ -1067,6 +1113,20 @@ export function useWorkspaceEntityPatching({
           });
         return;
       }
+      if (table === "documents") {
+        // Same pattern as meetings — tree rename should not wait on REST.
+        applyLiveDocumentOptimisticPatch(id, values);
+        void client
+          .requestJson(path, {
+            method: "PATCH",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify(values),
+          })
+          .catch((error) => {
+            console.warn("[desktop] document patch REST failed", error);
+          });
+        return;
+      }
       await client.requestJson(path, {
         method: "PATCH",
         headers: { "content-type": "application/json" },
@@ -1104,6 +1164,7 @@ export function useWorkspaceEntityPatching({
     },
     [
       applyLiveContactOptimisticPatch,
+      applyLiveDocumentOptimisticPatch,
       applyApiLetterPatch,
       applyLiveMeetingOptimisticPatch,
       applyOptimisticEntityPatch,

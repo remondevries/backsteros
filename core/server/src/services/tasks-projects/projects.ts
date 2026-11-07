@@ -303,6 +303,11 @@ function assertCodebaseLocationFields(
   }
 }
 
+/** Codebase + domain projects may bind a GitHub `owner/repo` (sites live under domains). */
+function projectTypeAllowsGithubRepository(type: string): boolean {
+  return type === "codebase" || type === "domeinname";
+}
+
 function resolveStructuredLocations(input: {
   type: string;
   development?: ProjectDevelopment | null;
@@ -596,7 +601,10 @@ export async function createProject(
   );
 
   const type = input.type ?? "general";
-  if (input.githubRepository && type !== "codebase") {
+  if (
+    input.githubRepository &&
+    !projectTypeAllowsGithubRepository(type)
+  ) {
     throw new Error("GITHUB_REPO_REQUIRES_CODEBASE");
   }
   assertCodebaseLocationFields(type, {
@@ -772,7 +780,7 @@ export async function updateProject(
   if (
     input.githubRepository !== undefined &&
     input.githubRepository !== null &&
-    nextType !== "codebase"
+    !projectTypeAllowsGithubRepository(nextType)
   ) {
     throw new Error("GITHUB_REPO_REQUIRES_CODEBASE");
   }
@@ -786,9 +794,10 @@ export async function updateProject(
     localWorkingDirectory: input.localWorkingDirectory,
   });
 
-  // Droping codebase type clears any linked repository.
+  // Leaving a type that cannot bind GitHub clears any linked repository.
   const githubRepository =
-    input.type !== undefined && input.type !== "codebase"
+    input.type !== undefined &&
+    !projectTypeAllowsGithubRepository(input.type)
       ? null
       : input.githubRepository;
 

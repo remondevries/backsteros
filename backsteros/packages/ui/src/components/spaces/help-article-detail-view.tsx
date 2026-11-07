@@ -87,6 +87,7 @@ export function HelpArticleDetailView({
                   contactOptions={contactOptions}
                   taskOptions={taskOptions}
                   projectOptions={projectOptions}
+                  omitPropertyKeys={["status"]}
                 >
                   <HelpArticlePropertiesDisplay
                     article={article}

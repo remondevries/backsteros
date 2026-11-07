@@ -427,6 +427,17 @@ export function useWorkspaceApiRows({
               return next;
             });
             setLiveDocumentsById((current) => {
+              const previous = current.get(row.id);
+              // Keep a fresher optimistic rename/edit — a lagging SSE GET can
+              // still return the pre-PATCH title for a beat.
+              if (
+                previous &&
+                typeof previous.updatedAt === "string" &&
+                typeof row.updatedAt === "string" &&
+                Date.parse(previous.updatedAt) > Date.parse(row.updatedAt)
+              ) {
+                return current;
+              }
               const next = new Map(current);
               next.set(row.id, row);
               return next;
@@ -1231,6 +1242,7 @@ export function useWorkspaceApiRows({
     apiDocuments,
     setApiDocuments,
     liveDocumentsById,
+    setLiveDocumentsById,
     liveDeletedDocumentIds,
     liveProjectsById,
     setLiveProjectsById,

@@ -188,6 +188,12 @@ export type ProjectsOverviewViewProps = {
   /** When true, show type pills (Catalog). Default false. */
   showTypeFilters?: boolean;
   /**
+   * When false, keep every project type (e.g. organization-linked domains).
+   * When true (default), the Projects list keeps only Default + Codebase.
+   * Ignored while `showTypeFilters` is on (Catalog uses its own filter).
+   */
+  restrictToProjectsListTypes?: boolean;
+  /**
    * When false, skip type subgroups (e.g. single-type Catalog filter).
    * Default true. Auto-disabled while a specific type filter is active.
    */
@@ -247,6 +253,7 @@ export function ProjectsOverviewView({
   onViewChange,
   showAreaFilters = true,
   showTypeFilters = false,
+  restrictToProjectsListTypes = true,
   showTypeGroups = true,
   emptyMessage = "No projects in this area.",
   selectedProjectId = null,
@@ -510,7 +517,9 @@ export function ProjectsOverviewView({
       : localProjects;
     const byType = showTypeFilters
       ? filterCatalogProjectsByType(byArea, typeFilter)
-      : filterProjectsListByType(byArea);
+      : restrictToProjectsListTypes
+        ? filterProjectsListByType(byArea)
+        : byArea;
     if (!listTypeToFilter.query) return byType;
     return byType.filter((project) =>
       listItemMatchesTypeToFilter(
@@ -524,6 +533,7 @@ export function ProjectsOverviewView({
     area,
     showAreaFilters,
     showTypeFilters,
+    restrictToProjectsListTypes,
     typeFilter,
     listTypeToFilter.query,
   ]);
@@ -699,10 +709,10 @@ export function ProjectsOverviewView({
 
   const areaFilterUniverse = useMemo(
     () =>
-      showTypeFilters
+      showTypeFilters || !restrictToProjectsListTypes
         ? localProjects
         : filterProjectsListByType(localProjects),
-    [localProjects, showTypeFilters],
+    [localProjects, restrictToProjectsListTypes, showTypeFilters],
   );
   const areaFilters = useMemo(
     () => visibleProjectAreaFilters(areaFilterUniverse),

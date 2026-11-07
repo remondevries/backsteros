@@ -3420,7 +3420,9 @@ button.entity-overview-subgroup__header:focus-visible {
   min-height: 0;
   flex: 1;
   gap: 0;
-  overflow: hidden;
+  /* One scroll for the whole rail card (avatar + tabs + sections). */
+  overflow-x: hidden;
+  overflow-y: auto;
   /* Cover + tabs sit full-bleed; identity + scroll keep the inset. */
   padding: 0;
 }
@@ -3431,14 +3433,31 @@ button.entity-overview-subgroup__header:focus-visible {
   padding-top: 0;
 }
 
+/*
+ * Domains reuse contact chrome but have no cover photo — the contact
+ * negative margin was clipping the 64px avatar circle at the top.
+ */
+.contact-detail__overview .domain-overview > .contact-overview__chrome {
+  margin-top: 0;
+  padding-top: 0;
+}
+
 .contact-detail__overview .contact-overview__header {
   padding-inline: 16px;
   box-sizing: border-box;
 }
 
 .contact-detail__overview .contact-overview__scroll {
+  flex: 0 0 auto;
+  min-height: auto;
+  overflow: visible;
   padding-inline: 16px;
   box-sizing: border-box;
+}
+
+.contact-detail__overview
+  .contact-overview__scroll:has(.contact-overview__section-body) {
+  overflow: visible;
 }
 
 .contact-detail__overview .contact-section-tabs {
@@ -3777,8 +3796,9 @@ button.entity-overview-subgroup__header:focus-visible {
   padding-top: 0;
 }
 
-.contact-detail-panel__body .organization-overview.entity-overview {
-  /* Orgs still use the circular mark — clear the absolute chrome. */
+.contact-detail-panel__body .organization-overview.entity-overview,
+.contact-detail-panel__body .domain-overview.entity-overview {
+  /* No cover — clear the absolute expand/hide chrome above the avatar. */
   padding-top: 32px;
 }
 
@@ -4600,7 +4620,9 @@ button.entity-overview-subgroup__header:focus-visible {
   min-height: 0;
   flex: 1;
   gap: 0;
-  overflow: hidden;
+  /* One scroll for the whole rail card (avatar + tabs + sections). */
+  overflow-x: hidden;
+  overflow-y: auto;
   /* Tabs sit full-bleed; header + scroll keep the inset. */
   padding-inline: 0;
   padding-bottom: 0;
@@ -4612,8 +4634,16 @@ button.entity-overview-subgroup__header:focus-visible {
 }
 
 .organization-detail__overview .organization-overview__scroll {
+  flex: 0 0 auto;
+  min-height: auto;
+  overflow: visible;
   padding-inline: 16px;
   box-sizing: border-box;
+}
+
+.organization-detail__overview
+  .organization-overview__scroll:has(.organization-overview__section-body) {
+  overflow: visible;
 }
 
 .organization-detail__overview .organization-section-tabs {

@@ -26,6 +26,7 @@ import {
   type ProjectProvider,
 } from "../../projects/project-provider.js";
 import {
+  getProjectEmailCategoryDefaultIcon,
   getProjectEmailCategoryLabel,
   parseProjectEmailCategory,
   PROJECT_EMAIL_CATEGORY_ORDER,
@@ -42,6 +43,7 @@ import {
 } from "../../projects/project-progress-ring.js";
 import { TransipIcon } from "../icons/transip-icon.js";
 import { OrganizationIcon } from "../organizations/organization-icon.js";
+import { ProjectOcticon } from "./project-octicon.js";
 import { EntityPropertiesSection } from "../entity/entity-properties-section.js";
 import { PropertyFieldGroup } from "../content/property-field-group.js";
 import { PropertyDropdown } from "../dropdowns/property-dropdown.js";
@@ -205,7 +207,12 @@ export function ProjectPropertiesDisplay({
         value,
         label: getProjectEmailCategoryLabel(value),
         searchTerms: `${value} ${getProjectEmailCategoryLabel(value)}`,
-        icon: <MailIcon size={14} />,
+        icon: (
+          <ProjectOcticon
+            icon={getProjectEmailCategoryDefaultIcon(value)}
+            size={14}
+          />
+        ),
       })),
     ],
     [],
@@ -381,7 +388,16 @@ export function ProjectPropertiesDisplay({
                 }
                 searchPlaceholder="Change category…"
                 ariaLabel="Category"
-                fallbackIcon={<MailIcon size={14} />}
+                fallbackIcon={
+                  projectCategory ? (
+                    <ProjectOcticon
+                      icon={getProjectEmailCategoryDefaultIcon(projectCategory)}
+                      size={14}
+                    />
+                  ) : (
+                    <MailIcon size={14} />
+                  )
+                }
                 fallbackLabel={
                   projectCategory
                     ? getProjectEmailCategoryLabel(projectCategory)

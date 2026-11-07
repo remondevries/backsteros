@@ -36,6 +36,11 @@ export type DocumentPropertiesPanelProps = {
   contactOptions?: SearchableDropdownOption<string>[];
   taskOptions?: SearchableDropdownOption<string>[];
   projectOptions?: SearchableDropdownOption<string>[];
+  /**
+   * Hide these property keys from the table and Add menu (e.g. `status` when a
+   * publish Status control already covers concept / published / offline).
+   */
+  omitPropertyKeys?: readonly string[];
   /** Extra table rows (e.g. publishable Status / Folder) in the same card. */
   children?: ReactNode;
 };
@@ -86,9 +91,14 @@ export function DocumentPropertiesPanel({
   contactOptions = [],
   taskOptions = [],
   projectOptions = [],
+  omitPropertyKeys = [],
   children,
 }: DocumentPropertiesPanelProps) {
   const definitions = types?.length ? types : fallbackTypes();
+  const omittedKeys = useMemo(
+    () => new Set(omitPropertyKeys),
+    [omitPropertyKeys],
+  );
   const byKey = useMemo(
     () =>
       new Map(
@@ -109,13 +119,21 @@ export function DocumentPropertiesPanel({
 
   const propertyKeys = [
     ...Object.keys(document.properties).filter(
-      (key) => key !== "docKey" && document.properties[key] != null,
+      (key) =>
+        key !== "docKey" &&
+        !omittedKeys.has(key) &&
+        document.properties[key] != null,
     ),
-    ...(pendingKey && !(pendingKey in document.properties) ? [pendingKey] : []),
+    ...(pendingKey &&
+    !(pendingKey in document.properties) &&
+    !omittedKeys.has(pendingKey)
+      ? [pendingKey]
+      : []),
   ];
   const unusedTypes = definitions.filter(
     (type) =>
       type.status === "active" &&
+      !omittedKeys.has(type.key) &&
       !propertyKeys.includes(type.key) &&
       type.key !== pendingKey,
   );

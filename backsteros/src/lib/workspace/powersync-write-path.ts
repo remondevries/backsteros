@@ -76,6 +76,26 @@ export function mustDualWriteRestAfterCrudFlush(
   ) {
     return true;
   }
+  // Document/folder renames must land in Postgres before a sync pull can
+  // resurrect the previous title (apiDocuments alone is ignored once SQLite
+  // has rows — see resolveLocalOrApiRows).
+  if (table === "documents" && Object.prototype.hasOwnProperty.call(values, "title")) {
+    return true;
+  }
+  // Spaces publish fields — PowerSync apply historically dropped these; keep
+  // REST dual-write so portal contact targeting cannot silently no-op.
+  if (
+    table === "documents" &&
+    (Object.prototype.hasOwnProperty.call(values, "contactIds") ||
+      Object.prototype.hasOwnProperty.call(values, "audience") ||
+      Object.prototype.hasOwnProperty.call(values, "publishStatus") ||
+      Object.prototype.hasOwnProperty.call(values, "publishSlug") ||
+      Object.prototype.hasOwnProperty.call(values, "seoTitle") ||
+      Object.prototype.hasOwnProperty.call(values, "seoDescription") ||
+      Object.prototype.hasOwnProperty.call(values, "placementFolderId"))
+  ) {
+    return true;
+  }
   return false;
 }
 

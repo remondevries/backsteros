@@ -2,11 +2,50 @@ import { useCallback } from "react";
 import type { Document as ApiDocument } from "@backsteros/contracts";
 import type { BacksterosApiClient } from "@backsteros/api-client";
 
-import { writeDocumentContentCache } from "../document-content-cache";
+import {
+  sha256HexUtf8,
+  writeDocumentContentCache,
+} from "../document-content-cache";
+import { putDocumentProperties } from "../document-properties-api";
 import type { SoftDeletableTable } from "./use-entity-patching";
 import { optimisticLocalMetadataCreate } from "./optimistic-local-metadata-create";
 import { shouldSkipRestEntityWrite } from "./powersync-write-path";
 import type { WorkspacePowerSync } from "./workspace-data-types";
+
+/** Vault-relative markdown path; stamp avoids DOCUMENT_PATH_EXISTS on repeat Untitled. */
+function buildKnowledgeDocumentPath(
+  folderPath: string | null | undefined,
+  title: string,
+  explicitPath?: string | null,
+): string {
+  const trimmedExplicit = explicitPath?.trim().replace(/^\/+/, "") || null;
+  if (trimmedExplicit) return trimmedExplicit;
+  const slug =
+    title
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "") || "untitled";
+  const stamp = Date.now().toString(36);
+  const fileName = `${slug}-${stamp}.md`;
+  const folder = folderPath?.trim().replace(/^\/+|\/+$/g, "") ?? "";
+  return folder ? `${folder}/${fileName}` : fileName;
+}
+
+async function seedOptimisticDocumentContent(
+  documentId: string,
+  content: string,
+  contentVersion: number,
+): Promise<string> {
+  const checksum = await sha256HexUtf8(content);
+  writeDocumentContentCache(documentId, {
+    content,
+    contentVersion,
+    checksum,
+    optimistic: true,
+  });
+  return checksum;
+}
 
 async function commitInitialDocumentContent(
   client: BacksterosApiClient,
@@ -93,6 +132,13 @@ export function useWorkspaceDocumentActions({
       const id = crypto.randomUUID().replace(/-/g, "");
       const now = new Date().toISOString();
       const icon = input.icon ?? null;
+      const content = input.content ?? "";
+      const initialContentVersion = 1;
+      const checksum = await seedOptimisticDocumentContent(
+        id,
+        content,
+        initialContentVersion,
+      );
       const document = {
         id,
         type: input.type,
@@ -106,15 +152,16 @@ export function useWorkspaceDocumentActions({
         title: input.title,
         storageKey: "",
         contentType: "text/markdown",
-        byteSize: 0,
-        checksum: null,
+        byteSize: new TextEncoder().encode(content).length,
+        checksum,
         snippet: null,
-        contentVersion: 1,
+        contentVersion: initialContentVersion,
         contentEtag: null,
         createdAt: now,
         updatedAt: now,
       } as ApiDocument;
       upsertOptimisticDocument(document);
+      let resolvedContentVersion = initialContentVersion;
       await optimisticLocalMetadataCreate({
         id,
         applyOptimistic: () => upsertOptimisticDocument(document),
@@ -135,10 +182,10 @@ export function useWorkspaceDocumentActions({
               title: input.title,
               storageKey: "",
               contentType: "text/markdown",
-              byteSize: 0,
-              checksum: null,
+              byteSize: document.byteSize,
+              checksum,
               snippet: null,
-              contentVersion: 1,
+              contentVersion: initialContentVersion,
               contentEtag: null,
             }),
             id,
@@ -156,19 +203,25 @@ export function useWorkspaceDocumentActions({
               );
             }
           }
-          const content = input.content ?? "";
           if (content.length > 0) {
-            const contentVersion = await commitInitialDocumentContent(
+            resolvedContentVersion = await commitInitialDocumentContent(
               client,
               id,
               content,
-              1,
+              initialContentVersion,
             );
-            upsertOptimisticDocument({ ...document, contentVersion });
+            upsertOptimisticDocument({
+              ...document,
+              contentVersion: resolvedContentVersion,
+            });
           }
         },
       });
-      return { id, path: input.path, contentVersion: 1 };
+      return {
+        id,
+        path: input.path,
+        contentVersion: resolvedContentVersion,
+      };
     },
     [client, powerSync, setApiDocuments, toSnakeFields, upsertOptimisticDocument],
   );
@@ -181,23 +234,12 @@ export function useWorkspaceDocumentActions({
       parentId?: string | null;
     }) => {
       const title = input.title.trim() || "Untitled";
-      const slug =
-        title
-          .toLowerCase()
-          .replace(/[^a-z0-9]+/g, "-")
-          .replace(/^-+|-+$/g, "") || "untitled";
-      const folder = input.folderPath?.trim().replace(/^\/+|\/+$/g, "") ?? "";
-      const path = folder ? `${folder}/${slug}.md` : `${slug}.md`;
+      const path = buildKnowledgeDocumentPath(input.folderPath, title);
+      const content = input.content ?? "";
       if (!authenticated) throw new Error("Sign in to create documents.");
-      if (shouldSkipRestEntityWrite(powerSync)) {
-        return createDocumentMetadataLocal({
-          type: "knowledge",
-          title,
-          path,
-          parentId: input.parentId ?? null,
-          content: input.content,
-        });
-      }
+      // REST-first for Spaces/knowledge (same as folders) so creates land in
+      // Postgres immediately instead of stalling in the PowerSync upload queue
+      // on path collisions (e.g. every "Untitled" → untitled.md).
       const document = await client.requestJson<ApiDocument>(
         "/api/v1/documents",
         {
@@ -207,13 +249,18 @@ export function useWorkspaceDocumentActions({
             type: "knowledge",
             title,
             path,
-            content: input.content ?? "",
+            content,
             parentId: input.parentId ?? undefined,
           }),
         },
       );
       upsertOptimisticDocument(document);
       await seedDocumentLocal(document);
+      writeDocumentContentCache(document.id, {
+        content,
+        contentVersion: document.contentVersion,
+        checksum: document.checksum ?? (await sha256HexUtf8(content)),
+      });
       return {
         id: document.id,
         path: document.path,
@@ -223,8 +270,6 @@ export function useWorkspaceDocumentActions({
     [
       authenticated,
       client,
-      createDocumentMetadataLocal,
-      powerSync,
       seedDocumentLocal,
       upsertOptimisticDocument,
     ],
@@ -240,15 +285,11 @@ export function useWorkspaceDocumentActions({
       path?: string | null;
     }) => {
       const title = input.title.trim() || "Untitled";
-      const slug =
-        title
-          .toLowerCase()
-          .replace(/[^a-z0-9]+/g, "-")
-          .replace(/^-+|-+$/g, "") || "untitled";
-      const folder = input.folderPath?.trim().replace(/^\/+|\/+$/g, "") ?? "";
-      const path =
-        input.path?.trim().replace(/^\/+/, "") ||
-        (folder ? `${folder}/${slug}.md` : `${slug}.md`);
+      const path = buildKnowledgeDocumentPath(
+        input.folderPath,
+        title,
+        input.path,
+      );
       if (!authenticated) throw new Error("Sign in to create documents.");
       if (shouldSkipRestEntityWrite(powerSync)) {
         return createDocumentMetadataLocal({
@@ -260,6 +301,7 @@ export function useWorkspaceDocumentActions({
           content: input.content,
         });
       }
+      const content = input.content;
       const document = await client.requestJson<ApiDocument>(
         "/api/v1/documents",
         {
@@ -270,13 +312,18 @@ export function useWorkspaceDocumentActions({
             projectId: input.projectId,
             title,
             path,
-            ...(input.content !== undefined ? { content: input.content } : {}),
+            ...(content !== undefined ? { content } : {}),
             parentId: input.parentId ?? undefined,
           }),
         },
       );
       upsertOptimisticDocument(document);
       await seedDocumentLocal(document);
+      writeDocumentContentCache(document.id, {
+        content: content ?? "",
+        contentVersion: document.contentVersion,
+        checksum: document.checksum ?? (await sha256HexUtf8(content ?? "")),
+      });
       return {
         id: document.id,
         path: document.path,
@@ -412,6 +459,19 @@ export function useWorkspaceDocumentActions({
       if (!trimmed) return { ok: false as const, error: "Title is required." };
       try {
         await patchViaPowerSyncOrApi("documents", id, { title: trimmed });
+        // Spaces folders often mirror the name in properties.title (portal /
+        // import seed). Keep that field aligned so a later properties read
+        // cannot resurrect the previous label.
+        if (authenticated) {
+          void putDocumentProperties(client, id, {
+            properties: { title: trimmed },
+          }).catch((error) => {
+            console.warn(
+              "[desktop] document properties.title sync after rename failed",
+              error,
+            );
+          });
+        }
         return { ok: true as const };
       } catch (error) {
         return {
@@ -421,7 +481,7 @@ export function useWorkspaceDocumentActions({
         };
       }
     },
-    [patchViaPowerSyncOrApi],
+    [authenticated, client, patchViaPowerSyncOrApi],
   );
 
   const updateDocumentIcon = useCallback(

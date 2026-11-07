@@ -1422,6 +1422,13 @@
       "when": 1796370000000,
       "tag": "0201_bunq_payment_proposal_unknown_outcome_ack",
       "breakpoints": true
+    },
+    {
+      "idx": 203,
+      "version": "7",
+      "when": 1796380000000,
+      "tag": "0202_projects_workspace_key_soft_unique",
+      "breakpoints": true
     }
   ]
 }

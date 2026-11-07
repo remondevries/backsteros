@@ -791,10 +791,16 @@ export async function patchDocumentContentMetadataFromSyncPayload(
     return existing;
   }
 
-  const nextContentVersion =
+  const parsedContentVersion =
     contentVersion === undefined || contentVersion === null
       ? existing.contentVersion
       : Number(contentVersion);
+  // Never rewind content_version from a stale PowerSync PUT/PATCH after a
+  // newer REST body save — that desync is what surfaces as
+  // CONTENT_VERSION_CONFLICT on the next editor save.
+  const nextContentVersion = Number.isFinite(parsedContentVersion)
+    ? Math.max(existing.contentVersion, parsedContentVersion)
+    : existing.contentVersion;
   const checksum =
     payload.checksum === undefined
       ? existing.checksum
@@ -830,9 +836,7 @@ export async function patchDocumentContentMetadataFromSyncPayload(
     .update(documents)
     .set({
       byteSize: Number.isFinite(nextByteSize) ? nextByteSize : existing.byteSize,
-      contentVersion: Number.isFinite(nextContentVersion)
-        ? nextContentVersion
-        : existing.contentVersion,
+      contentVersion: nextContentVersion,
       checksum,
       snippet,
       contentEtag,

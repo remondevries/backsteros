@@ -43,6 +43,7 @@ export const OrganizationWorkspaceTabPanel = memo(
         typeToFilterEnabled={typeToFilterEnabled}
         nestedAreas={nestedAreas}
         showAreaFilters={false}
+        restrictToProjectsListTypes={false}
         emptyMessage="No projects linked to this organization."
         view={view}
         {...handlers}

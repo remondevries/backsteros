@@ -470,6 +470,20 @@
   font-variant-numeric: tabular-nums;
 }
 
+.project-detail__overview-before-description {
+  display: flex;
+  width: 100%;
+  max-width: 800px;
+  flex-direction: column;
+  margin: 0 auto;
+  padding: 1.25rem 1rem 0;
+  box-sizing: border-box;
+}
+
+.project-detail__overview-before-description .domain-overview--panel-sections {
+  width: 100%;
+}
+
 .project-detail__description {
   display: flex;
   width: 100%;

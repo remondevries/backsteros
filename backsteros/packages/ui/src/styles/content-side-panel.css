@@ -901,6 +901,7 @@ body.is-resizing {
 }
 
 .app-side-panel-tree-folder-row {
+  position: relative;
   display: flex;
   width: 100%;
   min-height: 28px;
@@ -921,6 +922,45 @@ body.is-resizing {
 .app-side-panel-tree-folder-row:hover {
   color: var(--foreground);
   background: var(--sidebar-surface-1);
+}
+
+.app-side-panel-tree-folder-row__menu-trigger {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  z-index: 1;
+  display: flex;
+  width: 22px;
+  height: 22px;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: color-mix(in srgb, var(--foreground) 45%, transparent);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-50%);
+  cursor: pointer;
+  transition:
+    opacity 120ms ease,
+    background 120ms ease,
+    color 120ms ease;
+}
+
+.app-side-panel-tree-folder-row:hover .app-side-panel-tree-folder-row__menu-trigger,
+.app-side-panel-tree-folder-row.is-menu-open
+  .app-side-panel-tree-folder-row__menu-trigger,
+.app-side-panel-tree-folder-row__menu-trigger:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.app-side-panel-tree-folder-row__menu-trigger:hover {
+  background: color-mix(in srgb, var(--foreground) 8%, transparent);
+  color: color-mix(in srgb, var(--foreground) 80%, transparent);
 }
 
 .app-side-panel-tree-folder-row.keyboard-nav-item-highlight {
@@ -1165,4 +1205,236 @@ body.is-resizing {
   overflow: hidden;
   text-overflow: ellipsis;
   pointer-events: none;
+}
+
+
+/* Folder portal settings (Spaces tree ⋯ → Settings) */
+.folder-portal-settings-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 1400;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.folder-portal-settings-modal__backdrop {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  margin: 0;
+  padding: 0;
+  background: rgb(0 0 0 / 0.45);
+  cursor: pointer;
+}
+
+.folder-portal-settings-modal__panel {
+  position: relative;
+  z-index: 1;
+  width: min(420px, 100%);
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--foreground) 12%, transparent);
+  background: var(--background, #111);
+  color: var(--foreground);
+  box-shadow: 0 18px 48px rgb(0 0 0 / 0.35);
+}
+
+.folder-portal-settings-modal__header {
+  padding: 18px 20px 4px;
+}
+
+.folder-portal-settings-modal__title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.3;
+  text-align: center;
+}
+
+.folder-portal-settings-modal__body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 8px 20px 16px;
+}
+
+.folder-portal-settings-modal__identity {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding: 4px 0 6px;
+}
+
+.folder-portal-settings-modal__avatar {
+  display: inline-flex;
+  width: 72px;
+  height: 72px;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border: 0.5px solid rgb(255 255 255 / 0.1);
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.03);
+  color: inherit;
+  padding: 0;
+  cursor: pointer;
+}
+
+.folder-portal-settings-modal__avatar:hover:not(:disabled) {
+  background: rgb(255 255 255 / 0.06);
+}
+
+.folder-portal-settings-modal__avatar:focus-visible {
+  outline: 1px solid rgb(255 255 255 / 0.3);
+  outline-offset: 2px;
+}
+
+.folder-portal-settings-modal__icon-glyph,
+.folder-portal-settings-modal__icon-emoji {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 0;
+}
+
+.folder-portal-settings-modal__colors {
+  display: flex;
+  width: 100%;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.folder-portal-settings-modal__colors .custom-color-picker {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.folder-portal-settings-modal__color-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.folder-portal-settings-modal__color-swatch {
+  position: relative;
+  display: flex;
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 999px;
+  padding: 0;
+  cursor: pointer;
+  transition: transform 0.15s ease;
+}
+
+.folder-portal-settings-modal__color-swatch:hover:not(:disabled) {
+  transform: scale(1.05);
+}
+
+.folder-portal-settings-modal__color-swatch:focus-visible {
+  outline: 1px solid rgb(255 255 255 / 0.3);
+  outline-offset: 2px;
+}
+
+.folder-portal-settings-modal__color-swatch-check {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  filter: drop-shadow(0 1px 1px rgb(0 0 0 / 0.4));
+}
+
+.folder-portal-settings-modal__color-divider {
+  flex-shrink: 0;
+  width: 1px;
+  height: 20px;
+  margin: 0 2px;
+  background: rgb(255 255 255 / 0.12);
+}
+
+.folder-portal-settings-modal__field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.folder-portal-settings-modal__label {
+  font-size: 12px;
+  font-weight: 500;
+  color: color-mix(in srgb, var(--foreground) 70%, transparent);
+}
+
+.folder-portal-settings-modal__input,
+.folder-portal-settings-modal__textarea {
+  width: 100%;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--foreground) 14%, transparent);
+  background: color-mix(in srgb, var(--foreground) 4%, transparent);
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  padding: 8px 10px;
+}
+
+.folder-portal-settings-modal__textarea {
+  resize: vertical;
+  min-height: 72px;
+}
+
+.folder-portal-settings-modal__hint {
+  font-size: 11px;
+  line-height: 1.35;
+  color: color-mix(in srgb, var(--foreground) 45%, transparent);
+}
+
+.folder-portal-settings-modal__error {
+  margin: 0;
+  font-size: 12px;
+  color: #f87171;
+}
+
+.folder-portal-settings-modal__footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 0 20px 18px;
+}
+
+.folder-portal-settings-modal__primary,
+.folder-portal-settings-modal__secondary {
+  border-radius: 8px;
+  border: 0;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  padding: 8px 12px;
+  cursor: pointer;
+}
+
+.folder-portal-settings-modal__primary {
+  background: var(--foreground);
+  color: var(--background, #111);
+}
+
+.folder-portal-settings-modal__secondary {
+  background: transparent;
+  color: color-mix(in srgb, var(--foreground) 70%, transparent);
+}
+
+.folder-portal-settings-modal__primary:disabled,
+.folder-portal-settings-modal__secondary:disabled,
+.folder-portal-settings-modal__avatar:disabled,
+.folder-portal-settings-modal__color-swatch:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }

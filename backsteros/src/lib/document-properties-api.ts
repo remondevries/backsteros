@@ -5,7 +5,7 @@ export async function putDocumentProperties(
   documentId: string,
   input: {
     properties: Record<string, unknown>;
-    ifMatchVersion: number;
+    ifMatchVersion?: number;
   },
 ): Promise<{
   docKey: string | null;

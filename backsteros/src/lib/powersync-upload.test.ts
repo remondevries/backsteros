@@ -73,4 +73,54 @@ describe("PowerSync upload auth", () => {
     );
     assert.equal(called, false);
   });
+
+  it("retries POWERSYNC_MUTATION_CLAIM_RACE 503 then completes", async () => {
+    let attempts = 0;
+    globalThis.fetch = (async () => {
+      attempts += 1;
+      if (attempts === 1) {
+        return new Response(
+          JSON.stringify({
+            error: "POWERSYNC_MUTATION_CLAIM_RACE",
+            code: "powersync_retry",
+          }),
+          { status: 503 },
+        );
+      }
+      return new Response("{}", { status: 200 });
+    }) as typeof fetch;
+
+    const pending = pendingProjectBatch();
+    const connector = new BacksterPowerSyncConnector(
+      "http://127.0.0.1:8788",
+      async () => "local",
+      "device-1",
+    );
+    await connector.uploadData(pending.database);
+    assert.equal(attempts, 2);
+    assert.equal(pending.completed(), true);
+  });
+
+  it("serializes concurrent uploadData calls", async () => {
+    let inFlight = 0;
+    let maxInFlight = 0;
+    globalThis.fetch = (async () => {
+      inFlight += 1;
+      maxInFlight = Math.max(maxInFlight, inFlight);
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      inFlight -= 1;
+      return new Response("{}", { status: 200 });
+    }) as typeof fetch;
+
+    const connector = new BacksterPowerSyncConnector(
+      "http://127.0.0.1:8788",
+      async () => "local",
+      "device-1",
+    );
+    await Promise.all([
+      connector.uploadData(pendingProjectBatch().database),
+      connector.uploadData(pendingProjectBatch().database),
+    ]);
+    assert.equal(maxInFlight, 1);
+  });
 });

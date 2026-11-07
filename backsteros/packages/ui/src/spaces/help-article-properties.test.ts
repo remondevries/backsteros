@@ -252,6 +252,26 @@ describe("filterDocumentsForHelpArticleScope", () => {
   });
 });
 
+describe("formatHelpArticlePlacementPath", () => {
+  it("keeps language roots visible after stripping portal prefix", async () => {
+    const { formatHelpArticlePlacementPath } = await import(
+      "./help-article-placement.ts"
+    );
+    assert.equal(
+      formatHelpArticlePlacementPath("support/portal/en/code-projects"),
+      "en/code-projects",
+    );
+    assert.equal(
+      formatHelpArticlePlacementPath("support/portal/nl/code-projects"),
+      "nl/code-projects",
+    );
+    assert.equal(
+      formatHelpArticlePlacementPath("portal/en/email"),
+      "en/email",
+    );
+  });
+});
+
 describe("listHelpArticlePlacementFolders", () => {
   it("lists support folders for Appears in placement", async () => {
     const { listHelpArticlePlacementFolders } = await import(

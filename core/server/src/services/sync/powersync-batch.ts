@@ -154,24 +154,35 @@ export async function applyPowerSyncBatch(input: {
         );
       parentReceipt = await claimReceipt();
       if (!parentReceipt) {
-        const [raced] = await db
-          .select({ result: mutationReceipts.result })
-          .from(mutationReceipts)
-          .where(
-            and(
-              eq(mutationReceipts.workspaceId, input.workspaceId),
-              eq(mutationReceipts.mutationId, input.mutationId),
-            ),
-          )
-          .limit(1);
-        if (
-          raced?.result &&
-          typeof raced.result === "object" &&
-          (raced.result as { accepted?: unknown }).accepted === true
-        ) {
-          return { ok: true as const, duplicate: true };
+        // Concurrent upload of the same mutation id (flush + auto-upload).
+        // Wait briefly for the winner to accept instead of failing the queue.
+        for (let attempt = 0; attempt < 6; attempt++) {
+          await new Promise((resolve) =>
+            setTimeout(resolve, 40 * (attempt + 1)),
+          );
+          const [raced] = await db
+            .select({ result: mutationReceipts.result })
+            .from(mutationReceipts)
+            .where(
+              and(
+                eq(mutationReceipts.workspaceId, input.workspaceId),
+                eq(mutationReceipts.mutationId, input.mutationId),
+              ),
+            )
+            .limit(1);
+          if (
+            raced?.result &&
+            typeof raced.result === "object" &&
+            (raced.result as { accepted?: unknown }).accepted === true
+          ) {
+            return { ok: true as const, duplicate: true };
+          }
+          parentReceipt = await claimReceipt();
+          if (parentReceipt) break;
         }
-        throw new Error("POWERSYNC_MUTATION_CLAIM_RACE");
+        if (!parentReceipt) {
+          throw new Error("POWERSYNC_MUTATION_CLAIM_RACE");
+        }
       }
     }
 

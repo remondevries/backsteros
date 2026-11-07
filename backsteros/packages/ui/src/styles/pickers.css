@@ -295,11 +295,12 @@
   font-size: 12px;
 }
 
-/* Entity icon picker (icons + emojis + color presets + custom color) */
+/* Entity icon picker (icons + emojis + color presets + custom color).
+ * Above folder settings / relationship modals (1400) so nested opens stay on top. */
 .entity-icon-picker {
   position: fixed;
   inset: 0;
-  z-index: 90;
+  z-index: 1500;
   display: flex;
   align-items: center;
   justify-content: center;

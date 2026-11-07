@@ -30,6 +30,7 @@ import {
   type ProjectProvider,
 } from "../../projects/project-provider.js";
 import {
+  getProjectEmailCategoryDefaultIcon,
   getProjectEmailCategoryLabel,
   parseProjectEmailCategory,
   PROJECT_EMAIL_CATEGORY_ORDER,
@@ -37,6 +38,7 @@ import {
 } from "../../projects/project-email-category.js";
 import { getTaskPriorityLabel, TASK_PRIORITY_ORDER } from "../../tasks/task-priority.js";
 import { TransipIcon } from "../icons/transip-icon.js";
+import { ProjectOcticon } from "./project-octicon.js";
 import { adoptRemoteField } from "../../shared/adopt-remote-field.js";
 import { useCopyEntityIdShortcut } from "../../shortcuts/copy-entity-id-shortcut.js";
 import { useTitleRenameShortcut } from "../../shortcuts/title-rename-shortcut.js";
@@ -274,7 +276,12 @@ export function ProjectPanelDetailView({
         value,
         label: getProjectEmailCategoryLabel(value),
         searchTerms: `${value} ${getProjectEmailCategoryLabel(value)}`,
-        icon: <MailIcon size={14} />,
+        icon: (
+          <ProjectOcticon
+            icon={getProjectEmailCategoryDefaultIcon(value)}
+            size={14}
+          />
+        ),
       })),
     ],
     [],
@@ -477,7 +484,16 @@ export function ProjectPanelDetailView({
         }
         searchPlaceholder="Change category…"
         ariaLabel="Category"
-        fallbackIcon={<MailIcon size={14} />}
+        fallbackIcon={
+          projectCategory ? (
+            <ProjectOcticon
+              icon={getProjectEmailCategoryDefaultIcon(projectCategory)}
+              size={14}
+            />
+          ) : (
+            <MailIcon size={14} />
+          )
+        }
         fallbackLabel={
           projectCategory
             ? getProjectEmailCategoryLabel(projectCategory)

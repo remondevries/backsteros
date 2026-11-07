@@ -392,6 +392,7 @@ import { CartIcon } from "../components/icons/cart-icon.js";
 import { CreamIcon } from "../components/icons/cream-icon.js";
 import { GiftIcon } from "../components/icons/gift-icon.js";
 import { GlobeIcon } from "../components/icons/globe-icon.js";
+import { GoogleIcon } from "../components/icons/google-icon.js";
 import { GymIcon } from "../components/icons/gym-icon.js";
 import { HangerIcon } from "../components/icons/hanger-icon.js";
 import { JournalIcon } from "../components/icons/journal-icon.js";
@@ -399,7 +400,9 @@ import { LaptopIcon } from "../components/icons/laptop-icon.js";
 import { MercedesBenzIcon } from "../components/icons/mercedes-benz-icon.js";
 import { MobIcon } from "../components/icons/mob-icon.js";
 import { NetflixIcon } from "../components/icons/netflix-icon.js";
+import { Office365Icon } from "../components/icons/office365-icon.js";
 import { PetIcon } from "../components/icons/pet-icon.js";
+import { ProtonIcon } from "../components/icons/proton-icon.js";
 import { PhoneIcon } from "../components/icons/phone-icon.js";
 import { RazorIcon } from "../components/icons/razor-icon.js";
 import { ShoeIcon } from "../components/icons/shoe-icon.js";
@@ -589,6 +592,7 @@ const OCTICON_BY_KEY = {
   "git-pull-request-locked": GitPullRequestLockedIcon,
   "globe": GlobeIcon,
   "goal": GoalIcon,
+  "google": GoogleIcon,
   "grabber": GrabberIcon,
   "graph": GraphIcon,
   "graph-bar-horizontal": GraphBarHorizontalIcon,
@@ -667,6 +671,7 @@ const OCTICON_BY_KEY = {
   "north-star": NorthStarIcon,
   "note": NoteIcon,
   "number": NumberIcon,
+  "office365": Office365Icon,
   "organization": OrganizationIcon,
   "package": PackageIcon,
   "package-dependencies": PackageDependenciesIcon,
@@ -697,6 +702,7 @@ const OCTICON_BY_KEY = {
   "project-roadmap": ProjectRoadmapIcon,
   "project-symlink": ProjectSymlinkIcon,
   "project-template": ProjectTemplateIcon,
+  "proton": ProtonIcon,
   "pulse": PulseIcon,
   "question": QuestionIcon,
   "quote": QuoteIcon,

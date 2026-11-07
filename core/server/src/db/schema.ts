@@ -977,7 +977,9 @@ export const projects = pgTable(
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
   },
   (table) => [
-    uniqueIndex("projects_workspace_key_unique").on(table.workspaceId, table.key),
+    uniqueIndex("projects_workspace_key_unique")
+      .on(table.workspaceId, table.key)
+      .where(sql`${table.deletedAt} is null`),
     index("projects_workspace_id_idx").on(table.workspaceId),
     index("projects_organization_id_idx").on(table.organizationId),
     index("projects_area_id_idx").on(table.areaId),

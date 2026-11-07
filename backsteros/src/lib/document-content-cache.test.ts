@@ -49,6 +49,32 @@ test("shouldMissDocumentContentCache keeps hit when checksum matches known", () 
   );
 });
 
+test("shouldMissDocumentContentCache trusts optimistic seeds without server checksum", () => {
+  assert.equal(
+    shouldMissDocumentContentCache(
+      {
+        content: "",
+        contentVersion: 1,
+        checksum: "abc",
+        optimistic: true,
+      },
+      null,
+    ),
+    false,
+  );
+  assert.equal(
+    shouldMissDocumentContentCache(
+      {
+        content: "",
+        contentVersion: 1,
+        checksum: "abc",
+      },
+      null,
+    ),
+    true,
+  );
+});
+
 test("shouldMissDocumentContentCache misses when checksum drifted", () => {
   assert.equal(
     shouldMissDocumentContentCache(

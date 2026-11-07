@@ -39,6 +39,7 @@ import {
   findDuplicateSpaceOverviewIdsToDelete,
   findLocalOnlySpacesToPublish,
   listHelpArticleMoveFolders,
+  formatHelpArticlePlacementPath,
   listHelpArticlePlacementFolders,
   normalizeHelpArticleProperties,
   resolveHelpArticleAudience,
@@ -70,7 +71,6 @@ import {
   rememberDesktopSpaceCoverPreview,
   useDesktopSpaceCoverSrcMap,
 } from "../lib/space-cover-src";
-import { writeDocumentContentCache } from "../lib/document-content-cache";
 import {
   documentPropertiesFromApiDocument,
   putDocumentProperties,
@@ -558,10 +558,7 @@ function KnowledgePageBody() {
             ? (individualRoot.path ?? undefined)
             : (spaceRoot?.path ?? undefined),
         });
-        writeDocumentContentCache(created.id, {
-          content,
-          contentVersion: created.contentVersion,
-        });
+        // Content cache is seeded inside createKnowledgeDocument (with checksum).
         if (isSupportSpace) {
           writeArticleAudience(created.id, listScope);
         }
@@ -721,11 +718,15 @@ function KnowledgePageBody() {
         label: "No section",
         searchTerms: "none unassigned",
       },
-      ...folders.map((folder) => ({
-        value: folder.id,
-        label: folder.title,
-        searchTerms: `${folder.title} ${folder.path}`,
-      })),
+      ...folders.map((folder) => {
+        const pathLabel = formatHelpArticlePlacementPath(folder.path);
+        return {
+          value: folder.id,
+          label: folder.title,
+          secondaryLabel: pathLabel || undefined,
+          searchTerms: `${folder.title} ${folder.path} ${pathLabel}`,
+        };
+      }),
     ];
   }, [audienceById, isSupportSpace, scopedDocuments]);
 

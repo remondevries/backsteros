@@ -4,7 +4,6 @@ import {
   useEffect,
   useRef,
   useState,
-  useTransition,
   type ComponentType,
   type DragEvent,
   type MouseEvent,
@@ -33,6 +32,8 @@ import {
   treeNodeOrderKey,
   type TreeDragPayload,
 } from "../../documents/document-tree-order.js";
+import { KebabHorizontalIcon } from "../contacts/relationship-label-overflow-menu.js";
+import { DocumentTreeFolderOverflowMenu } from "./document-tree-folder-overflow-menu.js";
 
 export type DocumentTreeLinkComponent = ComponentType<{
   to: string;
@@ -52,6 +53,8 @@ type DocumentTreeSharedProps = {
   selectedPath?: string | null;
   onClearSelectedFolder?: () => void;
   onSelectFolder?: (folderId: string) => void;
+  /** Opens folder portal settings from the ⋯ → Settings action. */
+  onConfigureFolder?: (folderId: string) => void;
   collapsedFolderIds: ReadonlySet<string>;
   onToggleFolderCollapsed: (folderId: string) => void;
   highlightedNavItemId?: string | null;
@@ -170,8 +173,9 @@ function DocumentTreeItem({
 }: DocumentTreeSharedProps & { document: DocumentTreeDocumentNode }) {
   const [isRenaming, setIsRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState(document.title);
+  const [optimisticTitle, setOptimisticTitle] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [isPending, startTransition] = useTransition();
+  const displayTitle = optimisticTitle ?? document.title;
   const isSelected = document.path === selectedPath;
   const isKeyboardHighlighted = highlightedNavItemId === document.id;
   const href = getDocumentHref(document.path);
@@ -180,26 +184,33 @@ function DocumentTreeItem({
   const showInsertIndicator =
     canDrag && dragInsertBeforeId === treeNodeOrderKey(document);
 
+  useEffect(() => {
+    if (optimisticTitle != null && document.title === optimisticTitle) {
+      setOptimisticTitle(null);
+    }
+  }, [document.title, optimisticTitle]);
+
   function cancelRename() {
     setIsRenaming(false);
-    setRenameValue(document.title);
+    setRenameValue(displayTitle);
     setError(null);
   }
 
   function submitRename() {
     const trimmed = renameValue.trim();
-    if (!trimmed || trimmed === document.title || !onRename) {
+    if (!trimmed || trimmed === displayTitle || !onRename) {
       cancelRename();
       return;
     }
-    startTransition(async () => {
-      setError(null);
-      const result = await onRename(document.id, trimmed);
+    // Close the editor immediately so rename feels as snappy as other patches.
+    setOptimisticTitle(trimmed);
+    setIsRenaming(false);
+    setError(null);
+    void onRename(document.id, trimmed).then((result) => {
       if (!result.ok) {
+        setOptimisticTitle(null);
         setError(result.error);
-        return;
       }
-      setIsRenaming(false);
     });
   }
 
@@ -272,7 +283,7 @@ function DocumentTreeItem({
               onChange={setRenameValue}
               onSubmit={submitRename}
               onCancel={cancelRename}
-              isPending={isPending}
+              isPending={false}
               ariaLabel="Rename document"
             />
           ) : (
@@ -283,6 +294,7 @@ function DocumentTreeItem({
                 onRename
                   ? (event) => {
                       event.preventDefault();
+                      setRenameValue(displayTitle);
                       setIsRenaming(true);
                       setError(null);
                     }
@@ -301,7 +313,7 @@ function DocumentTreeItem({
               draggable={false}
               {...keyboardNavItemProps(document.id)}
             >
-              {document.title}
+              {displayTitle}
             </Link>
           )}
         </div>
@@ -317,6 +329,7 @@ function DocumentTreeFolder({
   selectedPath,
   onClearSelectedFolder,
   onSelectFolder,
+  onConfigureFolder,
   collapsedFolderIds,
   onToggleFolderCollapsed,
   highlightedNavItemId,
@@ -337,9 +350,12 @@ function DocumentTreeFolder({
   const [isDragging, setIsDragging] = useState(false);
   const [isRenaming, setIsRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState(folder.title);
+  const [optimisticTitle, setOptimisticTitle] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [isPending, startTransition] = useTransition();
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  const displayTitle = optimisticTitle ?? folder.title;
   const navId = folderNavId(folder.id);
+  const showFolderMenu = Boolean(onConfigureFolder || onRename);
   const isKeyboardHighlighted = highlightedNavItemId === navId;
   const paddingLeft = depth > 0 ? `${depth * 12}px` : undefined;
   const canDrag = Boolean(onReorderTreeItem);
@@ -351,6 +367,12 @@ function DocumentTreeFolder({
     canDrag && dragIntoFolderId === treeNodeOrderKey(folder);
 
   useEffect(() => {
+    if (optimisticTitle != null && folder.title === optimisticTitle) {
+      setOptimisticTitle(null);
+    }
+  }, [folder.title, optimisticTitle]);
+
+  useEffect(() => {
     if (!onRename || isRenaming) {
       return;
     }
@@ -359,32 +381,34 @@ function DocumentTreeFolder({
       if (focusedItemId !== navId) {
         return false;
       }
+      setRenameValue(displayTitle);
       setIsRenaming(true);
       setError(null);
       return true;
     });
-  }, [isRenaming, navId, onRename]);
+  }, [displayTitle, isRenaming, navId, onRename]);
 
   function cancelRename() {
     setIsRenaming(false);
-    setRenameValue(folder.title);
+    setRenameValue(displayTitle);
     setError(null);
   }
 
   function submitRename() {
     const trimmed = renameValue.trim();
-    if (!trimmed || trimmed === folder.title || !onRename) {
+    if (!trimmed || trimmed === displayTitle || !onRename) {
       cancelRename();
       return;
     }
-    startTransition(async () => {
-      setError(null);
-      const result = await onRename(folder.id, trimmed);
+    // Close the editor immediately so rename feels as snappy as other patches.
+    setOptimisticTitle(trimmed);
+    setIsRenaming(false);
+    setError(null);
+    void onRename(folder.id, trimmed).then((result) => {
       if (!result.ok) {
+        setOptimisticTitle(null);
         setError(result.error);
-        return;
       }
-      setIsRenaming(false);
     });
   }
 
@@ -473,17 +497,21 @@ function DocumentTreeFolder({
               onChange={setRenameValue}
               onSubmit={submitRename}
               onCancel={cancelRename}
-              isPending={isPending}
+              isPending={false}
               ariaLabel="Rename folder"
             />
           </div>
         ) : (
           <div
-            className={`app-side-panel-tree-folder-row min-w-0 ${
+            className={[
+              "app-side-panel-tree-folder-row min-w-0",
               isKeyboardHighlighted && !showDropIntoHighlight
                 ? "keyboard-nav-item-highlight"
-                : ""
-            }`}
+                : null,
+              menu ? "is-menu-open" : null,
+            ]
+              .filter(Boolean)
+              .join(" ")}
           >
             <button
               type="button"
@@ -500,6 +528,8 @@ function DocumentTreeFolder({
                   ? (event) => {
                       event.preventDefault();
                       event.stopPropagation();
+                      setMenu(null);
+                      setRenameValue(displayTitle);
                       setIsRenaming(true);
                       setError(null);
                     }
@@ -531,12 +561,56 @@ function DocumentTreeFolder({
                 <ChevronIcon expanded={!collapsed} />
               </span>
               <span className="app-side-panel-item-label min-w-0 flex-1 font-medium">
-                {folder.title}
+                {displayTitle}
               </span>
             </button>
+            {showFolderMenu ? (
+              <button
+                type="button"
+                className="app-side-panel-tree-folder-row__menu-trigger"
+                aria-label={`Actions for ${displayTitle}`}
+                aria-expanded={Boolean(menu)}
+                aria-haspopup="menu"
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  const rect = event.currentTarget.getBoundingClientRect();
+                  setMenu({
+                    x: rect.right,
+                    y: rect.bottom + 4,
+                  });
+                }}
+                onMouseDown={(event) => event.stopPropagation()}
+              >
+                <KebabHorizontalIcon />
+              </button>
+            ) : null}
           </div>
         )}
         {error ? <TreeErrorText error={error} /> : null}
+        <DocumentTreeFolderOverflowMenu
+          open={Boolean(menu)}
+          x={menu?.x ?? 0}
+          y={menu?.y ?? 0}
+          folderTitle={displayTitle}
+          onClose={() => setMenu(null)}
+          onSettings={
+            onConfigureFolder
+              ? () => {
+                  onConfigureFolder(folder.id);
+                }
+              : undefined
+          }
+          onRename={
+            onRename
+              ? () => {
+                  setRenameValue(displayTitle);
+                  setIsRenaming(true);
+                  setError(null);
+                }
+              : undefined
+          }
+        />
       </div>
 
       {!collapsed ? (
@@ -550,6 +624,7 @@ function DocumentTreeFolder({
               selectedPath={selectedPath}
               onClearSelectedFolder={onClearSelectedFolder}
               onSelectFolder={onSelectFolder}
+              onConfigureFolder={onConfigureFolder}
               collapsedFolderIds={collapsedFolderIds}
               onToggleFolderCollapsed={onToggleFolderCollapsed}
               highlightedNavItemId={highlightedNavItemId}

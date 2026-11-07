@@ -804,7 +804,8 @@ function parseTaskLinks(
   );
 }
 
-function parseStringIdArray(value: unknown): string[] | undefined {
+/** PowerSync JSON-text id arrays (`contact_ids`, `related_contact_ids`, …). */
+export function parseStringIdArray(value: unknown): string[] | undefined {
   if (value === undefined) return undefined;
   let raw: unknown = value;
   if (typeof raw === "string") {
@@ -814,6 +815,7 @@ function parseStringIdArray(value: unknown): string[] | undefined {
       return [];
     }
   }
+  if (raw == null) return [];
   if (!Array.isArray(raw)) return [];
   return raw.filter(
     (id): id is string => typeof id === "string" && id.trim().length > 0,

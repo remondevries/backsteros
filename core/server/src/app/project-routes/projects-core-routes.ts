@@ -226,7 +226,8 @@ export function registerProjectCoreRoutes(app: Hono) {
         ) {
           return c.json(
             {
-              error: "GitHub repository can only be set on codebase projects",
+              error:
+                "GitHub repository can only be set on codebase or domain projects",
               code: "github_repo_requires_codebase",
             },
             400,
@@ -395,7 +396,8 @@ export function registerProjectCoreRoutes(app: Hono) {
         ) {
           return c.json(
             {
-              error: "GitHub repository can only be set on codebase projects",
+              error:
+                "GitHub repository can only be set on codebase or domain projects",
               code: "github_repo_requires_codebase",
             },
             400,

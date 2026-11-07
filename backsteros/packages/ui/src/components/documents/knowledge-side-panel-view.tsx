@@ -41,7 +41,12 @@ import { FolderPlusIcon } from "../icons/folder-plus-icon.js";
 import { SidePanelPlusIcon } from "../shell/side-panel-plus-icon.js";
 import { KnowledgeSidePanelSkeleton } from "../skeletons/knowledge-detail-skeleton.js";
 import { KnowledgeSidePanelScopeFooter } from "../spaces/knowledge-side-panel-scope-footer.js";
+import { FolderPortalSettingsModal } from "../spaces/folder-portal-settings-modal.js";
 import type { HelpArticleAudience } from "../../spaces/help-article-properties.js";
+import {
+  folderPortalPropertiesFromDocument,
+  type FolderPortalProperties,
+} from "../../spaces/folder-portal-properties.js";
 
 export type KnowledgeSidePanelLinkComponent = ComponentType<{
   to: string;
@@ -71,6 +76,11 @@ export type KnowledgeSidePanelViewProps = {
   ) => Promise<KnowledgeSidePanelMutationResult>;
   onDelete?: (
     id: string,
+  ) => Promise<KnowledgeSidePanelMutationResult>;
+  /** Persist portal slug / icon / description for a Spaces folder. */
+  onSaveFolderPortalProperties?: (
+    folderId: string,
+    next: FolderPortalProperties,
   ) => Promise<KnowledgeSidePanelMutationResult>;
   onReorderTreeItem?: (request: TreeReorderRequest) => void;
   highlightedId?: string | null;
@@ -113,6 +123,7 @@ export function KnowledgeSidePanelView({
   onCreateFolder,
   onRename,
   onDelete,
+  onSaveFolderPortalProperties,
   onReorderTreeItem,
   highlightedId = null,
   listRef,
@@ -132,6 +143,11 @@ export function KnowledgeSidePanelView({
     () => new Set(),
   );
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
+  const [configureFolderId, setConfigureFolderId] = useState<string | null>(
+    null,
+  );
+  const [configureSaving, setConfigureSaving] = useState(false);
+  const [configureError, setConfigureError] = useState<string | null>(null);
   const [activeDragPayload, setActiveDragPayload] =
     useState<TreeDragPayload | null>(null);
   const [dragInsertBeforeId, setDragInsertBeforeId] = useState<string | null>(
@@ -243,6 +259,14 @@ export function KnowledgeSidePanelView({
   const showScopeFooter =
     listScope != null && typeof onListScopeChange === "function";
 
+  const configureFolder = useMemo(
+    () =>
+      configureFolderId
+        ? (items.find((item) => item.id === configureFolderId) ?? null)
+        : null,
+    [configureFolderId, items],
+  );
+
   return (
     <div
       className={[
@@ -317,6 +341,14 @@ export function KnowledgeSidePanelView({
                 selectedPath={selectedPath}
                 onSelectFolder={setSelectedFolderId}
                 onClearSelectedFolder={() => setSelectedFolderId(null)}
+                onConfigureFolder={
+                  onSaveFolderPortalProperties
+                    ? (folderId) => {
+                        setConfigureError(null);
+                        setConfigureFolderId(folderId);
+                      }
+                    : undefined
+                }
                 collapsedFolderIds={collapsedFolderIds}
                 onToggleFolderCollapsed={handleToggleFolderCollapsed}
                 highlightedNavItemId={highlightedId}
@@ -342,6 +374,37 @@ export function KnowledgeSidePanelView({
         <KnowledgeSidePanelScopeFooter
           scope={listScope}
           onScopeChange={onListScopeChange}
+        />
+      ) : null}
+
+      {onSaveFolderPortalProperties && configureFolder ? (
+        <FolderPortalSettingsModal
+          open
+          initial={folderPortalPropertiesFromDocument(configureFolder)}
+          saving={configureSaving}
+          error={configureError}
+          onClose={() => {
+            if (configureSaving) return;
+            setConfigureFolderId(null);
+            setConfigureError(null);
+          }}
+          onSave={async (next) => {
+            setConfigureSaving(true);
+            setConfigureError(null);
+            try {
+              const result = await onSaveFolderPortalProperties(
+                configureFolder.id,
+                next,
+              );
+              if (!result.ok) {
+                setConfigureError(result.error);
+                return;
+              }
+              setConfigureFolderId(null);
+            } finally {
+              setConfigureSaving(false);
+            }
+          }}
         />
       ) : null}
     </div>

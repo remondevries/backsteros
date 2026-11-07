@@ -12,6 +12,11 @@ export type CachedDocumentContent = {
   contentVersion: number;
   /** Full sha256 from GET; used to detect vault-side drift vs a warm LRU. */
   checksum?: string | null;
+  /**
+   * Seeded by a local create before the server row/checksum exists. Trusted
+   * only while PowerSync/API still has no checksum, so open doesn't race REST.
+   */
+  optimistic?: boolean;
 };
 
 /** Skip persisting a single body larger than this; RAM still keeps it. */
@@ -36,8 +41,11 @@ export function shouldMissDocumentContentCache(
 ): boolean {
   if (!cached) return true;
   if (cached.checksum == null || cached.checksum === "") return true;
-  // Without a server checksum we cannot verify the body — fetch REST.
-  if (knownChecksum == null || knownChecksum === "") return true;
+  // Brand-new local creates: no server checksum yet — keep the optimistic body
+  // so the editor opens cleanly instead of racing a not-yet-uploaded REST GET.
+  if (knownChecksum == null || knownChecksum === "") {
+    return cached.optimistic !== true;
+  }
   return cached.checksum !== knownChecksum;
 }
 

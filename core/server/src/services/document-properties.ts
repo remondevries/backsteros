@@ -743,8 +743,138 @@ export async function planDocumentPropertiesPut(
 }
 
 /**
+ * Folders have no vault markdown — store portal metadata on the JSONB
+ * `properties` column (and mirror slug/description/icon onto publish columns).
+ */
+async function putFolderDocumentProperties(
+  workspaceId: string,
+  id: string,
+  input: PutDocumentPropertiesInput,
+  options?: { mutationId?: string; deviceId?: string },
+) {
+  const [row] = await db
+    .select()
+    .from(documents)
+    .where(
+      and(
+        eq(documents.workspaceId, workspaceId),
+        eq(documents.id, id),
+        isNull(documents.deletedAt),
+      ),
+    )
+    .limit(1);
+  if (!row) return null;
+  if (row.kind !== "folder") {
+    throw new DocumentPropertyError(
+      "Folder properties path requires kind=folder",
+      "DOCUMENT_NOT_FOUND",
+    );
+  }
+  if (
+    input.ifMatchVersion != null &&
+    input.ifMatchVersion !== row.contentVersion
+  ) {
+    throw new DocumentPropertyError(
+      "Document content version conflict",
+      "CONTENT_VERSION_CONFLICT",
+    );
+  }
+
+  const current =
+    row.properties && typeof row.properties === "object"
+      ? ({ ...(row.properties as Record<string, unknown>) } as DocumentPropertiesIndex)
+      : ({} as DocumentPropertiesIndex);
+
+  for (const [key, value] of Object.entries(input.properties)) {
+    if (value === null) {
+      delete current[key];
+    } else {
+      current[key] = value;
+    }
+  }
+
+  const slugRaw = current.slug;
+  const slug =
+    typeof slugRaw === "string" && slugRaw.trim() ? slugRaw.trim() : null;
+  const descriptionRaw = current.description;
+  const description =
+    typeof descriptionRaw === "string" && descriptionRaw.trim()
+      ? descriptionRaw.trim()
+      : null;
+  const iconRaw = current.icon;
+  const icon =
+    typeof iconRaw === "string" && iconRaw.trim() ? iconRaw.trim() : null;
+
+  const nextVersion = row.contentVersion + 1;
+  const [updated] = await db
+    .update(documents)
+    .set({
+      properties: current,
+      frontMatterValid: true,
+      publishSlug: slug,
+      seoDescription: description,
+      icon,
+      contentVersion: nextVersion,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(documents.workspaceId, workspaceId),
+        eq(documents.id, id),
+        eq(documents.contentVersion, row.contentVersion),
+      ),
+    )
+    .returning();
+
+  if (!updated) {
+    throw new DocumentPropertyError(
+      "Document content version conflict",
+      "CONTENT_VERSION_CONFLICT",
+    );
+  }
+
+  await recordDocumentContentSyncEvent({
+    workspaceId,
+    documentId: updated.id,
+    mutationId:
+      options?.mutationId ??
+      `rest:document-properties:${updated.id}:${updated.contentVersion}`,
+    deviceId: options?.deviceId,
+    payload: {
+      id: updated.id,
+      type: updated.type,
+      project_id: updated.projectId,
+      audience: updated.audience,
+      path: updated.path,
+      title: updated.title,
+      storage_key: updated.storageKey,
+      byte_size: updated.byteSize,
+      checksum: updated.checksum,
+      snippet: updated.snippet,
+      content_version: updated.contentVersion,
+      content_etag: updated.contentEtag,
+      doc_key: updated.docKey,
+      properties: updated.properties,
+      front_matter_valid: updated.frontMatterValid,
+      publish_slug: updated.publishSlug,
+      seo_description: updated.seoDescription,
+      icon: updated.icon,
+      updated_at: updated.updatedAt.toISOString(),
+    },
+  });
+
+  return {
+    row: updated,
+    content: "",
+    properties: (updated.properties ?? {}) as DocumentPropertiesIndex,
+    contentVersion: updated.contentVersion,
+  };
+}
+
+/**
  * Properties PUT under the same row lock + CAS as updateDocumentContent.
  * Rebuilds front matter / index from the post-update project + audience row.
+ * Folders skip vault CAS and write JSONB properties only.
  */
 export async function putDocumentProperties(
   workspaceId: string,
@@ -752,6 +882,22 @@ export async function putDocumentProperties(
   input: PutDocumentPropertiesInput,
   options?: { mutationId?: string; deviceId?: string },
 ) {
+  const [kindRow] = await db
+    .select({ kind: documents.kind })
+    .from(documents)
+    .where(
+      and(
+        eq(documents.workspaceId, workspaceId),
+        eq(documents.id, id),
+        isNull(documents.deletedAt),
+      ),
+    )
+    .limit(1);
+  if (!kindRow) return null;
+  if (kindRow.kind === "folder") {
+    return putFolderDocumentProperties(workspaceId, id, input, options);
+  }
+
   const initial = await planDocumentPropertiesPut(workspaceId, id, input);
   if (!initial) return null;
 

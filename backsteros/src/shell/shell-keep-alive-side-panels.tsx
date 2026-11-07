@@ -13,6 +13,7 @@ import {
   filterDocumentsForHelpArticleScope,
   filterDocumentsForSpaceRoot,
   findHelpArticleIndividualRoot,
+  folderPortalPropertiesPayload,
   getContactsGroupHref,
   getJournalHref,
   getOrganizationsGroupHref,
@@ -27,6 +28,8 @@ import {
   useHelpArticleListScope,
   useWriteHelpArticleAudience,
 } from "@backsteros/ui";
+import { useDesktopApi } from "../lib/api-context";
+import { putDocumentProperties } from "../lib/document-properties-api";
 import {
   getKnowledgeHref,
   getTodayJournalDateSlug,
@@ -316,6 +319,7 @@ export function KnowledgeKeepAliveSidePanel({
   onNavigate: PanelNav;
 }) {
   const { pathname } = useShellLocation();
+  const { client } = useDesktopApi();
   const knowledgeReady = useWorkspaceSurfaceReady("knowledge");
   const { knowledgeDocuments } = useDesktopWorkspaceDocuments();
   const workspaceActions = useDesktopWorkspaceActions();
@@ -464,6 +468,61 @@ export function KnowledgeKeepAliveSidePanel({
       }}
       onRename={(id, title) => workspaceActions.renameDocument(id, title)}
       onDelete={(id) => workspaceActions.deleteDocument(id)}
+      onSaveFolderPortalProperties={async (folderId, next) => {
+        const item =
+          knowledgeDocuments.find((doc) => doc.id === folderId) ?? null;
+        const contentVersion = item?.contentVersion ?? 1;
+        const properties = folderPortalPropertiesPayload(next);
+        const icon =
+          typeof properties.icon === "string" ? properties.icon : null;
+        const nextTitle = next.title.trim();
+        try {
+          if (nextTitle && nextTitle !== item?.title?.trim()) {
+            const renamed = await workspaceActions.renameDocument(
+              folderId,
+              nextTitle,
+            );
+            if (!renamed.ok) {
+              return renamed;
+            }
+          }
+          try {
+            await putDocumentProperties(client, folderId, {
+              properties,
+              ifMatchVersion: contentVersion,
+            });
+          } catch (propertiesError) {
+            // Older cores reject folder properties PUT (no vault body).
+            // Icon/slug/description still land via column patches; color is
+            // embedded in the icon payload for the portal.
+            const message =
+              propertiesError instanceof Error
+                ? propertiesError.message
+                : String(propertiesError);
+            if (
+              !/storage_not_found|Document content not found in storage/i.test(
+                message,
+              )
+            ) {
+              throw propertiesError;
+            }
+          }
+          await workspaceActions.updateDocumentPublishFields(folderId, {
+            publishSlug: next.slug.trim() || null,
+            seoDescription: next.description.trim() || null,
+          });
+          await workspaceActions.updateDocumentIcon(folderId, icon);
+          return { ok: true };
+        } catch (error) {
+          return {
+            ok: false,
+            error:
+              error instanceof Error
+                ? error.message
+                : "Could not save folder settings.",
+          };
+        }
+      }}
       onReorderTreeItem={(request) =>
         handleDocumentTreeReorder(
           request,

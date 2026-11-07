@@ -152,13 +152,18 @@ export type ProjectDetailViewProps = {
    * When set, the default markdown description editor is not rendered.
    */
   overviewDescription?: ReactNode;
+  /**
+   * Domain registrar cards (Registration, Auth code, …) — rendered in the
+   * main overview column above Description.
+   */
+  overviewBeforeDescription?: ReactNode;
   /** Type-specific property rows in the right rail (Codebase, Registration…). */
   propertiesExtra?: ReactNode;
   /** Lead agent + Channel — Agents subgroup under Financials. */
   agentsExtra?: ReactNode;
   /** Trailing control on the Agents rule (title · line · end), e.g. Team Sync. */
   agentsHeaderEnd?: ReactNode;
-  /** Sections below Progress (Activity, domain registrar, …). */
+  /** Sections below Progress (Activity, …). */
   belowProperties?: ReactNode;
   /** Empty-state copy for the default description editor. */
   descriptionEmptyHint?: string;
@@ -166,8 +171,9 @@ export type ProjectDetailViewProps = {
 
 /**
  * Universal Linear-inspired project page — one layout for every project type.
- * Main: icon → name → summary → property chips → latest update → description.
- * Right rail: properties (task-panel chrome) → progress → type extras / activity.
+ * Main: icon → name → summary → property chips → latest update →
+ * (domain registrar) → description.
+ * Right rail: properties (task-panel chrome) → progress → activity / extras.
  */
 export function ProjectDetailView({
   project,
@@ -200,6 +206,7 @@ export function ProjectDetailView({
   latestUpdate = null,
   onOpenUpdates,
   overviewDescription,
+  overviewBeforeDescription = null,
   propertiesExtra = null,
   agentsExtra = null,
   agentsHeaderEnd = null,
@@ -420,6 +427,12 @@ export function ProjectDetailView({
           </div>
         ) : null}
       </div>
+
+      {overviewBeforeDescription ? (
+        <div className="project-detail__overview-before-description">
+          {overviewBeforeDescription}
+        </div>
+      ) : null}
 
       {overviewDescription ? (
         <div className="project-detail__description project-detail__description--expanded">

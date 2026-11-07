@@ -350,6 +350,7 @@ function useDesktopWorkspaceDataImpl(): {
     apiDocuments,
     setApiDocuments,
     liveDocumentsById,
+    setLiveDocumentsById,
     liveDeletedDocumentIds,
     liveProjectsById,
     setLiveProjectsById,
@@ -1057,6 +1058,15 @@ function useDesktopWorkspaceDataImpl(): {
     [liveMeetingsById, rawMeetings],
   );
 
+  const getDocumentById = useCallback(
+    (id: string) => {
+      const fromLive = liveDocumentsById.get(id);
+      if (fromLive) return fromLive;
+      return rawDocuments.find((document) => document.id === id) ?? null;
+    },
+    [liveDocumentsById, rawDocuments],
+  );
+
   const getTaskById = useCallback(
     (id: string) => {
       const fromLive = liveTasksById.get(id);
@@ -1108,6 +1118,8 @@ function useDesktopWorkspaceDataImpl(): {
     setApiOrganizations,
     setApiMeetings,
     setApiDocuments,
+    setLiveDocumentsById,
+    getDocumentById,
     setLiveProjectsById,
     getProjectById,
     setLiveMeetingsById,

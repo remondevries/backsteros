@@ -1116,6 +1116,16 @@ export {
 } from "./components/icons/google-icon.js";
 
 export {
+  Office365Icon,
+  type Office365IconProps,
+} from "./components/icons/office365-icon.js";
+
+export {
+  ProtonIcon,
+  type ProtonIconProps,
+} from "./components/icons/proton-icon.js";
+
+export {
   CalendarHabitsIconRow,
   type CalendarHabitsIconRowProps,
   type CalendarHabitIconItem,
@@ -2923,6 +2933,18 @@ export {
 } from "./components/spaces/support-space-settings-modal.js";
 
 export {
+  FolderPortalSettingsModal,
+  type FolderPortalSettingsModalProps,
+} from "./components/spaces/folder-portal-settings-modal.js";
+
+export {
+  folderPortalIconWithColor,
+  folderPortalPropertiesFromDocument,
+  folderPortalPropertiesPayload,
+  type FolderPortalProperties,
+} from "./spaces/folder-portal-properties.js";
+
+export {
   applyOptimisticSpaceReorder,
   buildSpaceSiblingOrderIds,
   isSpacesCategoryId,
@@ -3006,6 +3028,7 @@ export {
 } from "./spaces/help-article-individual-folder.js";
 
 export {
+  formatHelpArticlePlacementPath,
   listHelpArticleMoveFolders,
   listHelpArticlePlacementFolders,
   resolveHelpArticleFolderId,

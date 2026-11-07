@@ -17,7 +17,28 @@ export { appSchema, mapCrudBatch, powerSyncMutationId } from "@backsteros/powers
 
 export type TokenProvider = () => Promise<string | null>;
 
+const UPLOAD_RETRYABLE_STATUSES = new Set([408, 429, 500, 502, 503, 504]);
+const UPLOAD_MAX_ATTEMPTS = 4;
+
+function isRetryablePowerSyncUpload(status: number, detail: string): boolean {
+  if (!UPLOAD_RETRYABLE_STATUSES.has(status)) return false;
+  if (status !== 503) return true;
+  const lower = detail.toLowerCase();
+  // Explicit retry codes from /powersync/write, plus claim races that surface
+  // as a sticky Upload queue when flush + auto-upload overlap.
+  return (
+    lower.includes("powersync_retry") ||
+    lower.includes("powersync_mutation_claim_race") ||
+    lower.includes("group_not_found") ||
+    lower.includes("subject_not_found") ||
+    lower.length === 0
+  );
+}
+
 export class BacksterPowerSyncConnector implements PowerSyncBackendConnector {
+  /** Serialize uploads — concurrent flush + auto-upload race the same mutation id. */
+  private uploadChain: Promise<void> = Promise.resolve();
+
   constructor(
     private readonly apiUrl: string,
     private readonly getAuthToken: TokenProvider,
@@ -90,34 +111,58 @@ export class BacksterPowerSyncConnector implements PowerSyncBackendConnector {
   }
 
   async uploadData(database: AbstractPowerSyncDatabase) {
+    const run = this.uploadChain.then(() => this.uploadDataExclusive(database));
+    // Keep the chain alive across failures so later callers still serialize.
+    this.uploadChain = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    await run;
+  }
+
+  private async uploadDataExclusive(database: AbstractPowerSyncDatabase) {
     const batch = await database.getCrudBatch();
     if (!batch) return;
     const mutationId = powerSyncMutationId(this.deviceId, batch.crud);
     const authToken = await this.getAuthToken();
     if (!authToken) throw new Error("Missing session for upload");
-    const response = await fetch(this.endpoint("powersync/write"), {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${authToken}`,
-      },
-      body: JSON.stringify({
-        device_id: this.deviceId,
-        mutation_id: mutationId,
-        batch: mapCrudBatch(batch.crud),
-      }),
-    });
-    if (!response.ok) {
+
+    let lastError: Error | null = null;
+    for (let attempt = 0; attempt < UPLOAD_MAX_ATTEMPTS; attempt++) {
+      if (attempt > 0) {
+        await new Promise((resolve) =>
+          setTimeout(resolve, 150 * attempt * attempt),
+        );
+      }
+      const response = await fetch(this.endpoint("powersync/write"), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${authToken}`,
+        },
+        body: JSON.stringify({
+          device_id: this.deviceId,
+          mutation_id: mutationId,
+          batch: mapCrudBatch(batch.crud),
+        }),
+      });
+      if (response.ok) {
+        await batch.complete();
+        return;
+      }
       const detail = await response.text().catch(() => "");
       console.warn(
-        `[desktop] PowerSync upload failed (${response.status}) mutation=${mutationId}`,
+        `[desktop] PowerSync upload failed (${response.status}) mutation=${mutationId} attempt=${attempt + 1}`,
         detail.slice(0, 240),
       );
-      throw new Error(
+      lastError = new Error(
         `PowerSync upload failed (${response.status}): ${detail}`,
       );
+      if (!isRetryablePowerSyncUpload(response.status, detail)) {
+        throw lastError;
+      }
     }
-    await batch.complete();
+    throw lastError ?? new Error("PowerSync upload failed");
   }
 }
 

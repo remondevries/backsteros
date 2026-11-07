@@ -990,6 +990,41 @@ export async function commitDocumentPropertiesLeaderFirst(input: {
   }
 
   try {
+    const existing = await getDocumentById(
+      input.workspaceId,
+      input.documentId,
+    );
+    if (!existing) {
+      throw new Error("DOCUMENT_NOT_FOUND");
+    }
+    // Folders have no vault body — write JSONB locally (no leader vault plan).
+    if (existing.kind === "folder") {
+      const result = await putDocumentProperties(
+        input.workspaceId,
+        input.documentId,
+        {
+          properties: input.properties,
+          ifMatchVersion: input.ifMatchVersion,
+        },
+        { mutationId, deviceId },
+      );
+      if (!result) {
+        throw new Error("DOCUMENT_NOT_FOUND");
+      }
+      const lastSyncId = await getWorkspaceLastSyncId(input.workspaceId);
+      const event = await loadEventByMutationId(input.workspaceId, mutationId);
+      return {
+        lastSyncId,
+        events: event ? [event] : [],
+        source: "local_fallback",
+        contentVersion: result.contentVersion,
+        docKey: result.row.docKey,
+        properties: result.properties,
+        frontMatterValid: result.row.frontMatterValid,
+        content: result.content,
+      };
+    }
+
     // Validate locally first (storage readable, YAML ok) before forwarding.
     const { planDocumentPropertiesPut } = await import(
       "../document-properties.js"
