@@ -33,6 +33,11 @@ import {
   type TreeDragPayload,
 } from "../../documents/document-tree-order.js";
 import { KebabHorizontalIcon } from "../contacts/relationship-label-overflow-menu.js";
+import {
+  HelpArticleIndividualListItemCard,
+  type HelpArticleIndividualListContact,
+} from "../spaces/help-article-individual-list-item-card.js";
+import type { HelpArticleStatus } from "../../spaces/help-article-properties.js";
 import { DocumentTreeFolderOverflowMenu } from "./document-tree-folder-overflow-menu.js";
 
 export type DocumentTreeLinkComponent = ComponentType<{
@@ -46,6 +51,12 @@ export type DocumentTreeLinkComponent = ComponentType<{
 }>;
 
 type RenameResult = { ok: true } | { ok: false; error: string };
+
+export type DocumentTreeIndividualCardMeta = {
+  status?: HelpArticleStatus | string | null;
+  contacts?: readonly HelpArticleIndividualListContact[];
+  appearsInLabel?: string | null;
+};
 
 type DocumentTreeSharedProps = {
   depth: number;
@@ -69,6 +80,12 @@ type DocumentTreeSharedProps = {
   onTreeDragStart?: (payload: TreeDragPayload) => void;
   onTreeDragEnd?: () => void;
   onReorderTreeItem?: (request: TreeReorderRequest) => void;
+  /**
+   * Support Individual list: render document rows as inbox-style cards.
+   * Folders stay as tree rows.
+   */
+  documentRowVariant?: "default" | "individual-card";
+  individualCardMetaById?: ReadonlyMap<string, DocumentTreeIndividualCardMeta>;
 };
 
 function TreeRenameForm({
@@ -170,6 +187,8 @@ function DocumentTreeItem({
   onTreeDragStart,
   onTreeDragEnd,
   onReorderTreeItem,
+  documentRowVariant = "default",
+  individualCardMetaById,
 }: DocumentTreeSharedProps & { document: DocumentTreeDocumentNode }) {
   const [isRenaming, setIsRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState(document.title);
@@ -183,6 +202,8 @@ function DocumentTreeItem({
   const canDrag = Boolean(onReorderTreeItem);
   const showInsertIndicator =
     canDrag && dragInsertBeforeId === treeNodeOrderKey(document);
+  const useIndividualCard = documentRowVariant === "individual-card";
+  const cardMeta = individualCardMetaById?.get(document.id);
 
   useEffect(() => {
     if (optimisticTitle != null && document.title === optimisticTitle) {
@@ -254,6 +275,7 @@ function DocumentTreeItem({
     <li
       className={[
         "list-none",
+        useIndividualCard ? "inbox-list-item" : null,
         showInsertIndicator ? "app-side-panel-tree-insert-before" : null,
       ]
         .filter(Boolean)
@@ -262,61 +284,97 @@ function DocumentTreeItem({
       onDrop={canDrag ? handleDrop : undefined}
     >
       <div style={paddingLeft ? { paddingLeft } : undefined}>
-        <div
-          data-tauri-drag-region="false"
-          draggable={canDrag && !isRenaming}
-          onDragStart={
-            canDrag && !isRenaming ? handleDragStart : undefined
-          }
-          onDragEnd={canDrag && !isRenaming ? onTreeDragEnd : undefined}
-          className={`${sidePanelItemClass({
-            active: isSelected,
-            keyboardHighlighted: isKeyboardHighlighted || isRenaming,
-          })} min-w-0 ${canDrag && !isRenaming ? "app-side-panel-tree-draggable" : ""}`}
-        >
-          <span className="app-side-panel-item-icon" aria-hidden="true">
-            <DocumentIcon size={14} className="shrink-0" />
-          </span>
-          {isRenaming && onRename ? (
-            <TreeRenameForm
-              value={renameValue}
-              onChange={setRenameValue}
-              onSubmit={submitRename}
-              onCancel={cancelRename}
-              isPending={false}
-              ariaLabel="Rename document"
-            />
-          ) : (
-            <Link
-              to={href}
-              onClick={() => onClearSelectedFolder?.()}
-              onDoubleClick={
+        {useIndividualCard && !(isRenaming && onRename) ? (
+          <div
+            data-tauri-drag-region="false"
+            draggable={canDrag}
+            onDragStart={canDrag ? handleDragStart : undefined}
+            onDragEnd={canDrag ? onTreeDragEnd : undefined}
+            className={
+              canDrag ? "app-side-panel-tree-draggable min-w-0" : "min-w-0"
+            }
+          >
+            <HelpArticleIndividualListItemCard
+              title={displayTitle}
+              href={href}
+              Link={Link}
+              active={isSelected}
+              keyboardHighlighted={isKeyboardHighlighted}
+              itemId={document.id}
+              status={cardMeta?.status}
+              contacts={cardMeta?.contacts}
+              appearsInLabel={cardMeta?.appearsInLabel}
+              onActivate={() => onClearSelectedFolder?.()}
+              onDoubleClickTitle={
                 onRename
                   ? (event) => {
                       event.preventDefault();
+                      event.stopPropagation();
                       setRenameValue(displayTitle);
                       setIsRenaming(true);
                       setError(null);
                     }
                   : undefined
               }
-              className="app-side-panel-item-label min-w-0 flex-1 text-inherit no-underline"
-              title={
-                onRename
-                  ? canDrag
-                    ? "Double-click to rename · Drag to reorder"
-                    : "Double-click to rename"
-                  : canDrag
-                    ? "Drag to reorder"
+            />
+          </div>
+        ) : (
+          <div
+            data-tauri-drag-region="false"
+            draggable={canDrag && !isRenaming}
+            onDragStart={
+              canDrag && !isRenaming ? handleDragStart : undefined
+            }
+            onDragEnd={canDrag && !isRenaming ? onTreeDragEnd : undefined}
+            className={`${sidePanelItemClass({
+              active: isSelected,
+              keyboardHighlighted: isKeyboardHighlighted || isRenaming,
+            })} min-w-0 ${canDrag && !isRenaming ? "app-side-panel-tree-draggable" : ""}`}
+          >
+            <span className="app-side-panel-item-icon" aria-hidden="true">
+              <DocumentIcon size={14} className="shrink-0" />
+            </span>
+            {isRenaming && onRename ? (
+              <TreeRenameForm
+                value={renameValue}
+                onChange={setRenameValue}
+                onSubmit={submitRename}
+                onCancel={cancelRename}
+                isPending={false}
+                ariaLabel="Rename document"
+              />
+            ) : (
+              <Link
+                to={href}
+                onClick={() => onClearSelectedFolder?.()}
+                onDoubleClick={
+                  onRename
+                    ? (event) => {
+                        event.preventDefault();
+                        setRenameValue(displayTitle);
+                        setIsRenaming(true);
+                        setError(null);
+                      }
                     : undefined
-              }
-              draggable={false}
-              {...keyboardNavItemProps(document.id)}
-            >
-              {displayTitle}
-            </Link>
-          )}
-        </div>
+                }
+                className="app-side-panel-item-label min-w-0 flex-1 text-inherit no-underline"
+                title={
+                  onRename
+                    ? canDrag
+                      ? "Double-click to rename · Drag to reorder"
+                      : "Double-click to rename"
+                    : canDrag
+                      ? "Drag to reorder"
+                      : undefined
+                }
+                draggable={false}
+                {...keyboardNavItemProps(document.id)}
+              >
+                {displayTitle}
+              </Link>
+            )}
+          </div>
+        )}
         {error ? <TreeErrorText error={error} /> : null}
       </div>
     </li>
@@ -345,6 +403,8 @@ function DocumentTreeFolder({
   onTreeDragStart,
   onTreeDragEnd,
   onReorderTreeItem,
+  documentRowVariant = "default",
+  individualCardMetaById,
 }: DocumentTreeSharedProps & { folder: DocumentTreeFolderNode }) {
   const collapsed = collapsedFolderIds.has(folder.id);
   const [isDragging, setIsDragging] = useState(false);
@@ -639,6 +699,8 @@ function DocumentTreeFolder({
               onTreeDragStart={onTreeDragStart}
               onTreeDragEnd={onTreeDragEnd}
               onReorderTreeItem={onReorderTreeItem}
+              documentRowVariant={documentRowVariant}
+              individualCardMetaById={individualCardMetaById}
             />
           ))}
         </ul>

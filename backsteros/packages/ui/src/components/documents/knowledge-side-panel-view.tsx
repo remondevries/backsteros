@@ -6,6 +6,7 @@ import {
   useMemo,
   useState,
   type ComponentType,
+  type CSSProperties,
   type HTMLAttributes,
   type ReactNode,
   type Ref,
@@ -36,17 +37,43 @@ import {
   ContentSidePanelEmpty,
   ContentSidePanelList,
 } from "../content/content-side-panel-list.js";
-import { DocumentTreeNodeView } from "./document-tree.js";
+import {
+  DocumentTreeNodeView,
+  type DocumentTreeIndividualCardMeta,
+} from "./document-tree.js";
 import { FolderPlusIcon } from "../icons/folder-plus-icon.js";
 import { SidePanelPlusIcon } from "../shell/side-panel-plus-icon.js";
 import { KnowledgeSidePanelSkeleton } from "../skeletons/knowledge-detail-skeleton.js";
 import { KnowledgeSidePanelScopeFooter } from "../spaces/knowledge-side-panel-scope-footer.js";
 import { FolderPortalSettingsModal } from "../spaces/folder-portal-settings-modal.js";
+import {
+  HelpArticleIndividualListItemCard,
+  type HelpArticleIndividualListContact,
+} from "../spaces/help-article-individual-list-item-card.js";
+import { StatusGroupSection } from "../list-nav/status-group-section.js";
+import { AssigneeListMark } from "../tasks/assignee-list-mark.js";
 import type { HelpArticleAudience } from "../../spaces/help-article-properties.js";
+import { formatHelpArticlePlacementPath } from "../../spaces/help-article-placement.js";
+import { groupHelpArticleIndividualDocumentsByContact } from "../../spaces/help-article-individual-groups.js";
 import {
   folderPortalPropertiesFromDocument,
   type FolderPortalProperties,
 } from "../../spaces/folder-portal-properties.js";
+
+const INDIVIDUAL_CONTACT_GROUP_HEADER_STYLE: CSSProperties = {
+  backgroundColor: "transparent",
+  backgroundImage: "none",
+  backdropFilter: "none",
+  WebkitBackdropFilter: "none",
+  paddingLeft: 0,
+  paddingRight: 0,
+};
+
+const NO_CONTACTS_GROUP_KEY = "no-contacts";
+
+function individualContactGroupKey(contactId: string | null): string {
+  return contactId ?? NO_CONTACTS_GROUP_KEY;
+}
 
 export type KnowledgeSidePanelLinkComponent = ComponentType<{
   to: string;
@@ -101,6 +128,16 @@ export type KnowledgeSidePanelViewProps = {
    */
   listScope?: HelpArticleAudience | null;
   onListScopeChange?: (scope: HelpArticleAudience) => void;
+  /**
+   * Contact lookup for Individual list cards (id → name / avatar).
+   * Only used when `listScope === "individual"`.
+   */
+  contactById?: ReadonlyMap<string, HelpArticleIndividualListContact>;
+  /**
+   * Full space document set used to resolve Appears-in folder titles for
+   * Individual cards (panel `items` alone omit Group folders).
+   */
+  placementDocuments?: readonly KnowledgeListItem[];
 };
 
 function toTreeSource(item: KnowledgeListItem) {
@@ -136,6 +173,8 @@ export function KnowledgeSidePanelView({
   title = "Spaces",
   listScope = null,
   onListScopeChange,
+  contactById,
+  placementDocuments,
 }: KnowledgeSidePanelViewProps) {
   const selectedSlug = getSelectedSlugFromPathname(pathname);
   const [addingFolder, setAddingFolder] = useState(false);
@@ -171,10 +210,40 @@ export function KnowledgeSidePanelView({
     return match?.path ?? selectedSlug;
   }, [items, selectedSlug]);
 
-  const visibleNavItemIds = useMemo(
-    () => flattenVisibleDocumentTreeNavItemIds(tree, collapsedFolderIds),
-    [tree, collapsedFolderIds],
-  );
+  const useIndividualCards = listScope === "individual";
+  const [collapsedContactGroupKeys, setCollapsedContactGroupKeys] = useState<
+    Set<string>
+  >(() => new Set());
+
+  const individualContactGroups = useMemo(() => {
+    if (!useIndividualCards) return null;
+    return groupHelpArticleIndividualDocumentsByContact(items, contactById);
+  }, [contactById, items, useIndividualCards]);
+
+  const handleToggleContactGroup = useCallback((groupKey: string) => {
+    setCollapsedContactGroupKeys((current) => {
+      const next = new Set(current);
+      if (next.has(groupKey)) next.delete(groupKey);
+      else next.add(groupKey);
+      return next;
+    });
+  }, []);
+
+  const visibleNavItemIds = useMemo(() => {
+    if (individualContactGroups) {
+      return individualContactGroups.flatMap((group) => {
+        const key = individualContactGroupKey(group.contactId);
+        if (collapsedContactGroupKeys.has(key)) return [];
+        return group.items.map((item) => item.id);
+      });
+    }
+    return flattenVisibleDocumentTreeNavItemIds(tree, collapsedFolderIds);
+  }, [
+    collapsedContactGroupKeys,
+    collapsedFolderIds,
+    individualContactGroups,
+    tree,
+  ]);
 
   useEffect(() => {
     onVisibleNavItemIdsChange?.(visibleNavItemIds);
@@ -267,12 +336,54 @@ export function KnowledgeSidePanelView({
     [configureFolderId, items],
   );
 
+  const individualCardMetaById = useMemo(() => {
+    if (!useIndividualCards) return undefined;
+    const placementSource = placementDocuments ?? items;
+    const placementById = new Map(
+      placementSource
+        .filter((doc) => doc.kind === "folder")
+        .map((doc) => [doc.id, doc] as const),
+    );
+    const meta = new Map<string, DocumentTreeIndividualCardMeta>();
+    for (const item of items) {
+      if (item.kind === "folder") continue;
+      const contactIds = item.contactIds ?? [];
+      const contacts: HelpArticleIndividualListContact[] = [];
+      for (const contactId of contactIds) {
+        const known = contactById?.get(contactId);
+        contacts.push(
+          known ?? {
+            id: contactId,
+            name: contactId,
+            avatarSrc: null,
+          },
+        );
+      }
+      const placement = item.placementFolderId
+        ? placementById.get(item.placementFolderId)
+        : null;
+      const appearsInLabel = placement
+        ? formatHelpArticlePlacementPath(placement.path ?? placement.title) ||
+          placement.title
+        : null;
+      meta.set(item.id, {
+        status: item.publishStatus,
+        contacts,
+        appearsInLabel,
+      });
+    }
+    return meta;
+  }, [contactById, items, placementDocuments, useIndividualCards]);
+
   return (
     <div
       className={[
         "app-content-side-panel",
         "app-content-side-panel--documents",
         showScopeFooter ? "knowledge-side-panel--with-scope-footer" : null,
+        individualContactGroups
+          ? "help-article-individual-contact-groups"
+          : null,
       ]
         .filter(Boolean)
         .join(" ")}
@@ -332,41 +443,93 @@ export function KnowledgeSidePanelView({
             ref={listRef}
             {...listContainerProps}
           >
-            {tree.map((node) => (
-              <DocumentTreeNodeView
-                key={node.id}
-                node={node}
-                depth={0}
-                parentId={null}
-                selectedPath={selectedPath}
-                onSelectFolder={setSelectedFolderId}
-                onClearSelectedFolder={() => setSelectedFolderId(null)}
-                onConfigureFolder={
-                  onSaveFolderPortalProperties
-                    ? (folderId) => {
-                        setConfigureError(null);
-                        setConfigureFolderId(folderId);
+            {individualContactGroups
+              ? individualContactGroups.map((group) => {
+                  const groupKey = individualContactGroupKey(group.contactId);
+                  const collapsed = collapsedContactGroupKeys.has(groupKey);
+                  return (
+                    <StatusGroupSection
+                      key={groupKey}
+                      groupKey={groupKey}
+                      title={group.label}
+                      collapsed={collapsed}
+                      onToggle={() => handleToggleContactGroup(groupKey)}
+                      headerStyle={INDIVIDUAL_CONTACT_GROUP_HEADER_STYLE}
+                      icon={
+                        <AssigneeListMark
+                          label={group.label}
+                          avatarSrc={group.avatarSrc}
+                          unassigned={group.contactId == null}
+                          size={14}
+                        />
                       }
-                    : undefined
-                }
-                collapsedFolderIds={collapsedFolderIds}
-                onToggleFolderCollapsed={handleToggleFolderCollapsed}
-                highlightedNavItemId={highlightedId}
-                getDocumentHref={(path) => getDocumentHref(path)}
-                Link={Link}
-                onRename={onRename}
-                dragInsertBeforeId={dragInsertBeforeId}
-                dragIntoFolderId={dragIntoFolderId}
-                activeDragPayload={activeDragPayload}
-                onDragInsertBeforeId={setDragInsertBeforeId}
-                onDragIntoFolderId={setDragIntoFolderId}
-                onTreeDragStart={setActiveDragPayload}
-                onTreeDragEnd={handleTreeDragEnd}
-                onReorderTreeItem={
-                  onReorderTreeItem ? handleReorderTreeItem : undefined
-                }
-              />
-            ))}
+                    >
+                      {group.items.map((item) => {
+                        const meta = individualCardMetaById?.get(item.id);
+                        const href = getDocumentHref(item.path ?? item.id);
+                        const isSelected =
+                          selectedPath != null &&
+                          (item.path === selectedPath ||
+                            item.id === selectedPath);
+                        return (
+                          <li
+                            key={item.id}
+                            className="list-none inbox-list-item"
+                          >
+                            <HelpArticleIndividualListItemCard
+                              title={item.title}
+                              href={href}
+                              Link={Link}
+                              active={isSelected}
+                              keyboardHighlighted={highlightedId === item.id}
+                              itemId={item.id}
+                              status={meta?.status ?? item.publishStatus}
+                              contacts={meta?.contacts}
+                              appearsInLabel={meta?.appearsInLabel}
+                              showContacts={false}
+                              onActivate={() => setSelectedFolderId(null)}
+                            />
+                          </li>
+                        );
+                      })}
+                    </StatusGroupSection>
+                  );
+                })
+              : tree.map((node) => (
+                  <DocumentTreeNodeView
+                    key={node.id}
+                    node={node}
+                    depth={0}
+                    parentId={null}
+                    selectedPath={selectedPath}
+                    onSelectFolder={setSelectedFolderId}
+                    onClearSelectedFolder={() => setSelectedFolderId(null)}
+                    onConfigureFolder={
+                      onSaveFolderPortalProperties
+                        ? (folderId) => {
+                            setConfigureError(null);
+                            setConfigureFolderId(folderId);
+                          }
+                        : undefined
+                    }
+                    collapsedFolderIds={collapsedFolderIds}
+                    onToggleFolderCollapsed={handleToggleFolderCollapsed}
+                    highlightedNavItemId={highlightedId}
+                    getDocumentHref={(path) => getDocumentHref(path)}
+                    Link={Link}
+                    onRename={onRename}
+                    dragInsertBeforeId={dragInsertBeforeId}
+                    dragIntoFolderId={dragIntoFolderId}
+                    activeDragPayload={activeDragPayload}
+                    onDragInsertBeforeId={setDragInsertBeforeId}
+                    onDragIntoFolderId={setDragIntoFolderId}
+                    onTreeDragStart={setActiveDragPayload}
+                    onTreeDragEnd={handleTreeDragEnd}
+                    onReorderTreeItem={
+                      onReorderTreeItem ? handleReorderTreeItem : undefined
+                    }
+                  />
+                ))}
           </ContentSidePanelList>
         )}
       </div>

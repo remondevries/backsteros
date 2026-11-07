@@ -1,0 +1,53 @@
+import type { HelpArticleStatus } from "../../spaces/help-article-properties.js";
+
+function HelpArticlePublishedIcon() {
+  return (
+    <>
+      <path d="M10.75 12a1.25 1.25 0 1 1 2.5 0 1.25 1.25 0 0 1-2.5 0" />
+      <path d="M1.943 10.153C3.458 8.074 6.918 4.25 12 4.25s8.542 3.824 10.057 5.903l.023.031c.258.355.468.643.598 1.142.055.212.072.464.072.674s-.017.462-.072.674c-.13.5-.34.787-.598 1.142l-.023.031C20.542 15.926 17.082 19.75 12 19.75s-8.542-3.824-10.057-5.903l-.023-.031c-.258-.355-.468-.643-.598-1.142A2.8 2.8 0 0 1 1.25 12c0-.21.017-.462.072-.674.13-.5.34-.787.598-1.142zM9.25 12a2.75 2.75 0 1 0 5.5 0 2.75 2.75 0 0 0-5.5 0m1.5 0a1.25 1.25 0 1 1 2.5 0 1.25 1.25 0 0 1-2.5 0" />
+    </>
+  );
+}
+
+function HelpArticleOfflineIcon() {
+  return (
+    <path d="M21.53 2.47a.75.75 0 0 0-1.06 0l-3.227 3.227C15.762 4.847 14.007 4.25 12 4.25c-5.082 0-8.542 3.824-10.057 5.903l-.023.031c-.258.355-.468.643-.598 1.142A2.8 2.8 0 0 0 1.25 12c0 .21.017.462.072.674.13.5.34.787.598 1.142l.023.031c.734 1.007 1.924 2.423 3.533 3.616L2.47 20.47a.75.75 0 1 0 1.06 1.06l3.227-3.227c1.481.85 3.236 1.447 5.243 1.447 5.082 0 8.542-3.824 10.057-5.903l.023-.031c.258-.355.468-.643.598-1.142A2.8 2.8 0 0 0 22.75 12c0-.21-.017-.462-.072-.674-.13-.5-.34-.787-.598-1.142l-.023-.031c-.734-1.007-1.924-2.423-3.533-3.616L21.53 3.53a.75.75 0 0 0 0-1.06m-8.19 7.128-3.742 3.743a2.75 2.75 0 0 1 3.742-3.742M14.75 12a2.75 2.75 0 0 1-4.09 2.402l3.742-3.743c.222.397.348.854.348 1.341" />
+  );
+}
+
+export type HelpArticleStatusIconProps = {
+  status: HelpArticleStatus;
+  size?: number;
+};
+
+/** Status mark for help-article properties and Individual list cards. */
+export function HelpArticleStatusIcon({
+  status,
+  size = 14,
+}: HelpArticleStatusIconProps) {
+  if (status === "concept") {
+    return (
+      <span
+        className="help-article-status-dot help-article-status-dot--concept"
+        style={{ width: size, height: size }}
+        aria-hidden
+      />
+    );
+  }
+
+  return (
+    <svg
+      className={`help-article-status-icon help-article-status-icon--${status}`}
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden
+      focusable="false"
+    >
+      {status === "published" ? <HelpArticlePublishedIcon /> : null}
+      {status === "offline" ? <HelpArticleOfflineIcon /> : null}
+    </svg>
+  );
+}

@@ -732,6 +732,117 @@ body.is-resizing {
   color: color-mix(in srgb, var(--foreground) 45%, transparent);
 }
 
+/* Override `.inbox-list-item-card-subtitle { display: block }` so the status
+   mark (also `display: block` as SVG) stays beside the label. */
+.help-article-individual-list-item-card
+  .inbox-list-item-card-subtitle.help-article-individual-list-item-card__status {
+  display: flex;
+  max-width: 100%;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.help-article-individual-list-item-card
+  .help-article-individual-list-item-card__status
+  > .help-article-status-dot,
+.help-article-individual-list-item-card
+  .help-article-individual-list-item-card__status
+  > .help-article-status-icon {
+  flex-shrink: 0;
+}
+
+/*
+ * Status, title, and Appears in share one stack so the gaps above/below
+ * the title are identical (not split across primary vs meta rows).
+ */
+.help-article-individual-list-item-card
+  .help-article-individual-list-item-card__title-stack {
+  gap: 3px;
+}
+
+.help-article-individual-list-item-card.app-side-panel-item-stacked {
+  gap: 4px;
+}
+
+/* Match primary row: 14px doc icon + 6px gap → title column. */
+.help-article-individual-list-item-card > .app-side-panel-item-row-meta {
+  padding-left: 20px;
+  box-sizing: border-box;
+}
+
+.help-article-individual-list-item-card__appears-in {
+  display: block;
+  min-width: 0;
+}
+
+.help-article-individual-list-item-card__contacts {
+  min-width: 0;
+}
+
+/* Contact groups: name + divider rule; avatar swaps to chevron on hover. */
+.help-article-individual-contact-groups .status-group-header-row {
+  position: static;
+  z-index: auto;
+}
+
+.help-article-individual-contact-groups .status-group-header {
+  width: 100%;
+  gap: 8px;
+}
+
+.help-article-individual-contact-groups .status-group-title {
+  flex: 0 1 auto;
+  max-width: 70%;
+  color: color-mix(in srgb, var(--foreground) 72%, transparent);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.help-article-individual-contact-groups .status-group-header::after {
+  content: "";
+  display: block;
+  min-width: 12px;
+  flex: 1 1 auto;
+  height: 0;
+  border-top: 0.5px solid color-mix(in srgb, var(--foreground) 10%, transparent);
+}
+
+.help-article-individual-contact-groups .status-group-section {
+  gap: 2px;
+}
+
+.help-article-individual-contact-groups .status-group-section + .status-group-section {
+  margin-top: 6px;
+}
+
+.help-article-individual-list-item-card__avatars {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+}
+
+.help-article-individual-list-item-card__avatars .inbox-list-item-assignee-avatar {
+  width: 14px;
+  height: 14px;
+  margin-left: -4px;
+  border: 1px solid color-mix(in srgb, var(--background) 80%, transparent);
+}
+
+.help-article-individual-list-item-card__avatars
+  .inbox-list-item-assignee-avatar:first-child {
+  margin-left: 0;
+}
+
+.help-article-individual-list-item-card__avatar-more {
+  margin-left: 4px;
+  font-size: 11px;
+  line-height: 14px;
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
+}
+
 .help-article-seo-fields {
   display: flex;
   flex-direction: column;

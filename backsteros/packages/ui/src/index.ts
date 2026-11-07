@@ -3036,6 +3036,12 @@ export {
 } from "./spaces/help-article-placement.js";
 
 export {
+  groupHelpArticleIndividualDocumentsByContact,
+  type HelpArticleIndividualContactGroup,
+  type HelpArticleIndividualContactLookup,
+} from "./spaces/help-article-individual-groups.js";
+
+export {
   filterDocumentsForHelpArticleScope,
   readHelpArticleAudienceMap,
   readHelpArticleListScope,
@@ -3056,6 +3062,18 @@ export {
   HelpArticlePropertiesDisplay,
   type HelpArticlePropertiesDisplayProps,
 } from "./components/spaces/help-article-properties-display.js";
+
+export {
+  HelpArticleStatusIcon,
+  type HelpArticleStatusIconProps,
+} from "./components/spaces/help-article-status-icon.js";
+
+export {
+  HelpArticleIndividualListItemCard,
+  type HelpArticleIndividualListContact,
+  type HelpArticleIndividualListItemCardLinkComponent,
+  type HelpArticleIndividualListItemCardProps,
+} from "./components/spaces/help-article-individual-list-item-card.js";
 
 export {
   HelpArticleDetailView,
@@ -3227,6 +3245,7 @@ export {
 
 export {
   DocumentTreeNodeView,
+  type DocumentTreeIndividualCardMeta,
   type DocumentTreeLinkComponent,
 } from "./components/documents/document-tree.js";
 

@@ -53,10 +53,12 @@ import {
   useDesktopWorkspaceActions,
   useDesktopWorkspaceDocuments,
   useDesktopWorkspaceMeta,
+  useDesktopWorkspacePeople,
   useDesktopWorkspaceProjects,
   useDesktopWorkspaceTasks,
   useWorkspaceSurfaceReady,
 } from "../lib/workspace-data";
+import { useDesktopAvatarSrcMap } from "../lib/avatar-src";
 import {
   DesktopCalendarSidePanel,
   DesktopContactsSidePanel,
@@ -322,6 +324,8 @@ export function KnowledgeKeepAliveSidePanel({
   const { client } = useDesktopApi();
   const knowledgeReady = useWorkspaceSurfaceReady("knowledge");
   const { knowledgeDocuments } = useDesktopWorkspaceDocuments();
+  const { contacts } = useDesktopWorkspacePeople();
+  const contactAvatarSrc = useDesktopAvatarSrcMap("contact", contacts);
   const workspaceActions = useDesktopWorkspaceActions();
   const [listScope, setListScope] = useHelpArticleListScope();
   const audienceById = useHelpArticleAudienceMap();
@@ -378,6 +382,22 @@ export function KnowledgeKeepAliveSidePanel({
     );
   }, [audienceById, isSupportSpace, listScope, scopedDocuments]);
 
+  const contactById = useMemo(() => {
+    if (!isSupportSpace || listScope !== HELP_ARTICLE_AUDIENCE_INDIVIDUAL) {
+      return undefined;
+    }
+    return new Map(
+      contacts.map((contact) => [
+        contact.id,
+        {
+          id: contact.id,
+          name: contact.name?.trim() || contact.email?.trim() || contact.id,
+          avatarSrc: contactAvatarSrc[contact.id] ?? null,
+        },
+      ]),
+    );
+  }, [contactAvatarSrc, contacts, isSupportSpace, listScope]);
+
   const firstInSpaceHref = useMemo(() => {
     const first = panelDocuments.find((doc) => doc.kind !== "folder");
     if (first) return getKnowledgeHref(first.path ?? first.id);
@@ -432,6 +452,12 @@ export function KnowledgeKeepAliveSidePanel({
       title={spaceRoot?.title ?? "Spaces"}
       listScope={isSupportSpace ? listScope : null}
       onListScopeChange={isSupportSpace ? setListScope : undefined}
+      contactById={contactById}
+      placementDocuments={
+        isSupportSpace && listScope === HELP_ARTICLE_AUDIENCE_INDIVIDUAL
+          ? scopedDocuments
+          : undefined
+      }
       onAdd={(parentFolderId) => {
         const { parentId, parentPath } = resolveCreateParent(parentFolderId);
         void workspaceActions
