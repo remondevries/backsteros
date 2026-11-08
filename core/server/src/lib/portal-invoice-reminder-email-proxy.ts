@@ -2,16 +2,14 @@
  * Proxy Moneybird late / reminder schedule → Lemo Design portal reminder email.
  *
  * Env:
- * - CLIENT_PORTAL_URL
+ * - CLIENT_PORTAL_URL — e.g. https://client.lemo-design.com (loopback ignored)
  * - CLIENT_PORTAL_HOOK_SECRET (must match portal PORTAL_INTERNAL_HOOK_SECRET)
  */
 
+import { resolveClientPortalBaseUrl } from "./client-portal-url.js";
+
 function portalBaseUrl(): string {
-  return (
-    process.env.CLIENT_PORTAL_URL?.trim() ||
-    process.env.PORTAL_PUBLIC_URL?.trim() ||
-    "http://localhost:3000"
-  ).replace(/\/$/, "");
+  return resolveClientPortalBaseUrl();
 }
 
 function portalHookSecret(): string {
