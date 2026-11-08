@@ -8,6 +8,7 @@ import { toDocument } from "../lib/mappers.js";
 import {
   assertPrivateStorageKey,
   buildSpaceCoverStorageKey,
+  checksumForContent,
   deleteObject,
   getObject,
   putObject,
@@ -46,7 +47,9 @@ export async function putSpaceCover(
   const folder = await assertSpaceFolder(workspaceId, spaceDocumentId);
   if (!folder) return null;
 
-  const key = buildSpaceCoverStorageKey(spaceDocumentId);
+  const previousKey = folder.coverStorageKey?.trim() || null;
+  const checksum = checksumForContent(bytes);
+  const key = buildSpaceCoverStorageKey(spaceDocumentId, checksum);
   await putObject(key, bytes, contentType);
 
   const [updated] = await db
@@ -65,6 +68,13 @@ export async function putSpaceCover(
     .returning();
 
   if (!updated) return null;
+  if (previousKey && previousKey !== key) {
+    try {
+      await deleteObject(previousKey);
+    } catch {
+      // New cover is durable; orphaned previous object is best-effort.
+    }
+  }
   await recordDocumentRestSyncEvent(workspaceId, updated, "upsert");
   return toDocument(updated);
 }

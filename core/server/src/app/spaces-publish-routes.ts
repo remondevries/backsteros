@@ -440,11 +440,12 @@ export function registerSpacesPublishRoutes(app: Hono) {
     const spaceDocumentId = c.req.param("spaceDocumentId");
     const cover = await getSpaceCover(auth!.workspaceId, spaceDocumentId);
     if (!cover) return c.json(notFound("Cover"), 404);
+    // Revalidate on replace — max-age alone left overwritten covers stuck.
     return new Response(Buffer.from(cover.bytes), {
       status: 200,
       headers: {
         "Content-Type": cover.contentType,
-        "Cache-Control": "private, max-age=3600",
+        "Cache-Control": "private, no-cache",
       },
     });
   });
@@ -480,7 +481,7 @@ export function registerSpacesPublishRoutes(app: Hono) {
       status: 200,
       headers: {
         "Content-Type": cover.contentType,
-        "Cache-Control": "public, max-age=3600",
+        "Cache-Control": "public, max-age=0, must-revalidate",
       },
     });
   });

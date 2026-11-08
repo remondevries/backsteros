@@ -10,6 +10,7 @@ import {
   buildLetterPdfStorageKey,
   buildPrivateStorageKey,
   buildProjectVaultAbsolutePath,
+  buildSpaceCoverStorageKey,
   buildStorageKey,
   buildTaskImageStorageKey,
   buildTaskAttachmentStorageKey,
@@ -358,6 +359,18 @@ test("storage keys follow Obsidian vault layout", () => {
   assert.equal(
     buildPrivateStorageKey("ws_123", "avatars", "contact_1", "avatar-portal"),
     ".backsteros/avatars/contact_1/avatar-portal",
+  );
+  assert.equal(
+    buildSpaceCoverStorageKey("space_1"),
+    ".backsteros/space-covers/space_1/cover",
+  );
+  assert.equal(
+    buildSpaceCoverStorageKey("space_1", "abcdef0123456789"),
+    ".backsteros/space-covers/space_1/cover-abcdef012345",
+  );
+  assert.notEqual(
+    buildSpaceCoverStorageKey("space_1", "1111111111111111"),
+    buildSpaceCoverStorageKey("space_1", "2222222222222222"),
   );
   assert.equal(
     buildPrivateStorageKey(

@@ -592,6 +592,10 @@ export function SettingsAccountTab({
                   if (current) URL.revokeObjectURL(current);
                   return url;
                 });
+                void workspace.patchContact(contact.id, {
+                  avatarStorageKey: result.avatar?.storageKey ?? null,
+                  avatarContentType: result.avatar?.contentType ?? null,
+                });
               }
               return result;
             }}
@@ -605,6 +609,10 @@ export function SettingsAccountTab({
                 setAvatarOverride((current) => {
                   if (current) URL.revokeObjectURL(current);
                   return null;
+                });
+                void workspace.patchContact(contact.id, {
+                  avatarStorageKey: null,
+                  avatarContentType: null,
                 });
               }
               return result;

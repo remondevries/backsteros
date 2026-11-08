@@ -319,9 +319,20 @@ export function buildPrivateStorageKey(
   );
 }
 
-/** Space folder cover / OG image under `.backsteros/space-covers/{spaceId}/cover`. */
-export function buildSpaceCoverStorageKey(spaceDocumentId: string): string {
-  return buildPrivateStorageKey("", "space-covers", spaceDocumentId, "cover");
+/**
+ * Space folder cover / OG image under `.backsteros/space-covers/{spaceId}/…`.
+ * Pass a content checksum suffix so re-uploads mint a new key (clients cache by
+ * `coverStorageKey`; a fixed `cover` path left stale images on screen).
+ */
+export function buildSpaceCoverStorageKey(
+  spaceDocumentId: string,
+  contentChecksum?: string | null,
+): string {
+  const suffix = (contentChecksum ?? "")
+    .replace(/[^a-f0-9]/gi, "")
+    .slice(0, 12);
+  const fileName = suffix ? `cover-${suffix}` : "cover";
+  return buildPrivateStorageKey("", "space-covers", spaceDocumentId, fileName);
 }
 
 /** Task description images under `.backsteros/attachments/tasks/{taskId}/…`. */

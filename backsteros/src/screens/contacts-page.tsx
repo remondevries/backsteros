@@ -1062,6 +1062,10 @@ export function ContactsPage({
                 if (current) URL.revokeObjectURL(current);
                 return url;
               });
+              void workspace.patchContact(contact.id, {
+                portalAvatarStorageKey: result.avatar?.storageKey ?? null,
+                portalAvatarContentType: result.avatar?.contentType ?? null,
+              });
             }
             return result;
           }}
@@ -1075,6 +1079,10 @@ export function ContactsPage({
               setPortalAvatarOverride((current) => {
                 if (current) URL.revokeObjectURL(current);
                 return null;
+              });
+              void workspace.patchContact(contact.id, {
+                portalAvatarStorageKey: null,
+                portalAvatarContentType: null,
               });
             }
             return result;
