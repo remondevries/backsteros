@@ -106,6 +106,7 @@ import {
   useShellLocation,
   useShellParams,
 } from "../lib/shell-route-keep-alive";
+import { OrganizationEmbeddedContactPanel } from "../components/organization-embedded-contact-panel";
 import { useOrganizationPropertyHandlers } from "../lib/crm/use-crm-property-handlers";
 import { useCrmSubjectGroupMembership } from "../lib/crm/use-crm-subject-group-membership";
 import { useEntityDetailOverlayTransition } from "../lib/crm/use-entity-detail-overlay-transition";
@@ -182,9 +183,14 @@ export function OrganizationsPage() {
   const keepAliveActive = useKeepAliveActive();
   const keepAliveFrozen = useKeepAliveFrozen();
   const location = useShellLocation();
-  const { slug: routedSlug, section: sectionParam } = useShellParams() as {
+  const {
+    slug: routedSlug,
+    section: sectionParam,
+    contactSlug: nestedContactSlug,
+  } = useShellParams() as {
     slug?: string;
     section?: string;
+    contactSlug?: string;
   };
   const workspace = useDesktopWorkspaceData();
   const communicationItems = useCommunicationListItems();
@@ -198,6 +204,10 @@ export function OrganizationsPage() {
   const { client } = useDesktopApi();
   const powerSync = useDesktopPowerSync();
   const { organizations, projects, letters, contacts } = workspace;
+  const nestedContact = useMemo(() => {
+    if (!nestedContactSlug) return null;
+    return resolveListItemFromSlug(contacts, nestedContactSlug);
+  }, [contacts, nestedContactSlug]);
   const organizationAvatarSrc = useDesktopAvatarSrcMap(
     "organization",
     keepAliveFrozen ? [] : organizations,
@@ -214,9 +224,9 @@ export function OrganizationsPage() {
     ? resolveListItemFromSlug(organizations, routedSlug)
     : null;
 
-  const overlayLayout: OrganizationOverlayLayout = parseOrganizationOverlayLayout(
-    location.searchStr ?? "",
-  );
+  const overlayLayout: OrganizationOverlayLayout = nestedContactSlug
+    ? "page"
+    : parseOrganizationOverlayLayout(location.searchStr ?? "");
   const selectedGroupId = parseCrmGroupId(location.searchStr ?? "");
   const groupsCatalog = useCrmGroupsCatalog(keepAliveActive);
   const effectiveGroupId = groupsCatalog.resolveGroupId(selectedGroupId);
@@ -646,8 +656,10 @@ export function OrganizationsPage() {
   // Invalid section segment → overview. Legacy full-page workspace tabs
   // (`/projects`, `/contacts`, `/letters`, `/emails`, `/transactions`,
   // `/invoices`) → expanded overlay layout with the matching workspace tab.
+  // Nested `/contacts/:contactSlug` stays on this page (right-rail contact).
   useEffect(() => {
     if (!keepAliveActive) return;
+    if (nestedContactSlug) return;
     if (!selected || !sectionParam || !selectedSlugValue) return;
     if (
       sectionParam === "projects" ||
@@ -682,12 +694,19 @@ export function OrganizationsPage() {
     effectiveGroupId,
     keepAliveActive,
     navigate,
+    nestedContactSlug,
     sectionParam,
     selected,
     selectedGroupId,
     selectedSlugValue,
     setDetailCollapsed,
   ]);
+
+  useEffect(() => {
+    if (!nestedContactSlug) return;
+    setWorkspaceTab("contacts");
+    setDetailCollapsed(false);
+  }, [nestedContactSlug, setDetailCollapsed]);
 
   useDesktopSectionBreadcrumb(
     selected
@@ -699,14 +718,23 @@ export function OrganizationsPage() {
           {
             label: selected.name,
             href:
-              profileSection === "overview" || !selectedSlugValue
-                ? undefined
-                : getOrganizationOverlayHref(selectedSlugValue, {
-                    layout: overlayLayout,
+              nestedContact && selectedSlugValue
+                ? getOrganizationOverlayHref(selectedSlugValue, {
+                    layout: "page",
                     groupId: effectiveGroupId,
-                  }),
+                  })
+                : profileSection === "overview" || !selectedSlugValue
+                  ? undefined
+                  : getOrganizationOverlayHref(selectedSlugValue, {
+                      layout: overlayLayout,
+                      groupId: effectiveGroupId,
+                    }),
           },
-          ...(sectionLabel ? [{ label: sectionLabel }] : []),
+          ...(nestedContact
+            ? [{ label: nestedContact.name }]
+            : sectionLabel
+              ? [{ label: sectionLabel }]
+              : []),
         ]
       : [{ label: selectedGroupName ?? "Organizations" }],
     { enabled: keepAliveActive },
@@ -1552,6 +1580,7 @@ export function OrganizationsPage() {
       return (
         <OrganizationContactsListView
           contacts={orgContacts}
+          selectedContactId={nestedContact?.id ?? null}
           onSelectContact={(contact) =>
             navigate(getOrganizationContactHref(organizationSlug, contact))
           }
@@ -1888,7 +1917,12 @@ export function OrganizationsPage() {
         contentFaded={contentFaded}
         workspaceFaded={workspaceFaded}
         overlayLayout={overlayLayout}
-        title={panelOrganization?.name ?? selected?.name ?? "Organization"}
+        title={
+          nestedContact?.name ??
+          panelOrganization?.name ??
+          selected?.name ??
+          "Organization"
+        }
         onExpand={expandOverlay}
         onCollapse={collapseOverlay}
         onHide={hideDetail}
@@ -1900,6 +1934,18 @@ export function OrganizationsPage() {
           setWorkspaceTab(tab);
           setWorkspaceChatId(null);
           chatInbox.selectConversation(null);
+          if (
+            nestedContactSlug &&
+            tab !== "contacts" &&
+            selectedSlugValue
+          ) {
+            navigate(
+              getOrganizationOverlayHref(selectedSlugValue, {
+                layout: "page",
+                groupId: effectiveGroupId,
+              }),
+            );
+          }
         }}
         renderWorkspaceTab={(tab) => {
           if (workspaceChatId) {
@@ -1952,7 +1998,27 @@ export function OrganizationsPage() {
           return renderSection(tab);
         }}
       >
-        {renderOrganizationDetail()}
+        {nestedContact ? (
+          <OrganizationEmbeddedContactPanel
+            contact={
+              orgContacts.find((entry) => entry.id === nestedContact.id) ?? {
+                ...nestedContact,
+                avatarSrc:
+                  contactAvatarSrc[nestedContact.id] ??
+                  nestedContact.avatarSrc ??
+                  null,
+              }
+            }
+            active={keepAliveActive}
+            onSelectRelatedContact={(contactId) => {
+              const target = contacts.find((entry) => entry.id === contactId);
+              if (!target || !selectedSlugValue) return;
+              navigate(getOrganizationContactHref(selectedSlugValue, target));
+            }}
+          />
+        ) : (
+          renderOrganizationDetail()
+        )}
       </OrganizationDetailOverlay>
     </div>
   );

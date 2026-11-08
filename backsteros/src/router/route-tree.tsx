@@ -41,7 +41,6 @@ import {
   OrgContactScopedMeetingDetailPage,
   OrgContactScopedTaskDetailPage,
   OrgProjectScopedTaskDetailPage,
-  OrgScopedContactsPage,
   OrgScopedProjectsPage,
   OrganizationsPage,
   ProjectScopedTaskDetailPage,
@@ -698,13 +697,23 @@ const orgContactMeetingDetailRoute = createRoute({
 const orgContactSectionRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: "organizations/$slug/contacts/$contactSlug/$section",
-  component: OrgScopedContactsPage,
+  // Stay on the organization shell — contact opens in the right rail.
+  component: () => (
+    <LazyRoute>
+      <OrganizationsPage />
+    </LazyRoute>
+  ),
 });
 
 const orgContactDetailRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: "organizations/$slug/contacts/$contactSlug",
-  component: OrgScopedContactsPage,
+  // Stay on the organization shell — contact opens in the right rail.
+  component: () => (
+    <LazyRoute>
+      <OrganizationsPage />
+    </LazyRoute>
+  ),
 });
 
 const organizationDetailRoute = createRoute({
