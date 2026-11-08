@@ -341,6 +341,11 @@ export function buildInboxEmailListItem(input: {
   threadId?: string | null;
   title: string;
   from?: string | null;
+  /**
+   * Address for the party-line label when it should not follow `from`
+   * (e.g. counterparty contact email while `from` is our outbound).
+   */
+  partyAddress?: string | null;
   status?: string | null;
   priority?: number | null;
   dueDate?: number | string | Date | null;
@@ -398,7 +403,10 @@ export function buildInboxEmailListItem(input: {
     draftId,
     threadId,
     title: input.title.trim() || "(no subject)",
-    partyLabel: formatEmailListPartyLabel(input.contactName, input.from),
+    partyLabel: formatEmailListPartyLabel(
+      input.contactName,
+      input.partyAddress?.trim() || input.from,
+    ),
     status:
       input.status?.trim() === "concept"
         ? "concept"

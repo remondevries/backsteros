@@ -13,11 +13,13 @@ import {
   buildInboxEmailListItem,
   buildInboxMessagesModeItems,
   buildInboxTaskListItem,
+  collectMailboxContactIds,
   findInboxItemBySlugOrId,
   getSelectedInboxSlugFromPathname,
   isInboxPath,
   parseEmailDraftPath,
   parseEmailMessagePath,
+  resolveEmailListCardParty,
   resolveInboxModeListItems,
   sortInboxItemsByAttentionStatus,
   taskBelongsInInbox,
@@ -305,8 +307,31 @@ export function InboxModeModelProvider({
     // Defense in depth: tombstones hide rows even if AgentMail state lagged.
     const live = filterOutPendingEmailListRemovals(liveRaw);
     const mailboxById = buildMailboxByIdMap(agentMail.mailboxes);
+    const mailboxContactIds = collectMailboxContactIds(agentMail.mailboxes);
+    const mailboxEmails = new Set(
+      agentMail.mailboxes
+        .map((entry) => entry.email?.trim().toLowerCase())
+        .filter((email): email is string => Boolean(email)),
+    );
     const mapped = live.map((item) => {
       const mailbox = mailboxById.get(item.inboxId) ?? null;
+      const party = resolveEmailListCardParty({
+        contactId: item.contactId,
+        contactName: item.contactName,
+        from: item.from,
+        partyContactIds: item.partyContactIds ?? null,
+        mailboxContactIds,
+        mailboxEmails,
+        contactNameById: (id) => contactsById.get(id)?.name ?? null,
+      });
+      const partyContact = party.contactId
+        ? (contactsById.get(party.contactId) ?? null)
+        : null;
+      const partyAddress =
+        partyContact?.email?.trim() ||
+        partyContact?.emails?.find((entry) => entry.address?.trim())
+          ?.address ||
+        null;
       return buildInboxEmailListItem({
         inboxId: item.inboxId,
         messageId: item.id,
@@ -314,6 +339,7 @@ export function InboxModeModelProvider({
         threadId: item.threadId,
         title: item.subject,
         from: item.from,
+        partyAddress,
         status: item.status,
         inboxUpdatedAt: item.inboxUpdatedAt,
         priority: item.priority,
@@ -325,9 +351,9 @@ export function InboxModeModelProvider({
         projectName: item.projectName,
         organizationId: item.organizationId,
         organizationName: item.organizationName,
-        contactId: item.contactId,
-        contactName: item.contactName,
-        partyContactIds: item.partyContactIds ?? null,
+        contactId: party.contactId,
+        contactName: party.contactName,
+        partyContactIds: party.partyContactIds,
         emailThreadId: item.emailThreadId,
         number: item.number,
         displayId: item.displayId,

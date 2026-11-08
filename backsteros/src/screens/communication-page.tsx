@@ -24,6 +24,7 @@ import {
   buildOrganizationDropdownOptions,
   buildProjectDropdownOptions,
   buildTaskRelatedDropdownOptions,
+  collectMailboxContactIds,
   emailListItemPartyEmail,
   emailListItemPartyName,
   formatEmailListPartyLabel,
@@ -40,7 +41,6 @@ import {
   resolveOrganizationAvatarSrc,
   resolveSupportParties,
   taskStatusToChatStatus,
-  uniqueEmailPartyContactIds,
   withCommunicationMailFolder,
   type CommunicationCreateKind,
   type CommunicationEmailActiveParty,
@@ -693,12 +693,13 @@ function CommunicationPageBody() {
           (row) => row.id === chatInbox.selectedId,
         ) ?? chatInbox.detail);
 
-  // List card stays on the latest thread message; the right rail follows the
-  // selected message’s From address (emailSelectedParty).
+  // Right rail follows the selected message’s From (emailSelectedParty).
+  // Left list keeps the collapsed thread party (first message) — never follow
+  // in-thread selection.
   const fallbackPartyEmail = selectedEmail
     ? emailListItemPartyEmail(selectedEmail)
     : null;
-  const { focusParty, latestMessageParty, selectedMessageParty, emailPartyEmail } =
+  const { focusParty, selectedMessageParty, emailPartyEmail } =
     useMemo(
       () =>
         resolveCommunicationEmailParty({
@@ -860,62 +861,16 @@ function CommunicationPageBody() {
     [location.pathname, location.searchStr, navigate],
   );
 
-  // Keep the left-list email card in sync with the latest thread party.
+  const mailboxContactIds = useMemo(
+    () => collectMailboxContactIds(agentMail.mailboxes),
+    [agentMail.mailboxes],
+  );
+
+  // Left list rows keep their collapsed thread party/avatar. Opening a
+  // different message in the thread only updates the right rail.
   const chatEmailsForList = useMemo(() => {
-    const source =
-      mailFolder === "notifications" ? notificationEmails : chatEmails;
-    if (!selectedEmailId || !emailActiveParty) return source;
-    return source.map((item) => {
-      if (item.id !== selectedEmailId) return item;
-      return {
-        ...item,
-        // Prefer the live party map — do not keep a stale list contactId
-        // after the user unlinks (null must win over item.contactId).
-        contactId: latestMessageParty
-          ? latestMessageParty.contactId?.trim() || null
-          : item.contactId || null,
-        contactName:
-          matchedContact?.name?.trim() ||
-          (latestMessageParty && !latestMessageParty.contactId
-            ? null
-            : item.contactName) ||
-          null,
-        organizationId: latestMessageParty
-          ? latestMessageParty.organizationId?.trim() ||
-            matchedContact?.organizationId?.trim() ||
-            null
-          : item.organizationId || null,
-        organizationName:
-          matchedOrganization?.name?.trim() ||
-          (latestMessageParty &&
-          !latestMessageParty.organizationId &&
-          !matchedContact
-            ? null
-            : item.organizationName) ||
-          null,
-        partyContactIds: uniqueEmailPartyContactIds(
-          emailMessageParties,
-          latestMessageParty?.contactId ?? item.contactId,
-        ),
-        partyLabel:
-          formatEmailListPartyLabel(
-            polishedPartyName,
-            emailActiveParty.address,
-          ) ?? item.partyLabel,
-      };
-    });
-  }, [
-    chatEmails,
-    mailFolder,
-    notificationEmails,
-    emailActiveParty,
-    emailMessageParties,
-    latestMessageParty,
-    matchedContact,
-    matchedOrganization?.name,
-    polishedPartyName,
-    selectedEmailId,
-  ]);
+    return mailFolder === "notifications" ? notificationEmails : chatEmails;
+  }, [chatEmails, mailFolder, notificationEmails]);
 
   // Email: wait for AgentMail thread load before opening the right rail.
   // Create launcher keeps the rail closed; email compose opens it like a thread.
@@ -1651,8 +1606,15 @@ function CommunicationPageBody() {
         contactAvatarSrc,
         organizationUploadedSrc: organizationAvatarSrc,
         brandfetchClientId: getBrandfetchClientId(),
+        mailboxContactIds,
       }),
-    [contactAvatarSrc, organizationAvatarSrc, workspace.contacts, workspace.organizations],
+    [
+      contactAvatarSrc,
+      mailboxContactIds,
+      organizationAvatarSrc,
+      workspace.contacts,
+      workspace.organizations,
+    ],
   );
   const hideContactPanel = useCallback(() => setChatContactCollapsed(true), []);
   const showContactPanel = useCallback(

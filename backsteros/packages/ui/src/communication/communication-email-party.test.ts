@@ -84,7 +84,7 @@ describe("resolveCommunicationEmailParty", () => {
     });
   });
 
-  it("soft-matches From when the stored party is a mismatch", () => {
+  it("keeps a manual org-only link even when From matches a contact", () => {
     const resolved = resolveCommunicationEmailParty(
       input({
         activeParty: party({ messageId: "m1", address: "bob@example.com" }),
@@ -100,6 +100,34 @@ describe("resolveCommunicationEmailParty", () => {
         organizations: [
           { id: "o-billing", email: "billing@acme.com", emails: [] },
         ],
+      }),
+    );
+    assert.deepEqual(resolved.selectedMessageParty, {
+      contactId: null,
+      organizationId: "o-billing",
+    });
+  });
+
+  it("soft-matches From when the stored contact is a mismatch", () => {
+    const resolved = resolveCommunicationEmailParty(
+      input({
+        activeParty: party({ messageId: "m1", address: "bob@example.com" }),
+        messageParties: { m1: { contactId: "c-ada", organizationId: "o1" } },
+        contacts: [
+          {
+            id: "c-ada",
+            organizationId: "o1",
+            email: "ada@example.com",
+            emails: [],
+          },
+          {
+            id: "c-bob",
+            organizationId: "o-bob",
+            email: "bob@example.com",
+            emails: [],
+          },
+        ],
+        organizations: [],
       }),
     );
     assert.deepEqual(resolved.selectedMessageParty, {

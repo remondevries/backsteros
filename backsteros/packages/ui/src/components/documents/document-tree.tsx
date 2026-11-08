@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  memo,
   useEffect,
   useRef,
   useState,
@@ -88,6 +89,54 @@ type DocumentTreeSharedProps = {
   individualCardMetaById?: ReadonlyMap<string, DocumentTreeIndividualCardMeta>;
 };
 
+/** Collapsed ids that affect this folder row or its mounted descendants. */
+function collapsedSignatureForFolder(
+  folder: DocumentTreeFolderNode,
+  collapsedFolderIds: ReadonlySet<string>,
+): string {
+  const parts: string[] = [];
+  function visit(node: DocumentTreeFolderNode) {
+    if (collapsedFolderIds.has(node.id)) {
+      parts.push(node.id);
+      return;
+    }
+    for (const child of node.children) {
+      if (child.type === "folder") visit(child);
+    }
+  }
+  visit(folder);
+  return parts.join("\0");
+}
+
+function sharedTreePropsEqual(
+  prev: DocumentTreeSharedProps,
+  next: DocumentTreeSharedProps,
+): boolean {
+  return (
+    prev.depth === next.depth &&
+    prev.parentId === next.parentId &&
+    prev.selectedPath === next.selectedPath &&
+    prev.onClearSelectedFolder === next.onClearSelectedFolder &&
+    prev.onSelectFolder === next.onSelectFolder &&
+    prev.onConfigureFolder === next.onConfigureFolder &&
+    prev.onToggleFolderCollapsed === next.onToggleFolderCollapsed &&
+    prev.highlightedNavItemId === next.highlightedNavItemId &&
+    prev.getDocumentHref === next.getDocumentHref &&
+    prev.Link === next.Link &&
+    prev.onRename === next.onRename &&
+    prev.dragInsertBeforeId === next.dragInsertBeforeId &&
+    prev.dragIntoFolderId === next.dragIntoFolderId &&
+    prev.activeDragPayload === next.activeDragPayload &&
+    prev.onDragInsertBeforeId === next.onDragInsertBeforeId &&
+    prev.onDragIntoFolderId === next.onDragIntoFolderId &&
+    prev.onTreeDragStart === next.onTreeDragStart &&
+    prev.onTreeDragEnd === next.onTreeDragEnd &&
+    prev.onReorderTreeItem === next.onReorderTreeItem &&
+    prev.documentRowVariant === next.documentRowVariant &&
+    prev.individualCardMetaById === next.individualCardMetaById
+  );
+}
+
 function TreeRenameForm({
   value,
   onChange,
@@ -171,7 +220,7 @@ function ChevronIcon({ expanded }: { expanded: boolean }) {
   );
 }
 
-function DocumentTreeItem({
+const DocumentTreeItem = memo(function DocumentTreeItem({
   document,
   depth,
   selectedPath,
@@ -379,9 +428,13 @@ function DocumentTreeItem({
       </div>
     </li>
   );
-}
+}, (prev, next) => {
+  if (prev.document !== next.document) return false;
+  // Document rows ignore collapsedFolderIds for their own paint.
+  return sharedTreePropsEqual(prev, next);
+});
 
-function DocumentTreeFolder({
+const DocumentTreeFolder = memo(function DocumentTreeFolder({
   folder,
   depth,
   selectedPath,
@@ -707,7 +760,14 @@ function DocumentTreeFolder({
       ) : null}
     </li>
   );
-}
+}, (prev, next) => {
+  if (prev.folder !== next.folder) return false;
+  if (!sharedTreePropsEqual(prev, next)) return false;
+  return (
+    collapsedSignatureForFolder(prev.folder, prev.collapsedFolderIds) ===
+    collapsedSignatureForFolder(next.folder, next.collapsedFolderIds)
+  );
+});
 
 export function DocumentTreeNodeView(
   props: DocumentTreeSharedProps & { node: DocumentTreeNode },

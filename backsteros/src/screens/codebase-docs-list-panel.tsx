@@ -2,7 +2,6 @@ import {
   useCallback,
   useMemo,
   useRef,
-  useState,
   type FocusEvent,
   type MouseEvent,
   type ReactNode,
@@ -56,7 +55,11 @@ export function DesktopCodebaseDocsListPanel({
   ...viewProps
 }: Props) {
   const folderActivateRef = useRef<(folderId: string) => void>(() => {});
-  const [navItemIds, setNavItemIds] = useState<string[]>([]);
+  // Ref (not state): folder collapse updates visible ids without a second panel render.
+  const navItemIdsRef = useRef<readonly string[]>([]);
+  const onVisibleNavItemIdsChange = useCallback((ids: string[]) => {
+    navItemIdsRef.current = ids;
+  }, []);
   const { client } = useDesktopApi();
   const routerNavigate = useNavigate();
   const selectedSlug = getSelectedProjectDocumentPathFromPathname(pathname);
@@ -80,7 +83,7 @@ export function DesktopCodebaseDocsListPanel({
 
   const { listRef, highlightedId, listContainerProps } =
     useDesktopSidePanelListNav({
-      itemIds: navItemIds,
+      itemIdsRef: navItemIdsRef,
       selectedId,
       onNavigate: (itemId: string) => {
         const folderId = parseFolderNavId(itemId);
@@ -96,7 +99,7 @@ export function DesktopCodebaseDocsListPanel({
           );
         }
       },
-      enabled: keyboardEnabled && navItemIds.length > 0,
+      enabled: keyboardEnabled && items.length > 0,
       prefetchItemId,
       zone: LIST_KEYBOARD_NAV_ZONE_CONTENT,
       pathname,
@@ -153,7 +156,7 @@ export function DesktopCodebaseDocsListPanel({
       listRef={listRef}
       listContainerProps={listContainerProps}
       highlightedId={highlightedId}
-      onVisibleNavItemIdsChange={setNavItemIds}
+      onVisibleNavItemIdsChange={onVisibleNavItemIdsChange}
       onFolderActivateRef={folderActivateRef}
       footer={footer}
     />

@@ -22,9 +22,9 @@ export type ResolveCommunicationEmailPartyInput = {
   isComposing: boolean;
   composeParty: EmailMessagePartyLink;
   composePartyEmail: string | null;
-  /** Latest thread message (list card identity). */
+  /** Latest thread message (used when nothing is selected yet). */
   activeParty: CommunicationEmailActiveParty | null;
-  /** Selected thread message (rail follows this one). */
+  /** Selected thread message (right rail follows this one). */
   selectedParty: CommunicationEmailActiveParty | null;
   messageParties: EmailMessagePartyMap;
   /** Party address from the list row when the thread has not hydrated yet. */
@@ -36,7 +36,7 @@ export type ResolveCommunicationEmailPartyInput = {
 export type ResolvedCommunicationEmailParty = {
   /** Message the rail is focused on (selected, else latest); null in compose. */
   focusParty: CommunicationEmailActiveParty | null;
-  /** Party for the latest message — drives the left-list card. */
+  /** Party for the latest message (not the left-list card identity). */
   latestMessageParty: EmailMessagePartyLink | null;
   /** Party the rail shows and link/unlink edits. */
   selectedMessageParty: EmailMessagePartyLink | null;

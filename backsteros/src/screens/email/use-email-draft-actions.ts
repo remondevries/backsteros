@@ -613,6 +613,24 @@ export function useEmailDraftActions({
     ],
   );
 
+  const applyLoadedComposeDraft = useCallback(
+    (loaded: AgentMailDraftDetail, fallbackBody: string) => {
+      setComposeDraft(loaded);
+      setComposeTo((loaded.to ?? []).join(", "));
+      setComposeCc((loaded.cc ?? []).join(", "));
+      setComposeBcc((loaded.bcc ?? []).join(", "));
+      setComposeSubject(loaded.subject?.trim() ?? composeSubject);
+      const nextEditable =
+        resolveEditableEmailDraftBody(loaded) || fallbackBody;
+      lastSavedConceptRef.current = {
+        body: nextEditable,
+        updatedAt: loaded.updatedAt,
+      };
+      setConceptBodyDraft(nextEditable);
+    },
+    [composeSubject],
+  );
+
   const saveComposeDraft = useCallback(
     async (body: string) => {
       if (!composeInboxId || conceptSavingRef.current) return;
@@ -626,7 +644,39 @@ export function useEmailDraftActions({
       conceptSavingRef.current = true;
       setConceptSaving(true);
       setConceptError(null);
+      const existingDraftId =
+        composeDraft?.draftId?.trim() ||
+        composeSession.draftId?.trim() ||
+        "";
+      const targetInboxId =
+        composeDraft?.inboxId?.trim() ||
+        composeSession.inboxId?.trim() ||
+        composeInboxId;
       try {
+        // Reopened / already-saved drafts must PATCH in place. Compose-draft
+        // upsert keys only on composeSessionId→client_id, and reopen mints a
+        // fresh session id — posting again would create a duplicate.
+        if (existingDraftId && targetInboxId) {
+          const updated = await client.requestJson<AgentMailDraftDetail>(
+            `/api/v1/email/inboxes/${encodeURIComponent(targetInboxId)}/drafts/${encodeURIComponent(existingDraftId)}`,
+            {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(
+                draftHeaderPayload({ includeBody: agentBody }),
+              ),
+            },
+          );
+          writeEmailComposeSession({
+            sessionId: composeSession.sessionId,
+            draftId: updated.draftId,
+            inboxId: updated.inboxId || targetInboxId,
+          });
+          applyLoadedComposeDraft(updated, agentBody);
+          requestMailboxReload();
+          return;
+        }
+
         const result = await client.requestJson<{
           draftId: string;
           inboxId: string;
@@ -654,18 +704,7 @@ export function useEmailDraftActions({
         const loaded = await client.requestJson<AgentMailDraftDetail>(
           `/api/v1/email/inboxes/${encodeURIComponent(result.inboxId)}/drafts/${encodeURIComponent(result.draftId)}`,
         );
-        setComposeDraft(loaded);
-        setComposeTo((loaded.to ?? []).join(", "));
-        setComposeCc((loaded.cc ?? []).join(", "));
-        setComposeBcc((loaded.bcc ?? []).join(", "));
-        setComposeSubject(loaded.subject?.trim() ?? composeSubject);
-        const nextEditable =
-          resolveEditableEmailDraftBody(loaded) || agentBody;
-        lastSavedConceptRef.current = {
-          body: nextEditable,
-          updatedAt: loaded.updatedAt,
-        };
-        setConceptBodyDraft(nextEditable);
+        applyLoadedComposeDraft(loaded, agentBody);
         requestMailboxReload();
       } catch (caught) {
         setConceptError(
@@ -678,13 +717,19 @@ export function useEmailDraftActions({
       }
     },
     [
+      applyLoadedComposeDraft,
       client,
       composeBcc,
       composeCc,
+      composeDraft?.draftId,
+      composeDraft?.inboxId,
       composeInboxId,
+      composeSession.draftId,
+      composeSession.inboxId,
       composeSession.sessionId,
       composeSubject,
       composeTo,
+      draftHeaderPayload,
     ],
   );
 
@@ -791,17 +836,20 @@ export function useEmailDraftActions({
           { method: "POST" },
         );
         requestMailboxReload();
-        const returnToMessageId =
+        // Only reopen a *parent* thread after a reply send. Do not fall back to
+        // result.messageId — that is the outbound message, and treating it as a
+        // parent breaks compose (Communication's reloadMessageDetail throws;
+        // email compose never leaves the composer).
+        const parentMessageId =
           reloadMessageId?.trim() ||
           result.inReplyToMessageId?.trim() ||
-          result.messageId?.trim() ||
           null;
-        if (returnToMessageId && (inboxId || result.inboxId)) {
+        if (!isCompose && parentMessageId && (inboxId || result.inboxId)) {
           const targetInbox = inboxId || result.inboxId;
           promoteEmailThreadStatus("on_hold");
           dispatchEmailListPatch({
             inboxId: targetInbox,
-            messageId: returnToMessageId,
+            messageId: parentMessageId,
             threadId: result.threadId ?? null,
             status: "on_hold",
             conceptDraftId: null,
@@ -815,7 +863,10 @@ export function useEmailDraftActions({
           setReplyCc("");
           setReplySubjectText("");
           replyHeadersSeededForDraftRef.current = null;
-          const reloaded = await reloadMessageDetail(targetInbox, returnToMessageId);
+          const reloaded = await reloadMessageDetail(
+            targetInbox,
+            parentMessageId,
+          );
           setDraft(null);
           setComposeDraft(null);
           setMessage({
@@ -825,7 +876,7 @@ export function useEmailDraftActions({
             conceptPreview: null,
           });
           if (draftId) {
-            navigate(toEmailDetailHref(targetInbox, returnToMessageId), {
+            navigate(toEmailDetailHref(targetInbox, parentMessageId), {
               replace: true,
             });
           }
@@ -840,8 +891,24 @@ export function useEmailDraftActions({
           inboxId: draftInboxId,
           messageId: targetDraftId,
         });
+        if (result.messageId && result.inboxId) {
+          dispatchEmailListPatch({
+            inboxId: result.inboxId,
+            messageId: result.messageId,
+            threadId: result.threadId ?? null,
+            status: "on_hold",
+            conceptDraftId: null,
+          });
+        }
         if (onComposeFinished) {
           onComposeFinished();
+          return;
+        }
+        if (result.messageId && result.inboxId) {
+          navigate(toEmailDetailHref(result.inboxId, result.messageId), {
+            replace: true,
+          });
+          return;
         }
         navigate(resolveEmailListReturnHref(listReturnHref, targetDraftId), {
           replace: true,
@@ -864,6 +931,7 @@ export function useEmailDraftActions({
       draftHeaderPayload,
       draftId,
       inboxId,
+      isCompose,
       message?.conceptDraft,
       navigate,
       onComposeFinished,

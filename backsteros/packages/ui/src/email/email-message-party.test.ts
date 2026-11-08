@@ -4,7 +4,9 @@ import { describe, it } from "node:test";
 import {
   buildEmailMessagePartyAutoLinks,
   classifyStoredEmailMessageParty,
+  collectMailboxContactIds,
   matchEmailMessageParty,
+  resolveEmailListCardParty,
   resolveEmailMessagePartyAddress,
   uniqueEmailPartyContactIds,
 } from "./email-message-party.js";
@@ -273,7 +275,7 @@ describe("email-message-party", () => {
     });
   });
 
-  it("treats an empty newly created org as unknown (keep manual link)", () => {
+  it("keeps org-only manual links even when org emails do not match From", () => {
     assert.equal(
       classifyStoredEmailMessageParty({
         party: { contactId: null, organizationId: "o-new" },
@@ -292,7 +294,7 @@ describe("email-message-party", () => {
           { id: "o-billing", email: "billing@acme.com", emails: [] },
         ],
       }),
-      "mismatch",
+      "unknown",
     );
   });
 
@@ -487,6 +489,82 @@ describe("email-message-party", () => {
       "msg-remon-reply": { contactId: "remon", organizationId: "o-lemo" },
       "msg-marcel": { contactId: "marcel", organizationId: "o-schotpoort" },
     });
+  });
+
+  it("collectMailboxContactIds unique-trims mailbox contact links", () => {
+    assert.deepEqual(
+      [...collectMailboxContactIds([
+        { contactId: " remon " },
+        { contactId: "remon" },
+        { contactId: null },
+        { contactId: "ops" },
+      ])].sort(),
+      ["ops", "remon"],
+    );
+  });
+
+  it("resolveEmailListCardParty prefers a counterparty over our mailbox face", () => {
+    const mailboxContactIds = new Set(["remon"]);
+    const mailboxEmails = new Set(["remon@lemo-design.nl"]);
+    const names = new Map([
+      ["remon", "Remon de Vries"],
+      ["eric", "Eric Koops"],
+    ]);
+
+    // Thread filed on Remon, but Eric is also on the message → show Eric.
+    assert.deepEqual(
+      resolveEmailListCardParty({
+        contactId: "remon",
+        contactName: "Remon de Vries",
+        from: "Eric Koops <eric@example.com>",
+        partyContactIds: ["remon", "eric"],
+        mailboxContactIds,
+        mailboxEmails,
+        contactNameById: names,
+      }),
+      {
+        contactId: "eric",
+        contactName: "Eric Koops",
+        partyContactIds: ["eric"],
+      },
+    );
+
+    // Only us on the thread → keep Remon.
+    assert.deepEqual(
+      resolveEmailListCardParty({
+        contactId: "remon",
+        contactName: "Remon de Vries",
+        from: "remon@lemo-design.nl",
+        partyContactIds: ["remon"],
+        mailboxContactIds,
+        mailboxEmails,
+        contactNameById: names,
+      }),
+      {
+        contactId: "remon",
+        contactName: "Remon de Vries",
+        partyContactIds: ["remon"],
+      },
+    );
+
+    // Mailbox contact filed, From is someone else, no counterparty id yet →
+    // clear so the card follows From for name/avatar.
+    assert.deepEqual(
+      resolveEmailListCardParty({
+        contactId: "remon",
+        contactName: "Remon de Vries",
+        from: "Eric Koops <eric@example.com>",
+        partyContactIds: ["remon"],
+        mailboxContactIds,
+        mailboxEmails,
+        contactNameById: names,
+      }),
+      {
+        contactId: null,
+        contactName: null,
+        partyContactIds: ["remon"],
+      },
+    );
   });
 
   it("OS-136: manual org on unmatched From is kept", () => {

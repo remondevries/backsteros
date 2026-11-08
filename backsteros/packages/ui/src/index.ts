@@ -709,11 +709,13 @@ export {
 export {
   buildEmailMessagePartyAutoLinks,
   classifyStoredEmailMessageParty,
+  collectMailboxContactIds,
   contactHasEmailAddress,
   getEmailMessageParty,
   listInboundPartyAddresses,
   matchEmailMessageParty,
   organizationMatchesEmailAddress,
+  resolveEmailListCardParty,
   resolveEmailMessagePartyAddress,
   uniqueEmailPartyContactIds,
   type EmailMessagePartyLink,

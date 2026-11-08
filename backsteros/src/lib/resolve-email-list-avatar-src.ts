@@ -1,5 +1,6 @@
 import {
   brandfetchLogoUrlFromEmailAddress,
+  contactHasEmailAddress,
   emailListItemPartyEmail,
   matchEmailMessageParty,
   resolveOrganizationAvatarSrc,
@@ -24,13 +25,13 @@ type AvatarOrganization = {
 };
 
 /**
- * List-card avatar for an email row — same priority as the open thread:
- * filed contact → filed org → soft-matched party → Brandfetch domain.
- * Soft-match / Brandfetch keep logos visible after leaving the thread (the open
- * row used to inject orgId only while selected).
+ * List-card avatar for an email row — must match the name on the card.
  *
- * Do not fall back to `mailboxAvatarSrc` — on Messages that is our mailbox
- * contact face, which wrongly replaces the thread’s other-party avatar.
+ * The card name prefers `contactId` / `contactName` (counterparty). Avatar
+ * must follow that same person — never our mailbox face just because the
+ * collapsed `from` / party-label email is an outbound address of ours.
+ *
+ * Do not fall back to `mailboxAvatarSrc`.
  */
 export function resolveEmailListAvatarSrc(input: {
   item: InboxEmailListItem;
@@ -39,6 +40,8 @@ export function resolveEmailListAvatarSrc(input: {
   contactAvatarSrc: Record<string, string>;
   organizationUploadedSrc: Record<string, string>;
   brandfetchClientId: string | null | undefined;
+  /** Our mailbox-linked contact ids — skipped when a counterparty matches. */
+  mailboxContactIds?: ReadonlySet<string>;
 }): string | null {
   const {
     item,
@@ -47,9 +50,12 @@ export function resolveEmailListAvatarSrc(input: {
     contactAvatarSrc,
     organizationUploadedSrc,
     brandfetchClientId,
+    mailboxContactIds,
   } = input;
 
-  const resolveOrg = (organizationId: string | null | undefined): string | null => {
+  const resolveOrg = (
+    organizationId: string | null | undefined,
+  ): string | null => {
     const id = organizationId?.trim();
     if (!id) return null;
     const organization =
@@ -62,7 +68,9 @@ export function resolveEmailListAvatarSrc(input: {
     });
   };
 
-  const resolveContact = (contactId: string | null | undefined): string | null => {
+  const resolveContact = (
+    contactId: string | null | undefined,
+  ): string | null => {
     const id = contactId?.trim();
     if (!id) return null;
     const contact = contacts.find((entry) => entry.id === id) ?? null;
@@ -72,11 +80,17 @@ export function resolveEmailListAvatarSrc(input: {
     return resolveOrg(contact?.organizationId);
   };
 
-  const filedContact = resolveContact(item.contactId);
-  if (filedContact) return filedContact;
+  const filedId = item.contactId?.trim() || null;
+  const filedIsMailbox = Boolean(
+    filedId && mailboxContactIds?.has(filedId),
+  );
 
-  const filedOrg = resolveOrg(item.organizationId);
-  if (filedOrg) return filedOrg;
+  // Card name comes from contactId/contactName — prefer that face first when
+  // it is a counterparty (not our mailbox contact).
+  if (filedId && !filedIsMailbox) {
+    const filedAvatar = resolveContact(filedId);
+    if (filedAvatar) return filedAvatar;
+  }
 
   const partyEmail = emailListItemPartyEmail(item);
   const matched = matchEmailMessageParty({
@@ -85,13 +99,45 @@ export function resolveEmailListAvatarSrc(input: {
     organizations,
   });
   if (matched?.contactId) {
-    const matchedContact = resolveContact(matched.contactId);
-    if (matchedContact) return matchedContact;
+    const matchedIsMailbox = Boolean(
+      mailboxContactIds?.has(matched.contactId),
+    );
+    // Party-label email can still be our outbound From while the name is the
+    // counterparty — never let that soft-match paint our face on their row.
+    if (!(matchedIsMailbox && filedId && !filedIsMailbox)) {
+      const matchedContact = resolveContact(matched.contactId);
+      if (matchedContact) return matchedContact;
+      // Same person, no uploaded face — stop here (brandfetch below) instead
+      // of falling through to a different filed contact.
+      const matchedPerson = contacts.find(
+        (entry) => entry.id === matched.contactId,
+      );
+      const matchedOrg = resolveOrg(matchedPerson?.organizationId);
+      if (matchedOrg) return matchedOrg;
+      return brandfetchLogoUrlFromEmailAddress(partyEmail, brandfetchClientId);
+    }
   }
   if (matched?.organizationId) {
     const matchedOrg = resolveOrg(matched.organizationId);
     if (matchedOrg) return matchedOrg;
   }
+
+  // Skip our mailbox filing when the party line points at someone else.
+  if (filedId && !(filedIsMailbox && partyEmail)) {
+    const filedContact =
+      contacts.find((entry) => entry.id === filedId) ?? null;
+    if (
+      !partyEmail ||
+      !filedContact ||
+      contactHasEmailAddress(filedContact, partyEmail)
+    ) {
+      const filedAvatar = resolveContact(filedId);
+      if (filedAvatar) return filedAvatar;
+    }
+  }
+
+  const filedOrg = resolveOrg(item.organizationId);
+  if (filedOrg) return filedOrg;
 
   return brandfetchLogoUrlFromEmailAddress(partyEmail, brandfetchClientId);
 }

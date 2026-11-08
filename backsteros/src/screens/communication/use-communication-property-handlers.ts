@@ -21,6 +21,7 @@ import {
 import type { ChatConversation } from "@backsteros/contracts";
 
 import { patchEmailTaskListItem } from "../../lib/email-list-tasks";
+import { patchEmailMessageDetailCacheMessageParties } from "../../lib/email-message-detail-cache";
 import type { DesktopWorkspaceData } from "../../lib/workspace/workspace-data-types";
 
 export type ComposeEmailMeta = {
@@ -184,14 +185,27 @@ async function linkMessageParty(
   nextParty: EmailMessagePartyLink,
   options: { seedWhenEmpty: boolean },
 ): Promise<void> {
+  const email = ctx.selectedEmail;
   const updated = await patchEmail(ctx, {
     messageParty: { messageId, ...nextParty },
   });
-  ctx.setEmailMessageParties((prev) => ({
-    ...prev,
+  const nextParties: EmailMessagePartyMap = {
     ...(updated ?? {}),
     [messageId]: nextParty,
+  };
+  ctx.setEmailMessageParties((prev) => ({
+    ...prev,
+    ...nextParties,
   }));
+  // Keep the warm message-detail cache in sync — reopen otherwise paints the
+  // pre-unlink parties from cache and looks like the clear never saved.
+  if (email) {
+    patchEmailMessageDetailCacheMessageParties(
+      email.inboxId,
+      email.messageId,
+      nextParties,
+    );
+  }
   // Seed when the thread has not hydrated yet so create-org → link paints now.
   const apply = (prev: CommunicationEmailActiveParty | null) =>
     prev || options.seedWhenEmpty
@@ -473,6 +487,14 @@ export function useCommunicationPropertyHandlers(
         const next =
           (await patchEmail(c, { messageParties: parties })) ?? parties;
         c.setEmailMessageParties((prev) => ({ ...prev, ...next }));
+        const email = c.selectedEmail;
+        if (email) {
+          patchEmailMessageDetailCacheMessageParties(
+            email.inboxId,
+            email.messageId,
+            next,
+          );
+        }
         return next;
       },
     };

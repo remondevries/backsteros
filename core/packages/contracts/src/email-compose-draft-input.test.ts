@@ -33,3 +33,17 @@ test("emailComposeDraftInputSchema rejects empty To array", () => {
   });
   assert.equal(parsed.success, false);
 });
+
+test("emailComposeDraftInputSchema accepts draftId for in-place update", () => {
+  const parsed = emailComposeDraftInputSchema.safeParse({
+    to: "ada@example.com",
+    subject: "Hello",
+    body: "Body",
+    draftId: "draft_123",
+    composeSessionId: "session_abc",
+  });
+  assert.equal(parsed.success, true);
+  if (parsed.success) {
+    assert.equal(parsed.data.draftId, "draft_123");
+  }
+});

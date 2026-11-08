@@ -113,7 +113,11 @@ export type KnowledgeSidePanelViewProps = {
   highlightedId?: string | null;
   listRef?: Ref<HTMLElement>;
   listContainerProps?: HTMLAttributes<HTMLElement>;
-  /** Visible keyboard-nav ids (documents + `folder:` ids). */
+  /**
+   * Visible keyboard-nav ids (documents + `folder:` ids).
+   * Invoked during render — keep this a cheap ref write so folder collapse
+   * does not need a parent setState/re-render.
+   */
   onVisibleNavItemIdsChange?: (ids: string[]) => void;
   /** Activate a folder from external keyboard navigation. */
   onFolderActivateRef?: Ref<(folderId: string) => void>;
@@ -245,9 +249,9 @@ export function KnowledgeSidePanelView({
     tree,
   ]);
 
-  useEffect(() => {
-    onVisibleNavItemIdsChange?.(visibleNavItemIds);
-  }, [onVisibleNavItemIdsChange, visibleNavItemIds]);
+  // Sync during render (ref write in the desktop shell) — avoids a second
+  // paint from useEffect → parent setState on every expand/collapse.
+  onVisibleNavItemIdsChange?.(visibleNavItemIds);
 
   const handleToggleFolderCollapsed = useCallback((folderId: string) => {
     setCollapsedFolderIds((current) => {
@@ -257,6 +261,26 @@ export function KnowledgeSidePanelView({
       return next;
     });
   }, []);
+
+  const clearSelectedFolder = useCallback(() => {
+    setSelectedFolderId(null);
+  }, []);
+
+  const resolveDocumentHref = useCallback(
+    (path: string) => getDocumentHref(path),
+    [getDocumentHref],
+  );
+
+  const handleConfigureFolder = useMemo(
+    () =>
+      onSaveFolderPortalProperties
+        ? (folderId: string) => {
+            setConfigureError(null);
+            setConfigureFolderId(folderId);
+          }
+        : undefined,
+    [onSaveFolderPortalProperties],
+  );
 
   const activateFolder = useCallback(
     (folderId: string) => {
@@ -503,19 +527,12 @@ export function KnowledgeSidePanelView({
                     parentId={null}
                     selectedPath={selectedPath}
                     onSelectFolder={setSelectedFolderId}
-                    onClearSelectedFolder={() => setSelectedFolderId(null)}
-                    onConfigureFolder={
-                      onSaveFolderPortalProperties
-                        ? (folderId) => {
-                            setConfigureError(null);
-                            setConfigureFolderId(folderId);
-                          }
-                        : undefined
-                    }
+                    onClearSelectedFolder={clearSelectedFolder}
+                    onConfigureFolder={handleConfigureFolder}
                     collapsedFolderIds={collapsedFolderIds}
                     onToggleFolderCollapsed={handleToggleFolderCollapsed}
                     highlightedNavItemId={highlightedId}
-                    getDocumentHref={(path) => getDocumentHref(path)}
+                    getDocumentHref={resolveDocumentHref}
                     Link={Link}
                     onRename={onRename}
                     dragInsertBeforeId={dragInsertBeforeId}

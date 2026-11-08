@@ -560,6 +560,11 @@ export const emailComposeDraftInputSchema = z.object({
   subject: z.string().max(500),
   body: z.string().min(1).max(100_000),
   composeSessionId: z.string().min(1).max(200).optional(),
+  /**
+   * When set, update this AgentMail draft in place instead of matching by
+   * composeSessionId→client_id (avoids duplicates after reopen).
+   */
+  draftId: z.string().trim().min(1).max(200).optional(),
 });
 
 /** Default workflow status for agent-started outbound threads (waiting on customer). */

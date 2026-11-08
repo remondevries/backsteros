@@ -1017,6 +1017,7 @@ function ListKeyboardNavigationGlobalListener({
 export function useListKeyboardNavigation({
   containerRef,
   itemIds,
+  getItemIds: getItemIdsProp,
   selectedId,
   onNavigate,
   zone,
@@ -1028,6 +1029,12 @@ export function useListKeyboardNavigation({
 }: {
   containerRef: RefObject<HTMLElement | null>;
   itemIds: string[];
+  /**
+   * Optional live reader for visible ids (e.g. folder collapse). When set,
+   * j/k uses this instead of a copied `itemIds` snapshot so parents can avoid
+   * re-rendering on every expand/collapse.
+   */
+  getItemIds?: () => readonly string[];
   selectedId: string | null;
   onNavigate: (itemId: string) => void;
   zone: ListKeyboardNavZone;
@@ -1076,12 +1083,15 @@ export function useListKeyboardNavigation({
     }
   }, [mountGate]);
   const itemIdsRef = useLatestRef(itemIds);
+  const getItemIdsPropRef = useLatestRef(getItemIdsProp);
   const selectedIdRef = useLatestRef(selectedId);
   const onNavigateRef = useLatestRef(onNavigate);
   const onShiftStepRef = useLatestRef(onShiftStep);
   const resolveNextItemIdRef = useLatestRef(resolveNextItemId);
   const manualHighlightRef = useLatestRef(manualHighlight);
   const registrationId = useId();
+
+  const liveItemIds = getItemIdsProp?.() ?? itemIds;
 
   const [prevSelectedId, setPrevSelectedId] = useState(selectedId);
   if (selectedId !== prevSelectedId) {
@@ -1090,7 +1100,7 @@ export function useListKeyboardNavigation({
     if (
       selectedId == null &&
       previous != null &&
-      itemIds.includes(previous)
+      liveItemIds.includes(previous)
     ) {
       // Escape / clear selection — keep j/k anchored on the row that was open
       // instead of falling through to the top of the list.
@@ -1108,7 +1118,7 @@ export function useListKeyboardNavigation({
   const resolvedHighlight =
     activeZone !== zone
       ? null
-      : manualHighlight != null && itemIds.includes(manualHighlight)
+      : manualHighlight != null && liveItemIds.includes(manualHighlight)
         ? manualHighlight
         : null;
 
@@ -1147,8 +1157,15 @@ export function useListKeyboardNavigation({
     return () => cancelAnimationFrame(raf);
   }, [activeZone, containerRef, manualHighlight, selectedId, zone]);
 
+  const hasLiveItemIds = Boolean(getItemIdsProp);
+
   useEffect(() => {
-    if (!resolvedEnabled || itemIds.length === 0) {
+    if (!resolvedEnabled) {
+      return;
+    }
+    // Snapshot lists still gate on length; live getItemIds lists register while
+    // enabled and read ids on each j/k (folder collapse must not re-register).
+    if (!hasLiveItemIds && itemIds.length === 0) {
       return;
     }
 
@@ -1156,14 +1173,18 @@ export function useListKeyboardNavigation({
       id: registrationId,
       zone,
       containerRef,
-      getItemIds: () => itemIdsRef.current,
+      getItemIds: () => {
+        const ids = getItemIdsPropRef.current?.() ?? itemIdsRef.current;
+        return Array.isArray(ids) ? (ids as string[]) : Array.from(ids);
+      },
       getSelectedId: () => selectedIdRef.current,
       // Return the stored landing/j/k row even while this zone is inactive so
       // Tab activation can restore closest-to-today (etc.) instead of item[0].
       // Display still uses `resolvedHighlight` (null when another zone owns keys).
       getHighlightedId: () => {
         const id = manualHighlightRef.current;
-        return id != null && itemIdsRef.current.includes(id) ? id : null;
+        const ids = getItemIdsPropRef.current?.() ?? itemIdsRef.current;
+        return id != null && ids.includes(id) ? id : null;
       },
       setHighlightedId: setManualHighlight,
       onActivate: (itemId) => onNavigateRef.current(itemId),
@@ -1175,14 +1196,16 @@ export function useListKeyboardNavigation({
     });
   }, [
     containerRef,
-    resolvedEnabled,
+    hasLiveItemIds,
     itemIds.length,
     itemIdsRef,
+    getItemIdsPropRef,
     manualHighlightRef,
     onNavigateRef,
     onShiftStepRef,
     register,
     registrationId,
+    resolvedEnabled,
     resolvedPriority,
     resolveNextItemIdRef,
     selectedIdRef,

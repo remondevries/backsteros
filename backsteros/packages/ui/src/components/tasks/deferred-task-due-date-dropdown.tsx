@@ -114,13 +114,28 @@ export function DeferredTaskDueDateDropdown(props: TaskDueDateDropdownProps) {
   );
 
   if (variant === "icon") {
+    if (disabled) {
+      // Static mark — stay in the card hit target (disabled buttons eat clicks).
+      return (
+        <span
+          className="task-item-row__icon-trigger"
+          title={displayLabel}
+          aria-label={displayLabel}
+        >
+          <TaskDueDateIcon
+            size={14}
+            active={hasDueDate}
+            urgency={hasDueDate ? dueDateUrgency : null}
+          />
+        </span>
+      );
+    }
     return wrapTrigger(
       <button
         type="button"
         title={displayLabel}
         className="task-item-row__icon-trigger"
         tabIndex={-1}
-        disabled={disabled}
         aria-haspopup="listbox"
         aria-expanded={false}
         aria-label={`Change due date: ${displayLabel}`}
@@ -137,23 +152,14 @@ export function DeferredTaskDueDateDropdown(props: TaskDueDateDropdownProps) {
   }
 
   if (variant === "list") {
-    return wrapTrigger(
-      <button
-        type="button"
-        title={displayLabel}
-        className={[
-          "task-due-date-dropdown__list-trigger",
-          hasDueDate ? "is-set" : "is-empty",
-        ]
-          .filter(Boolean)
-          .join(" ")}
-        disabled={disabled}
-        aria-haspopup="listbox"
-        aria-expanded={false}
-        aria-label={`Change due date: ${displayLabel}`}
-        onMouseDown={stopFieldEvent}
-        onClick={mount}
-      >
+    const listTriggerClass = [
+      "task-due-date-dropdown__list-trigger",
+      hasDueDate ? "is-set" : "is-empty",
+    ]
+      .filter(Boolean)
+      .join(" ");
+    const listTriggerBody = (
+      <>
         {showIcon ? (
           <TaskDueDateIcon
             size={14}
@@ -164,7 +170,53 @@ export function DeferredTaskDueDateDropdown(props: TaskDueDateDropdownProps) {
         <span className="task-due-date-dropdown__list-trigger-label">
           {displayLabel}
         </span>
+      </>
+    );
+    if (disabled) {
+      // Read-only list mark — part of the card link, not a dead control.
+      return (
+        <span
+          className={listTriggerClass}
+          title={displayLabel}
+          aria-label={displayLabel}
+        >
+          {listTriggerBody}
+        </span>
+      );
+    }
+    return wrapTrigger(
+      <button
+        type="button"
+        title={displayLabel}
+        className={listTriggerClass}
+        aria-haspopup="listbox"
+        aria-expanded={false}
+        aria-label={`Change due date: ${displayLabel}`}
+        onMouseDown={stopFieldEvent}
+        onClick={mount}
+      >
+        {listTriggerBody}
       </button>,
+    );
+  }
+
+  if (disabled) {
+    return (
+      <span
+        className="property-dropdown-trigger"
+        title={displayLabel}
+        aria-label={displayLabel}
+      >
+        {showIcon ? (
+          <span className="property-dropdown-trigger__icon" aria-hidden="true">
+            <TaskDueDateIcon
+              active={hasDueDate}
+              urgency={hasDueDate ? dueDateUrgency : null}
+            />
+          </span>
+        ) : null}
+        <span className="property-dropdown-trigger__label">{displayLabel}</span>
+      </span>
     );
   }
 
@@ -173,7 +225,6 @@ export function DeferredTaskDueDateDropdown(props: TaskDueDateDropdownProps) {
       type="button"
       className="property-dropdown-trigger"
       title={displayLabel}
-      disabled={disabled}
       aria-haspopup="listbox"
       aria-expanded={false}
       aria-label={`Change due date: ${displayLabel}`}

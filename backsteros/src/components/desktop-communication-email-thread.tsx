@@ -217,7 +217,7 @@ type DesktopCommunicationEmailThreadProps = {
   item: InboxEmailListItem;
   selectedMessageId: string | null;
   onSelectMessage: (messageId: string) => void;
-  /** Latest thread message — drives the right-rail / list card identity. */
+  /** Latest thread message — seeds the right rail when nothing is selected yet. */
   onActivePartyChange?: (party: CommunicationEmailActiveParty | null) => void;
   /** Selected message — drives per-message org/contact linking. */
   onSelectedPartyChange?: (party: CommunicationEmailActiveParty | null) => void;
@@ -600,7 +600,9 @@ function DesktopCommunicationEmailThreadView({
     const fromMeta = message?.threadMetadata?.messageParties;
     if (!fromMeta || Object.keys(fromMeta).length === 0) return;
     const metaKey = `${message?.threadMetadata?.id ?? ""}:${message?.threadMetadata?.updatedAt ?? ""}`;
-    setLocalParties((prev) => ({ ...fromMeta, ...prev }));
+    // Metadata wins per key so an explicit unlink (null/null) replaces a soft
+    // match that raced in before the thread row loaded.
+    setLocalParties((prev) => ({ ...prev, ...fromMeta }));
     if (hydratedMetaKeyRef.current === metaKey) return;
     hydratedMetaKeyRef.current = metaKey;
     onMessagePartiesChange?.(fromMeta);
@@ -657,10 +659,13 @@ function DesktopCommunicationEmailThreadView({
     if (autoLinkKeyRef.current === key) return;
     autoLinkKeyRef.current = key;
 
-    // Per-message From/To matching only — do not seed thread-level contact/org
+    // Per-message From matching only — do not seed thread-level contact/org
     // onto the open message (that mis-files other participants in the thread).
+    // Parent/manual map + metadata win so an explicit unlink is not rediscovered.
     const existing = {
-      ...(message.threadMetadata?.messageParties ?? localParties),
+      ...localParties,
+      ...(message.threadMetadata?.messageParties ?? {}),
+      ...(messagePartiesProp ?? {}),
     };
     const discovered = buildEmailMessagePartyAutoLinks({
       messages: threadEntries,
@@ -691,6 +696,7 @@ function DesktopCommunicationEmailThreadView({
   }, [
     item.inboxId,
     message,
+    messagePartiesProp,
     onAutoLinkParties,
     onMessagePartiesChange,
     ourMailboxEmails,

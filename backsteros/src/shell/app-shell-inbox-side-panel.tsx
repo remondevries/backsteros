@@ -23,6 +23,7 @@ import {
   parseEmailMessagePath,
   resolveInboxListItemIdFromPathname,
   resolveInboxOpenTarget,
+  collectMailboxContactIds,
   resolveInboxPanelPathname,
   useInboxListModeShortcuts,
   useListKeyboardNavigation,
@@ -34,6 +35,7 @@ import {
   type InboxListMode,
 } from "@backsteros/ui";
 
+import { useAgentMail } from "../lib/agentmail-context";
 import { useDesktopApi } from "../lib/api-context";
 import {
   deleteEmailMessage,
@@ -430,6 +432,11 @@ export function DesktopInboxSidePanel({
   }, [client, leaveHighlightedEmail]);
 
   const { contacts, organizations } = useDesktopWorkspacePeople();
+  const agentMail = useAgentMail();
+  const mailboxContactIds = useMemo(
+    () => collectMailboxContactIds(agentMail.mailboxes),
+    [agentMail.mailboxes],
+  );
   const resolveEmailAvatarSrc = useCallback(
     (item: InboxEmailListItem) =>
       resolveEmailListAvatarSrc({
@@ -439,8 +446,15 @@ export function DesktopInboxSidePanel({
         contactAvatarSrc,
         organizationUploadedSrc: organizationAvatarSrc,
         brandfetchClientId: getBrandfetchClientId(),
+        mailboxContactIds,
       }),
-    [contactAvatarSrc, contacts, organizationAvatarSrc, organizations],
+    [
+      contactAvatarSrc,
+      contacts,
+      mailboxContactIds,
+      organizationAvatarSrc,
+      organizations,
+    ],
   );
   const resolveContactAvatarSrc = useCallback(
     (contactId: string) => contactAvatarSrc[contactId] ?? null,

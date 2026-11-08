@@ -329,7 +329,8 @@ export async function defaultUpdateMessagesDraft(input: {
   composeSessionId?: string;
   wrap?: boolean;
 }): Promise<MessagesDraftHandle> {
-  // upsert with same composeSessionId updates the existing draft when found.
+  // Prefer draftId so updates never mint a second AgentMail draft when the
+  // compose session id was reminted (e.g. draft reopen).
   const updated = await upsertEmailComposeDraft(
     input.workspaceId,
     input.inboxId,
@@ -340,7 +341,8 @@ export async function defaultUpdateMessagesDraft(input: {
       subject: input.subject,
       body: input.body,
       recipientFirstName: input.recipientFirstName,
-      composeSessionId: input.composeSessionId ?? input.draftId,
+      composeSessionId: input.composeSessionId,
+      draftId: input.draftId,
       wrap: input.wrap !== true ? false : true,
     },
   );

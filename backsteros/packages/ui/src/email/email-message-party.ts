@@ -162,16 +162,11 @@ export function classifyStoredEmailMessageParty(input: {
     );
     if (!organization) return "unknown";
     if (organizationMatchesEmailAddress(organization, address)) return "match";
-    // Brand-new / empty org (create-from-query) has no emails yet — keep the
-    // manual link instead of treating it as a stale mismatch that soft-match
-    // would wipe.
-    const hasAnyEmail =
-      Boolean(organization.email?.trim()) ||
-      (organization.emails ?? []).some((entry) =>
-        Boolean(entry.address?.trim()),
-      );
-    if (!hasAnyEmail) return "unknown";
-    return "mismatch";
+    // Org-only filing is intentional (party From need not be an org mailbox).
+    // Treat as unknown so soft-match / auto-link do not wipe a manual link
+    // when the user reopens the thread — including brand-new empty orgs and
+    // orgs whose CRM emails simply do not match this From address.
+    return "unknown";
   }
 
   return "unknown";
@@ -292,6 +287,117 @@ export function uniqueEmailPartyContactIds(
     if (fallback) ids.push(fallback);
   }
   return ids;
+}
+
+/** Contact ids linked to our AgentMail mailboxes (our own faces). */
+export function collectMailboxContactIds(
+  mailboxes: readonly { contactId?: string | null }[],
+): Set<string> {
+  const ids = new Set<string>();
+  for (const mailbox of mailboxes) {
+    const id = mailbox.contactId?.trim();
+    if (id) ids.add(id);
+  }
+  return ids;
+}
+
+function lookupContactName(
+  contactId: string,
+  lookup?:
+    | ReadonlyMap<string, string>
+    | ((id: string) => string | null | undefined),
+): string | null {
+  if (!lookup) return null;
+  if (typeof lookup === "function") {
+    return lookup(contactId)?.trim() || null;
+  }
+  return lookup.get(contactId)?.trim() || null;
+}
+
+/**
+ * List-card party identity: prefer a counterparty over our mailbox contact.
+ *
+ * When Remon’s mailbox contact is filed on the thread but Eric (or anyone else)
+ * is also on the message, the card should show Eric’s name — never our face —
+ * unless we are the only party.
+ */
+export function resolveEmailListCardParty(input: {
+  contactId?: string | null;
+  contactName?: string | null;
+  from?: string | null;
+  partyContactIds?: readonly string[] | null;
+  mailboxContactIds: ReadonlySet<string>;
+  mailboxEmails: ReadonlySet<string>;
+  contactNameById?:
+    | ReadonlyMap<string, string>
+    | ((id: string) => string | null | undefined);
+}): {
+  contactId: string | null;
+  contactName: string | null;
+  partyContactIds: string[] | null;
+} {
+  const filedId = input.contactId?.trim() || null;
+  const filedName = input.contactName?.trim() || null;
+  const fromEmail = parseReplyToAddress(input.from ?? "")
+    .trim()
+    .toLowerCase();
+  const fromIsOurs = Boolean(fromEmail && input.mailboxEmails.has(fromEmail));
+
+  const rawIds: string[] = [];
+  const seen = new Set<string>();
+  for (const entry of input.partyContactIds ?? []) {
+    const id = entry?.trim();
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    rawIds.push(id);
+  }
+  if (filedId && !seen.has(filedId)) {
+    rawIds.push(filedId);
+    seen.add(filedId);
+  }
+
+  const counterpartIds = rawIds.filter(
+    (id) => !input.mailboxContactIds.has(id),
+  );
+  // Prefer non-mailbox contacts when any exist; otherwise keep ourselves.
+  const partyContactIds =
+    counterpartIds.length > 0
+      ? counterpartIds
+      : rawIds.length > 0
+        ? rawIds
+        : null;
+
+  const preferCounterparty =
+    counterpartIds.length > 0 ||
+    (Boolean(filedId && input.mailboxContactIds.has(filedId)) &&
+      Boolean(fromEmail) &&
+      !fromIsOurs);
+
+  if (preferCounterparty) {
+    const counterpartyId = counterpartIds[0] ?? null;
+    if (counterpartyId) {
+      return {
+        contactId: counterpartyId,
+        contactName:
+          lookupContactName(counterpartyId, input.contactNameById) ||
+          (counterpartyId === filedId ? filedName : null),
+        partyContactIds,
+      };
+    }
+    // From is someone else but we have no counterparty contact id yet —
+    // clear our mailbox filing so the card name/avatar follow `from`.
+    return {
+      contactId: null,
+      contactName: null,
+      partyContactIds,
+    };
+  }
+
+  return {
+    contactId: filedId,
+    contactName: filedName,
+    partyContactIds,
+  };
 }
 
 /** True when address is already listed on the contact (any label). */

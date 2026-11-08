@@ -1,4 +1,10 @@
-import { useEffect, useRef, type HTMLAttributes, type RefObject } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  type HTMLAttributes,
+  type RefObject,
+} from "react";
 
 import {
   getDefaultListKeyboardNavZone,
@@ -12,7 +18,16 @@ import {
 import { useKeepAliveActive } from "./shell-route-keep-alive";
 
 export type UseDesktopSidePanelListNavOptions = {
-  itemIds: readonly string[];
+  /**
+   * Snapshot list for simple panels. Prefer `itemIdsRef` for document trees so
+   * folder collapse can update visible ids without a parent re-render.
+   */
+  itemIds?: readonly string[];
+  /**
+   * Live visible ids (documents + `folder:` ids). Read on each j/k step; the
+   * owning tree writes this ref during render when collapse changes.
+   */
+  itemIdsRef?: RefObject<readonly string[]>;
   selectedId: string | null;
   onNavigate: (itemId: string) => void;
   enabled?: boolean;
@@ -42,6 +57,7 @@ export type UseDesktopSidePanelListNavResult = {
  */
 export function useDesktopSidePanelListNav({
   itemIds,
+  itemIdsRef,
   selectedId,
   onNavigate,
   enabled,
@@ -52,16 +68,25 @@ export function useDesktopSidePanelListNav({
   const listRef = useRef<HTMLElement>(null);
   const keepAliveActive = useKeepAliveActive();
   const { setActiveZone } = useListKeyboardNavigationZone();
+  const snapshotIds = itemIds ?? [];
+  const snapshotIdsRef = useRef(snapshotIds);
+  snapshotIdsRef.current = snapshotIds;
   const resolvedEnabled =
-    keepAliveActive && (enabled ?? itemIds.length > 0);
+    keepAliveActive &&
+    (enabled ?? (itemIdsRef?.current ?? snapshotIds).length > 0);
   const resolvedZone: ListKeyboardNavZone =
     zone ?? LIST_KEYBOARD_NAV_ZONE_SIDE_PANEL;
-  const mutableItemIds: string[] = Array.from(itemIds);
-  const landingId = mutableItemIds[0] ?? null;
+  const mutableItemIds: string[] = Array.from(snapshotIds);
   const lastLandingKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (!resolvedEnabled || landingId == null) {
+    if (!resolvedEnabled) {
+      lastLandingKeyRef.current = null;
+      return;
+    }
+    const landingId =
+      (itemIdsRef?.current ?? snapshotIdsRef.current)[0] ?? null;
+    if (landingId == null) {
       lastLandingKeyRef.current = null;
       return;
     }
@@ -84,11 +109,26 @@ export function useDesktopSidePanelListNav({
       });
     });
     return () => cancelAnimationFrame(frame);
-  }, [landingId, pathname, resolvedEnabled, resolvedZone, setActiveZone]);
+    // itemIdsRef / snapshot length: reclaim landing when the list first becomes
+    // navigable (items load). Collapse must not retrigger landing.
+  }, [
+    pathname,
+    resolvedEnabled,
+    resolvedZone,
+    setActiveZone,
+    snapshotIds.length,
+    itemIdsRef,
+  ]);
+
+  const readLiveItemIds = useCallback(
+    () => itemIdsRef?.current ?? [],
+    [itemIdsRef],
+  );
 
   const { highlightedId } = useListKeyboardNavigation({
     containerRef: listRef,
     itemIds: mutableItemIds,
+    getItemIds: itemIdsRef ? readLiveItemIds : undefined,
     selectedId,
     onNavigate,
     zone: resolvedZone,

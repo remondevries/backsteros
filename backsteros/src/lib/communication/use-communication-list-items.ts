@@ -3,8 +3,11 @@ import { useMemo, useRef } from "react";
 import {
   buildInboxEmailListItem,
   buildInboxTaskListItem,
+  collectMailboxContactIds,
+  resolveEmailListCardParty,
   sortInboxItemsByAttentionStatus,
   type EmailListItem,
+  type EmailMailbox,
   type InboxEmailListItem,
   type InboxListItem,
 } from "@backsteros/ui";
@@ -25,15 +28,41 @@ let cachedCommunicationListItems: InboxListItem[] = [];
 
 function buildCommunicationEmailRows(input: {
   messages: readonly EmailListItem[];
-  mailboxById: Map<
-    string,
-    { email?: string | null; displayName?: string | null }
-  >;
+  mailboxes: readonly EmailMailbox[];
+  mailboxById: Map<string, EmailMailbox>;
+  contacts: readonly {
+    id: string;
+    email?: string | null;
+    emails?: readonly { address?: string | null }[] | null;
+  }[];
+  contactNameById: ReadonlyMap<string, string>;
   contactAvatarSrc: Record<string, string | null | undefined>;
   organizationAvatarSrc: Record<string, string | null | undefined>;
 }): InboxEmailListItem[] {
+  const mailboxContactIds = collectMailboxContactIds(input.mailboxes);
+  const mailboxEmails = new Set(
+    input.mailboxes
+      .map((mailbox) => mailbox.email?.trim().toLowerCase())
+      .filter((email): email is string => Boolean(email)),
+  );
   return input.messages.map((item) => {
     const mailbox = input.mailboxById.get(item.inboxId) ?? null;
+    const party = resolveEmailListCardParty({
+      contactId: item.contactId,
+      contactName: item.contactName,
+      from: item.from,
+      partyContactIds: item.partyContactIds ?? null,
+      mailboxContactIds,
+      mailboxEmails,
+      contactNameById: input.contactNameById,
+    });
+    const partyContact = party.contactId
+      ? input.contacts.find((entry) => entry.id === party.contactId) ?? null
+      : null;
+    const partyAddress =
+      partyContact?.email?.trim() ||
+      partyContact?.emails?.find((entry) => entry.address?.trim())?.address ||
+      null;
     return buildInboxEmailListItem({
       inboxId: item.inboxId,
       messageId: item.id,
@@ -41,6 +70,7 @@ function buildCommunicationEmailRows(input: {
       threadId: item.threadId,
       title: item.subject,
       from: item.from,
+      partyAddress,
       status: item.status,
       inboxUpdatedAt: item.inboxUpdatedAt,
       priority: item.priority,
@@ -52,17 +82,17 @@ function buildCommunicationEmailRows(input: {
       projectName: item.projectName,
       organizationId: item.organizationId,
       organizationName: item.organizationName,
-      contactId: item.contactId,
-      contactName: item.contactName,
-      partyContactIds: item.partyContactIds ?? null,
+      contactId: party.contactId,
+      contactName: party.contactName,
+      partyContactIds: party.partyContactIds,
       emailThreadId: item.emailThreadId,
       number: item.number,
       displayId: item.displayId,
       direction: item.direction ?? null,
       mailboxEmail: mailbox?.email ?? null,
       mailboxLabel: mailbox?.displayName || mailbox?.email || null,
-      mailboxAvatarSrc: item.contactId
-        ? (input.contactAvatarSrc[item.contactId] ?? null)
+      mailboxAvatarSrc: party.contactId
+        ? (input.contactAvatarSrc[party.contactId] ?? null)
         : item.organizationId
           ? (input.organizationAvatarSrc[item.organizationId] ?? null)
           : null,
@@ -169,9 +199,15 @@ export function useCommunicationListItems(): InboxListItem[] {
       });
 
     const mailboxById = buildMailboxByIdMap(agentMail.mailboxes);
+    const contactNameById = new Map(
+      contacts.map((contact) => [contact.id, contact.name] as const),
+    );
     const emails: InboxListItem[] = buildCommunicationEmailRows({
       messages: agentMail.messages,
+      mailboxes: agentMail.mailboxes,
       mailboxById,
+      contacts,
+      contactNameById,
       contactAvatarSrc,
       organizationAvatarSrc,
     });
@@ -215,10 +251,16 @@ export function useCommunicationNotificationEmails(): InboxEmailListItem[] {
 
   return useMemo(() => {
     const mailboxById = buildMailboxByIdMap(agentMail.mailboxes);
+    const contactNameById = new Map(
+      contacts.map((contact) => [contact.id, contact.name] as const),
+    );
     return sortInboxItemsByAttentionStatus(
       buildCommunicationEmailRows({
         messages: agentMail.notificationMessages,
+        mailboxes: agentMail.mailboxes,
         mailboxById,
+        contacts,
+        contactNameById,
         contactAvatarSrc,
         organizationAvatarSrc,
       }),
@@ -229,6 +271,7 @@ export function useCommunicationNotificationEmails(): InboxEmailListItem[] {
     agentMail.notificationMessages.length,
     notificationSignature,
     contactAvatarSrc,
+    contacts,
     organizationAvatarSrc,
   ]);
 }

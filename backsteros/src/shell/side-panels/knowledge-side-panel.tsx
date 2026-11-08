@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState, type FocusEvent, type MouseEvent, type ReactNode } from "react";
+import { useCallback, useMemo, useRef, type FocusEvent, type MouseEvent, type ReactNode } from "react";
 
 import {
   KnowledgeSidePanelView,
@@ -35,7 +35,11 @@ export function DesktopKnowledgeSidePanel({
 > &
   SidePanelNavProps) {
   const folderActivateRef = useRef<(folderId: string) => void>(() => {});
-  const [navItemIds, setNavItemIds] = useState<string[]>([]);
+  // Ref (not state): folder collapse updates visible ids without a second panel render.
+  const navItemIdsRef = useRef<readonly string[]>([]);
+  const onVisibleNavItemIdsChange = useCallback((ids: string[]) => {
+    navItemIdsRef.current = ids;
+  }, []);
   const { client } = useDesktopApi();
   const { pathname, items } = viewProps;
   const selectedSlug = getSelectedKnowledgeSlugFromPathname(pathname);
@@ -58,7 +62,7 @@ export function DesktopKnowledgeSidePanel({
 
   const { listRef, highlightedId, listContainerProps } =
     useDesktopSidePanelListNav({
-      itemIds: navItemIds,
+      itemIdsRef: navItemIdsRef,
       selectedId,
       onNavigate: (itemId) => {
         const folderId = parseFolderNavId(itemId);
@@ -69,7 +73,7 @@ export function DesktopKnowledgeSidePanel({
         const item = items.find((entry) => entry.id === itemId);
         if (item) onNavigate(getKnowledgeHref(item.path ?? item.id));
       },
-      enabled: navItemIds.length > 0,
+      enabled: items.length > 0,
       prefetchItemId,
     });
 
@@ -122,7 +126,7 @@ export function DesktopKnowledgeSidePanel({
       listRef={listRef}
       listContainerProps={listContainerProps}
       highlightedId={highlightedId}
-      onVisibleNavItemIdsChange={setNavItemIds}
+      onVisibleNavItemIdsChange={onVisibleNavItemIdsChange}
       onFolderActivateRef={folderActivateRef}
     />
   );

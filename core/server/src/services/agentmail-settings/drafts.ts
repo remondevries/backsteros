@@ -589,10 +589,9 @@ async function saveComposeDraft(
   inboxId: string,
   sessionId: string,
   assembled: AssembledComposeEmail,
+  draftId?: string | null,
 ): Promise<AgentMailDraftDetail> {
   const clientId = composeClientId(sessionId);
-  const drafts = await listConceptDrafts(client, inboxId);
-  const existing = drafts.find((draft) => draft.clientId === clientId);
   const avatar = await agentMailDraftLifecycleDeps.resolveSignOffAvatar(
     workspaceId,
     inboxId,
@@ -601,15 +600,39 @@ async function saveComposeDraft(
 
   const cc = assembled.cc.filter((address) => address.includes("@"));
   const bcc = (assembled.bcc ?? []).filter((address) => address.includes("@"));
+  const headerAndBody = (current?: AgentMailDraftDetail) => ({
+    to: assembled.to,
+    cc,
+    bcc,
+    subject: assembled.subject,
+    ...draftBodyPayload(bodies, avatar, current),
+  });
+
+  const explicitDraftId = draftId?.trim();
+  if (explicitDraftId) {
+    try {
+      const current = await client.getDraft(inboxId, explicitDraftId);
+      return client.updateDraft(
+        inboxId,
+        explicitDraftId,
+        headerAndBody(current),
+      );
+    } catch (error) {
+      if (!isDraftNotFoundError(error)) throw error;
+      // Fall through — draft may have moved inbox or been deleted; try
+      // session client_id match, then create.
+    }
+  }
+
+  const drafts = await listConceptDrafts(client, inboxId);
+  const existing = drafts.find((draft) => draft.clientId === clientId);
   if (existing) {
     const current = await client.getDraft(inboxId, existing.draftId);
-    return client.updateDraft(inboxId, existing.draftId, {
-      to: assembled.to,
-      cc,
-      bcc,
-      subject: assembled.subject,
-      ...draftBodyPayload(bodies, avatar, current),
-    });
+    return client.updateDraft(
+      inboxId,
+      existing.draftId,
+      headerAndBody(current),
+    );
   }
 
   const bodyFields = draftBodyPayload(bodies, avatar);
@@ -789,6 +812,8 @@ export async function upsertEmailComposeDraft(
     subject: string;
     body: string;
     composeSessionId?: string;
+    /** Prefer in-place update when the caller already has a draft id. */
+    draftId?: string | null;
     /** When set, never derive greeting name from the To address. */
     recipientFirstName?: string | null;
     /** When false, skip greeting + sign-off wrapping. */
@@ -836,6 +861,7 @@ export async function upsertEmailComposeDraft(
     inboxId,
     composeSessionId,
     assembled,
+    input.draftId,
   );
   await ensureDraftEmailThreadRegistered(
     workspaceId,

@@ -29,6 +29,83 @@ describe("resolveEmailListAvatarSrc", () => {
     assert.ok(src?.includes("google.com"));
   });
 
+  it("prefers the party-line contact over a filed mailbox contact", () => {
+    const item = {
+      ...buildInboxEmailListItem({
+        inboxId: "box",
+        messageId: "m1",
+        title: "Hello",
+        from: "Eric Koops <eric@example.com>",
+        status: "triage",
+        contactId: "remon",
+        contactName: "Remon de Vries",
+      }),
+      partyLabel: "Eric Koops (eric@example.com)",
+    };
+    const src = resolveEmailListAvatarSrc({
+      item,
+      contacts: [
+        {
+          id: "remon",
+          name: "Remon de Vries",
+          email: "remon@lemo-design.nl",
+          avatarSrc: "https://cdn.example/remon.png",
+        },
+        {
+          id: "eric",
+          name: "Eric Koops",
+          email: "eric@example.com",
+          avatarSrc: "https://cdn.example/eric.png",
+        },
+      ],
+      organizations: [],
+      contactAvatarSrc: {},
+      organizationUploadedSrc: {},
+      brandfetchClientId: null,
+      mailboxContactIds: new Set(["remon"]),
+    });
+    assert.equal(src, "https://cdn.example/eric.png");
+  });
+
+  it("uses the counterparty contact avatar when party-label email is our outbound From", () => {
+    const item = {
+      ...buildInboxEmailListItem({
+        inboxId: "box",
+        messageId: "m1",
+        title: "Hello",
+        from: "Remon de Vries <remon@lemo-design.com>",
+        status: "on_hold",
+        contactId: "ewout",
+        contactName: "Ewout Bos",
+      }),
+      // Buggy label shape: name is counterparty, email is our mailbox From.
+      partyLabel: "Ewout Bos (remon@lemo-design.com)",
+    };
+    const src = resolveEmailListAvatarSrc({
+      item,
+      contacts: [
+        {
+          id: "remon",
+          name: "Remon de Vries",
+          email: "remon@lemo-design.com",
+          avatarSrc: "https://cdn.example/remon.png",
+        },
+        {
+          id: "ewout",
+          name: "Ewout Bos",
+          email: "ewout.bos@gmail.com",
+          avatarSrc: "https://cdn.example/ewout.png",
+        },
+      ],
+      organizations: [],
+      contactAvatarSrc: {},
+      organizationUploadedSrc: {},
+      brandfetchClientId: null,
+      mailboxContactIds: new Set(["remon"]),
+    });
+    assert.equal(src, "https://cdn.example/ewout.png");
+  });
+
   it("prefers a filed organization Brandfetch website over domain fallback", () => {
     const item = {
       ...buildInboxEmailListItem({

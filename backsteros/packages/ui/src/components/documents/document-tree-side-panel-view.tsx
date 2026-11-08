@@ -71,6 +71,10 @@ export type DocumentTreeSidePanelViewProps = {
   highlightedId?: string | null;
   listRef?: Ref<HTMLElement>;
   listContainerProps?: HTMLAttributes<HTMLElement>;
+  /**
+   * Invoked during render — keep this a cheap ref write so folder collapse
+   * does not need a parent setState/re-render.
+   */
   onVisibleNavItemIdsChange?: (ids: string[]) => void;
   onFolderActivateRef?: Ref<(folderId: string) => void>;
   loading?: boolean;
@@ -155,9 +159,9 @@ export function DocumentTreeSidePanelView({
     [tree, collapsedFolderIds],
   );
 
-  useEffect(() => {
-    onVisibleNavItemIdsChange?.(visibleNavItemIds);
-  }, [onVisibleNavItemIdsChange, visibleNavItemIds]);
+  // Sync during render (ref write in the desktop shell) — avoids a second
+  // paint from useEffect → parent setState on every expand/collapse.
+  onVisibleNavItemIdsChange?.(visibleNavItemIds);
 
   const handleToggleFolderCollapsed = useCallback((folderId: string) => {
     setCollapsedFolderIds((current) => {
@@ -166,6 +170,10 @@ export function DocumentTreeSidePanelView({
       else next.add(folderId);
       return next;
     });
+  }, []);
+
+  const clearSelectedFolder = useCallback(() => {
+    setSelectedFolderId(null);
   }, []);
 
   const activateFolder = useCallback(
@@ -282,7 +290,7 @@ export function DocumentTreeSidePanelView({
       parentId={null}
       selectedPath={selectedPath}
       onSelectFolder={setSelectedFolderId}
-      onClearSelectedFolder={() => setSelectedFolderId(null)}
+      onClearSelectedFolder={clearSelectedFolder}
       collapsedFolderIds={collapsedFolderIds}
       onToggleFolderCollapsed={handleToggleFolderCollapsed}
       highlightedNavItemId={highlightedId}

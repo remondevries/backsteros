@@ -96,6 +96,37 @@ export function discardEmailMessageDetailCache(
   messageInflight.delete(key);
 }
 
+/**
+ * Merge per-message contact/org parties into a warm thread cache entry.
+ * Link/unlink otherwise leaves stale parties in cache and reopen revives them.
+ */
+export function patchEmailMessageDetailCacheMessageParties(
+  inboxId: string,
+  messageId: string,
+  messageParties: NonNullable<
+    AgentMailMessageDetail["threadMetadata"]
+  >["messageParties"],
+): void {
+  const inbox = inboxId.trim();
+  const message = messageId.trim();
+  if (!inbox || !message || !messageParties) return;
+  const cached = peekEmailMessageDetailCache(inbox, message);
+  if (!cached) return;
+  const prevMeta = cached.threadMetadata;
+  writeEmailMessageDetailCache(inbox, message, {
+    ...cached,
+    threadMetadata: prevMeta
+      ? {
+          ...prevMeta,
+          messageParties: {
+            ...(prevMeta.messageParties ?? {}),
+            ...messageParties,
+          },
+        }
+      : prevMeta,
+  });
+}
+
 export function peekEmailDraftDetailCache(
   inboxId: string,
   draftId: string,
