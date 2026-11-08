@@ -226,6 +226,16 @@ export default defineConfig(async ({ command }) => {
     // Do not set COEP/COOP here — cross-origin workers/scripts and
     // `require-corp` breaks session tokens (PowerSync then gets 401).
     proxy: {
+      // Portal invite email HTML preview (owned by client.lemo-design.com).
+      // Open http://localhost:1420/email/welcome — requires portal `npm run dev`.
+      "/email/welcome": {
+        target: (
+          process.env.CLIENT_PORTAL_URL ||
+          process.env.VITE_CLIENT_PORTAL_URL ||
+          "http://127.0.0.1:3000"
+        ).replace(/\/$/, ""),
+        changeOrigin: true,
+      },
       // Same-origin proxy so the Catalog side panel can read T3 Code
       // `/api/hetzner/*` without CORS friction during `dev:vite` / `tauri dev`.
       "/api/hetzner": {

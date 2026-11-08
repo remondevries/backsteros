@@ -720,6 +720,9 @@ function DesktopChatContactDetailPanelView({
           setPortalSaveError(null);
           try {
             if (portalUsername === null && portalPassword === "") {
+              await workspace.patchContact(contact.id, {
+                portalUsername: null,
+              });
               await client.requestJson(
                 `/api/v1/contacts/${encodeURIComponent(contact.id)}`,
                 {
@@ -731,9 +734,6 @@ function DesktopChatContactDetailPanelView({
                   }),
                 },
               );
-              await workspace.patchContact(contact.id, {
-                portalUsername: null,
-              });
               return;
             }
             // Password is REST-only. Never follow with settings/PowerSync in the
@@ -757,6 +757,12 @@ function DesktopChatContactDetailPanelView({
               );
               return;
             }
+            // Optimistic live overlay first so avatars / portal UI do not wait
+            // on the REST round-trip.
+            await workspace.patchContact(contact.id, {
+              portalSettings: settings,
+              portalUsername,
+            });
             await client.requestJson(
               `/api/v1/contacts/${encodeURIComponent(contact.id)}`,
               {
@@ -768,10 +774,6 @@ function DesktopChatContactDetailPanelView({
                 }),
               },
             );
-            await workspace.patchContact(contact.id, {
-              portalSettings: settings,
-              portalUsername,
-            });
           } catch (error) {
             setPortalSaveError(
               error instanceof Error

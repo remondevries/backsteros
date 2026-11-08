@@ -1083,6 +1083,9 @@ export function ContactsPage({
             setPortalSaveError(null);
             try {
               if (portalUsername === null && portalPassword === "") {
+                await workspace.patchContact(contact.id, {
+                  portalUsername: null,
+                });
                 await client.requestJson(
                   `/api/v1/contacts/${encodeURIComponent(contact.id)}`,
                   {
@@ -1094,9 +1097,6 @@ export function ContactsPage({
                     }),
                   },
                 );
-                await workspace.patchContact(contact.id, {
-                  portalUsername: null,
-                });
                 return;
               }
               // Password is REST-only. Never follow with settings/PowerSync in the
@@ -1122,6 +1122,12 @@ export function ContactsPage({
                 );
                 return;
               }
+              // Optimistic live overlay first so the detail pane (avatars,
+              // toggles) does not wait on REST round-trip / remount.
+              await workspace.patchContact(contact.id, {
+                portalSettings: settings,
+                portalUsername,
+              });
               await client.requestJson(
                 `/api/v1/contacts/${encodeURIComponent(contact.id)}`,
                 {
@@ -1133,10 +1139,6 @@ export function ContactsPage({
                   }),
                 },
               );
-              await workspace.patchContact(contact.id, {
-                portalSettings: settings,
-                portalUsername,
-              });
             } catch (error) {
               setPortalSaveError(
                 error instanceof Error

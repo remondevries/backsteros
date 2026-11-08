@@ -32,6 +32,26 @@ export type ContactPortalEmailOption = {
   label?: string | null;
 };
 
+/** Ambiguity-safe alphabet for staff-generated portal passwords. */
+const PORTAL_PASSWORD_ALPHABET =
+  "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%";
+
+const PORTAL_PASSWORD_LENGTH = 16;
+
+/** Cryptographically random portal password (≥8 chars; confirm still required). */
+export function generatePortalPassword(
+  length: number = PORTAL_PASSWORD_LENGTH,
+): string {
+  const size = Math.max(8, Math.floor(length));
+  const bytes = new Uint8Array(size);
+  crypto.getRandomValues(bytes);
+  let out = "";
+  for (let i = 0; i < size; i++) {
+    out += PORTAL_PASSWORD_ALPHABET[bytes[i]! % PORTAL_PASSWORD_ALPHABET.length]!;
+  }
+  return out;
+}
+
 /** Sentinel dropdown value — clears portal username and password. */
 const PORTAL_NO_ACCOUNT_VALUE = "__portal_no_account__";
 
@@ -186,8 +206,12 @@ export function ContactPortalTabView({
   const [password, setPassword] = useState("");
   const [passwordSaving, setPasswordSaving] = useState(false);
   const [passwordSaved, setPasswordSaved] = useState(false);
+  /** True only after Generate — drives the copy affordance (not manual typing). */
+  const [passwordGenerated, setPasswordGenerated] = useState(false);
   const [usernameCopied, setUsernameCopied] = useState(false);
+  const [passwordCopied, setPasswordCopied] = useState(false);
   const usernameCopiedTimerRef = useRef<number | null>(null);
+  const passwordCopiedTimerRef = useRef<number | null>(null);
   const passwordSavedTimerRef = useRef<number | null>(null);
   const draftRef = useRef(draft);
   const usernameRef = useRef(username);
@@ -246,6 +270,9 @@ export function ContactPortalTabView({
       if (usernameCopiedTimerRef.current != null) {
         window.clearTimeout(usernameCopiedTimerRef.current);
       }
+      if (passwordCopiedTimerRef.current != null) {
+        window.clearTimeout(passwordCopiedTimerRef.current);
+      }
       if (passwordSavedTimerRef.current != null) {
         window.clearTimeout(passwordSavedTimerRef.current);
       }
@@ -267,6 +294,24 @@ export function ContactPortalTabView({
       }, 1500);
     } catch {
       setUsernameCopied(false);
+    }
+  }
+
+  async function copyPasswordToClipboard(value: string) {
+    const text = value.trim();
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      setPasswordCopied(true);
+      if (passwordCopiedTimerRef.current != null) {
+        window.clearTimeout(passwordCopiedTimerRef.current);
+      }
+      passwordCopiedTimerRef.current = window.setTimeout(() => {
+        setPasswordCopied(false);
+        passwordCopiedTimerRef.current = null;
+      }, 1500);
+    } catch {
+      setPasswordCopied(false);
     }
   }
 
@@ -445,6 +490,8 @@ export function ContactPortalTabView({
     try {
       await persist({ portalPassword: next });
       setPassword("");
+      setPasswordGenerated(false);
+      setPasswordCopied(false);
       setPasswordSaved(true);
       if (passwordSavedTimerRef.current != null) {
         window.clearTimeout(passwordSavedTimerRef.current);
@@ -462,6 +509,8 @@ export function ContactPortalTabView({
 
   const passwordDraft = password.trim();
   const canConfirmPassword = passwordDraft.length >= 8 && !passwordSaving;
+  const showGeneratedPasswordCopy =
+    passwordGenerated && Boolean(passwordDraft) && !passwordSaving;
   const hasUsername = Boolean(username.trim());
   const showStaffEmailActions =
     hasUsername && Boolean(onSendPasswordReset || onSendInvite);
@@ -591,7 +640,10 @@ export function ContactPortalTabView({
             className={[
               "contact-portal-tab__credential",
               "contact-portal-tab__password",
-              passwordDraft || passwordSaved ? "has-confirm" : null,
+              passwordDraft || passwordSaving || passwordSaved
+                ? "has-confirm"
+                : null,
+              showGeneratedPasswordCopy ? "has-copy" : null,
             ]
               .filter(Boolean)
               .join(" ")}
@@ -605,6 +657,8 @@ export function ContactPortalTabView({
               disabled={passwordSaving}
               onChange={(event) => {
                 setPasswordSaved(false);
+                setPasswordGenerated(false);
+                setPasswordCopied(false);
                 setPassword(event.target.value);
               }}
               onKeyDown={(event) => {
@@ -615,13 +669,55 @@ export function ContactPortalTabView({
               }}
               placeholder={portalPasswordSet ? "••••••••" : "Set a password"}
             />
-            {passwordDraft || passwordSaving ? (
-              <div className="contact-portal-tab__credential-actions">
+            <div className="contact-portal-tab__credential-actions">
+              <button
+                type="button"
+                className="contact-portal-tab__credential-action"
+                disabled={passwordSaving}
+                aria-label="Generate password"
+                title="Generate password"
+                onMouseDown={(event) => {
+                  event.preventDefault();
+                }}
+                onClick={() => {
+                  setPasswordSaved(false);
+                  setPasswordCopied(false);
+                  setPasswordGenerated(true);
+                  setPassword(generatePortalPassword());
+                }}
+              >
+                <SyncIcon size={14} />
+              </button>
+              {showGeneratedPasswordCopy ? (
+                <button
+                  type="button"
+                  className="contact-portal-tab__credential-action"
+                  aria-label={
+                    passwordCopied ? "Password copied" : "Copy password"
+                  }
+                  title={passwordCopied ? "Copied" : "Copy password"}
+                  onMouseDown={(event) => {
+                    event.preventDefault();
+                  }}
+                  onClick={() => {
+                    void copyPasswordToClipboard(password);
+                  }}
+                >
+                  {passwordCopied ? (
+                    <CheckIcon size={14} />
+                  ) : (
+                    <CopyIcon size={14} />
+                  )}
+                </button>
+              ) : null}
+              {passwordDraft || passwordSaving ? (
                 <button
                   type="button"
                   className="contact-portal-tab__password-confirm"
                   disabled={!canConfirmPassword}
-                  aria-label={passwordSaving ? "Saving password" : "Confirm password"}
+                  aria-label={
+                    passwordSaving ? "Saving password" : "Confirm password"
+                  }
                   aria-busy={passwordSaving || undefined}
                   title={
                     passwordSaving
@@ -650,9 +746,7 @@ export function ContactPortalTabView({
                     "Confirm"
                   )}
                 </button>
-              </div>
-            ) : passwordSaved ? (
-              <div className="contact-portal-tab__credential-actions">
+              ) : passwordSaved ? (
                 <span
                   className="contact-portal-tab__password-saved"
                   role="status"
@@ -661,8 +755,8 @@ export function ContactPortalTabView({
                 >
                   <CheckIcon size={14} />
                 </span>
-              </div>
-            ) : null}
+              ) : null}
+            </div>
           </div>
           {passwordDraft && !canConfirmPassword ? (
             <p className="contact-portal-tab__hint">

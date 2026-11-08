@@ -2,11 +2,17 @@ import { useEffect, useMemo, useState } from "react";
 import { resolveOrganizationAvatarSrc } from "@backsteros/ui";
 
 import { useDesktopApi } from "./api-context";
+import { avatarCacheKey } from "./avatar-cache-key";
 import { getBrandfetchClientId } from "./brandfetch";
+
+export { avatarCacheKey } from "./avatar-cache-key";
 
 type AvatarEntity = {
   id: string;
   avatarStorageKey?: string | null;
+  /**
+   * Optional. Ignored for blob-cache identity — see {@link avatarCacheKey}.
+   */
   avatarUpdatedAt?: number | null;
 };
 
@@ -19,10 +25,6 @@ type AvatarClient = {
 const avatarObjectUrlCache = new Map<string, string>();
 /** In-flight downloads so parallel hooks share one request per avatar. */
 const avatarInflight = new Map<string, Promise<string | null>>();
-
-function avatarCacheKey(kind: AvatarKind, entry: AvatarEntity): string {
-  return `${kind}:${entry.id}:${entry.avatarStorageKey}:${entry.avatarUpdatedAt ?? 0}`;
-}
 
 function urlsEqual(
   left: Record<string, string>,
@@ -92,10 +94,7 @@ export function useDesktopAvatarSrcMap(
     () =>
       entities
         .filter((entry) => entry.avatarStorageKey)
-        .map(
-          (entry) =>
-            `${entry.id}:${entry.avatarStorageKey}:${entry.avatarUpdatedAt ?? 0}`,
-        )
+        .map((entry) => `${entry.id}:${entry.avatarStorageKey}`)
         .sort()
         .join("|"),
     [entities],

@@ -17,8 +17,9 @@ type AvatarKind = "contact" | "organization";
 
 const avatarObjectUrlCache = new Map<string, string>();
 
+/** Stable across non-avatar field writes; storage key changes on re-upload. */
 function avatarCacheKey(kind: AvatarKind, entry: AvatarEntity): string {
-  return `${kind}:${entry.id}:${entry.avatarStorageKey ?? ""}:${entry.avatarUpdatedAt ?? 0}`;
+  return `${kind}:${entry.id}:${entry.avatarStorageKey ?? ""}`;
 }
 
 function urlsEqual(
@@ -57,10 +58,7 @@ export function useAvatarSrcMap(
     () =>
       entities
         .filter((entry) => entry.avatarStorageKey)
-        .map(
-          (entry) =>
-            `${entry.id}:${entry.avatarStorageKey}:${entry.avatarUpdatedAt ?? 0}`,
-        )
+        .map((entry) => `${entry.id}:${entry.avatarStorageKey}`)
         .sort()
         .join("|"),
     [entities],
