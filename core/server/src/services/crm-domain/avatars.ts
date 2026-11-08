@@ -11,10 +11,19 @@ import {
 } from "../../lib/storage.js";
 import { db } from "../../db/index.js";
 import { avatars, bankAccounts, contacts, organizations } from "../../db/schema.js";
-function avatarObjectFileName(entityType: string): string {
-  // Portal avatar shares the contact id but must not overwrite the personal blob.
-  if (entityType === "avatar_portal") return "avatar-portal";
-  return "avatar";
+/**
+ * Object file name for an avatar blob.
+ * Portal avatars share the contact id but must not collide with the personal mark.
+ * Content checksum is embedded so a re-upload mints a new storage key (clients
+ * cache by storage key; overwriting the same path left stale logos on screen).
+ */
+export function buildAvatarObjectFileName(
+  entityType: string,
+  contentChecksum: string,
+): string {
+  const base = entityType === "avatar_portal" ? "avatar-portal" : "avatar";
+  const suffix = contentChecksum.replace(/[^a-f0-9]/gi, "").slice(0, 12);
+  return suffix ? `${base}-${suffix}` : base;
 }
 
 export async function putAvatar(
@@ -37,13 +46,27 @@ export async function putAvatar(
     storeBytes = optimized.bytes;
     storeType = optimized.contentType;
   }
+  const checksum = checksumForContent(storeBytes);
   const id = newId();
   const key = buildPrivateStorageKey(
     workspaceId,
     "avatars",
     entityId,
-    avatarObjectFileName(entityType),
+    buildAvatarObjectFileName(entityType, checksum),
   );
+
+  const [previous] = await db
+    .select({ storageKey: avatars.storageKey })
+    .from(avatars)
+    .where(
+      and(
+        eq(avatars.workspaceId, workspaceId),
+        eq(avatars.entityType, entityType),
+        eq(avatars.entityId, entityId),
+      ),
+    )
+    .limit(1);
+
   const stored = await putObject(key, storeBytes, storeType);
   const [row] = await db
     .insert(avatars)
@@ -55,7 +78,7 @@ export async function putAvatar(
       storageKey: key,
       contentType: storeType,
       byteSize: stored.byteSize,
-      checksum: checksumForContent(storeBytes),
+      checksum,
       contentEtag: stored.etag,
     })
     .onConflictDoUpdate({
@@ -64,7 +87,7 @@ export async function putAvatar(
         storageKey: key,
         contentType: storeType,
         byteSize: stored.byteSize,
-        checksum: checksumForContent(storeBytes),
+        checksum,
         contentEtag: stored.etag,
         updatedAt: new Date(),
       },
@@ -107,6 +130,15 @@ export async function putAvatar(
         updatedAt: new Date(),
       })
       .where(and(eq(contacts.workspaceId, workspaceId), eq(contacts.id, entityId)));
+  }
+
+  const previousKey = previous?.storageKey?.trim() || null;
+  if (previousKey && previousKey !== key) {
+    try {
+      await deleteObject(previousKey);
+    } catch {
+      // New blob is already durable; orphaned previous object is best-effort.
+    }
   }
   return row!;
 }

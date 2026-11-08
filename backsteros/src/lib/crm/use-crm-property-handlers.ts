@@ -59,23 +59,31 @@ function avatarHandlers(
     client: BacksterosApiClient;
     entityId: string | null;
     setAvatarOverride: AvatarOverrideSetter;
+    onAvatarStored?: (storageKey: string | null, contentType: string | null) => void;
   },
 ) {
   return {
     onUploadAvatar: async (file: File) => {
-      const { client, entityId, setAvatarOverride } = read();
+      const { client, entityId, setAvatarOverride, onAvatarStored } = read();
       if (!entityId) return { ok: false as const, error: "Nothing selected." };
       const result = await uploadDesktopAvatar(client, kind, entityId, file);
       if (result.ok) {
         replaceAvatarOverride(setAvatarOverride, URL.createObjectURL(file));
+        onAvatarStored?.(
+          result.avatar?.storageKey ?? null,
+          result.avatar?.contentType ?? null,
+        );
       }
       return result;
     },
     onRemoveAvatar: async () => {
-      const { client, entityId, setAvatarOverride } = read();
+      const { client, entityId, setAvatarOverride, onAvatarStored } = read();
       if (!entityId) return { ok: false as const, error: "Nothing selected." };
       const result = await removeDesktopAvatar(client, kind, entityId);
-      if (result.ok) replaceAvatarOverride(setAvatarOverride, null);
+      if (result.ok) {
+        replaceAvatarOverride(setAvatarOverride, null);
+        onAvatarStored?.(null, null);
+      }
       return result;
     },
   };
@@ -133,6 +141,14 @@ export function useContactPropertyHandlers(
     const read = () => ({
       ...contextRef.current,
       entityId: contextRef.current.contactId,
+      onAvatarStored: (storageKey: string | null, contentType: string | null) => {
+        const { contactId, patchContact } = contextRef.current;
+        if (!contactId) return;
+        void patchContact(contactId, {
+          avatarStorageKey: storageKey,
+          avatarContentType: contentType,
+        });
+      },
     });
     return {
       ...contactFieldHandlers(read),
@@ -173,6 +189,14 @@ export function useOrganizationPropertyHandlers(
     const read = () => ({
       ...contextRef.current,
       entityId: contextRef.current.organizationId,
+      onAvatarStored: (storageKey: string | null, contentType: string | null) => {
+        const { organizationId, patchOrganization } = contextRef.current;
+        if (!organizationId) return;
+        void patchOrganization(organizationId, {
+          avatarStorageKey: storageKey,
+          avatarContentType: contentType,
+        });
+      },
     });
     const withOrganization = (
       run: (organizationId: string) => Promise<unknown>,

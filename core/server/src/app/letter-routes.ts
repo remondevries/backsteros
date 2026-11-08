@@ -652,8 +652,17 @@ export function registerLetterRoutes(app: Hono) {
       result.row.contentType,
       result.bytes,
     );
+    const etag = `"${(result.row.contentEtag || result.row.checksum || "").trim()}"`;
+    if (etag !== `""`) {
+      c.header("ETag", etag);
+      const ifNoneMatch = c.req.header("If-None-Match")?.trim();
+      if (ifNoneMatch && ifNoneMatch === etag) {
+        return c.body(null, 304);
+      }
+    }
     c.header("Content-Type", contentType);
-    c.header("Cache-Control", "private, max-age=300");
+    // Revalidate on each use — max-age alone left overwritten logos stuck for 5m.
+    c.header("Cache-Control", "private, no-cache");
     const body = Uint8Array.from(result.bytes);
     return c.body(body.buffer.slice(body.byteOffset, body.byteOffset + body.byteLength));
   });

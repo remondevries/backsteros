@@ -77,6 +77,36 @@ async function resolveAvatarObjectUrl(
   return pending;
 }
 
+/** Drop session blob URLs for one entity so a re-upload can re-fetch. */
+export function invalidateDesktopAvatarCache(
+  kind: AvatarKind,
+  entityId: string,
+): void {
+  const prefix = `${kind}:${entityId}:`;
+  for (const [key, url] of avatarObjectUrlCache) {
+    if (!key.startsWith(prefix)) continue;
+    URL.revokeObjectURL(url);
+    avatarObjectUrlCache.delete(key);
+  }
+  for (const key of avatarInflight.keys()) {
+    if (key.startsWith(prefix)) avatarInflight.delete(key);
+  }
+}
+
+/** Seed the session cache after a successful local upload (optional). */
+export function seedDesktopAvatarCache(
+  kind: AvatarKind,
+  entry: AvatarEntity,
+  file: Blob,
+): string {
+  const key = avatarCacheKey(kind, entry);
+  const previous = avatarObjectUrlCache.get(key);
+  if (previous) URL.revokeObjectURL(previous);
+  const url = URL.createObjectURL(file);
+  avatarObjectUrlCache.set(key, url);
+  return url;
+}
+
 /**
  * Resolve avatar blob URLs for contacts/orgs that have `avatarStorageKey`.
  * Object URLs are cached for the session so task switches do not re-download.

@@ -18,14 +18,15 @@ describe("avatarCacheKey", () => {
   });
 
   it("changes when the storage key changes (re-upload)", () => {
-    const before = avatarCacheKey("avatar_portal", {
-      id: "c1",
-      avatarStorageKey: "avatars/portal-old.png",
+    const before = avatarCacheKey("organization", {
+      id: "o1",
+      avatarStorageKey: ".backsteros/avatars/o1/avatar-aaaaaaaaaaaa",
     });
-    const after = avatarCacheKey("avatar_portal", {
-      id: "c1",
-      avatarStorageKey: "avatars/portal-new.png",
+    const after = avatarCacheKey("organization", {
+      id: "o1",
+      avatarStorageKey: ".backsteros/avatars/o1/avatar-bbbbbbbbbbbb",
     });
     assert.notEqual(before, after);
   });
 });
+
