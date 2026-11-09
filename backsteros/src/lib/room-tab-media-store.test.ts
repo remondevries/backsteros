@@ -75,10 +75,10 @@ describe("room-tab-media-store", () => {
     setRoomTabMedia(meetingId, {
       cameraPublished: false,
       micEnabled: true,
-      audioLevel: 0.42,
+      audioLevel: 0.4,
     });
     assert.equal(discreteWakes, 1);
-    assert.equal(levels.at(-1), 0.42);
+    assert.equal(levels.at(-1), 0.4);
 
     setRoomTabMedia(meetingId, {
       cameraPublished: false,

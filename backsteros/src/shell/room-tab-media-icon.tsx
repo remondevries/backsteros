@@ -9,6 +9,7 @@ import { normalizeAudioLevel } from "@backsteros/meetings";
 
 import {
   formatRoomTabMediaTooltip,
+  getRoomTabMediaAudioLevel,
   getRoomTabMediaDiscrete,
   getRoomTabMediaDiscreteEpoch,
   subscribeRoomTabMediaAudio,
@@ -20,11 +21,23 @@ function prefersReducedMotion(): boolean {
   return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
 
+function applyTabAudioLevel(
+  el: HTMLElement,
+  micEnabled: boolean,
+  rawLevel: number,
+): void {
+  const display =
+    micEnabled && !prefersReducedMotion()
+      ? normalizeAudioLevel(rawLevel)
+      : 0;
+  el.style.setProperty("--avatar-audio-level", String(display));
+}
+
 /**
  * Meeting-format tab glyph with a top-left live pip:
  * - green fill when the local camera track is published
- * - audio-level outline (avatar ring pattern) when mic is on and speaking
- * - mic-only stays outline-capable without a green fill
+ * - orange outline that tracks mic energy (same gated curve as the host avatar)
+ * - mic-only uses a neutral idle fill so orange is reserved for speaking
  */
 export function RoomTabMediaIcon({
   format,
@@ -39,25 +52,32 @@ export function RoomTabMediaIcon({
     () => 0,
   );
   const discrete = getRoomTabMediaDiscrete(meetingId);
+  const rootRef = useRef<HTMLSpanElement>(null);
   const liveRef = useRef<HTMLSpanElement>(null);
+  const micEnabledRef = useRef(discrete.micEnabled);
+  micEnabledRef.current = discrete.micEnabled;
 
   useEffect(() => {
-    const el = liveRef.current;
-    if (!el) return;
-    return subscribeRoomTabMediaAudio(meetingId, (level) => {
-      const display =
-        discrete.micEnabled && !prefersReducedMotion()
-          ? normalizeAudioLevel(level)
-          : 0;
-      el.style.setProperty("--avatar-audio-level", String(display));
-    });
-  }, [discrete.micEnabled, meetingId]);
+    const root = rootRef.current;
+    const live = liveRef.current;
+    if (!root) return;
+
+    const paint = (level: number) => {
+      const micOn = micEnabledRef.current;
+      applyTabAudioLevel(root, micOn, level);
+      if (live) applyTabAudioLevel(live, micOn, level);
+    };
+
+    paint(getRoomTabMediaAudioLevel(meetingId));
+    return subscribeRoomTabMediaAudio(meetingId, paint);
+  }, [discrete.cameraPublished, discrete.micEnabled, meetingId]);
 
   const showPip = discrete.cameraPublished || discrete.micEnabled;
   const statusLabel = formatRoomTabMediaTooltip(discrete);
 
   return (
     <span
+      ref={rootRef}
       className="content-tab-icon content-tab-room-icon"
       aria-label={statusLabel}
       title={statusLabel}

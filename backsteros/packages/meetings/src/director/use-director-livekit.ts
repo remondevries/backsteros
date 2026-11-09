@@ -33,6 +33,12 @@ const AUDIO_SIGNAL_GATE = 0.008;
 const AUDIO_SIGNAL_INTERVAL_MS = 45;
 const AUDIO_SIGNAL_TTL_MS = 140;
 
+/** Match guest VU / room-tab store quantization so rings update without spam. */
+function quantizeAudioLevel(level: number): number {
+  if (!Number.isFinite(level) || level <= 0) return 0;
+  return Math.round(Math.max(0, level) * 40) / 40;
+}
+
 export type GuestPhase = "lobby" | "ready" | "room";
 
 export type GuestFeed = {
@@ -553,7 +559,12 @@ export function useDirectorLiveKit({
           const current = roomRef.current;
           if (!current) return;
           if (!localAudioMeterActiveRef.current) {
-            setHostAudioLevel(current.localParticipant.audioLevel || 0);
+            const next = quantizeAudioLevel(
+              current.localParticipant.audioLevel || 0,
+            );
+            setHostAudioLevel((previous) =>
+              previous === next ? previous : next,
+            );
           }
           const levels: Record<string, number> = {};
           for (const participant of current.remoteParticipants.values()) {
@@ -870,7 +881,10 @@ export function useDirectorLiveKit({
         let energy = 0;
         for (const sample of samples) energy += sample * sample;
         const level = Math.sqrt(energy / samples.length);
-        setHostAudioLevel(level);
+        const quantized = quantizeAudioLevel(level);
+        setHostAudioLevel((previous) =>
+          previous === quantized ? previous : quantized,
+        );
         const now = performance.now();
         if (
           level > AUDIO_SIGNAL_GATE &&
@@ -882,7 +896,7 @@ export function useDirectorLiveKit({
             .publishData(
               encodeMeetingRoomDataMessage({
                 type: "bm.audioSignal",
-                level,
+                level: quantized || level,
               }),
               { reliable: false },
             )

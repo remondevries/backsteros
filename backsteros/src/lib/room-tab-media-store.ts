@@ -80,16 +80,17 @@ export function setRoomTabMedia(
     discreteByMeeting.set(id, discrete);
   }
 
-  const level =
+  // Quantize like Director guest VU updates — keeps the tab ring smooth without
+  // dropping speech pulses on tiny float jitter / identical React writes.
+  const raw =
     discrete.micEnabled && Number.isFinite(next.audioLevel)
       ? Math.max(0, next.audioLevel)
       : 0;
-  const previousLevel = audioByMeeting.get(id) ?? 0;
-  if (previousLevel !== level) {
+  const level = Math.round(raw * 40) / 40;
+  const previousLevel = audioByMeeting.get(id);
+  if (previousLevel === undefined || previousLevel !== level) {
     audioByMeeting.set(id, level);
     emitAudio(id, level);
-  } else if (!audioByMeeting.has(id)) {
-    audioByMeeting.set(id, level);
   }
 }
 

@@ -523,13 +523,14 @@
   height: 5px;
   border-radius: 999px;
   pointer-events: none;
+  /* Same gated orange ring as the host avatar, scaled up for the 5px pip. */
   box-shadow:
-    0 0 0 calc(1px + var(--avatar-audio-level, 0) * 1.5px)
+    0 0 0 calc(1px + var(--avatar-audio-level, 0) * 3px)
       rgb(249 115 22 / calc(var(--avatar-audio-level, 0) * 0.95)),
-    0 0 0 calc(2px + var(--avatar-audio-level, 0) * 3.5px)
-      rgb(249 115 22 / calc(var(--avatar-audio-level, 0) * 0.44)),
-    0 0 0 calc(3px + var(--avatar-audio-level, 0) * 5px)
-      rgb(249 115 22 / calc(var(--avatar-audio-level, 0) * 0.18));
+    0 0 0 calc(2px + var(--avatar-audio-level, 0) * 6px)
+      rgb(249 115 22 / calc(var(--avatar-audio-level, 0) * 0.5)),
+    0 0 0 calc(3px + var(--avatar-audio-level, 0) * 9px)
+      rgb(249 115 22 / calc(var(--avatar-audio-level, 0) * 0.22));
   transition: box-shadow 0ms linear, background-color 120ms ease;
 }
 
@@ -537,17 +538,19 @@
   background: #22c55e;
 }
 
-/* Mic-only: no green fill — thin idle outline so cam-off stays distinct. */
+/*
+ * Mic-only: no green fill. Neutral idle pip so orange is reserved for the
+ * level-driven speaking ring (matches host avatar behavior).
+ */
 .content-tab-room-icon__live.is-mic-only.is-mic-on {
-  background: transparent;
+  background: color-mix(in srgb, var(--foreground) 45%, transparent);
   box-shadow:
-    0 0 0 1px rgb(249 115 22 / 0.55),
-    0 0 0 calc(1px + var(--avatar-audio-level, 0) * 1.5px)
+    0 0 0 calc(1px + var(--avatar-audio-level, 0) * 3px)
       rgb(249 115 22 / calc(var(--avatar-audio-level, 0) * 0.95)),
-    0 0 0 calc(2px + var(--avatar-audio-level, 0) * 3.5px)
-      rgb(249 115 22 / calc(var(--avatar-audio-level, 0) * 0.44)),
-    0 0 0 calc(3px + var(--avatar-audio-level, 0) * 5px)
-      rgb(249 115 22 / calc(var(--avatar-audio-level, 0) * 0.18));
+    0 0 0 calc(2px + var(--avatar-audio-level, 0) * 6px)
+      rgb(249 115 22 / calc(var(--avatar-audio-level, 0) * 0.5)),
+    0 0 0 calc(3px + var(--avatar-audio-level, 0) * 9px)
+      rgb(249 115 22 / calc(var(--avatar-audio-level, 0) * 0.22));
 }
 
 .content-tab-room-icon__live.is-mic-muted:not(.is-camera-on) {
@@ -557,14 +560,11 @@
 @media (prefers-reduced-motion: reduce) {
   .content-tab-room-icon__live {
     transition: background-color 120ms ease;
-  }
-
-  .content-tab-room-icon__live.is-camera-on {
     box-shadow: none;
   }
 
   .content-tab-room-icon__live.is-mic-only.is-mic-on {
-    box-shadow: 0 0 0 1px rgb(249 115 22 / 0.55);
+    box-shadow: none;
   }
 }
 
