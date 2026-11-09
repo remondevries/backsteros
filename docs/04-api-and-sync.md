@@ -101,6 +101,19 @@ Unknown filter ids return **400** (not an empty 200). Bad enum values
 (`status=bogus`, `mode=bogus`, `type=bogus` on search/documents) likewise return **400**
 with a `field` in the body.
 
+#### Project soft-delete / restore
+
+`DELETE /api/v1/projects/:id` soft-deletes (`deletedAt`). Ordinary `GET` /
+`PATCH` / list / key resolution keep excluding soft-deleted rows.
+
+`POST /api/v1/projects/:id/restore` (scope `projects:write`) clears `deletedAt`
+on the **existing** row (same id/key). Soft-deleted id/key resolve for this
+route only. Already-active is idempotent **200**. Missing → **404**. Ambiguous
+soft-deleted key → **409** `project_restore_key_ambiguous`. Live key collision
+→ **409** `project_key_exists`. Does **not** revive independently soft-deleted
+children. Public agents door proxies the route; core still enforces the key
+scope.
+
 #### Codebase project locations (agents)
 
 `GET` / `PATCH /api/v1/projects/:id` expose GitHub + Development + Production +

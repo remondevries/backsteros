@@ -177,9 +177,11 @@ export {
   subscribeEmailUpdated,
 } from "../lib/email-inbox-events.js";
 export {
+  ProjectRestoreRefError,
   resolveContactRef,
   resolveOrganizationRef,
   resolveProjectRef,
+  resolveProjectRestoreRef,
   resolveTaskListFilterRefs,
   resolveTaskRef,
   resolveTaskWriteRefs,
@@ -505,6 +507,7 @@ export {
   routeContactId,
   routeOrganizationId,
   routeProjectId,
+  routeProjectRestoreId,
   routeTaskId,
   sanitizeWorkspaceSettings,
   type TaskRow,

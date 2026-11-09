@@ -135,6 +135,7 @@ Projects:
   backsteros project create --key DOT --name "Dotfiles" [--description ...] [--status active]
   backsteros project update <id|KEY> [--name ...] [--status ...] [--body '{...}']
   backsteros project delete <id|KEY>
+  backsteros project restore <id|KEY>
 
 Tasks:
   backsteros task list [--project KEY|id[,KEY…]] [--status in_progress,on_hold|all] [--assignee id[,id…]] [--due before:2026-10-08] [--limit 200]

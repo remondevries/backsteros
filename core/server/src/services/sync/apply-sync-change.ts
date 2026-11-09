@@ -171,6 +171,36 @@ export async function applySyncChange(
         return row ? projectSnapshot(row) : null;
       }
 
+      // Soft-deleted row with same id: restore then optionally patch fields.
+      // Ordinary getProjectById hides tombstones; create would PK-conflict.
+      const includingDeleted =
+        await taskProjectService.getProjectRowByIdIncludingDeleted(
+          workspaceId,
+          change.entity_id,
+          executor,
+        );
+      if (includingDeleted?.deletedAt) {
+        const restored = await taskProjectService.restoreProject(
+          workspaceId,
+          change.entity_id,
+          executor,
+          projectWriteOptions,
+        );
+        if (restored.status === "missing") return null;
+        const hasFieldPatch = Object.values(input).some((v) => v !== undefined);
+        if (!hasFieldPatch) {
+          return projectSnapshot(restored.row);
+        }
+        const row = await taskProjectService.updateProject(
+          workspaceId,
+          change.entity_id,
+          input,
+          executor,
+          projectWriteOptions,
+        );
+        return row ? projectSnapshot(row) : projectSnapshot(restored.row);
+      }
+
       if (change.operation === "patch") {
         return null;
       }

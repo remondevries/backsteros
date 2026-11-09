@@ -17,11 +17,13 @@ import {
   notFound,
   parseProjectsListQuery,
   projectVaultService,
+  ProjectRestoreRefError,
   publishProjectLive,
   recordProjectRestSyncEvent,
   requireResolvedRef,
   requireScope,
   routeProjectId,
+  routeProjectRestoreId,
   taskProjectService,
   toProject,
   unauthorized,
@@ -1075,5 +1077,104 @@ export function registerProjectCoreRoutes(app: Hono) {
     await recordProjectRestSyncEvent(auth.workspaceId, row, "delete");
     publishProjectLive(auth, row.id, "delete");
     return c.body(null, 204);
+  });
+
+  app.post("/api/v1/projects/:id/restore", async (c) => {
+    const auth = getAuth(c);
+    if (!requireScope("projects:write")(auth)) {
+      return c.json(auth ? forbidden() : unauthorized(), auth ? 403 : 401);
+    }
+
+    const projectIdRaw = c.req.param("id");
+    let projectId: string | null;
+    try {
+      projectId = await routeProjectRestoreId(auth.workspaceId, projectIdRaw);
+    } catch (error) {
+      if (error instanceof ProjectRestoreRefError) {
+        return c.json(
+          {
+            error:
+              "Multiple soft-deleted projects share that key; restore by id",
+            code: error.code,
+          },
+          409,
+        );
+      }
+      throw error;
+    }
+    if (!projectId) return c.json(notFound("Project"), 404);
+
+    try {
+      if (isRestLeaderFirstWrite()) {
+        const existing =
+          await taskProjectService.getProjectRowByIdIncludingDeleted(
+            auth.workspaceId,
+            projectId,
+          );
+        if (!existing) {
+          return c.json(notFound("Project"), 404);
+        }
+        if (existing.deletedAt == null) {
+          return c.json(toProject(existing), 200);
+        }
+        const liveWithKey = await taskProjectService.getProjectByKey(
+          auth.workspaceId,
+          existing.key,
+        );
+        if (liveWithKey && liveWithKey.id !== existing.id) {
+          return c.json(
+            {
+              error: "Project key already exists",
+              code: "project_key_exists",
+            },
+            409,
+          );
+        }
+        await commitRestEntityWrite({
+          workspaceId: auth.workspaceId,
+          entity: "project",
+          entityId: projectId,
+          operation: "upsert",
+          payload: { id: projectId, deleted_at: null },
+        });
+        const row = await taskProjectService.getProjectById(
+          auth.workspaceId,
+          projectId,
+        );
+        if (!row) {
+          return c.json(notFound("Project"), 404);
+        }
+        publishProjectLive(auth, row.id, "upsert");
+        return c.json(toProject(row), 200);
+      }
+
+      const result = await taskProjectService.restoreProject(
+        auth.workspaceId,
+        projectId,
+      );
+      if (result.status === "missing") {
+        return c.json(notFound("Project"), 404);
+      }
+      if (result.status === "restored") {
+        await recordProjectRestSyncEvent(
+          auth.workspaceId,
+          result.row,
+          "upsert",
+        );
+        publishProjectLive(auth, result.row.id, "upsert");
+      }
+      return c.json(toProject(result.row), 200);
+    } catch (error) {
+      if (error instanceof Error && error.message === "PROJECT_KEY_EXISTS") {
+        return c.json(
+          {
+            error: "Project key already exists",
+            code: "project_key_exists",
+          },
+          409,
+        );
+      }
+      throw error;
+    }
   });
 }

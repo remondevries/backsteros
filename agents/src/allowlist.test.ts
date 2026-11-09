@@ -12,6 +12,10 @@ test("allows product writes including task create", () => {
   assert.equal(isRouteAllowed("PATCH", "/api/v1/documents/doc_1/content"), true);
   assert.equal(isRouteAllowed("POST", "/api/v1/letters"), true);
   assert.equal(isRouteAllowed("PATCH", "/api/v1/projects/proj_1"), true);
+  assert.equal(
+    isRouteAllowed("POST", "/api/v1/projects/proj_1/restore"),
+    true,
+  );
   assert.equal(isRouteAllowed("GET", "/api/v1/search"), true);
 });
 

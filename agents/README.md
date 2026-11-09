@@ -152,6 +152,19 @@ Record and Remon picks Commit vs PR in the UI (do not ask that in Brief) →
 desktop ACP records → Brief notify → `done`. On failed checks, loop `brief`
 (cycle++) from Verify. Details: `docs/04-api-and-sync.md` (Task agent factory runs).
 
+## Project restore
+
+Soft-deleted projects stay hidden from ordinary `GET` / list / key resolution.
+Authorized restore (same id/key, clears `deletedAt` only):
+
+```http
+POST /api/v1/projects/{id|KEY}/restore
+Authorization: Bearer sk_live_…   # projects:write
+```
+
+Proxied on this door; core enforces scopes. See `docs/04-api-and-sync.md`
+(Project soft-delete / restore).
+
 ## Channel Connect (project Locations → Channel)
 
 See **[CHANNEL-CONNECT.md](./CHANNEL-CONNECT.md)** for the agent routine.

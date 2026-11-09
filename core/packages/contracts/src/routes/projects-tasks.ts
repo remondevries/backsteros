@@ -118,6 +118,25 @@ export const projectsTasksRoutes: AppRouter = c.router({
     },
     summary: "Soft-delete project by id or key",
   },
+  restoreProject: {
+    method: "POST",
+    path: "/api/v1/projects/:id/restore",
+    pathParams: z.object({
+      /** Project id or key (e.g. `MM`). Soft-deleted targets resolve for restore only. */
+      id: z.string(),
+    }),
+    body: null,
+    responses: {
+      200: projectSchema,
+      400: badRequestSchema,
+      401: errorSchema,
+      403: errorSchema,
+      404: errorSchema,
+      409: errorSchema,
+    },
+    summary:
+      "Restore a soft-deleted project by id or key (idempotent when already active)",
+  },
   ensureProjectVault: {
     method: "POST",
     path: "/api/v1/projects/:id/ensure-vault",

@@ -4,7 +4,7 @@
  * route/handler concerns so later tasks on the same routes can reuse it.
  */
 
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, isNotNull, isNull, sql } from "drizzle-orm";
 
 import { db } from "../db/index.js";
 import { contacts, emailThreads, organizations, projects, tasks } from "../db/schema.js";
@@ -18,6 +18,15 @@ export { parseTaskDisplayKey, TASK_DISPLAY_KEY_RE } from "./task-filters.js";
 export type { ParsedTaskDisplayKey } from "./task-filters.js";
 
 type DbExecutor = Pick<typeof db, "select">;
+
+/** Soft-deleted key matched more than one project — restore must use id. */
+export class ProjectRestoreRefError extends Error {
+  readonly code = "project_restore_key_ambiguous" as const;
+  constructor() {
+    super("PROJECT_RESTORE_KEY_AMBIGUOUS");
+    this.name = "ProjectRestoreRefError";
+  }
+}
 
 export async function resolveTaskRef(
   workspaceId: string,
@@ -115,6 +124,48 @@ export async function resolveProjectRef(
     )
     .limit(1);
   return byKey?.id ?? null;
+}
+
+/**
+ * Resolve a project for restore only. Live rows win; soft-deleted id/key are
+ * visible here without changing ordinary {@link resolveProjectRef} lookups.
+ * Ambiguous soft-deleted keys throw {@link ProjectRestoreRefError}.
+ */
+export async function resolveProjectRestoreRef(
+  workspaceId: string,
+  ref: string,
+  executor: DbExecutor = db,
+): Promise<string | null> {
+  const trimmed = ref.trim();
+  if (!trimmed) return null;
+
+  const [byId] = await executor
+    .select({ id: projects.id })
+    .from(projects)
+    .where(
+      and(eq(projects.workspaceId, workspaceId), eq(projects.id, trimmed)),
+    )
+    .limit(1);
+  if (byId) return byId.id;
+
+  const liveId = await resolveProjectRef(workspaceId, trimmed, executor);
+  if (liveId) return liveId;
+
+  const deletedRows = await executor
+    .select({ id: projects.id })
+    .from(projects)
+    .where(
+      and(
+        eq(projects.workspaceId, workspaceId),
+        sql`lower(${projects.key}) = ${trimmed.toLowerCase()}`,
+        isNotNull(projects.deletedAt),
+      ),
+    );
+  if (deletedRows.length === 0) return null;
+  if (deletedRows.length > 1) {
+    throw new ProjectRestoreRefError();
+  }
+  return deletedRows[0]?.id ?? null;
 }
 
 function parseEmailDisplayNumber(ref: string): number | null {

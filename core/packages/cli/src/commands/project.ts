@@ -132,9 +132,26 @@ export async function runProjectCommand(
       emitResult(config.json, { ok: true, id }, `deleted project ${ref} (${id})`);
       return;
     }
+    case "restore": {
+      const ref = positionals[0];
+      if (!ref) throw new Error("Usage: backsteros project restore <id|KEY>");
+      // Restore resolves soft-deleted targets on the server; do not pre-resolve
+      // via ordinary get (that hides tombstones).
+      const res = await client.contract.restoreProject({ params: { id: ref } });
+      if (res.status !== 200) {
+        throw new Error(`restore failed (${res.status})`);
+      }
+      const p = res.body;
+      emitResult(
+        config.json,
+        p,
+        `restored ${p.key}  ${p.status}  ${p.name}  (${p.id})`,
+      );
+      return;
+    }
     default:
       throw new Error(
-        `Unknown project action "${action ?? ""}". Use list|get|create|update|delete.`,
+        `Unknown project action "${action ?? ""}". Use list|get|create|update|delete|restore.`,
       );
   }
 }

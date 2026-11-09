@@ -8,14 +8,17 @@ export {
   listProjectsPaginated,
   getProjectById,
   getProjectByKey,
+  getProjectRowByIdIncludingDeleted,
   createProject,
   updateProject,
   deleteProject,
+  restoreProject,
   getProjectKeyMap,
   beginProjectChannelConnect,
 } from "./tasks-projects/projects.js";
 export type {
   ProjectWriteOptions,
+  RestoreProjectResult,
 } from "./tasks-projects/projects.js";
 export {
   createTask,

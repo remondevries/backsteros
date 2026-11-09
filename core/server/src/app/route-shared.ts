@@ -205,13 +205,16 @@ import {
   paginateByUpdatedAtId,
 } from "../lib/list-query.js";
 import {
+  ProjectRestoreRefError,
   resolveContactRef,
   resolveOrganizationRef,
   resolveProjectRef,
+  resolveProjectRestoreRef,
   resolveTaskListFilterRefs,
   resolveTaskRef,
   resolveTaskWriteRefs,
 } from "../lib/entity-refs.js";
+export { ProjectRestoreRefError, resolveProjectRestoreRef };
 import {
   readIdempotencyKey,
   withIdempotency,
@@ -642,6 +645,11 @@ export async function routeTaskId(workspaceId: string, ref: string) {
 
 export async function routeProjectId(workspaceId: string, ref: string) {
   return resolveProjectRef(workspaceId, ref);
+}
+
+/** Restore-only path ref (includes soft-deleted). Ordinary routes keep {@link routeProjectId}. */
+export async function routeProjectRestoreId(workspaceId: string, ref: string) {
+  return resolveProjectRestoreRef(workspaceId, ref);
 }
 
 export async function routeOrganizationId(workspaceId: string, ref: string) {

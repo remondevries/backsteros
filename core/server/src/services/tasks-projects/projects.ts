@@ -1,5 +1,16 @@
 import path from "node:path";
-import { and, asc, desc, eq, gte, inArray, isNull, sql, type SQL } from "drizzle-orm";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  gte,
+  inArray,
+  isNotNull,
+  isNull,
+  sql,
+  type SQL,
+} from "drizzle-orm";
 import type {
   CreateProjectInput,
   ProjectChannelStatus,
@@ -1153,6 +1164,76 @@ export async function deleteProject(
     )
     .returning();
   return row ?? null;
+}
+
+/** Load a project row including soft-deleted (restore / sync only). */
+export async function getProjectRowByIdIncludingDeleted(
+  workspaceId: string,
+  id: string,
+  executor: DbExecutor = db,
+) {
+  const [row] = await executor
+    .select()
+    .from(projects)
+    .where(
+      and(eq(projects.workspaceId, workspaceId), eq(projects.id, id)),
+    )
+    .limit(1);
+  return row ?? null;
+}
+
+export type RestoreProjectResult =
+  | { status: "restored" | "already_active"; row: typeof projects.$inferSelect }
+  | { status: "missing" };
+
+/**
+ * Clear soft-delete on an existing project. Does not revive child rows.
+ * Fails with PROJECT_KEY_EXISTS when another live project owns the same key.
+ */
+export async function restoreProject(
+  workspaceId: string,
+  id: string,
+  executor: DbExecutor = db,
+  options?: ProjectWriteOptions,
+): Promise<RestoreProjectResult> {
+  const existing = await getProjectRowByIdIncludingDeleted(
+    workspaceId,
+    id,
+    executor,
+  );
+  if (!existing) return { status: "missing" };
+  if (existing.deletedAt == null) {
+    return { status: "already_active", row: existing };
+  }
+
+  const liveWithKey = await getProjectByKey(
+    workspaceId,
+    existing.key,
+    executor,
+  );
+  if (liveWithKey && liveWithKey.id !== existing.id) {
+    throw new Error("PROJECT_KEY_EXISTS");
+  }
+
+  const now = options?.updatedAt ?? new Date();
+  const [row] = await executor
+    .update(projects)
+    .set({ deletedAt: null, updatedAt: now })
+    .where(
+      and(
+        eq(projects.workspaceId, workspaceId),
+        eq(projects.id, id),
+        isNotNull(projects.deletedAt),
+      ),
+    )
+    .returning();
+  if (!row) {
+    // Race: another writer restored concurrently — treat as already active.
+    const again = await getProjectById(workspaceId, id, executor);
+    if (again) return { status: "already_active", row: again };
+    return { status: "missing" };
+  }
+  return { status: "restored", row };
 }
 
 /**
