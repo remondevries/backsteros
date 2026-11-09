@@ -463,6 +463,9 @@ importers:
       '@backsteros/contracts':
         specifier: workspace:*
         version: link:../../../core/packages/contracts
+      '@backsteros/ui':
+        specifier: workspace:*
+        version: link:../ui
       '@mynaui/icons-react':
         specifier: ^0.4.11
         version: 0.4.11(react@19.2.3)

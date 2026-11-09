@@ -1,3 +1,4 @@
+import { SegmentedPillToggle } from "@backsteros/ui";
 import {
   PRESENTATION_KINDS,
   PRESENTATION_LABELS,
@@ -11,42 +12,38 @@ type PresentationModeTabsProps = {
   onSelect: (kind: PresentationKind) => void;
 };
 
-/** Top-center Local / Screenshare controls. */
+const PRESENTATION_OPTIONS = PRESENTATION_KINDS.map((kind) => ({
+  value: kind,
+  label: PRESENTATION_LABELS[kind],
+}));
+
+/**
+ * Local / Screenshare control — same SegmentedPillToggle used across the
+ * desktop shell (Preview/Edit, list/board, etc.).
+ */
 export function PresentationModeTabs({
   selected,
   broadcastKind,
   focusedIndex,
   onSelect,
 }: PresentationModeTabsProps) {
+  // SegmentedPillToggle highlights by value match. When nothing is prepared,
+  // pass a non-option sentinel so neither segment reads as selected.
+  const value = (selected ?? "__none__") as PresentationKind;
+
   return (
-    <nav
-      className="director__mode-tabs"
-      aria-label="Presentation mode"
+    <div
+      className="director__presentation-toggle"
       data-tauri-drag-region="false"
+      data-broadcast={broadcastKind ?? undefined}
+      data-picker-focus={selected == null ? String(focusedIndex) : undefined}
     >
-      {PRESENTATION_KINDS.map((kind, index) => {
-        const active = selected === kind;
-        const focused = !selected && focusedIndex === index;
-        const live = broadcastKind === kind;
-        return (
-          <button
-            key={kind}
-            type="button"
-            className={[
-              "director__mode-tab",
-              active ? "is-active" : null,
-              focused ? "is-focused" : null,
-              live ? "is-broadcasting" : null,
-            ]
-              .filter(Boolean)
-              .join(" ")}
-            aria-pressed={active}
-            onClick={() => onSelect(kind)}
-          >
-            {PRESENTATION_LABELS[kind]}
-          </button>
-        );
-      })}
-    </nav>
+      <SegmentedPillToggle
+        value={value}
+        options={PRESENTATION_OPTIONS}
+        onChange={onSelect}
+        ariaLabel="Presentation mode"
+      />
+    </div>
   );
 }
