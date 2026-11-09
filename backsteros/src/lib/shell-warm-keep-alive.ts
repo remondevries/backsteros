@@ -27,7 +27,19 @@ export const KEEP_ALIVE_SURFACES = new Set<PendingPageSurface>([
 ]);
 
 const mountedKeepAliveSurfaces = new Set<PendingPageSurface>();
+/** Fallback when no product-tab binding is active yet (first mount / tests). */
 const lastKeepAliveHref = new Map<PendingPageSurface, string>();
+/**
+ * Per product-tab bookmark for warm surfaces. Two Inbox (or Tasks/…) tabs must
+ * not share one surface-global lastHref — each tab keeps its own selection.
+ */
+const lastHrefByTabId = new Map<string, string>();
+let activeProductTabId: string | null = null;
+/**
+ * Bumps when the active product tab changes. Async panel loads / late remember
+ * calls capture this and no-op if the user already switched away.
+ */
+let warmNavGeneration = 0;
 /** Pane / outlet listeners — notified synchronously so DOM can flip this frame. */
 const warmKeepAliveListeners = new Set<() => void>();
 /**
@@ -239,9 +251,82 @@ export function subscribeWarmKeepAliveChrome(onChange: () => void): () => void {
   };
 }
 
+export type WarmKeepAliveProductTabRef = {
+  id: string;
+  href: string;
+};
+
+/**
+ * Mirror product-tab bookmarks into the warm store. Call whenever tabs change
+ * and synchronously before navigate on activate/close so the first paint after
+ * a tab switch reads that tab's selection — not a sibling tab's lastHref.
+ */
+export function syncWarmKeepAliveProductTabs(input: {
+  activeTabId: string;
+  tabs: readonly WarmKeepAliveProductTabRef[];
+}): void {
+  const prevActive = activeProductTabId;
+  const prevVisibleHref =
+    visibleKeepAliveSurface != null
+      ? lastHrefForKeepAliveSurface(visibleKeepAliveSurface)
+      : null;
+
+  const nextIds = new Set(input.tabs.map((tab) => tab.id));
+  for (const id of [...lastHrefByTabId.keys()]) {
+    if (!nextIds.has(id)) lastHrefByTabId.delete(id);
+  }
+  for (const tab of input.tabs) {
+    const normalized = formatResolvedAppHref(resolveAppHref(tab.href));
+    lastHrefByTabId.set(tab.id, normalized);
+  }
+  const nextActive = input.activeTabId || null;
+  if (nextActive !== prevActive) {
+    warmNavGeneration += 1;
+  }
+  activeProductTabId = nextActive;
+
+  const nextVisibleHref =
+    visibleKeepAliveSurface != null
+      ? lastHrefForKeepAliveSurface(visibleKeepAliveSurface)
+      : null;
+  if (
+    visibleKeepAliveSurface != null &&
+    nextVisibleHref != null &&
+    nextVisibleHref !== prevVisibleHref
+  ) {
+    // Keep surface fallback aligned so short-circuit flips / popstate stay coherent.
+    lastKeepAliveHref.set(visibleKeepAliveSurface, nextVisibleHref);
+    emitWarmKeepAlive();
+  }
+}
+
+export function getWarmKeepAliveActiveProductTabId(): string | null {
+  return activeProductTabId;
+}
+
+export function getWarmNavGeneration(): number {
+  return warmNavGeneration;
+}
+
+export function isWarmNavGenerationCurrent(generation: number): boolean {
+  return generation === warmNavGeneration;
+}
+
 export function lastHrefForKeepAliveSurface(
   surface: PendingPageSurface,
 ): string {
+  if (activeProductTabId) {
+    const tabHref = lastHrefByTabId.get(activeProductTabId);
+    if (tabHref) {
+      const resolved = resolveAppHref(tabHref);
+      if (
+        resolved.surface === surface &&
+        shouldKeepAliveSurface(surface, resolved.pathname)
+      ) {
+        return formatResolvedAppHref(resolved);
+      }
+    }
+  }
   return lastKeepAliveHref.get(surface) ?? KEEP_ALIVE_GO_ROOT[surface] ?? "/";
 }
 
@@ -269,8 +354,34 @@ export function rememberKeepAliveHref(
   surface: PendingPageSurface,
   pathname: string,
   searchStr: string,
+  options?: { generation?: number; tabId?: string },
 ): void {
-  lastKeepAliveHref.set(surface, hrefFromParts(pathname, searchStr));
+  if (
+    options?.generation != null &&
+    !isWarmNavGenerationCurrent(options.generation)
+  ) {
+    return;
+  }
+  if (
+    options?.tabId != null &&
+    activeProductTabId != null &&
+    options.tabId !== activeProductTabId
+  ) {
+    return;
+  }
+  const href = hrefFromParts(pathname, searchStr);
+  lastKeepAliveHref.set(surface, href);
+  if (!activeProductTabId) return;
+  const tabHref = lastHrefByTabId.get(activeProductTabId);
+  // Bind only when the active tab already belongs to this surface (or is unset).
+  if (tabHref) {
+    const tabSurface = resolveAppHref(tabHref).surface;
+    if (tabSurface !== surface) return;
+  }
+  lastHrefByTabId.set(
+    activeProductTabId,
+    formatResolvedAppHref(resolveAppHref(href)),
+  );
 }
 
 /**
@@ -303,7 +414,7 @@ function rememberEmailListPanelSelectionHref(
   );
   if (params.get("list") !== list) return false;
   const nextHref = formatResolvedAppHref(resolved);
-  if (lastKeepAliveHref.get(list) === nextHref) return false;
+  if (lastHrefForKeepAliveSurface(list) === nextHref) return false;
   rememberKeepAliveHref(list, resolved.pathname, resolved.search);
   // Callers often run from layout/nav; defer so we never notify React
   // subscribers synchronously inside another component's render.
@@ -387,7 +498,10 @@ export function tryWarmKeepAliveFlip(
   const nextHref = formatResolvedAppHref(resolved);
   const replace = options?.replace ?? false;
   const alreadyVisible = visibleKeepAliveSurface === resolved.surface;
-  if (alreadyVisible && lastKeepAliveHref.get(resolved.surface) === nextHref) {
+  if (
+    alreadyVisible &&
+    lastHrefForKeepAliveSurface(resolved.surface) === nextHref
+  ) {
     // Nothing changed for keep-alive consumers — skip the epoch fan-out.
     followWarmKeepAliveUrl(nextHref, replace);
     rememberSectionEntryFromNav(nextHref);
@@ -442,6 +556,9 @@ export function listMountedKeepAliveSurfaces(): PendingPageSurface[] {
 export function resetKeepAliveForTests(): void {
   mountedKeepAliveSurfaces.clear();
   lastKeepAliveHref.clear();
+  lastHrefByTabId.clear();
+  activeProductTabId = null;
+  warmNavGeneration = 0;
   visibleKeepAliveSurface = null;
   outletTransitionPending = false;
   warmKeepAliveEpoch = 0;

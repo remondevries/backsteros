@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useNavigate } from "@tanstack/react-router";
 
 import {
@@ -25,8 +32,18 @@ import {
   setOpenRoomMeetingIds,
 } from "../lib/room-session-keep-alive";
 import { navigateToHref } from "../router/navigate-href";
-import { useShellLocation } from "../lib/shell-route-keep-alive";
+import {
+  syncWarmKeepAliveProductTabs,
+  useShellLocation,
+} from "../lib/shell-route-keep-alive";
 import { loadTabsState, TABS_STORAGE_KEY } from "./app-shell-tabs";
+
+function mirrorWarmKeepAliveTabs(state: ProductTabsState): void {
+  syncWarmKeepAliveProductTabs({
+    activeTabId: state.activeTabId,
+    tabs: state.tabs.map((tab) => ({ id: tab.id, href: tab.href })),
+  });
+}
 
 export function useShellTabs() {
   const location = useShellLocation();
@@ -168,6 +185,12 @@ export function useShellTabs() {
     );
   }, [tabsState.tabs]);
 
+  // Mirror product-tab bookmarks into the warm store before paint so same-
+  // surface tab switches (two Inbox tabs) restore each tab's own lastHref.
+  useLayoutEffect(() => {
+    mirrorWarmKeepAliveTabs(tabsState);
+  }, [tabsState]);
+
   useEffect(() => {
     const payload = JSON.stringify(tabsState);
     try {
@@ -220,9 +243,11 @@ export function useShellTabs() {
         pendingTabSwitchRef.current = { tabId, href: tab.href };
       }
 
-      // Set activeTabId synchronously (same turn as navigate) — do not defer
-      // with startTransition; that was the race that rewrote the wrong tab.
-      setTabsState((current) => activateProductTab(current, tabId));
+      // Mirror warm lastHref for the target tab BEFORE navigate — setState has
+      // not committed yet, and same-surface flips must not read the sibling tab.
+      const next = activateProductTab(tabsState, tabId);
+      mirrorWarmKeepAliveTabs(next);
+      setTabsState(next);
 
       if (needsNavigate) {
         navigateToHref(navigate, tab.href);
@@ -232,8 +257,7 @@ export function useShellTabs() {
       location.pathname,
       search,
       navigate,
-      tabsState.tabs,
-      tabsState.activeTabId,
+      tabsState,
     ],
   );
 
@@ -241,6 +265,9 @@ export function useShellTabs() {
     (tabId: string) => {
       setTabsState((current) => {
         const { state, navigateHref } = closeProductTab(current, tabId);
+        // Sync before the microtask navigate so the destination tab's lastHref
+        // is bound before tryWarmKeepAliveFlip runs.
+        mirrorWarmKeepAliveTabs(state);
         if (navigateHref != null) {
           // Closing active (or last) tab: arm pending so sync does not write
           // the destination onto a stale active id during the navigate.
@@ -258,19 +285,25 @@ export function useShellTabs() {
 
   /** Homepage: rewrite the active tab bookmark to Inbox and navigate there. */
   const goHome = useCallback(() => {
-    setTabsState((current) =>
-      syncActiveTabToPath(current, "/inbox", ""),
-    );
+    setTabsState((current) => {
+      const next = syncActiveTabToPath(current, "/inbox", "");
+      mirrorWarmKeepAliveTabs(next);
+      return next;
+    });
     navigateToHref(navigate, "/inbox");
   }, [navigate]);
 
   const openNewTab = useCallback(() => {
     const tab = createProductTab("/inbox");
     pendingTabSwitchRef.current = { tabId: tab.id, href: tab.href };
-    setTabsState((current) => ({
-      tabs: [...current.tabs, tab],
-      activeTabId: tab.id,
-    }));
+    setTabsState((current) => {
+      const next = {
+        tabs: [...current.tabs, tab],
+        activeTabId: tab.id,
+      };
+      mirrorWarmKeepAliveTabs(next);
+      return next;
+    });
     navigateToHref(navigate, tab.href);
   }, [navigate]);
 
@@ -281,10 +314,14 @@ export function useShellTabs() {
       );
       const tab = createProductTab(destination);
       pendingTabSwitchRef.current = { tabId: tab.id, href: tab.href };
-      setTabsState((current) => ({
-        tabs: [...current.tabs, tab],
-        activeTabId: tab.id,
-      }));
+      setTabsState((current) => {
+        const next = {
+          tabs: [...current.tabs, tab],
+          activeTabId: tab.id,
+        };
+        mirrorWarmKeepAliveTabs(next);
+        return next;
+      });
       navigateToHref(navigate, destination);
     },
     [navigate],
@@ -293,6 +330,7 @@ export function useShellTabs() {
   const activatePreviousTab = useCallback(() => {
     setTabsState((current) => {
       const { state, navigateHref } = cycleProductTab(current, -1);
+      mirrorWarmKeepAliveTabs(state);
       if (navigateHref != null) {
         pendingTabSwitchRef.current = {
           tabId: state.activeTabId,
@@ -307,6 +345,7 @@ export function useShellTabs() {
   const activateNextTab = useCallback(() => {
     setTabsState((current) => {
       const { state, navigateHref } = cycleProductTab(current, 1);
+      mirrorWarmKeepAliveTabs(state);
       if (navigateHref != null) {
         pendingTabSwitchRef.current = {
           tabId: state.activeTabId,

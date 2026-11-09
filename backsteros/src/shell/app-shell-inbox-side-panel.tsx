@@ -63,6 +63,8 @@ import {
 } from "../lib/inbox/inbox-open-after-removal";
 import { rememberSectionEntryHrefs } from "../lib/section-entry-store";
 import {
+  getWarmNavGeneration,
+  isWarmNavGenerationCurrent,
   useKeepAliveActive,
   useShellLocation,
 } from "../lib/shell-route-keep-alive";
@@ -265,12 +267,16 @@ export function DesktopInboxSidePanel({
     // re-navigate to openTarget (first row / mode seed) and yank content.
     if (!keepAliveActive) return;
     if (!openTarget) return;
+    // Capture tab-nav generation so a late open after switching away cannot
+    // rewrite the sibling Inbox/Messages tab's selection.
+    const generation = getWarmNavGeneration();
     if (
       lastOpenedHrefRef.current === openTarget.href &&
       inboxContentAlreadyShowsHref(openTarget.href)
     ) {
       return;
     }
+    if (!isWarmNavGenerationCurrent(generation)) return;
     lastOpenedHrefRef.current = openTarget.href;
     onNavigate(openTarget.href);
   }, [keepAliveActive, onNavigate, openTarget]);
@@ -288,6 +294,7 @@ export function DesktopInboxSidePanel({
     if (!keepAliveActive) return;
     const queued = consumeInboxOpenAfterRemoval();
     if (!queued) return;
+    const generation = getWarmNavGeneration();
     if (queued.itemId) {
       setMessagesHighlightedId(queued.itemId);
     }
@@ -297,6 +304,7 @@ export function DesktopInboxSidePanel({
     ) {
       return;
     }
+    if (!isWarmNavGenerationCurrent(generation)) return;
     lastOpenedHrefRef.current = queued.href;
     onNavigate(queued.href);
   }, [keepAliveActive, items, onNavigate, contentPathname]);
@@ -329,12 +337,14 @@ export function DesktopInboxSidePanel({
     const item = itemById.get(highlightedId);
     if (!item) return;
     const href = getInboxItemHref(item, items);
+    const generation = getWarmNavGeneration();
     if (
       lastOpenedHrefRef.current === href &&
       inboxContentAlreadyShowsHref(href)
     ) {
       return;
     }
+    if (!isWarmNavGenerationCurrent(generation)) return;
     lastOpenedHrefRef.current = href;
     onNavigate(href);
   }, [
