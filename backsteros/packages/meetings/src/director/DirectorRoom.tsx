@@ -933,7 +933,11 @@ export function DirectorRoom({
     });
   }
 
-  function selectPresentation(kind: PresentationKind) {
+  function selectPresentation(kind: PresentationKind | null) {
+    if (kind == null) {
+      closePresentation();
+      return;
+    }
     // Host prepare only — keep any live broadcast on the previous kind until
     // Broadcast replaces it (avoids guest flicker while switching tabs).
     setPresentationMode(true);

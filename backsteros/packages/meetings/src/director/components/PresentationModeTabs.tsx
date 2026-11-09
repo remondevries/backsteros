@@ -5,21 +5,29 @@ import {
   type PresentationKind,
 } from "../presentation";
 
+type PresentationToggleValue = PresentationKind | "none";
+
 type PresentationModeTabsProps = {
   selected: PresentationKind | null;
   broadcastKind: PresentationKind | null;
   focusedIndex: number;
-  onSelect: (kind: PresentationKind) => void;
+  onSelect: (kind: PresentationKind | null) => void;
 };
 
-const PRESENTATION_OPTIONS = PRESENTATION_KINDS.map((kind) => ({
-  value: kind,
-  label: PRESENTATION_LABELS[kind],
-}));
+const PRESENTATION_OPTIONS: ReadonlyArray<{
+  value: PresentationToggleValue;
+  label: string;
+}> = [
+  { value: "none", label: "None" },
+  ...PRESENTATION_KINDS.map((kind) => ({
+    value: kind,
+    label: PRESENTATION_LABELS[kind],
+  })),
+];
 
 /**
- * Local / Screenshare control — same SegmentedPillToggle used across the
- * desktop shell (Preview/Edit, list/board, etc.).
+ * None / Local / Screenshare — same SegmentedPillToggle used across the
+ * desktop shell. None is the default and clears presentation prepare.
  */
 export function PresentationModeTabs({
   selected,
@@ -27,9 +35,7 @@ export function PresentationModeTabs({
   focusedIndex,
   onSelect,
 }: PresentationModeTabsProps) {
-  // SegmentedPillToggle highlights by value match. When nothing is prepared,
-  // pass a non-option sentinel so neither segment reads as selected.
-  const value = (selected ?? "__none__") as PresentationKind;
+  const value: PresentationToggleValue = selected ?? "none";
 
   return (
     <div
@@ -41,7 +47,9 @@ export function PresentationModeTabs({
       <SegmentedPillToggle
         value={value}
         options={PRESENTATION_OPTIONS}
-        onChange={onSelect}
+        onChange={(next) => {
+          onSelect(next === "none" ? null : next);
+        }}
         ariaLabel="Presentation mode"
       />
     </div>
