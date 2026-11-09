@@ -171,6 +171,25 @@ export function canMintMeetingHostRoomToken(
   return false;
 }
 
+/**
+ * Choose the LiveKit identity key for a mint.
+ * Host: prefer explicit key, else owner user / Access key id (stable reconnect).
+ * Guest: only an explicit key (portal contact id, etc.). Never reuse the host
+ * owner id — that made every Bearer-local guest mint collide as guest-<userId>.
+ */
+export function resolveMeetingRoomParticipantKey(input: {
+  role: "host" | "guest";
+  participantKey?: string | null;
+  auth?: AuthContext | null;
+}): string | null {
+  const explicit = input.participantKey?.trim() || null;
+  if (explicit) return explicit;
+  if (input.role === "guest") return null;
+  const auth = input.auth;
+  if (!auth) return null;
+  return auth.userId?.trim() || auth.apiKeyId?.trim() || null;
+}
+
 function sanitizeParticipantKey(value: string): string {
   return value.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 48);
 }

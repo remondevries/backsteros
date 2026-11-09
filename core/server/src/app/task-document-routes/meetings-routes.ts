@@ -33,6 +33,7 @@ import {
   canMintMeetingHostRoomToken,
   LiveKitNotConfiguredError,
   mintMeetingLiveKitToken,
+  resolveMeetingRoomParticipantKey,
 } from "../../services/livekit-room-token.js";
 
 /** Meetings and meeting scheduling settings. */
@@ -307,11 +308,11 @@ export function registerMeetingsRoutes(app: Hono) {
         meetingId,
       );
       if (!meeting) return c.json(notFound("Meeting"), 404);
-      const participantKey =
-        body.participantKey?.trim() ||
-        auth.userId?.trim() ||
-        auth.apiKeyId?.trim() ||
-        null;
+      const participantKey = resolveMeetingRoomParticipantKey({
+        role,
+        participantKey: body.participantKey,
+        auth,
+      });
       try {
         const token = await mintMeetingLiveKitToken({
           meetingId: meeting.id,

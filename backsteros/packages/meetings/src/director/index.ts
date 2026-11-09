@@ -5,6 +5,8 @@ export {
   type GuestFeed,
   type GuestPhase,
 } from "./use-director-livekit";
+/** Prefer this facade — swap LiveKit → RealtimeKit behind it later. */
+export { useDirectorRoom } from "./use-director-room";
 export { usePresentationKeyboardNav } from "./use-presentation-keyboard-nav";
 export { useDirectorGoShortcuts } from "./use-director-go-shortcuts";
 export {
@@ -25,7 +27,11 @@ export {
 } from "./lib/host-meetings";
 export {
   connectHostRoom,
+  connectHostMeetingRoom,
   disconnectHostRoom,
+  disconnectHostMeetingRoom,
   enqueueHostLiveKitTask,
+  enqueueHostMeetingRoomTask,
   type ConnectHostRoomOptions,
+  type HostMeetingRoomSession,
 } from "./lib/host-livekit-session";

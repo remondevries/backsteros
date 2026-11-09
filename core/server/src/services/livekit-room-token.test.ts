@@ -10,6 +10,7 @@ import {
   mintMeetingLiveKitToken,
   parseDotenv,
   resolveLiveKitClientUrl,
+  resolveMeetingRoomParticipantKey,
   type LiveKitRoomConfig,
 } from "./livekit-room-token.js";
 
@@ -198,4 +199,52 @@ test("mintMeetingLiveKitToken guest identities stay unique under one room", asyn
   assert.equal(second.identity, "guest-g2");
   assert.notEqual(first.identity, second.identity);
   assert.equal(first.room, second.room);
+});
+
+test("resolveMeetingRoomParticipantKey keeps host stable and guests explicit-or-random", () => {
+  const owner = auth({ contactId: null, scopes: ["tasks:write", "settings:write"] });
+  assert.equal(
+    resolveMeetingRoomParticipantKey({
+      role: "host",
+      auth: owner,
+    }),
+    "user-1",
+  );
+  assert.equal(
+    resolveMeetingRoomParticipantKey({
+      role: "host",
+      participantKey: " explicit-host ",
+      auth: owner,
+    }),
+    "explicit-host",
+  );
+  assert.equal(
+    resolveMeetingRoomParticipantKey({
+      role: "guest",
+      auth: owner,
+    }),
+    null,
+  );
+  assert.equal(
+    resolveMeetingRoomParticipantKey({
+      role: "guest",
+      participantKey: "contact-9",
+      auth: owner,
+    }),
+    "contact-9",
+  );
+});
+
+test("guest mints without participantKey get unique random identities", async () => {
+  const first = await mintMeetingLiveKitToken(
+    { meetingId: "meeting-abc", role: "guest" },
+    config,
+  );
+  const second = await mintMeetingLiveKitToken(
+    { meetingId: "meeting-abc", role: "guest" },
+    config,
+  );
+  assert.match(first.identity, /^guest-[a-zA-Z0-9]+$/);
+  assert.match(second.identity, /^guest-[a-zA-Z0-9]+$/);
+  assert.notEqual(first.identity, second.identity);
 });

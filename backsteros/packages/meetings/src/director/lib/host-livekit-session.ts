@@ -6,7 +6,14 @@ import {
   type MeetingRoomCredentials,
 } from "../../room/index";
 
-/** Serializes all host LiveKit connect/teardown work (avoids overlapping rooms). */
+/**
+ * LiveKit `Room` is today’s host session object. A Cloudflare (etc.) adapter
+ * should return its own session type from {@link connectHostMeetingRoom} and
+ * keep Director on that facade — not on `livekit-client` imports.
+ */
+export type HostMeetingRoomSession = Room;
+
+/** Serializes all host connect/teardown work (avoids overlapping rooms). */
 let queue: Promise<unknown> = Promise.resolve();
 
 export function enqueueHostLiveKitTask<T>(task: () => Promise<T>): Promise<T> {
@@ -17,6 +24,9 @@ export function enqueueHostLiveKitTask<T>(task: () => Promise<T>): Promise<T> {
   );
   return run;
 }
+
+/** Provider-agnostic alias — same queue as {@link enqueueHostLiveKitTask}. */
+export const enqueueHostMeetingRoomTask = enqueueHostLiveKitTask;
 
 export async function disconnectHostRoom(room: Room | null): Promise<void> {
   if (!room) return;
@@ -136,3 +146,9 @@ export async function connectHostRoom(
     credentials,
   };
 }
+
+/** Provider-agnostic alias for {@link connectHostRoom}. */
+export const connectHostMeetingRoom = connectHostRoom;
+
+/** Provider-agnostic alias for {@link disconnectHostRoom}. */
+export const disconnectHostMeetingRoom = disconnectHostRoom;

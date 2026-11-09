@@ -46,10 +46,10 @@ import {
 import { Switch } from "./Switch";
 import { useDirectorGoShortcuts } from "./use-director-go-shortcuts";
 import {
-  useDirectorLiveKit,
+  useDirectorRoom,
   visitorNotice,
   type GuestFeed,
-} from "./use-director-livekit";
+} from "./use-director-room";
 import { usePresentationKeyboardNav } from "./use-presentation-keyboard-nav";
 
 const LOCALE = "en-GB";
@@ -495,7 +495,7 @@ export function DirectorRoom({
     viewportPreviewStream,
     startViewportStream,
     stopViewportStream,
-  } = useDirectorLiveKit({
+  } = useDirectorRoom({
       cameraOn: cameraTrackOn,
       cameraIntent: cameraOn,
       muted,

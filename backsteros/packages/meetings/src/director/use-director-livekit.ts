@@ -14,6 +14,11 @@ import {
 } from "livekit-client";
 import { usePresentationViewportStream } from "./hooks/use-presentation-viewport-stream";
 import {
+  encodeMeetingRoomDataMessage,
+  isMeetingRoomGuestIdentity,
+  MEETING_ROOM_ATTR,
+} from "../room/protocol";
+import {
   connectHostRoom,
   disconnectHostRoom,
   enqueueHostLiveKitTask,
@@ -38,7 +43,7 @@ export type GuestFeed = {
 };
 
 function isGuest(participant: RemoteParticipant): boolean {
-  return participant.identity.startsWith("guest-");
+  return isMeetingRoomGuestIdentity(participant.identity);
 }
 
 /** Avoid LiveKit re-attach — it resets the decoder and flickers the <video>. */
@@ -52,7 +57,7 @@ function attachCameraTrackIfNeeded(
 }
 
 function guestPhase(participant: RemoteParticipant): GuestPhase {
-  const phase = participant.attributes?.["bm.phase"];
+  const phase = participant.attributes?.[MEETING_ROOM_ATTR.phase];
   if (phase === "ready") return "ready";
   if (phase === "lobby") return "lobby";
   return "room";
@@ -444,7 +449,7 @@ export function useDirectorLiveKit({
             publication: TrackPublication,
             participant: Participant,
           ) {
-            if (!participant.identity.startsWith("guest-")) return;
+            if (!isMeetingRoomGuestIdentity(participant.identity)) return;
             if (
               publication.kind === Track.Kind.Video &&
               publication.source === Track.Source.Camera
@@ -457,7 +462,7 @@ export function useDirectorLiveKit({
             publication: TrackPublication,
             participant: Participant,
           ) {
-            if (!participant.identity.startsWith("guest-")) return;
+            if (!isMeetingRoomGuestIdentity(participant.identity)) return;
             if (
               publication.kind === Track.Kind.Video &&
               publication.source === Track.Source.Camera
@@ -478,7 +483,7 @@ export function useDirectorLiveKit({
             _changed: Record<string, string>,
             participant: RemoteParticipant | LocalParticipant,
           ) {
-            if (!participant.identity.startsWith("guest-")) return;
+            if (!isMeetingRoomGuestIdentity(participant.identity)) return;
             syncGuestFeeds(next);
           }
 
@@ -613,9 +618,10 @@ export function useDirectorLiveKit({
 
     async function publishCameraIntent() {
       try {
-        const payload = new TextEncoder().encode(
-          JSON.stringify({ type: "bm.camera", on: cameraIntent }),
-        );
+        const payload = encodeMeetingRoomDataMessage({
+          type: "bm.camera",
+          on: cameraIntent,
+        });
         await room!.localParticipant.publishData(payload, { reliable: true });
       } catch (dataErr) {
         if (cancelled) return;
@@ -626,7 +632,7 @@ export function useDirectorLiveKit({
       }
       try {
         await room!.localParticipant.setAttributes({
-          "bm.camera": cameraIntent ? "1" : "0",
+          [MEETING_ROOM_ATTR.camera]: cameraIntent ? "1" : "0",
         });
       } catch (attrErr) {
         if (cancelled) return;
@@ -855,7 +861,6 @@ export function useDirectorLiveKit({
       if (cancelled) return;
 
       const samples = new Float32Array(analyser.fftSize);
-      const encoder = new TextEncoder();
       let signalActive = false;
       let lastSignalAt = 0;
       localAudioMeterActiveRef.current = true;
@@ -875,9 +880,10 @@ export function useDirectorLiveKit({
           lastSignalAt = now;
           void room.localParticipant
             .publishData(
-              encoder.encode(
-                JSON.stringify({ type: "bm.audioSignal", level }),
-              ),
+              encodeMeetingRoomDataMessage({
+                type: "bm.audioSignal",
+                level,
+              }),
               { reliable: false },
             )
             .catch(() => undefined);
@@ -914,16 +920,14 @@ export function useDirectorLiveKit({
         const mode = getPresentationDeliveryMode(activePresentation);
         const url =
           on && mode === "iframe" ? (presentationUrl ?? "") : "";
-        const payload = new TextEncoder().encode(
-          JSON.stringify({
-            type: "bm.presentation",
-            on,
-            kind: activePresentation,
-            mode,
-            url: url || null,
-            viewport: viewportStreamPhase,
-          }),
-        );
+        const payload = encodeMeetingRoomDataMessage({
+          type: "bm.presentation",
+          on,
+          kind: activePresentation,
+          mode,
+          url: url || null,
+          viewport: viewportStreamPhase,
+        });
         await room!.localParticipant.publishData(payload, { reliable: true });
         try {
           await room!.localParticipant.setAttributes({
@@ -954,7 +958,7 @@ export function useDirectorLiveKit({
     void publishActivePresentation();
 
     function onGuestJoined(participant: RemoteParticipant) {
-      if (!participant.identity.startsWith("guest-")) return;
+      if (!isMeetingRoomGuestIdentity(participant.identity)) return;
       void publishActivePresentation();
     }
     room.on(RoomEvent.ParticipantConnected, onGuestJoined);
@@ -977,16 +981,14 @@ export function useDirectorLiveKit({
 
     async function publishStageTheme() {
       try {
-        const payload = new TextEncoder().encode(
-          JSON.stringify({
-            type: "bm.theme",
-            theme: stageTheme,
-          }),
-        );
+        const payload = encodeMeetingRoomDataMessage({
+          type: "bm.theme",
+          theme: stageTheme,
+        });
         await room!.localParticipant.publishData(payload, { reliable: true });
         try {
           await room!.localParticipant.setAttributes({
-            "bm.theme": stageTheme,
+            [MEETING_ROOM_ATTR.theme]: stageTheme,
           });
         } catch (attrErr) {
           console.log(
@@ -1004,7 +1006,7 @@ export function useDirectorLiveKit({
     void publishStageTheme();
 
     function onGuestJoined(participant: RemoteParticipant) {
-      if (!participant.identity.startsWith("guest-")) return;
+      if (!isMeetingRoomGuestIdentity(participant.identity)) return;
       void publishStageTheme();
     }
     room.on(RoomEvent.ParticipantConnected, onGuestJoined);
@@ -1022,16 +1024,14 @@ export function useDirectorLiveKit({
 
     async function publishRoomOpen() {
       try {
-        const payload = new TextEncoder().encode(
-          JSON.stringify({
-            type: "bm.roomOpen",
-            open: roomOpen,
-          }),
-        );
+        const payload = encodeMeetingRoomDataMessage({
+          type: "bm.roomOpen",
+          open: roomOpen,
+        });
         await room!.localParticipant.publishData(payload, { reliable: true });
         try {
           await room!.localParticipant.setAttributes({
-            "bm.roomOpen": roomOpen ? "1" : "0",
+            [MEETING_ROOM_ATTR.roomOpen]: roomOpen ? "1" : "0",
           });
         } catch (attrErr) {
           console.log(
@@ -1049,7 +1049,7 @@ export function useDirectorLiveKit({
     void publishRoomOpen();
 
     function onGuestJoined(participant: RemoteParticipant) {
-      if (!participant.identity.startsWith("guest-")) return;
+      if (!isMeetingRoomGuestIdentity(participant.identity)) return;
       void publishRoomOpen();
     }
     room.on(RoomEvent.ParticipantConnected, onGuestJoined);

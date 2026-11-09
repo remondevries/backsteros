@@ -2,6 +2,15 @@
  * Media-backend-agnostic meeting room types.
  * LiveKit is the current provider; Cloudflare RealtimeKit (etc.) can implement
  * the same {@link MeetingRoomMediaProvider} later without rewriting Director UI.
+ *
+ * Swap path for a new provider:
+ * 1. Implement {@link MeetingRoomMediaProvider#fetchCredentials} (or map core’s
+ *    `provider` field when core mints RealtimeKit tokens).
+ * 2. Register it with {@link setMeetingRoomMediaProvider}.
+ * 3. Replace the LiveKit session behind `useDirectorRoom` /
+ *    `connectHostMeetingRoom` — keep {@link DirectorRoom} on the facade only.
+ * 4. Keep {@link ./protocol.ts} message/attribute names stable so the portal
+ *    guest path does not change.
  */
 
 export type MeetingRoomProviderId = "livekit";
@@ -15,7 +24,7 @@ export type MeetingRoomCredentials = {
   /** SFU room name — always the BacksterOS meeting id. */
   room: string;
   meetingId: string;
-  /** LiveKit participant identity (unique per concurrent join). */
+  /** Participant identity (unique per concurrent join). */
   identity?: string;
   provider: MeetingRoomProviderId;
 };
@@ -32,8 +41,9 @@ export type FetchMeetingRoomTokenOptions = {
 };
 
 /**
- * Thin session surface Director tools depend on. Swap the LiveKit adapter
- * for another media backend without changing presentation / lobby UI.
+ * Credentials + connect entry for the active media backend.
+ * Session control (publish tracks, data channel) still lives in the Director
+ * LiveKit hook until a RealtimeKit adapter lands — see package report / index.
  */
 export type MeetingRoomMediaProvider = {
   readonly id: MeetingRoomProviderId;
