@@ -141,6 +141,22 @@ export const meetingsHabitsRoutes: AppRouter = c.router({
     },
     summary: "Delete a meeting",
   },
+  createMeetingRoomToken: {
+    method: "POST",
+    path: "/api/v1/meetings/:id/room-token",
+    pathParams: s.idParamsSchema,
+    body: s.createMeetingRoomTokenBodySchema,
+    responses: {
+      200: s.meetingRoomTokenSchema,
+      400: badRequestSchema,
+      401: errorSchema,
+      403: errorSchema,
+      404: errorSchema,
+      503: errorSchema,
+    },
+    summary:
+      "Mint a join token for the meeting room (room name = meeting id; secrets stay on core)",
+  },
   getWhoopDay: {
     method: "GET",
     path: "/api/v1/whoop/day",

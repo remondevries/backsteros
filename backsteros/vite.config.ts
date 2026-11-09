@@ -187,6 +187,17 @@ export default defineConfig(async ({ command }) => {
         find: /^@backsteros\/ui$/,
         replacement: path.resolve(__dirname, "packages/ui/src/index.ts"),
       },
+      {
+        find: "@backsteros/meetings/director.css",
+        replacement: path.resolve(
+          __dirname,
+          "packages/meetings/src/director/styles/director.css",
+        ),
+      },
+      {
+        find: /^@backsteros\/meetings$/,
+        replacement: path.resolve(__dirname, "packages/meetings/src/index.ts"),
+      },
     ],
   },
 

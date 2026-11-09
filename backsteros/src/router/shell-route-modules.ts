@@ -116,6 +116,11 @@ export const meetingDetailPage = createSharedLazyPage(
   () => import("../screens/meeting-detail-page"),
   "MeetingDetailPage",
 );
+/** Not warmed with the shell — LiveKit/Director load only when a room tab opens. */
+export const meetingRoomPage = createSharedLazyPage(
+  () => import("../screens/meeting-room-page"),
+  "MeetingRoomPage",
+);
 export const taskDetailPage = createSharedLazyPage(
   () => import("../screens/task-detail-page"),
   "TaskDetailPage",

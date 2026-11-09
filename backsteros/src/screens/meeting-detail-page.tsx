@@ -19,6 +19,7 @@ import {
   useDesktopWorkspacePeople,
   useDesktopWorkspaceProjects,
 } from "../lib/workspace-data";
+import { requestOpenHrefInNewTab } from "../lib/open-href-in-new-tab";
 import { navigateToHref } from "../router/navigate-href";
 
 export type MeetingDetailPageProps = {
@@ -115,6 +116,13 @@ export function MeetingDetailPage({
   );
   const meetingContactNavigation = useMeetingContactNavigation(contacts);
 
+  const handleStartRoom = useCallback(() => {
+    if (!meeting) return;
+    requestOpenHrefInNewTab(
+      `/calendar/meetings/${encodeURIComponent(meeting.id)}/room`,
+    );
+  }, [meeting]);
+
   const handleDeleteMeeting = useCallback(async () => {
     if (!meeting) {
       return { ok: false as const, error: "Meeting is required." };
@@ -175,6 +183,7 @@ export function MeetingDetailPage({
         {...detailProps}
         {...meetingEmailActions}
         {...meetingContactNavigation}
+        onStartRoom={handleStartRoom}
       />
     </div>
   );

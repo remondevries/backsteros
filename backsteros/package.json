@@ -32,8 +32,10 @@
   "dependencies": {
     "@backsteros/api-client": "workspace:*",
     "@backsteros/contracts": "workspace:*",
+    "@backsteros/meetings": "workspace:*",
     "@backsteros/powersync-schema": "workspace:*",
     "@backsteros/ui": "workspace:*",
+    "livekit-client": "^2.22.3",
     "@briangaoo/totem": "git+https://github.com/briangaoo/totem.git#586ee89d0ec8f8ba4a142c824ecaeea7faaa200b",
     "@journeyapps/wa-sqlite": "^1.7.2",
     "@legendapp/list": "3.2.0",

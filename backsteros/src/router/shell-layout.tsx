@@ -51,6 +51,7 @@ import {
   knowledgePage,
   lettersPage,
   meetingDetailPage,
+  meetingRoomPage,
   navigationTrailPage,
   notFoundPage,
   organizationsPage,
@@ -90,6 +91,7 @@ const CalendarPage = calendarPage.Page;
 const CommunicationPage = communicationPage.Page;
 const ChatUiDevPage = chatUiDevPage.Page;
 const MeetingDetailPage = meetingDetailPage.Page;
+const MeetingRoomPage = meetingRoomPage.Page;
 const TaskDetailPage = taskDetailPage.Page;
 const InboxPage = inboxPage.Page;
 const TaskListPage = taskListPage.Page;
@@ -586,6 +588,7 @@ export {
   KnowledgePage,
   LettersPage,
   MeetingDetailPage,
+  MeetingRoomPage,
   NotFoundPage,
   OrganizationsPage,
   ProjectsPage,

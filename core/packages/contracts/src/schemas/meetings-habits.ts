@@ -274,6 +274,31 @@ export type CreateMeetingInput = z.infer<typeof createMeetingSchema>;
 
 export type UpdateMeetingInput = z.infer<typeof updateMeetingSchema>;
 
+/**
+ * Join credentials for a live meeting room (LiveKit today; media backend may change).
+ * Room name is always the meeting id. Minted only by core — never by the client.
+ */
+export const meetingRoomTokenSchema = z.object({
+  token: z.string().min(1),
+  url: z.string().min(1),
+  room: z.string().min(1),
+  meetingId: z.string().min(1),
+  /** Media backend id so clients can branch if RealtimeKit (etc.) replaces LiveKit. */
+  provider: z.literal("livekit").default("livekit"),
+});
+
+export type MeetingRoomToken = z.infer<typeof meetingRoomTokenSchema>;
+
+export const createMeetingRoomTokenBodySchema = z.object({
+  /** Host (Director) vs guest identity; default host. */
+  role: z.enum(["host", "guest"]).optional(),
+  displayName: z.string().trim().min(1).max(120).optional(),
+});
+
+export type CreateMeetingRoomTokenBody = z.infer<
+  typeof createMeetingRoomTokenBodySchema
+>;
+
 export const meetingWeekdayHoursSlotSchema = z.object({
   start: z.string().min(1).max(8),
   end: z.string().min(1).max(8),

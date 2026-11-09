@@ -98,6 +98,7 @@ import {
   resetEmailComposeSession,
   writeEmailComposeSession,
 } from "../lib/email-compose-session";
+import { requestOpenHrefInNewTab } from "../lib/open-href-in-new-tab";
 import { navigateToHref } from "../router/navigate-href";
 import { TaskDetailPage } from "./task-detail-page";
 import { CalendarGridPane } from "./calendar/calendar-grid-pane";
@@ -930,6 +931,12 @@ function CalendarPageBody() {
   const meetingContactNavigation = useMeetingContactNavigation(
     workspace.contacts,
   );
+  const handleStartRoom = useCallback(() => {
+    if (!meeting) return;
+    requestOpenHrefInNewTab(
+      `/calendar/meetings/${encodeURIComponent(meeting.id)}/room`,
+    );
+  }, [meeting]);
 
   const discardMeetingDraft = useCallback(() => {
     setMeetingDraft(null);
@@ -1689,6 +1696,7 @@ function CalendarPageBody() {
                 {...activeMeetingDetailProps}
                 {...meetingEmailActions}
                 {...meetingContactNavigation}
+                onStartRoom={meetingDraft ? undefined : handleStartRoom}
               />
               <CalendarTaskDetailOverlay
                 open={Boolean(
@@ -1745,6 +1753,7 @@ function CalendarPageBody() {
         {...meetingDetailProps}
         {...meetingEmailActions}
         {...meetingContactNavigation}
+        onStartRoom={handleStartRoom}
         headerMoreAction={<EntityHeaderActionsSlot />}
       />
       <CalendarTaskDetailOverlay

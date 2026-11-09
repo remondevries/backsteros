@@ -141,6 +141,10 @@ export function getTabTitleForHref(href: string): string {
     return "Calendar";
   }
 
+  if (/^\/calendar\/meetings\/[^/]+\/room$/.test(normalized)) {
+    return "Meeting room";
+  }
+
   // Keep the Messages section label for conversation / email rows — opaque
   // ids like `email:…` used to flash the generic "Page" tab title.
   if (

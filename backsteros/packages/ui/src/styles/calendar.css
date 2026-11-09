@@ -2184,6 +2184,28 @@ html.is-calendar-month-event-dragging .fc-event-dragging:not(.calendar-month-eve
   background: rgb(255 255 255 / 0.06);
 }
 
+.meeting-detail-view__start-room {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin-left: 8px;
+  padding: 5px 10px;
+  border: 1px solid color-mix(in srgb, var(--foreground) 18%, transparent);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--foreground);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 550;
+  line-height: 1.2;
+  cursor: pointer;
+}
+
+.meeting-detail-view__start-room:hover {
+  background: rgb(255 255 255 / 0.06);
+}
+
 .meeting-properties-stacked {
   display: flex;
   flex-direction: column;

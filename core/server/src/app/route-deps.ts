@@ -19,6 +19,7 @@ export {
   createEmailThreadCommentSchema,
   createHabitSchema,
   createMeetingSchema,
+  createMeetingRoomTokenBodySchema,
   createPortalContactLogSchema,
   createProjectSchema,
   createProjectUpdateSchema,

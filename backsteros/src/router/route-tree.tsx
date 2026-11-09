@@ -21,6 +21,7 @@ import {
   CalendarPage,
   CalendarScopedMeetingDetailPage,
   CalendarScopedTaskDetailPage,
+  MeetingRoomPage,
   ChatUiDevPage,
   CommunicationPage,
   ContactScopedLetterPage,
@@ -345,6 +346,16 @@ const calendarTaskDetailRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: "calendar/tasks/$taskId",
   component: CalendarScopedTaskDetailPage,
+});
+
+const calendarMeetingRoomRoute = createRoute({
+  getParentRoute: () => shellRoute,
+  path: "calendar/meetings/$meetingId/room",
+  component: () => (
+    <LazyRoute>
+      <MeetingRoomPage />
+    </LazyRoute>
+  ),
 });
 
 const calendarMeetingDetailRoute = createRoute({
@@ -936,6 +947,7 @@ export const routeTree = rootRoute.addChildren([
     tasksDetailRoute,
     calendarRoute,
     calendarTaskDetailRoute,
+    calendarMeetingRoomRoute,
     calendarMeetingDetailRoute,
     areasRoute,
     projectsRoute,

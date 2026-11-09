@@ -193,6 +193,8 @@ export type MeetingDetailViewProps = {
   onFormatChange?: (format: MeetingFormat) => void;
   /** Extra action(s) rendered to the left of the close button (e.g. ⋯ menu). */
   headerMoreAction?: ReactNode;
+  /** Open the in-app Director room for this meeting (new product tab). */
+  onStartRoom?: () => void;
   onSummaryChange: (summary: string) => void;
   onNotesChange: (notes: string) => void;
   onTranscriptionChange: (transcription: string) => void;
@@ -280,6 +282,7 @@ export function MeetingDetailView({
   onExpand,
   onCollapse,
   headerMoreAction: _headerMoreAction,
+  onStartRoom,
 }: MeetingDetailViewProps) {
   const [uncontrolledTab, setUncontrolledTab] =
     useState<MeetingContentTab>("summary");
@@ -438,6 +441,17 @@ export function MeetingDetailView({
     />
   );
 
+  const startRoomAction =
+    onStartRoom != null && isVideoCall ? (
+      <button
+        type="button"
+        className="meeting-detail-view__start-room"
+        onClick={onStartRoom}
+      >
+        Start room
+      </button>
+    ) : null;
+
   const layoutAction =
     onExpand != null ? (
       <button
@@ -558,6 +572,7 @@ export function MeetingDetailView({
                   <p className="content-detail-display-id">{displayId}</p>
                   {titleEditor}
                   {formatToggle}
+                  {startRoomAction}
                 </ContentDetailTitleHeader>
                 <div className="meeting-detail-view__content meeting-detail-view__content--page">
                   {contentTabNav}
@@ -585,6 +600,7 @@ export function MeetingDetailView({
     >
       <header className="meeting-detail-view__header">
         {formatToggle}
+        {startRoomAction}
         <div className="meeting-detail-view__title-row">
           <div className="meeting-detail-view__title">{titleEditor}</div>
           {closeAction ? (

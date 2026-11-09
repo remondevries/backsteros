@@ -5,6 +5,7 @@ import {
   can,
   collectQueryParams,
   commitRestEntityWrite,
+  createMeetingRoomTokenBodySchema,
   createMeetingSchema,
   forbidden,
   getAuth,
@@ -28,6 +29,10 @@ import {
   zValidator,
 } from "../route-deps.js";
 import type { Hono } from "../route-deps.js";
+import {
+  LiveKitNotConfiguredError,
+  mintMeetingLiveKitToken,
+} from "../../services/livekit-room-token.js";
 
 /** Meetings and meeting scheduling settings. */
 export function registerMeetingsRoutes(app: Hono) {
@@ -264,6 +269,43 @@ export function registerMeetingsRoutes(app: Hono) {
               },
             },
             400,
+          );
+        }
+        throw error;
+      }
+    },
+  );
+
+  app.post(
+    "/api/v1/meetings/:id/room-token",
+    zValidator("json", createMeetingRoomTokenBodySchema),
+    async (c) => {
+      const auth = getAuth(c);
+      if (!can(auth, "tasks:read")) return c.json(forbidden(), 403);
+      const meetingId = c.req.param("id");
+      const meeting = await meetingService.getMeetingById(
+        auth.workspaceId,
+        meetingId,
+      );
+      if (!meeting) return c.json(notFound("Meeting"), 404);
+      const body = c.req.valid("json");
+      try {
+        const token = await mintMeetingLiveKitToken({
+          meetingId: meeting.id,
+          role: body.role,
+          displayName: body.displayName,
+        });
+        return c.json(token);
+      } catch (error) {
+        if (error instanceof LiveKitNotConfiguredError) {
+          return c.json(
+            {
+              error: {
+                code: error.code,
+                message: error.message,
+              },
+            },
+            503,
           );
         }
         throw error;

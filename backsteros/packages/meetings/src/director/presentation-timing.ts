@@ -1,0 +1,2 @@
+export const PRESENTATION_SWAP_OUT_MS = 120;
+export const PRESENTATION_SWAP_IN_MS = 140;

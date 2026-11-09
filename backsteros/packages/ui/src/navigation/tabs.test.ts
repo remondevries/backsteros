@@ -8,6 +8,7 @@ import {
   createDefaultTabsState,
   createProductTab,
   cycleProductTab,
+  getTabTitleForHref,
   refreshOpenTabTaskStatuses,
   syncActiveTabTaskMeta,
   syncActiveTabToPath,
@@ -241,5 +242,14 @@ describe("refreshOpenTabTaskStatuses", () => {
     );
     assert.equal(next.tabs[0]?.taskStatus, "completed");
     assert.equal(next.tabs[1]?.taskStatus, "in_progress");
+  });
+});
+
+describe("getTabTitleForHref", () => {
+  test("labels the meeting Director room route", () => {
+    assert.equal(
+      getTabTitleForHref("/calendar/meetings/abc-uuid/room"),
+      "Meeting room",
+    );
   });
 });
