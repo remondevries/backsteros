@@ -793,6 +793,13 @@ export const listExternalCalendarEventsResponseSchema = z.object({
   events: z.array(externalCalendarEventSchema),
 });
 
+export const deleteExternalCalendarEventResultSchema = z.object({
+  id: z.string(),
+  provider: z.string(),
+  remoteDeleted: z.boolean(),
+  deletedMeetingIds: z.array(z.string()),
+});
+
 /** GitHub integration (workspace PAT; optional Clerk OAuth still supported). */
 export const githubSettingsSchema = z.object({
   apiTokenConfigured: z.boolean(),
@@ -1378,6 +1385,10 @@ export type GoogleCalendarSyncResult = z.infer<
 >;
 
 export type ExternalCalendarEvent = z.infer<typeof externalCalendarEventSchema>;
+
+export type DeleteExternalCalendarEventResult = z.infer<
+  typeof deleteExternalCalendarEventResultSchema
+>;
 
 export type ListExternalCalendarEventsQuery = z.infer<
   typeof listExternalCalendarEventsQuerySchema

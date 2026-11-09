@@ -174,6 +174,11 @@ export type CalendarViewProps = {
     event: CalendarExternalPopoverEvent,
   ) => void | Promise<void>;
   attachingExternalNotes?: boolean;
+  /** Delete a Google (etc.) agenda block from the remote calendar. */
+  onDeleteExternalEvent?: (
+    event: CalendarExternalPopoverEvent,
+  ) => void | Promise<void>;
+  deletingExternalEvent?: boolean;
   /** Habit day tasks keyed by local `YYYY-MM-DD` (shown above each day's events). */
   dayHabitsByDate?: ReadonlyMap<string, readonly CalendarHabitIconItem[]>;
   onToggleDayHabit?: (
@@ -218,6 +223,8 @@ export function CalendarView({
   onMeetingOpen,
   onAttachExternalNotes,
   attachingExternalNotes = false,
+  onDeleteExternalEvent,
+  deletingExternalEvent = false,
   dayHabitsByDate,
   onToggleDayHabit,
   viewMode: controlledViewMode,
@@ -2110,7 +2117,9 @@ export function CalendarView({
         anchorRect={openExternalPopover?.anchorRect ?? null}
         onClose={() => setOpenExternalPopover(null)}
         attaching={attachingExternalNotes}
+        deleting={deletingExternalEvent}
         onAttachNotes={onAttachExternalNotes}
+        onDelete={onDeleteExternalEvent}
         onOpenNotes={onMeetingOpen}
       />
     </div>

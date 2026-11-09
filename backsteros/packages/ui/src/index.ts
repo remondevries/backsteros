@@ -1629,6 +1629,12 @@ export {
 } from "./components/meetings/meeting-detail-view.js";
 
 export {
+  MeetingRoomLinkCopy,
+  shouldShowMeetingRoomLinkCopy,
+  type MeetingRoomLinkCopyProps,
+} from "./components/meetings/meeting-room-link-copy.js";
+
+export {
   MEETING_BASE_CONTENT_TAB_ORDER,
   MEETING_CONTENT_TAB_ORDER,
   MEETING_DETAILS_TAB,

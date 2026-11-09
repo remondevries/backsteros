@@ -34,7 +34,10 @@ import type { ReactNode } from "react";
 export type MeetingPropertiesStackedProps = Omit<
   MeetingPropertiesInlineChipsProps,
   "triggerVariant"
->;
+> & {
+  /** Optional control beside the tracked-time pill (e.g. Start room). */
+  timerTrailing?: ReactNode;
+};
 
 function resolveOrganizationTriggerIcon(
   organizationId: string | null | undefined,
@@ -109,6 +112,7 @@ export function MeetingPropertiesStacked({
   onCreateOrganizationFromQuery,
   onCreateContactFromQuery,
   timerSession = null,
+  timerTrailing = null,
 }: MeetingPropertiesStackedProps) {
   const {
     disabled,
@@ -151,6 +155,7 @@ export function MeetingPropertiesStacked({
           onTrackedDurationSecondsChange={onTrackedDurationSecondsChange}
           timerSession={timerSession}
         />
+        {timerTrailing}
       </div>
 
       <EntityPropertiesSection title="Properties">

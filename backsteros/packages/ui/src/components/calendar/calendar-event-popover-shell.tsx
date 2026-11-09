@@ -120,6 +120,8 @@ export function useCalendarEventPopoverPosition({
       const target = event.target;
       if (!(target instanceof Element)) return;
       if (panelRef.current?.contains(target)) return;
+      // Portaled overflow menus (⋯) belong to this popover — keep it open.
+      if (target.closest("[data-entity-header-action-menu]")) return;
       // Don't close on mousedown over a calendar event — that swallows the
       // subsequent click that should open/toggle the popover.
       if (

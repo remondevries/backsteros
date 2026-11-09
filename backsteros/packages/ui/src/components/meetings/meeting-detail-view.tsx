@@ -36,6 +36,10 @@ import {
 } from "./meeting-properties-stacked.js";
 import { MeetingPortalEmailActions } from "./meeting-portal-email-actions.js";
 import {
+  MeetingRoomLinkCopy,
+  shouldShowMeetingRoomLinkCopy,
+} from "./meeting-room-link-copy.js";
+import {
   MeetingPropertiesInlineChips,
   type MeetingPropertiesInlineChipsProps,
 } from "./meeting-properties-inline-chips.js";
@@ -195,6 +199,11 @@ export type MeetingDetailViewProps = {
   headerMoreAction?: ReactNode;
   /** Open the in-app Director room for this meeting (new product tab). */
   onStartRoom?: () => void;
+  /**
+   * Guest portal lobby URL for video-call meetings. When set, Details shows
+   * a copy-to-clipboard control for the shareable room link.
+   */
+  roomGuestUrl?: string | null;
   onSummaryChange: (summary: string) => void;
   onNotesChange: (notes: string) => void;
   onTranscriptionChange: (transcription: string) => void;
@@ -283,6 +292,7 @@ export function MeetingDetailView({
   onCollapse,
   headerMoreAction: _headerMoreAction,
   onStartRoom,
+  roomGuestUrl,
 }: MeetingDetailViewProps) {
   const [uncontrolledTab, setUncontrolledTab] =
     useState<MeetingContentTab>("summary");
@@ -488,15 +498,20 @@ export function MeetingDetailView({
       aria-label={tabAriaLabel}
     >
       {activeTab === MEETING_DETAILS_TAB ? (
-        <MeetingPortalEmailActions
-          attendeeContactIds={meeting?.attendeeContactIds ?? []}
-          attendeePortalEmails={meeting?.attendeePortalEmails}
-          attendeeOptions={contactOptions ?? []}
-          onSendInvite={onSendMeetingInvite}
-          onSendReminder={onSendMeetingReminder}
-          resolveContactHref={resolveContactHref}
-          onNavigateHref={onNavigateHref}
-        />
+        <div className="meeting-detail-view__details">
+          {shouldShowMeetingRoomLinkCopy(roomGuestUrl) ? (
+            <MeetingRoomLinkCopy url={(roomGuestUrl ?? "").trim()} />
+          ) : null}
+          <MeetingPortalEmailActions
+            attendeeContactIds={meeting?.attendeeContactIds ?? []}
+            attendeePortalEmails={meeting?.attendeePortalEmails}
+            attendeeOptions={contactOptions ?? []}
+            onSendInvite={onSendMeetingInvite}
+            onSendReminder={onSendMeetingReminder}
+            resolveContactHref={resolveContactHref}
+            onNavigateHref={onNavigateHref}
+          />
+        </div>
       ) : (
         <MeetingContentTabEditor
           key={activeTab}
@@ -572,7 +587,6 @@ export function MeetingDetailView({
                   <p className="content-detail-display-id">{displayId}</p>
                   {titleEditor}
                   {formatToggle}
-                  {startRoomAction}
                 </ContentDetailTitleHeader>
                 <div className="meeting-detail-view__content meeting-detail-view__content--page">
                   {contentTabNav}
@@ -582,7 +596,12 @@ export function MeetingDetailView({
               </div>
             </div>
           }
-          properties={<MeetingPropertiesStacked {...propertiesProps} />}
+          properties={
+            <MeetingPropertiesStacked
+              {...propertiesProps}
+              timerTrailing={startRoomAction}
+            />
+          }
           dock={
             dockToggle ? (
               <FloatingPillToggleDock>{dockToggle}</FloatingPillToggleDock>
@@ -599,8 +618,10 @@ export function MeetingDetailView({
       data-meeting-detail-layout="panel"
     >
       <header className="meeting-detail-view__header">
-        {formatToggle}
-        {startRoomAction}
+        <div className="meeting-detail-view__format-row">
+          {formatToggle}
+          {startRoomAction}
+        </div>
         <div className="meeting-detail-view__title-row">
           <div className="meeting-detail-view__title">{titleEditor}</div>
           {closeAction ? (

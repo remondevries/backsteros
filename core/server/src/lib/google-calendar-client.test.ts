@@ -1,13 +1,18 @@
 import assert from "node:assert/strict";
-import { describe, it } from "node:test";
+import { afterEach, describe, it, mock } from "node:test";
 
 import {
   buildGoogleAuthorizeUrl,
   externalCalendarEventId,
+  GoogleCalendarClient,
   GOOGLE_CALENDAR_OAUTH_SCOPES,
 } from "./google-calendar-client.js";
 
 describe("google-calendar-client", () => {
+  afterEach(() => {
+    mock.restoreAll();
+  });
+
   it("builds an authorize URL with offline consent", () => {
     const url = new URL(
       buildGoogleAuthorizeUrl({
@@ -48,5 +53,33 @@ describe("google-calendar-client", () => {
     assert.equal(a, b);
     assert.notEqual(a, c);
     assert.equal(a.length, 21);
+  });
+
+  it("deleteEvent treats 404 and 410 as success", async () => {
+    const statuses = [204, 404, 410];
+    for (const status of statuses) {
+      mock.method(globalThis, "fetch", async () => new Response(null, { status }));
+      const client = new GoogleCalendarClient("token");
+      await assert.doesNotReject(() =>
+        client.deleteEvent({ calendarId: "primary", eventId: "evt-1" }),
+      );
+      mock.restoreAll();
+    }
+  });
+
+  it("deleteEvent throws on unexpected Google errors", async () => {
+    mock.method(
+      globalThis,
+      "fetch",
+      async () =>
+        new Response(JSON.stringify({ error: { message: "quota" } }), {
+          status: 403,
+        }),
+    );
+    const client = new GoogleCalendarClient("token");
+    await assert.rejects(
+      () => client.deleteEvent({ calendarId: "primary", eventId: "evt-1" }),
+      /quota/,
+    );
   });
 });

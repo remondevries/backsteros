@@ -34,7 +34,11 @@ import {
   mapboxStaticMapQuerySchema,
   moneybirdSettingsService,
   bunqSandboxFundSchema,
+  notFound,
   provisionBunqSandboxUserSchema,
+  publishMeetingLive,
+  recordMeetingDerivedCrmActivityRestSyncEvents,
+  recordMeetingRestSyncEvent,
   recordWorkspaceSettingRestSyncEvent,
   sanitizeWorkspaceSettings,
   testCursorConnection,
@@ -663,6 +667,47 @@ export function registerSettingsRoutes(app: Hono) {
         parsed.data,
       ),
     });
+  });
+  app.delete("/api/v1/external-calendar-events/:id", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "tasks:write") && !can(auth, "settings:write")) {
+      return c.json(forbidden(), 403);
+    }
+    try {
+      const result =
+        await googleCalendarSettingsService.deleteExternalCalendarEvent(
+          auth.workspaceId,
+          c.req.param("id"),
+        );
+      if (!result) return c.json(notFound("External calendar event"), 404);
+      for (const meeting of result.deletedMeetings) {
+        await recordMeetingRestSyncEvent(
+          auth.workspaceId,
+          meeting,
+          "delete",
+        );
+        await recordMeetingDerivedCrmActivityRestSyncEvents(
+          auth.workspaceId,
+          meeting.id,
+        );
+        publishMeetingLive(auth, meeting.id, {
+          projectId: meeting.projectId ?? null,
+          operation: "delete",
+        });
+      }
+      return c.json({
+        id: result.id,
+        provider: result.provider,
+        remoteDeleted: result.remoteDeleted,
+        deletedMeetingIds: result.deletedMeetings.map((row) => row.id),
+      });
+    } catch (error) {
+      const message =
+        error instanceof GoogleCalendarApiError || error instanceof Error
+          ? error.message
+          : "Could not delete external calendar event";
+      return c.json({ error: message, code: "bad_request" }, 400);
+    }
   });
   app.get("/api/v1/settings/transip", async (c) => {
     const auth = getAuth(c);

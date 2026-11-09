@@ -10,7 +10,7 @@ export function shouldShowDevCoreBadge(input: {
 }): { show: boolean; port: string | null } {
   if (!input.viteDev) return { show: false, port: null };
   if (!isLocalDevApiUrl(input.apiUrl)) return { show: false, port: null };
-  let port = "?";
+  let port: string;
   try {
     port = new URL(input.apiUrl).port || "80";
   } catch {

@@ -33,6 +33,7 @@ import {
   googleCalendarWebhookUrl,
   resolveGoogleCalendarWebhookBaseUrl,
 } from "../lib/google-calendar-webhook-url.js";
+import { softDeleteMeetingCrmActivities } from "./crm-activities.js";
 import { previewCursorApiKey } from "./cursor-settings.js";
 
 export {
@@ -1179,6 +1180,97 @@ export async function pushLinkedMeetingScheduleToGoogle(
       updatedAt: new Date(),
     })
     .where(eq(externalCalendarEvents.id, external.id));
+}
+
+export type DeleteExternalCalendarEventResult = {
+  id: string;
+  provider: string;
+  remoteDeleted: boolean;
+  deletedMeetings: (typeof meetings.$inferSelect)[];
+};
+
+/**
+ * Remove a synced external calendar event from Google (when applicable) and
+ * soft-delete the local row. Soft-deletes any linked Backster meetings so the
+ * agenda stays consistent.
+ */
+export async function deleteExternalCalendarEvent(
+  workspaceId: string,
+  eventId: string,
+): Promise<DeleteExternalCalendarEventResult | null> {
+  const trimmedId = eventId.trim();
+  if (!trimmedId) return null;
+
+  const [external] = await db
+    .select()
+    .from(externalCalendarEvents)
+    .where(
+      and(
+        eq(externalCalendarEvents.id, trimmedId),
+        eq(externalCalendarEvents.workspaceId, workspaceId),
+        isNull(externalCalendarEvents.deletedAt),
+      ),
+    )
+    .limit(1);
+  if (!external) return null;
+
+  const linkedMeetings = await db
+    .select()
+    .from(meetings)
+    .where(
+      and(
+        eq(meetings.workspaceId, workspaceId),
+        eq(meetings.externalCalendarEventId, external.id),
+        isNull(meetings.deletedAt),
+      ),
+    );
+
+  let remoteDeleted = false;
+  if (
+    external.provider === GOOGLE_CALENDAR_PROVIDER &&
+    external.calendarId?.trim() &&
+    external.externalId?.trim()
+  ) {
+    const accessToken = await getGoogleCalendarAccessToken(workspaceId);
+    const client = new GoogleCalendarClient(accessToken);
+    await client.deleteEvent({
+      calendarId: external.calendarId,
+      eventId: external.externalId,
+    });
+    remoteDeleted = true;
+  }
+
+  const now = new Date();
+  await db
+    .update(externalCalendarEvents)
+    .set({ deletedAt: now, updatedAt: now })
+    .where(eq(externalCalendarEvents.id, external.id));
+
+  const deletedMeetings: (typeof meetings.$inferSelect)[] = [];
+  for (const linked of linkedMeetings) {
+    const [deleted] = await db
+      .update(meetings)
+      .set({ deletedAt: now, updatedAt: now })
+      .where(
+        and(
+          eq(meetings.workspaceId, workspaceId),
+          eq(meetings.id, linked.id),
+          isNull(meetings.deletedAt),
+        ),
+      )
+      .returning();
+    if (deleted) {
+      await softDeleteMeetingCrmActivities(workspaceId, deleted.id);
+      deletedMeetings.push(deleted);
+    }
+  }
+
+  return {
+    id: external.id,
+    provider: external.provider,
+    remoteDeleted,
+    deletedMeetings,
+  };
 }
 
 /** Test helper — clear in-memory OAuth state. */

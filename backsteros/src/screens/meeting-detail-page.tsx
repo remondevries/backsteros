@@ -1,6 +1,7 @@
 import { useCallback, useMemo } from "react";
 import { useNavigate, useParams } from "@tanstack/react-router";
 
+import { guestMeetUrl } from "@backsteros/meetings";
 import {
   formatMeetingDisplayId,
   MeetingDetailView,
@@ -8,6 +9,7 @@ import {
   RegisterPageTitle,
 } from "@backsteros/ui";
 
+import { useDesktopApi } from "../lib/api-context";
 import { useDesktopSectionBreadcrumb } from "../lib/use-desktop-breadcrumb";
 import { useDesktopMeetingNotes } from "../lib/use-meeting-notes";
 import { useMeetingDetailViewProps } from "../lib/use-meeting-detail-props";
@@ -52,6 +54,7 @@ export function MeetingDetailPage({
     createContact,
     createOrganization,
   } = useDesktopWorkspaceActions();
+  const { client } = useDesktopApi();
   const detailWorkspace = useMemo(
     () => ({ contacts, organizations, projects, createContact, createOrganization }),
     [contacts, createContact, createOrganization, organizations, projects],
@@ -140,6 +143,44 @@ export function MeetingDetailPage({
     }
   }, [backHref, meeting, navigate, softDeleteMeeting]);
 
+  const handleDeleteMeetingAndGoogle = useCallback(async () => {
+    if (!meeting) {
+      return { ok: false as const, error: "Meeting is required." };
+    }
+    const externalId = meeting.externalCalendarEventId?.trim() || null;
+    if (!externalId) {
+      return handleDeleteMeeting();
+    }
+    try {
+      await client.requestJson(
+        `/api/v1/external-calendar-events/${encodeURIComponent(externalId)}`,
+        { method: "DELETE" },
+      );
+      try {
+        await softDeleteMeeting(meeting.id);
+      } catch {
+        // Already removed on the server when the Google event was deleted.
+      }
+      navigateToHref(navigate, backHref, { replace: true });
+      return { ok: true as const };
+    } catch (error) {
+      return {
+        ok: false as const,
+        error:
+          error instanceof Error
+            ? error.message
+            : "Failed to delete Google event.",
+      };
+    }
+  }, [
+    backHref,
+    client,
+    handleDeleteMeeting,
+    meeting,
+    navigate,
+    softDeleteMeeting,
+  ]);
+
   if (!ready) {
     return <div className="flex min-h-0 flex-1" />;
   }
@@ -166,6 +207,15 @@ export function MeetingDetailPage({
       <RegisterEntityDeleteAction
         entityLabel={`meeting ${displayId ?? meeting.title}`}
         onDelete={handleDeleteMeeting}
+        secondaryAction={
+          meeting.externalCalendarEventId?.trim()
+            ? {
+                label: "Delete + Google",
+                shortcutKey: "g",
+                onConfirm: handleDeleteMeetingAndGoogle,
+              }
+            : undefined
+        }
       />
       <MeetingDetailView
         layout="page"
@@ -184,6 +234,7 @@ export function MeetingDetailPage({
         {...meetingEmailActions}
         {...meetingContactNavigation}
         onStartRoom={handleStartRoom}
+        roomGuestUrl={guestMeetUrl(meeting.id)}
       />
     </div>
   );

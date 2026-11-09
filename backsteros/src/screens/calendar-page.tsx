@@ -71,6 +71,7 @@ import {
   type TaskCalendarPatch,
   type TimetrackingEntry,
 } from "@backsteros/ui";
+import { guestMeetUrl } from "@backsteros/meetings";
 
 import {
   useDesktopAvatarSrcMap,
@@ -178,6 +179,7 @@ function CalendarPageBody() {
     softRefreshApiMeetings,
   });
   const [attachingExternalNotes, setAttachingExternalNotes] = useState(false);
+  const [deletingExternalEvent, setDeletingExternalEvent] = useState(false);
 
   const openMeetingId = parseCalendarMeetingOverlayId(searchParams.toString());
   const openTaskId = parseCalendarTaskOverlayId(searchParams.toString());
@@ -341,6 +343,7 @@ function CalendarPageBody() {
     });
 
   const displayId = meeting ? formatMeetingDisplayId(meeting.number) : null;
+  const roomGuestUrl = meeting?.id ? guestMeetUrl(meeting.id) : null;
 
   const meetingDetailLabel = meeting
     ? formatMeetingBreadcrumbLabel(meeting.number, meeting.title)
@@ -986,6 +989,56 @@ function CalendarPageBody() {
       }
     : meetingDetailProps;
 
+  const deleteExternalCalendarEvent = useCallback(
+    async (eventId: string) => {
+      const result = await client.requestJson<{
+        id: string;
+        deletedMeetingIds: string[];
+      }>(
+        `/api/v1/external-calendar-events/${encodeURIComponent(eventId)}`,
+        { method: "DELETE" },
+      );
+      setExternalCalendarEvents((current) =>
+        current.filter((entry) => entry.id !== eventId),
+      );
+      for (const meetingId of result.deletedMeetingIds ?? []) {
+        try {
+          await workspace.softDeleteMeeting(meetingId);
+        } catch {
+          // Server already soft-deleted; local/PowerSync catch-up is best-effort.
+        }
+      }
+      return result;
+    },
+    [client, setExternalCalendarEvents, workspace],
+  );
+
+  const handleDeleteExternalEvent = useCallback(
+    async (event: CalendarExternalPopoverEvent) => {
+      if (deletingExternalEvent) return;
+      setDeletingExternalEvent(true);
+      try {
+        const result = await deleteExternalCalendarEvent(event.id);
+        if (
+          openMeetingId &&
+          (result.deletedMeetingIds ?? []).includes(openMeetingId)
+        ) {
+          setOpenMeetingId(null);
+        }
+      } catch (error) {
+        console.warn("[calendar] Delete Google event failed:", error);
+      } finally {
+        setDeletingExternalEvent(false);
+      }
+    },
+    [
+      deleteExternalCalendarEvent,
+      deletingExternalEvent,
+      openMeetingId,
+      setOpenMeetingId,
+    ],
+  );
+
   const handleDeleteMeeting = useCallback(async () => {
     if (!meeting) {
       return { ok: false as const, error: "Meeting is required." };
@@ -1002,6 +1055,40 @@ function CalendarPageBody() {
       };
     }
   }, [meeting, setOpenMeetingId, workspace]);
+
+  const handleDeleteMeetingAndGoogle = useCallback(async () => {
+    if (!meeting) {
+      return { ok: false as const, error: "Meeting is required." };
+    }
+    const externalId = meeting.externalCalendarEventId?.trim() || null;
+    if (!externalId) {
+      return handleDeleteMeeting();
+    }
+    try {
+      await deleteExternalCalendarEvent(externalId);
+      try {
+        await workspace.softDeleteMeeting(meeting.id);
+      } catch {
+        // Already removed on the server when the Google event was deleted.
+      }
+      setOpenMeetingId(null);
+      return { ok: true as const };
+    } catch (error) {
+      return {
+        ok: false as const,
+        error:
+          error instanceof Error
+            ? error.message
+            : "Failed to delete Google event.",
+      };
+    }
+  }, [
+    deleteExternalCalendarEvent,
+    handleDeleteMeeting,
+    meeting,
+    setOpenMeetingId,
+    workspace,
+  ]);
 
   const handleTaskReschedule = (taskId: string, patch: TaskCalendarPatch) => {
     void workspace.patchTask(taskId, patch);
@@ -1361,6 +1448,8 @@ function CalendarPageBody() {
       onMeetingOpen={openMeetingFromGrid}
       onAttachExternalNotes={handleAttachExternalNotes}
       attachingExternalNotes={attachingExternalNotes}
+      onDeleteExternalEvent={handleDeleteExternalEvent}
+      deletingExternalEvent={deletingExternalEvent}
       dayHabitsByDate={dayHabitsByDate}
       onToggleDayHabit={handleToggleDayHabit}
     />
@@ -1382,6 +1471,15 @@ function CalendarPageBody() {
               <RegisterEntityDeleteAction
                 entityLabel={`meeting ${displayId ?? meeting.title}`}
                 onDelete={handleDeleteMeeting}
+                secondaryAction={
+                  meeting.externalCalendarEventId?.trim()
+                    ? {
+                        label: "Delete + Google",
+                        shortcutKey: "g",
+                        onConfirm: handleDeleteMeetingAndGoogle,
+                      }
+                    : undefined
+                }
               />
             </>
           ) : null}
@@ -1697,6 +1795,7 @@ function CalendarPageBody() {
                 {...meetingEmailActions}
                 {...meetingContactNavigation}
                 onStartRoom={meetingDraft ? undefined : handleStartRoom}
+                roomGuestUrl={meetingDraft ? null : roomGuestUrl}
               />
               <CalendarTaskDetailOverlay
                 open={Boolean(
@@ -1754,6 +1853,7 @@ function CalendarPageBody() {
         {...meetingEmailActions}
         {...meetingContactNavigation}
         onStartRoom={handleStartRoom}
+        roomGuestUrl={roomGuestUrl}
         headerMoreAction={<EntityHeaderActionsSlot />}
       />
       <CalendarTaskDetailOverlay

@@ -372,6 +372,40 @@ export class GoogleCalendarClient {
     return (await response.json()) as GoogleCalendarEvent;
   }
 
+  /**
+   * Delete an event on Google Calendar.
+   * https://developers.google.com/calendar/api/v3/reference/events/delete
+   * 404 / 410 = already gone — treated as success.
+   */
+  async deleteEvent(input: {
+    calendarId: string;
+    eventId: string;
+  }): Promise<void> {
+    const calendarId = encodeURIComponent(input.calendarId);
+    const eventId = encodeURIComponent(input.eventId);
+    const response = await fetch(
+      `${GOOGLE_CALENDAR_API_BASE}/calendars/${calendarId}/events/${eventId}`,
+      {
+        method: "DELETE",
+        headers: {
+          authorization: `Bearer ${this.accessToken}`,
+          accept: "application/json",
+        },
+      },
+    );
+    if (!response.ok && response.status !== 404 && response.status !== 410) {
+      const text = await response.text();
+      let message = text.trim() || `Google API HTTP ${response.status}`;
+      try {
+        const json = JSON.parse(text) as { error?: { message?: string } };
+        if (json.error?.message) message = json.error.message;
+      } catch {
+        // keep text
+      }
+      throw new GoogleCalendarApiError(message, response.status, text);
+    }
+  }
+
   async stopChannel(input: {
     channelId: string;
     resourceId: string;

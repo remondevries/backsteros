@@ -1929,6 +1929,25 @@ html.is-calendar-month-event-dragging .fc-event-dragging:not(.calendar-month-eve
   padding: 12px var(--meeting-panel-inset) 0 var(--meeting-panel-inset-left);
 }
 
+/* Panel: format dropdown left, Start room opposite on the same row. */
+.meeting-detail-view__format-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.meeting-detail-view__format-row .meeting-detail-view__format-field {
+  margin-top: 0;
+}
+
+.meeting-detail-view__format-row .meeting-detail-view__start-room {
+  margin-left: 0;
+}
+
 .meeting-detail-view__format-field {
   display: flex;
   flex-wrap: wrap;
@@ -2199,7 +2218,7 @@ html.is-calendar-month-event-dragging .fc-event-dragging:not(.calendar-month-eve
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  margin-left: 8px;
+  margin-left: 0;
   padding: 5px 10px;
   border: 1px solid color-mix(in srgb, var(--foreground) 18%, transparent);
   border-radius: 6px;
@@ -2214,6 +2233,11 @@ html.is-calendar-month-event-dragging .fc-event-dragging:not(.calendar-month-eve
 
 .meeting-detail-view__start-room:hover {
   background: rgb(255 255 255 / 0.06);
+}
+
+/* Page properties rail: Start room sits opposite the tracked-time pill. */
+.detail-properties-panel__timer .meeting-detail-view__start-room {
+  margin-left: auto;
 }
 
 .meeting-properties-stacked {
@@ -2338,6 +2362,55 @@ html.is-calendar-month-event-dragging .fc-event-dragging:not(.calendar-month-eve
 }
 
 /* Details tab — members-02 style attendee rows (avatar + copy, actions right). */
+.meeting-detail-view__details {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.meeting-room-link-copy {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 12px;
+  row-gap: 6px;
+  padding: 4px 0 12px;
+  border-bottom: 1px solid var(--border-subtle, rgba(128, 128, 128, 0.18));
+}
+
+.meeting-room-link-copy__meta {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.meeting-room-link-copy__label {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  line-height: 14px;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
+}
+
+.meeting-room-link-copy__url {
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  line-height: 1.35;
+  color: var(--text-muted, #8b949e);
+}
+
+.meeting-room-link-copy__button {
+  flex-shrink: 0;
+}
+
 .meeting-attendee-email-list {
   list-style: none;
   margin: 0;
@@ -2759,6 +2832,7 @@ html.is-calendar-month-event-dragging .fc-event-dragging:not(.calendar-month-eve
 }
 
 .calendar-task-event-popover__expand,
+.calendar-task-event-popover__overflow,
 .calendar-task-event-popover__close {
   display: inline-flex;
   width: 28px;
@@ -2774,9 +2848,19 @@ html.is-calendar-month-event-dragging .fc-event-dragging:not(.calendar-month-eve
 }
 
 .calendar-task-event-popover__expand:hover,
+.calendar-task-event-popover__overflow:hover:not(:disabled),
 .calendar-task-event-popover__close:hover {
   color: var(--foreground);
   background: color-mix(in srgb, var(--foreground) 8%, transparent);
+}
+
+.calendar-task-event-popover__overflow:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.calendar-task-event-popover__header-actions .entity-header-actions-trigger-wrap {
+  display: inline-flex;
 }
 
 .calendar-task-event-popover__schedule {
@@ -2923,17 +3007,8 @@ html.is-calendar-month-event-dragging .fc-event-dragging:not(.calendar-month-eve
   gap: 10px;
 }
 
-.calendar-external-event-popover__google-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  color: var(--color-fg-muted, #8b949e);
-  text-decoration: none;
-}
-
-.calendar-external-event-popover__google-link:hover {
-  color: var(--color-fg-default, #e6edf3);
+.calendar-external-event-popover__footer--end {
+  justify-content: flex-end;
 }
 
 .calendar-view .fc .fc-event.external-calendar-event--linked {

@@ -1,10 +1,14 @@
 "use client";
 
 import { LinkExternalIcon, XIcon } from "@primer/octicons-react";
-import { useId } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 
 import { formatCalendarTaskScheduleLabel } from "../../calendar/calendar-events.js";
+import {
+  EntityActionsMenu,
+  type EntityActionsMenuItem,
+} from "../entity-actions/entity-actions-menu.js";
 import { GoogleIcon } from "../icons/google-icon.js";
 import {
   previewCalendarPopoverDescription,
@@ -37,7 +41,10 @@ export type CalendarExternalEventPopoverProps = {
   onAttachNotes?: (event: CalendarExternalPopoverEvent) => void | Promise<void>;
   /** Open an existing linked meeting. */
   onOpenNotes?: (meetingId: string) => void;
+  /** Remove the event from Google Calendar (and any linked Backster meeting). */
+  onDelete?: (event: CalendarExternalPopoverEvent) => void | Promise<void>;
   attaching?: boolean;
+  deleting?: boolean;
 };
 
 function scheduleLabelForExternal(
@@ -66,9 +73,12 @@ export function CalendarExternalEventPopover({
   onClose,
   onAttachNotes,
   onOpenNotes,
+  onDelete,
   attaching = false,
+  deleting = false,
 }: CalendarExternalEventPopoverProps) {
   const titleId = useId();
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const { panelRef, panelStyle } = useCalendarEventPopoverPosition({
     open,
     anchorRect,
@@ -76,6 +86,48 @@ export function CalendarExternalEventPopover({
     panelWidth: PANEL_WIDTH,
     contentKey: event?.id ?? null,
   });
+
+  useEffect(() => {
+    setConfirmDelete(false);
+  }, [event?.id, open]);
+
+  const busy = attaching || deleting;
+  const htmlLink = event?.htmlLink?.trim() || null;
+  const overflowItems = useMemo((): EntityActionsMenuItem[] => {
+    if (!event) return [];
+    const items: EntityActionsMenuItem[] = [];
+    if (htmlLink) {
+      items.push({
+        id: "open-google",
+        label: "Open in Google",
+        icon: <LinkExternalIcon size={16} />,
+        onSelect: () => {
+          window.open(htmlLink, "_blank", "noopener,noreferrer");
+        },
+      });
+    }
+    if (onDelete) {
+      items.push({
+        id: "delete",
+        label: deleting
+          ? "Deleting…"
+          : confirmDelete
+            ? "Confirm delete"
+            : "Delete from Google",
+        danger: true,
+        disabled: busy,
+        onSelect: () => {
+          if (!confirmDelete) {
+            setConfirmDelete(true);
+            return false;
+          }
+          onClose();
+          void onDelete(event);
+        },
+      });
+    }
+    return items;
+  }, [busy, confirmDelete, deleting, event, htmlLink, onClose, onDelete]);
 
   if (!open || !event || !anchorRect || typeof document === "undefined") {
     return null;
@@ -86,7 +138,33 @@ export function CalendarExternalEventPopover({
     event.description,
   );
   const linkedMeetingId = event.linkedMeetingId?.trim() || null;
-  const htmlLink = event.htmlLink?.trim() || null;
+  const showOverflow = overflowItems.length > 0;
+  const footerAction =
+    linkedMeetingId && onOpenNotes ? (
+      <button
+        type="button"
+        className="calendar-task-event-popover__open"
+        disabled={busy}
+        onClick={() => {
+          onOpenNotes(linkedMeetingId);
+          onClose();
+        }}
+      >
+        Open event
+      </button>
+    ) : onAttachNotes ? (
+      <button
+        type="button"
+        className="calendar-task-event-popover__open"
+        disabled={busy}
+        onClick={() => {
+          onClose();
+          void onAttachNotes(event);
+        }}
+      >
+        {attaching ? "Converting…" : "Convert to Event"}
+      </button>
+    ) : null;
 
   return createPortal(
     <div
@@ -111,14 +189,28 @@ export function CalendarExternalEventPopover({
           />
           <span>{scheduleLabel ?? "Scheduled"}</span>
         </div>
-        <button
-          type="button"
-          className="calendar-task-event-popover__close"
-          onClick={onClose}
-          aria-label="Close"
-        >
-          <XIcon size={14} />
-        </button>
+        <div className="calendar-task-event-popover__header-actions">
+          {showOverflow ? (
+            <EntityActionsMenu
+              ariaLabel="Google event actions"
+              triggerAriaLabel="More actions"
+              disabled={busy && !htmlLink}
+              triggerClassName="calendar-task-event-popover__overflow"
+              items={overflowItems}
+              onOpenChange={(menuOpen) => {
+                if (!menuOpen) setConfirmDelete(false);
+              }}
+            />
+          ) : null}
+          <button
+            type="button"
+            className="calendar-task-event-popover__close"
+            onClick={onClose}
+            aria-label="Close"
+          >
+            <XIcon size={14} />
+          </button>
+        </div>
       </div>
       <div className="calendar-task-event-popover__body">
         <h2 id={titleId} className="calendar-task-event-popover__title">
@@ -144,45 +236,11 @@ export function CalendarExternalEventPopover({
           notes stay in BacksterOS.
         </p>
       </div>
-      <div className="calendar-task-event-popover__footer calendar-external-event-popover__footer">
-        {htmlLink ? (
-          <a
-            className="calendar-external-event-popover__google-link"
-            href={htmlLink}
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <LinkExternalIcon size={14} />
-            Open in Google
-          </a>
-        ) : (
-          <span />
-        )}
-        {linkedMeetingId && onOpenNotes ? (
-          <button
-            type="button"
-            className="calendar-task-event-popover__open"
-            onClick={() => {
-              onOpenNotes(linkedMeetingId);
-              onClose();
-            }}
-          >
-            Open event
-          </button>
-        ) : onAttachNotes ? (
-          <button
-            type="button"
-            className="calendar-task-event-popover__open"
-            disabled={attaching}
-            onClick={() => {
-              onClose();
-              void onAttachNotes(event);
-            }}
-          >
-            {attaching ? "Converting…" : "Convert to Event"}
-          </button>
-        ) : null}
-      </div>
+      {footerAction ? (
+        <div className="calendar-task-event-popover__footer calendar-external-event-popover__footer calendar-external-event-popover__footer--end">
+          {footerAction}
+        </div>
+      ) : null}
     </div>,
     document.body,
   );
