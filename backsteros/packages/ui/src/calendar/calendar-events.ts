@@ -194,6 +194,13 @@ export type MeetingCalendarLike = {
 /** Timed blocks at least this long show project name + extra top padding. */
 export const CALENDAR_EVENT_EXPANDED_MIN_DURATION_MS = 45 * 60 * 1000;
 
+/**
+ * Expanded blocks longer than this use the full 3-line layout (project /
+ * icon+time / title). Shorter expanded blocks (≤ 1h) keep project on the
+ * icon+time row so the chip stays 2 lines.
+ */
+export const CALENDAR_EVENT_FULL_EXPANDED_MIN_DURATION_MS = 60 * 60 * 1000;
+
 /** Open-ended live meetings (start only) render this long with a fade-out. */
 export const OPEN_ENDED_MEETING_VISUAL_MS = 60 * 60 * 1000;
 
@@ -207,6 +214,13 @@ export function calendarEventDurationMs(
 
 export function calendarEventHasExpandedContent(durationMs: number): boolean {
   return durationMs >= CALENDAR_EVENT_EXPANDED_MIN_DURATION_MS;
+}
+
+/** True when the block is tall enough for project on its own line. */
+export function calendarEventHasFullExpandedContent(
+  durationMs: number,
+): boolean {
+  return durationMs > CALENDAR_EVENT_FULL_EXPANDED_MIN_DURATION_MS;
 }
 
 /** Patch payload for `patchTask` after a calendar drop/resize. */

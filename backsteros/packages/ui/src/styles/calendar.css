@@ -1052,6 +1052,12 @@
   padding: 6px 6px 4px;
 }
 
+/* ≤1h expanded: slightly tighter so icon+time+project + title fit in 2 lines. */
+.task-calendar-event__content--expanded.task-calendar-event__content--dense {
+  gap: 2px;
+  padding: 4px 6px 3px;
+}
+
 .task-calendar-event__row {
   display: flex;
   align-items: center;
@@ -1069,6 +1075,10 @@
   font-size: 0.625rem;
   line-height: 1.2;
   opacity: 0.72;
+}
+
+.task-calendar-event__row > .task-calendar-event__project {
+  flex: 1 1 0%;
 }
 
 .task-calendar-event__status-icon {

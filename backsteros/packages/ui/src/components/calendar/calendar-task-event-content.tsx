@@ -6,6 +6,7 @@ import {
   calendarEntityFromEvent,
   calendarEventDurationMs,
   calendarEventHasExpandedContent,
+  calendarEventHasFullExpandedContent,
 } from "../../calendar/calendar-events.js";
 import { MEETINGS_AVAILABILITY_MARKER_TYPE } from "../../calendar/calendar-availability-events.js";
 import { isPastCompletedMeeting } from "../../meetings/meeting-status.js";
@@ -219,6 +220,12 @@ export function CalendarTaskEventContent({
   const expanded =
     isSocial ||
     (!arg.event.allDay && calendarEventHasExpandedContent(durationMs));
+  // ≤1h expanded timed blocks: icon + time + project on one row, title below.
+  // Longer blocks keep project on its own line (3 rows). ≤30–45m stays compact.
+  const fullExpanded =
+    !isSocial &&
+    !arg.event.allDay &&
+    calendarEventHasFullExpandedContent(durationMs);
   if (isSocial) {
     const timeText = socialStartTimeText(arg);
     const taskId =
@@ -399,11 +406,17 @@ export function CalendarTaskEventContent({
 
   return (
     <div
-      className={`task-calendar-event__content${
-        expanded ? " task-calendar-event__content--expanded" : ""
-      }`}
+      className={[
+        "task-calendar-event__content",
+        expanded ? "task-calendar-event__content--expanded" : null,
+        expanded && !fullExpanded
+          ? "task-calendar-event__content--dense"
+          : null,
+      ]
+        .filter(Boolean)
+        .join(" ")}
     >
-      {expanded && projectName ? (
+      {expanded && fullExpanded && projectName ? (
         <span className="task-calendar-event__project">{projectName}</span>
       ) : null}
       {expanded ? (
@@ -412,6 +425,9 @@ export function CalendarTaskEventContent({
             {statusIcon}
             {arg.timeText ? (
               <span className="task-calendar-event__time">{arg.timeText}</span>
+            ) : null}
+            {!fullExpanded && projectName ? (
+              <span className="task-calendar-event__project">{projectName}</span>
             ) : null}
           </div>
           <span className="task-calendar-event__title">{title}</span>

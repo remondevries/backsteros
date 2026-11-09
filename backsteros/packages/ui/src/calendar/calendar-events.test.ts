@@ -5,8 +5,12 @@ import {
   DEFAULT_TIMED_TASK_DURATION_MINUTES,
   MIN_CALENDAR_MEETING_DURATION_MINUTES,
   OPEN_ENDED_MEETING_VISUAL_MS,
+  CALENDAR_EVENT_EXPANDED_MIN_DURATION_MS,
+  CALENDAR_EVENT_FULL_EXPANDED_MIN_DURATION_MS,
   calendarChangeToMeetingPatch,
   calendarChangeToTaskPatch,
+  calendarEventHasExpandedContent,
+  calendarEventHasFullExpandedContent,
   taskPatchMovingToLocalDateYmd,
   calendarSelectionToMeetingRange,
   isCalendarMeetingDuplicateModifier,
@@ -851,5 +855,25 @@ test("same start but different title keeps Google beside a meeting", () => {
     events.filter((event) => event.extendedProps.entityType === "external")
       .length,
     1,
+  );
+});
+
+test("expanded content thresholds: compact under 45m, dense through 1h, full after", () => {
+  assert.equal(calendarEventHasExpandedContent(30 * 60 * 1000), false);
+  assert.equal(
+    calendarEventHasExpandedContent(CALENDAR_EVENT_EXPANDED_MIN_DURATION_MS),
+    true,
+  );
+  assert.equal(
+    calendarEventHasFullExpandedContent(
+      CALENDAR_EVENT_FULL_EXPANDED_MIN_DURATION_MS,
+    ),
+    false,
+  );
+  assert.equal(
+    calendarEventHasFullExpandedContent(
+      CALENDAR_EVENT_FULL_EXPANDED_MIN_DURATION_MS + 1,
+    ),
+    true,
   );
 });
