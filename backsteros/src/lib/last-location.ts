@@ -11,6 +11,9 @@ function isPersistableLocation(href: string): boolean {
   // the URL. Persisting `/chat/…` makes StartupRedirect bounce back into that
   // route → history thrash + React max-update-depth in the shell.
   if (href === "/chat" || href.startsWith("/chat/")) return false;
+  // Director room is heavy (LiveKit); cold-start into `/room` after a freeze
+  // feels like a hung shell. Re-open via Start room instead.
+  if (/^\/calendar\/meetings\/[^/]+\/room(?:\?|$)/.test(href)) return false;
   return true;
 }
 

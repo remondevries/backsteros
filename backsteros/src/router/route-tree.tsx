@@ -13,6 +13,10 @@ import {
 } from "../components/startup-location";
 import { DesktopProviders } from "../lib/desktop-providers";
 import { isDesktopOverlayPath } from "../lib/desktop-overlay";
+import {
+  getDesktopPublicEnvironment,
+  shouldAttachDesktopPowerSync,
+} from "../lib/env";
 import { DesktopOverlayComposePage } from "../screens/desktop-overlay-compose-page";
 import { DesktopOverlayPalettePage } from "../screens/desktop-overlay-palette-page";
 import { validateTasksListSearch } from "./routes/tasks.route";
@@ -54,7 +58,9 @@ import {
 } from "./shell-layout";
 
 function RootLayout() {
-  const enablePowerSync = !isDesktopOverlayPath(window.location.pathname);
+  const enablePowerSync =
+    !isDesktopOverlayPath(window.location.pathname) &&
+    shouldAttachDesktopPowerSync(getDesktopPublicEnvironment().apiUrl);
   return (
     <DesktopProviders enablePowerSync={enablePowerSync}>
       <DesktopOverlayRouteSync />

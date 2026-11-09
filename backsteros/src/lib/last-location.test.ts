@@ -69,3 +69,12 @@ test("chat deep links are not persistable (avoids StartupRedirect loop)", () => 
   assert.equal(readLastLocation(), null);
   assert.equal(resolveStartupLocation(), "/inbox");
 });
+
+test("meeting room paths are not persistable (avoid cold-start Director)", () => {
+  mockStorage();
+  writeLastLocation(
+    "/calendar/meetings/11111111-1111-4111-8111-111111111111/room",
+  );
+  assert.equal(readLastLocation(), null);
+  assert.equal(resolveStartupLocation(), "/inbox");
+});

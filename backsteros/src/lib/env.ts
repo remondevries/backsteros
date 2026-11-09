@@ -106,6 +106,30 @@ function isLocalCoreApiPort(port: string): boolean {
 }
 
 /**
+ * Whether the desktop shell should open a PowerSync SQLite client for `apiUrl`.
+ *
+ * Separate hot-reload DEV cores (`:8800`, …) share machine PowerSync `:8080`,
+ * which still replicates the live `backsteros` DB. Attaching that stream while
+ * REST points at `backsteros_dev` caused a WebKit MessagePort → avatar
+ * `setAttribute` thrash (UI frozen, process alive). Production local-core
+ * `:8788` keeps PowerSync. Opt out explicitly with `VITE_DISABLE_POWERSYNC=1`.
+ */
+export function shouldAttachDesktopPowerSync(apiUrl: string): boolean {
+  const flag = readViteOrProcessEnv("VITE_DISABLE_POWERSYNC")?.toLowerCase();
+  if (flag === "1" || flag === "true" || flag === "yes") return false;
+  try {
+    const url = new URL(apiUrl);
+    const host = url.hostname.toLowerCase();
+    if (!isLoopbackHostname(host)) return true;
+    const port = url.port || (url.protocol === "https:" ? "443" : "80");
+    // Canonical local-core LaunchAgent port only.
+    return port === "8788";
+  } catch {
+    return true;
+  }
+}
+
+/**
  * True when `VITE_API_URL` targets local-core (default `:8788`, or another
  * loopback DEV port), not the Vite UI on `:1420`.
  * Loopback always qualifies. Cleartext Tailscale / MagicDNS / configured HTTPS
