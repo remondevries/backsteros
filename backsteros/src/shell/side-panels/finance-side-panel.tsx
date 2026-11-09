@@ -20,7 +20,8 @@ import type { BankAccount } from "@backsteros/contracts";
 
 import { useDesktopApi } from "../../lib/api-context";
 import { useDesktopAvatarSrcMap } from "../../lib/avatar-src";
-import { navigateToHref } from "../../router/navigate-href";
+import { navigateToHrefIfWarmOwner } from "../../lib/owned-warm-navigate";
+import { captureWarmNavOwner } from "../../lib/shell-warm-keep-alive";
 
 const BANK_ACCOUNTS_CHANGED_EVENT = "backsteros:bank-accounts-changed";
 
@@ -133,7 +134,10 @@ export function DesktopFinanceSidePanel({
     selectedId,
     onNavigate: (itemId) => {
       const href = resolveFinanceSidePanelHref(itemId);
-      if (href) navigateToHref(navigate, href);
+      if (href) {
+        const owner = captureWarmNavOwner();
+        navigateToHrefIfWarmOwner(navigate, href, owner);
+      }
     },
     zone: LIST_KEYBOARD_NAV_ZONE_SIDE_PANEL,
     enabled: itemIds.length > 0,

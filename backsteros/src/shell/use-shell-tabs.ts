@@ -9,7 +9,6 @@ import {
 import { useNavigate } from "@tanstack/react-router";
 
 import {
-  activateProductTab,
   buildProductTabHref,
   closeProductTab,
   createProductTab,
@@ -25,27 +24,25 @@ import {
 } from "@backsteros/ui";
 import { useNavigationHistory } from "@backsteros/ui/navigation";
 
+import {
+  mirrorWarmKeepAliveTabsFromState,
+  prepareActivateShellProductTab,
+} from "../lib/activate-shell-product-tab";
 import { withEntityDetailPageLayout } from "../lib/entity-detail-page-layout-href";
 import { formatResolvedAppHref, resolveAppHref } from "../lib/resolve-app-href";
 import {
   collectOpenRoomMeetingIds,
   setOpenRoomMeetingIds,
 } from "../lib/room-session-keep-alive";
+import { navigateToHrefIfWarmOwner } from "../lib/owned-warm-navigate";
 import { navigateToHref } from "../router/navigate-href";
-import { pruneProductTabUiState } from "../lib/product-tab-ui-state";
 import {
-  syncWarmKeepAliveProductTabs,
+  captureWarmNavOwner,
   useShellLocation,
 } from "../lib/shell-route-keep-alive";
 import { loadTabsState, TABS_STORAGE_KEY } from "./app-shell-tabs";
 
-function mirrorWarmKeepAliveTabs(state: ProductTabsState): void {
-  syncWarmKeepAliveProductTabs({
-    activeTabId: state.activeTabId,
-    tabs: state.tabs.map((tab) => ({ id: tab.id, href: tab.href })),
-  });
-  pruneProductTabUiState(state.tabs.map((tab) => tab.id));
-}
+const mirrorWarmKeepAliveTabs = mirrorWarmKeepAliveTabsFromState;
 
 export function useShellTabs() {
   const location = useShellLocation();
@@ -109,9 +106,12 @@ export function useShellTabs() {
     }
   }
 
+  // Side panels / chrome / in-app history — capture owner at click time so a
+  // late panel callback after a tab switch cannot rewrite the new tab.
   const navigateTo = useCallback(
     (href: string) => {
-      navigateToHref(navigate, href);
+      const owner = captureWarmNavOwner();
+      navigateToHrefIfWarmOwner(navigate, href, owner);
     },
     [navigate],
   );
@@ -229,44 +229,32 @@ export function useShellTabs() {
 
   const activateTab = useCallback(
     (tabId: string) => {
-      const tab = tabsState.tabs.find((entry) => entry.id === tabId);
-      if (!tab) return;
-      if (tabId === tabsState.activeTabId) return;
-
-      const currentHref = buildProductTabHref(
-        location.pathname,
-        search,
-      );
-      const needsNavigate = tab.href !== currentHref;
+      const prepared = prepareActivateShellProductTab({
+        tabsState,
+        tabId,
+        livePathname: location.pathname,
+        liveSearch: search,
+      });
+      if (prepared.skipped) return;
 
       // Mark pending before any state/nav so a location update cannot clobber
       // the previous tab's href while activeTabId is mid-flight.
-      if (needsNavigate) {
-        pendingTabSwitchRef.current = { tabId, href: tab.href };
+      if (prepared.navigateHref != null) {
+        pendingTabSwitchRef.current = {
+          tabId,
+          href: prepared.navigateHref,
+        };
       }
 
-      // Flush the leaving tab’s live location into product-tab state before
-      // switching — otherwise chrome rAF lag leaves a stale bookmark that
-      // sync could prefer over warm (or lose on persistence).
-      const flushed = syncActiveTabToPath(
-        tabsState,
-        location.pathname,
-        search,
-      );
-      const next = activateProductTab(flushed, tabId);
-      mirrorWarmKeepAliveTabs(next);
-      setTabsState(next);
+      setTabsState(prepared.next);
 
-      if (needsNavigate) {
-        navigateToHref(navigate, tab.href);
+      if (prepared.navigateHref != null) {
+        // Tab switch itself is not an owned panel nav — new active tab already
+        // mirrored; navigate without a stale pre-switch owner claim.
+        navigateToHref(navigate, prepared.navigateHref);
       }
     },
-    [
-      location.pathname,
-      search,
-      navigate,
-      tabsState,
-    ],
+    [location.pathname, search, navigate, tabsState],
   );
 
   const closeTab = useCallback(

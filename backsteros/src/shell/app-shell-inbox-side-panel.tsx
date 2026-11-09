@@ -69,6 +69,7 @@ import {
   getProductTabUiState,
   patchProductTabInboxUi,
 } from "../lib/product-tab-ui-state";
+import { useProductTabScrollRestore } from "../lib/use-product-tab-scroll";
 import {
   captureWarmNavOwner,
   getWarmKeepAliveActiveProductTabId,
@@ -112,6 +113,7 @@ export function DesktopInboxSidePanel({
   void _onNavigate;
   const listRef = useRef<HTMLElement>(null);
   const routerNavigate = useNavigate();
+  useProductTabScrollRestore("inbox", "panel", listRef);
   const keepAliveActive = useKeepAliveActive();
   const { pathname: shellPathname } = useShellLocation();
   const activeTabId = getWarmKeepAliveActiveProductTabId();

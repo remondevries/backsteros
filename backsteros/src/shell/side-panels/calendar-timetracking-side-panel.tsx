@@ -20,8 +20,11 @@ import {
 } from "@backsteros/ui";
 
 import { useDesktopSidePanelListNav } from "../../lib/use-desktop-side-panel-list-nav";
-import { useShellLocation } from "../../lib/shell-route-keep-alive";
-import { navigateToHref } from "../../router/navigate-href";
+import { navigateToHrefIfWarmOwner } from "../../lib/owned-warm-navigate";
+import {
+  captureWarmNavOwner,
+  useShellLocation,
+} from "../../lib/shell-route-keep-alive";
 
 function searchParamsFromSearchStr(searchStr: string): URLSearchParams {
   return new URLSearchParams(
@@ -57,9 +60,13 @@ export function DesktopCalendarTimetrackingSidePanel({
       // Absolute /calendar?... so keep-alive lastHref + address bar stay in sync
       // (same pattern as CalendarPage) — relative navigate() misses warm flips.
       const query = next.toString();
-      navigateToHref(navigate, query ? `/calendar?${query}` : "/calendar", {
-        replace: navigateOpts?.replace ?? false,
-      });
+      const owner = captureWarmNavOwner();
+      navigateToHrefIfWarmOwner(
+        navigate,
+        query ? `/calendar?${query}` : "/calendar",
+        owner,
+        { replace: navigateOpts?.replace ?? false },
+      );
     },
     [navigate, searchStr],
   );
