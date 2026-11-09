@@ -456,7 +456,11 @@ export function registerFinanceRoutes(app: Hono) {
           : error instanceof BunqApiError && error.status >= 400
             ? Math.min(error.status, 502)
             : 400;
-      return c.json({ error: message, code: "bad_request" }, status as 400);
+      const code =
+        error instanceof BunqApiError && error.code
+          ? error.code
+          : "bad_request";
+      return c.json({ error: message, code }, status as 400);
     }
   });
   app.get(
@@ -479,7 +483,11 @@ export function registerFinanceRoutes(app: Hono) {
           error instanceof Error
             ? error.message
             : "Could not list bunq sandbox payments";
-        return c.json({ error: message, code: "bad_request" }, 400);
+        const code =
+          error instanceof BunqApiError && error.code
+            ? error.code
+            : "bad_request";
+        return c.json({ error: message, code }, 400);
       }
     },
   );
@@ -1691,7 +1699,10 @@ export function registerFinanceRoutes(app: Hono) {
       }
       if (error instanceof BunqApiError) {
         return c.json(
-          { error: error.message, code: "bad_request" },
+          {
+            error: error.message,
+            code: error.code ?? "bad_request",
+          },
           error.status >= 400 && error.status < 600
             ? (Math.min(error.status, 502) as 400)
             : 400,

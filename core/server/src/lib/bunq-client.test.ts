@@ -13,11 +13,98 @@ import {
   BunqClient,
   BunqLiveApiRefusedError,
   BunqPaymentAmbiguousOutcomeError,
+  extractBunqErrorDescriptions,
+  formatBunqHttpFailure,
   generateBunqSigningKeyPair,
   mapBunqMonetaryAccount,
   mapBunqPayment,
   signBunqRequestBody,
 } from "./bunq-client.js";
+
+describe("bunq error sanitization", () => {
+  it("extracts error_description without exposing the raw body shape secrets", () => {
+    const body = JSON.stringify({
+      Error: [
+        {
+          error_description:
+            "User credentials are incorrect. Incorrect API key or IP address.",
+          error_description_translated: "…",
+        },
+      ],
+    });
+    assert.deepEqual(extractBunqErrorDescriptions(body), [
+      "User credentials are incorrect. Incorrect API key or IP address.",
+    ]);
+  });
+
+  it("maps session-server auth rejection to reconnect guidance", () => {
+    const body = JSON.stringify({
+      Error: [
+        {
+          error_description:
+            "User credentials are incorrect. Incorrect API key or IP address.",
+        },
+      ],
+    });
+    const formatted = formatBunqHttpFailure(
+      "POST",
+      "/session-server",
+      400,
+      body,
+    );
+    assert.equal(formatted.code, "bunq_auth_rejected");
+    assert.match(formatted.message, /API key or egress IP/i);
+    assert.match(formatted.message, /Settings → bunq/i);
+    assert.equal(formatted.message.includes("sk_"), false);
+  });
+
+  it("keeps generic path/status when bunq body has no Error descriptions", () => {
+    const formatted = formatBunqHttpFailure("POST", "/session-server", 400, "{}");
+    assert.equal(formatted.code, "bunq_api_error");
+    assert.equal(formatted.message, "bunq POST /session-server failed (400)");
+  });
+
+  it("surfaces non-auth bunq descriptions without blind retry language", () => {
+    const body = JSON.stringify({
+      Error: [{ error_description: "Too many requests please slow down." }],
+    });
+    const formatted = formatBunqHttpFailure("GET", "/user/1/monetary-account", 429, body);
+    assert.equal(formatted.code, "bunq_api_error");
+    assert.match(formatted.message, /Too many requests/i);
+    assert.equal(/reconnect|retry automatically/i.test(formatted.message), false);
+  });
+
+  it("requestJson attaches formatted auth rejection on session-server 400", async () => {
+    const { privateKeyPem } = generateBunqSigningKeyPair();
+    const client = new BunqClient({
+      apiKey: "sandbox_fake_key",
+      signingPrivateKeyPem: privateKeyPem,
+      permittedIps: ["203.0.113.10"],
+      installationToken: "inst",
+      environment: "sandbox",
+      fetchImpl: async () =>
+        new Response(
+          JSON.stringify({
+            Error: [
+              {
+                error_description:
+                  "User credentials are incorrect. Incorrect API key or IP address.",
+              },
+            ],
+          }),
+          { status: 400, headers: { "Content-Type": "application/json" } },
+        ),
+    });
+    await assert.rejects(
+      () => client.createSession(),
+      (error: unknown) =>
+        error instanceof BunqApiError &&
+        error.status === 400 &&
+        error.code === "bunq_auth_rejected" &&
+        /Settings → bunq/i.test(error.message),
+    );
+  });
+});
 
 describe("bunq-client sandbox guards", () => {
   it("allows only the official sandbox API base", () => {

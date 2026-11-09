@@ -97,14 +97,99 @@ export type BunqSandboxUserResult = {
 
 export class BunqApiError extends Error {
   readonly status: number;
+  /** Raw bunq HTTP body — never log or return to clients; use {@link code}/message. */
   readonly body: string;
+  /** Stable machine code for UI / API consumers (sanitized). */
+  readonly code: string | null;
 
-  constructor(status: number, body: string, message?: string) {
+  constructor(
+    status: number,
+    body: string,
+    message?: string,
+    code: string | null = null,
+  ) {
     super(message ?? `bunq API error ${status}`);
     this.name = "BunqApiError";
     this.status = status;
     this.body = body;
+    this.code = code;
   }
+}
+
+/** Extract bunq `Error[].error_description` strings; never returns tokens/keys. */
+export function extractBunqErrorDescriptions(body: string): string[] {
+  if (!body.trim()) return [];
+  try {
+    const parsed = JSON.parse(body) as unknown;
+    if (!parsed || typeof parsed !== "object") return [];
+    const errors = (parsed as { Error?: unknown }).Error;
+    if (!Array.isArray(errors)) return [];
+    const out: string[] = [];
+    for (const entry of errors) {
+      if (!entry || typeof entry !== "object") continue;
+      const record = entry as Record<string, unknown>;
+      const desc =
+        typeof record.error_description === "string"
+          ? record.error_description
+          : typeof record.error_description_translated === "string"
+            ? record.error_description_translated
+            : null;
+      if (!desc?.trim()) continue;
+      // Hard strip anything that looks like a secret fragment.
+      const cleaned = desc
+        .trim()
+        .replace(/sk_[A-Za-z0-9_\-]+/g, "[redacted]")
+        .replace(/-----BEGIN[\s\S]*?-----END[^-]+-----/g, "[redacted]")
+        .slice(0, 240);
+      if (cleaned) out.push(cleaned);
+    }
+    return out;
+  } catch {
+    return [];
+  }
+}
+
+export type FormattedBunqHttpFailure = {
+  message: string;
+  code: string;
+};
+
+/**
+ * Build a safe user-facing message from a bunq HTTP failure.
+ * Prefer official error_description; map known auth failures to reconnect guidance.
+ */
+export function formatBunqHttpFailure(
+  method: string,
+  path: string,
+  status: number,
+  body: string,
+): FormattedBunqHttpFailure {
+  const descriptions = extractBunqErrorDescriptions(body);
+  const primary = descriptions[0] ?? null;
+  const authRejected =
+    status === 400 &&
+    primary != null &&
+    /incorrect api key or ip address/i.test(primary);
+
+  if (authRejected) {
+    return {
+      code: "bunq_auth_rejected",
+      message:
+        "bunq rejected the API key or egress IP. Update the key or permitted IPs in Settings → bunq, then reconnect. Cached transactions stay available until sync succeeds.",
+    };
+  }
+
+  if (primary) {
+    return {
+      code: "bunq_api_error",
+      message: `bunq ${method} ${path} failed (${status}): ${primary}`,
+    };
+  }
+
+  return {
+    code: "bunq_api_error",
+    message: `bunq ${method} ${path} failed (${status})`,
+  };
 }
 
 export class BunqLiveApiRefusedError extends Error {
@@ -1000,10 +1085,12 @@ export class BunqClient {
       payload = null;
     }
     if (!response.ok) {
+      const formatted = formatBunqHttpFailure(method, path, response.status, text);
       throw new BunqApiError(
         response.status,
         text,
-        `bunq ${method} ${path} failed (${response.status})`,
+        formatted.message,
+        formatted.code,
       );
     }
     return payload;
