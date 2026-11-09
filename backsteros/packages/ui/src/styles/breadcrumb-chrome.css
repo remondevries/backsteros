@@ -47,7 +47,10 @@
   top: 0;
   bottom: 0;
   left: 50%;
-  z-index: 0;
+  /* Above the equal-width side columns so Local/Screenshare stays clickable;
+   * wrapper stays pointer-events:none so empty center space still passes
+   * through to left/right chrome. */
+  z-index: 2;
   display: flex;
   max-width: min(46vw, 360px);
   align-items: center;
