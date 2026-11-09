@@ -136,6 +136,7 @@ test("cleartext PowerSync stays loopback for local-core API", () => {
 test("optional replica API splits loopback REST vs SSE hosts", () => {
   assert.equal(isLocalDevApiUrl("http://127.0.0.1:8788"), true);
   assert.equal(isLocalDevApiUrl("http://localhost:8788"), true);
+  assert.equal(isLocalDevApiUrl("http://127.0.0.1:8800"), true);
   assert.equal(isLocalDevApiUrl("http://localhost:1420"), false);
   assert.equal(isLocalDevApiUrl("https://api.local.backsteros.com"), false);
   assert.equal(

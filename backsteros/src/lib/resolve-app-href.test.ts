@@ -86,6 +86,15 @@ test("resolveAppHref leaves concrete item hrefs alone and applies defaults", () 
   assert.equal(formatResolvedAppHref(resolveAppHref("/letters")), "/letters");
 });
 
+test("Start room path is meeting-detail outlet (not calendar keep-alive)", () => {
+  const room =
+    "/calendar/meetings/11111111-1111-4111-8111-111111111111/room";
+  const resolved = resolveAppHref(room);
+  assert.equal(resolved.surface, "meeting-detail");
+  assert.equal(resolved.pathname, room);
+  assert.equal(formatResolvedAppHref(resolved), room);
+});
+
 test("resolveAppHref expands inbox root to the seeded first item", () => {
   rememberSectionEntryHrefs({
     inbox: "/inbox/in-1",

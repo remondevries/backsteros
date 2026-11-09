@@ -34,9 +34,14 @@
   box-sizing: border-box;
 }
 
-html,
-body,
-#root {
+/*
+ * Standalone BacksterMeet sets `html.meet-app`. When Director embeds in the
+ * desktop shell, do not paint `#root` black or force overflow:hidden — that
+ * made Start-room look like a silent blank tab while the shell stayed mounted.
+ */
+html.meet-app,
+html.meet-app body,
+html.meet-app #root {
   margin: 0;
   height: 100%;
   overflow: hidden;

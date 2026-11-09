@@ -129,7 +129,13 @@ if (import.meta.hot) {
 
 function ShellRouteSuspenseFallback() {
   return (
-    <div className="flex min-h-0 min-w-0 flex-1" aria-busy="true" aria-label="Loading page" />
+    <div
+      className="flex min-h-0 min-w-0 flex-1 flex-col items-center justify-center gap-2 p-6 text-sm text-muted-foreground"
+      aria-busy="true"
+      aria-label="Loading page"
+    >
+      <p>Loading…</p>
+    </div>
   );
 }
 
@@ -139,9 +145,11 @@ const MemoizedShellRouteTree = memo(function MemoizedShellRouteTree({
   trail: ReturnType<typeof parseNavigationTrailPath>;
 }) {
   return (
-    <Suspense fallback={<ShellRouteSuspenseFallback />}>
-      {trail ? <NavigationTrailPage trail={trail} /> : <Outlet />}
-    </Suspense>
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+      <Suspense fallback={<ShellRouteSuspenseFallback />}>
+        {trail ? <NavigationTrailPage trail={trail} /> : <Outlet />}
+      </Suspense>
+    </div>
   );
 });
 
@@ -225,7 +233,9 @@ function ShellRouteContent({
           );
         })}
         <KeepAliveOutletGate showOutlet={showOutlet}>
-          <MemoizedShellRouteTree trail={trail} />
+          <div className="keep-alive-outlet">
+            <MemoizedShellRouteTree trail={trail} />
+          </div>
         </KeepAliveOutletGate>
       </div>
     </ShellRouteFrame>

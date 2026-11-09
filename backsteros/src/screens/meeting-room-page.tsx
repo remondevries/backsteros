@@ -46,19 +46,48 @@ export function MeetingRoomPage() {
   ]);
 
   if (!ready) {
-    return <div className="flex min-h-0 flex-1" />;
+    return (
+      <div
+        className="meeting-room-page flex min-h-0 flex-1 flex-col items-center justify-center gap-2 p-6 text-sm text-muted-foreground"
+        aria-busy="true"
+        data-meeting-room-state="loading"
+      >
+        <p>Loading meeting room…</p>
+      </div>
+    );
+  }
+
+  if (!meetingRouteParam) {
+    return (
+      <div
+        className="meeting-room-page flex min-h-0 flex-1 flex-col items-center justify-center gap-2 p-6 text-sm"
+        data-meeting-room-state="missing-id"
+      >
+        <p>Missing meeting id in the room URL.</p>
+      </div>
+    );
   }
 
   if (!meeting) {
     return (
-      <div className="inbox-detail-empty">
+      <div
+        className="meeting-room-page flex min-h-0 flex-1 flex-col items-center justify-center gap-2 p-6 text-sm"
+        data-meeting-room-state="not-found"
+      >
         <p>Meeting not found.</p>
+        <p className="text-muted-foreground">
+          Open Agenda, select the meeting, then Start room again.
+        </p>
       </div>
     );
   }
 
   return (
-    <div className="meeting-room-page flex min-h-0 flex-1 flex-col">
+    <div
+      className="meeting-room-page flex min-h-0 flex-1 flex-col"
+      data-meeting-room-state="ready"
+      style={{ height: "100%", minHeight: 0 }}
+    >
       <RegisterPageTitle title={`${displayId ?? "Meeting"} · Room`} />
       <DirectorRoom
         meetingId={meeting.id}

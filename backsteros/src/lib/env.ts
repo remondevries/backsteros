@@ -93,13 +93,21 @@ function isLoopbackHostname(host: string): boolean {
   return host === "127.0.0.1" || host === "localhost" || host === "::1";
 }
 
-/** Port on local-core (LaunchAgent / docker API). Vite UI stays on 1420. */
+/**
+ * Port on a local-core API process. Vite UI stays on 1420.
+ * Accept any non-UI loopback port so a separate hot-reload DEV core
+ * (`:8800`, `:8799`, …) still gets the local-shell bearer.
+ */
 function isLocalCoreApiPort(port: string): boolean {
-  return port === "" || port === "8788";
+  if (port === "" || port === "8788") return true;
+  if (port === "1420") return false;
+  const n = Number(port);
+  return Number.isInteger(n) && n > 0 && n < 65536;
 }
 
 /**
- * True when `VITE_API_URL` targets local-core (`:8788`), not the Vite UI on `:1420`.
+ * True when `VITE_API_URL` targets local-core (default `:8788`, or another
+ * loopback DEV port), not the Vite UI on `:1420`.
  * Loopback always qualifies. Cleartext Tailscale / MagicDNS / configured HTTPS
  * gateway hosts qualify only when {@link treatConfiguredApiAsLocalCore} is set.
  */
@@ -113,7 +121,9 @@ export function isLocalDevApiUrl(apiUrl: string): boolean {
     const configured = configuredDevServerHostname();
     // HTTPS same-origin gateway (nginx → :8788 / :1420 / PowerSync).
     if (configured && host === configured) return true;
-    if (!isLocalCoreApiPort(url.port)) return false;
+    // Non-loopback still defaults to the production local-core port unless
+    // the URL is the configured HTTPS gateway host above.
+    if (url.port !== "" && url.port !== "8788") return false;
     // Explicit opt-in: MagicDNS name, this development box, or any CGNAT tailnet IP.
     return (
       host === "development" ||

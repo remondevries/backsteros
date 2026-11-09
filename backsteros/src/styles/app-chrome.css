@@ -225,6 +225,43 @@
 }
 
 /*
+ * Outlet pages (meeting room, settings, …) must fill the same absolute slot
+ * as keep-alive panes. Without this, percentage-height children (Director
+ * `height: 100%`) collapse to 0 → blank Start-room tab.
+ */
+.keep-alive-outlet {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/*
+ * Start room is an Outlet (not calendar keep-alive). Without :has() flex lock,
+ * `.page-scroll` stays `display:block` + overflow auto and the flex-1 stack
+ * collapses to height 0 — Director mounts but paints a blank tab.
+ */
+.page-scroll:has(.meeting-room-page),
+.bos-product-shell .page-scroll:has(.meeting-room-page) {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.page-scroll:has(.meeting-room-page) > .keep-alive-stack,
+.page-scroll:has(.meeting-room-page) .keep-alive-outlet,
+.page-scroll:has(.meeting-room-page) .meeting-room-page {
+  flex: 1 1 0%;
+  min-height: 0;
+  height: 100%;
+}
+
+/*
  * Vite browser preview has no overlay titlebar. Match tauri.conf.json
  * trafficLightPosition { x: 16, y: 24 }: 12px dots, 8px gaps, faded so they
  * read as layout guides rather than live window controls.

@@ -160,6 +160,17 @@ test("outlet nav dismisses a visible keep-alive pane", () => {
   assert.equal(getVisibleKeepAliveSurface(), null);
 });
 
+test("Start room outlet dismisses calendar keep-alive so Director can paint", () => {
+  markKeepAliveSurfaceMounted("calendar");
+  rememberKeepAliveHref("calendar", "/calendar", "");
+  syncVisibleKeepAliveSurfaceFromRoute("calendar");
+  const roomHref =
+    "/calendar/meetings/11111111-1111-4111-8111-111111111111/room";
+  assert.equal(dismissKeepAliveForOutletNavigation(roomHref), true);
+  assert.equal(getVisibleKeepAliveSurface(), null);
+  assert.equal(isKeepAliveOutletTransitionPending(), true);
+});
+
 test("first-visit keep-alive nav clears stale visible so activeProp can win", () => {
   markKeepAliveSurfaceMounted("projects");
   rememberKeepAliveHref("projects", "/projects/BOS", "");
