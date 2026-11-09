@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { describe, it } from "node:test";
+import { fileURLToPath } from "node:url";
 
 import {
   bunqPaymentFingerprint,
@@ -7,6 +10,42 @@ import {
   mapBunqPaymentToLedgerRow,
   parseBunqAmountToCents,
 } from "./bunq-sync-map.js";
+import { shouldForwardBunqSyncToCloud } from "../../lib/bunq-sync-cloud-forward.js";
+
+describe("bunq-sync ownership (OS-171)", () => {
+  it("forwards on local hybrid role and keeps cloud/standalone local", () => {
+    const prev = process.env.CORE_REPLICATION_ROLE;
+    try {
+      process.env.CORE_REPLICATION_ROLE = "local";
+      assert.equal(shouldForwardBunqSyncToCloud(), true);
+      process.env.CORE_REPLICATION_ROLE = "cloud";
+      assert.equal(shouldForwardBunqSyncToCloud(), false);
+      delete process.env.CORE_REPLICATION_ROLE;
+      assert.equal(shouldForwardBunqSyncToCloud(), false);
+    } finally {
+      if (prev === undefined) delete process.env.CORE_REPLICATION_ROLE;
+      else process.env.CORE_REPLICATION_ROLE = prev;
+    }
+  });
+
+  it("gates getConnectedBunqClient behind cloud-forward ownership", () => {
+    const src = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), "bunq-sync.ts"),
+      "utf8",
+    );
+    assert.match(src, /shouldForwardBunqSyncToCloud/);
+    assert.match(src, /forwardBunqSyncToCloud/);
+    const forwardIdx = src.indexOf("forwardBunqSyncToCloud");
+    const clientIdx = src.indexOf("getConnectedBunqClient");
+    assert.ok(forwardIdx > 0 && clientIdx > forwardIdx);
+    assert.equal(src.includes("getConnectedBunqClient(workspaceId)"), true);
+    // Local hybrid path must return before any bunq client construction.
+    assert.match(
+      src,
+      /if \(shouldForwardBunqSyncToCloud\(\)\) \{[\s\S]*?return forwardBunqSyncToCloud/,
+    );
+  });
+});
 
 describe("bunq-sync-map", () => {
   it("parses bunq decimal amounts to cents", () => {

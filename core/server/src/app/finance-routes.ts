@@ -49,6 +49,7 @@ import {
   toFinancialTransaction,
 } from "../lib/mappers.js";
 import { BunqApiError, BunqLiveApiRefusedError } from "../lib/bunq-client.js";
+import { BunqSyncCloudForwardError } from "../lib/bunq-sync-cloud-forward.js";
 import { MoneybirdApiError } from "../lib/moneybird-client.js";
 import { newId } from "../lib/crypto.js";
 import { clientEstimateRouteDeps } from "../services/finance/client-estimates.js";
@@ -1696,6 +1697,14 @@ export function registerFinanceRoutes(app: Hono) {
     } catch (error) {
       if (error instanceof BunqLiveApiRefusedError) {
         return c.json({ error: error.message, code: "bad_request" }, 400);
+      }
+      if (error instanceof BunqSyncCloudForwardError) {
+        return c.json(
+          { error: error.message, code: error.code },
+          (error.status >= 400 && error.status < 600
+            ? Math.min(error.status, 502)
+            : 502) as 400,
+        );
       }
       if (error instanceof BunqApiError) {
         return c.json(

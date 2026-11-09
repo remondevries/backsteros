@@ -1,7 +1,10 @@
 /**
- * Sandbox bunq → local financial_transactions sync (OS-166).
+ * bunq → financial_transactions sync (OS-166 / OS-171).
  * Only for the Finance bank account key `bunq-personal`.
  * Insert-only by bunq payment id; no payment/mutation writes to bunq.
+ *
+ * Hybrid local-core (CORE_REPLICATION_ROLE=local) never calls bunq HTTP —
+ * ownership is cloud-core via peer forward (permitted egress IP).
  */
 
 import { and, eq } from "drizzle-orm";
@@ -14,6 +17,11 @@ import {
   BunqApiError,
   type BunqPayment,
 } from "../../lib/bunq-client.js";
+import {
+  BunqSyncCloudForwardError,
+  forwardBunqSyncToCloud,
+  shouldForwardBunqSyncToCloud,
+} from "../../lib/bunq-sync-cloud-forward.js";
 import { newId } from "../../lib/crypto.js";
 import {
   BUNQ_PERSONAL_BANK_ACCOUNT_KEY,
@@ -34,9 +42,12 @@ export {
   parseBunqAmountToCents,
 } from "./bunq-sync-map.js";
 
+export { BunqSyncCloudForwardError, shouldForwardBunqSyncToCloud };
+
 export async function syncBankAccountFromBunq(
   workspaceId: string,
   bankAccountId: string,
+  options: { fetchImpl?: typeof fetch } = {},
 ): Promise<BunqBankAccountSyncResult | null> {
   const account = await getBankAccountById(workspaceId, bankAccountId);
   if (!account) return null;
@@ -51,6 +62,25 @@ export async function syncBankAccountFromBunq(
 
   // Keep the canonical Finance row present even if someone renamed the display name.
   await ensureBunqPersonalBankAccount(workspaceId);
+
+  if (shouldForwardBunqSyncToCloud()) {
+    // No local bunq HTTP — cloud owns ingestion; ledger rows replicate back.
+    return forwardBunqSyncToCloud({
+      workspaceId,
+      bankAccountId,
+      fetchImpl: options.fetchImpl,
+    });
+  }
+
+  return runBunqSyncLocally(workspaceId, bankAccountId, account.type);
+}
+
+/** Cloud / standalone path — calls bunq from this host's egress IP. */
+export async function runBunqSyncLocally(
+  workspaceId: string,
+  bankAccountId: string,
+  accountType: string,
+): Promise<BunqBankAccountSyncResult> {
   const client = await getConnectedBunqClient(workspaceId);
 
   const monetaryAccounts = await client.listMonetaryAccounts();
@@ -93,7 +123,7 @@ export async function syncBankAccountFromBunq(
   for (const entry of payments) {
     const ledger = mapBunqPaymentToLedgerRow(
       entry.payment,
-      account.type,
+      accountType,
       entry.monetaryAccountId,
     );
     if (!ledger) continue;

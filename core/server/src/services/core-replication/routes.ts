@@ -1215,4 +1215,76 @@ export function registerCoreReplicationRoutes(app: Hono) {
       return c.json(poll);
     },
   );
+
+  /**
+   * Local-core → cloud-core: run Bunq Personal ingestion on cloud egress
+   * (OS-171). Local must not call bunq HTTP when role=local. Cloud uses its
+   * own workspace secrets; response is counts only (no credentials).
+   */
+  app.post("/internal/core-replication/bunq-sync", async (c) => {
+    if (!replicationAuth(c.req.header("Authorization"))) {
+      return c.json(unauthorized(), 401);
+    }
+    const config = getCoreReplicationConfig();
+    if (!config || config.role !== "cloud") {
+      return c.json(
+        {
+          error: "bunq sync peer ingest is cloud-only",
+          code: "forbidden" as const,
+        },
+        403,
+      );
+    }
+
+    const body = (await c.req.json().catch(() => null)) as {
+      workspace_id?: string;
+      bank_account_id?: string;
+    } | null;
+    const workspaceId = body?.workspace_id?.trim();
+    const bankAccountId = body?.bank_account_id?.trim();
+    if (!workspaceId || !bankAccountId) {
+      return c.json(
+        {
+          error: "workspace_id and bank_account_id are required",
+          code: "bad_request" as const,
+        },
+        400,
+      );
+    }
+
+    try {
+      const { syncBankAccountFromBunq } = await import(
+        "../finance/bunq-sync.js"
+      );
+      const result = await syncBankAccountFromBunq(workspaceId, bankAccountId);
+      if (!result) {
+        return c.json(
+          { error: "Bank account not found", code: "not_found" as const },
+          404,
+        );
+      }
+      return c.json(result);
+    } catch (error) {
+      const { BunqApiError, BunqLiveApiRefusedError } = await import(
+        "../../lib/bunq-client.js"
+      );
+      if (error instanceof BunqLiveApiRefusedError) {
+        return c.json({ error: error.message, code: "bad_request" }, 400);
+      }
+      if (error instanceof BunqApiError) {
+        return c.json(
+          {
+            error: error.message,
+            code: error.code ?? "bad_request",
+          },
+          error.status >= 400 && error.status < 600
+            ? (Math.min(error.status, 502) as 400)
+            : 400,
+        );
+      }
+      const message =
+        error instanceof Error ? error.message : "bunq bank sync failed";
+      return c.json({ error: message, code: "bad_request" as const }, 400);
+    }
+  });
 }
