@@ -28,15 +28,20 @@ import { useDesktopApi } from "../../lib/api-context";
 import { useAgentMail } from "../../lib/agentmail-context";
 import {
   readEmailComposeSession,
-  resetEmailComposeSession,
+  resetEmailComposeSessionForTab,
   writeEmailComposeSession,
 } from "../../lib/email-compose-session";
 import { createRequestAbortSignal } from "../../lib/request-timeout";
 import { forgetEmailListRemoval } from "../../lib/email-list-pending-removals";
 import {
+  captureWarmNavOwner,
+  isWarmNavOwnerCurrent,
+} from "../../lib/shell-warm-keep-alive";
+import {
   dispatchEmailListPatch,
   dispatchEmailListRemove,
 } from "../../lib/use-agentmail-mailboxes";
+import { navigateToHrefIfWarmOwner } from "../../lib/owned-warm-navigate";
 
 import {
   emailRequestErrorMessage,
@@ -47,7 +52,6 @@ import {
   resolveEmailListReturnHref,
   type EmailListReturnHref,
 } from "../../lib/email-list-return-href";
-import { navigateToHref } from "../../router/navigate-href";
 import { pinEmailThreadScrollDuringUpdate } from "./email-thread-scroll-pin";
 
 export function useEmailDraftActions({
@@ -100,7 +104,9 @@ export function useEmailDraftActions({
   const routerNavigate = useNavigate();
   const navigate = useCallback(
     (to: string, options?: { replace?: boolean; state?: unknown }) => {
-      navigateToHref(routerNavigate, to, options);
+      // Default sync navigations (header edits) claim the current tab.
+      const owner = captureWarmNavOwner();
+      navigateToHrefIfWarmOwner(routerNavigate, to, owner, options);
     },
     [routerNavigate],
   );
@@ -801,6 +807,10 @@ export function useEmailDraftActions({
       sendingRef.current = true;
       setSending(true);
       setSendError(null);
+      // Capture submitting tab — send uses explicit draft ids (no wrong-mail),
+      // but post-send navigate/session reset must not touch a sibling tab.
+      const sendOwner = captureWarmNavOwner();
+      const sendOwnerTabId = sendOwner?.tabId ?? null;
       try {
         // Only PATCH fields that changed. Never re-save an unchanged body —
         // OS-87 sends stored shelled drafts byte-for-byte.
@@ -836,6 +846,7 @@ export function useEmailDraftActions({
           { method: "POST" },
         );
         requestMailboxReload();
+        const ownerStillCurrent = isWarmNavOwnerCurrent(sendOwner);
         // Only reopen a *parent* thread after a reply send. Do not fall back to
         // result.messageId — that is the outbound message, and treating it as a
         // parent breaks compose (Communication's reloadMessageDetail throws;
@@ -875,17 +886,21 @@ export function useEmailDraftActions({
             conceptDraftId: null,
             conceptPreview: null,
           });
-          if (draftId) {
-            navigate(toEmailDetailHref(targetInbox, parentMessageId), {
-              replace: true,
-            });
+          if (draftId && ownerStillCurrent) {
+            navigateToHrefIfWarmOwner(
+              routerNavigate,
+              toEmailDetailHref(targetInbox, parentMessageId),
+              sendOwner,
+              { replace: true },
+            );
           }
           return;
         }
         setDraft(null);
         setMessage(null);
         setComposeDraft(null);
-        resetEmailComposeSession();
+        // Always clear the submitting tab's session — not whatever is active now.
+        resetEmailComposeSessionForTab(sendOwnerTabId);
         // Remove the draft row so send does not leave a ghost in Communication.
         dispatchEmailListRemove({
           inboxId: draftInboxId,
@@ -900,19 +915,28 @@ export function useEmailDraftActions({
             conceptDraftId: null,
           });
         }
+        if (!ownerStillCurrent) {
+          return;
+        }
         if (onComposeFinished) {
           onComposeFinished();
           return;
         }
         if (result.messageId && result.inboxId) {
-          navigate(toEmailDetailHref(result.inboxId, result.messageId), {
-            replace: true,
-          });
+          navigateToHrefIfWarmOwner(
+            routerNavigate,
+            toEmailDetailHref(result.inboxId, result.messageId),
+            sendOwner,
+            { replace: true },
+          );
           return;
         }
-        navigate(resolveEmailListReturnHref(listReturnHref, targetDraftId), {
-          replace: true,
-        });
+        navigateToHrefIfWarmOwner(
+          routerNavigate,
+          resolveEmailListReturnHref(listReturnHref, targetDraftId),
+          sendOwner,
+          { replace: true },
+        );
       } catch (caught) {
         setSendError(
           emailRequestErrorMessage(caught, "Could not send draft."),
@@ -933,12 +957,12 @@ export function useEmailDraftActions({
       inboxId,
       isCompose,
       message?.conceptDraft,
-      navigate,
       onComposeFinished,
       ownsDraftHeaders,
       promoteEmailThreadStatus,
       reloadMessageDetail,
       listReturnHref,
+      routerNavigate,
       setDraft,
       setMessage,
       toEmailDetailHref,

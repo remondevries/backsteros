@@ -10,6 +10,7 @@ import {
   DESKTOP_OVERLAY_REQUEST_COMPOSE_CONTEXT_EVENT,
   snapshotComposeOverlayContext,
 } from "../lib/desktop-overlay";
+import { captureWarmNavOwner } from "../lib/shell-warm-keep-alive";
 import { isTauriRuntime } from "../lib/whoop";
 import {
   useDesktopWorkspaceDocuments,
@@ -47,6 +48,8 @@ function buildContextFromWorkspace(input: {
       })),
     ],
     defaultAssigneeId: getDefaultAssigneeId(),
+    // Fresh capture at publish time (request handler overrides again).
+    navOwner: captureWarmNavOwner(),
   });
 }
 
@@ -91,10 +94,13 @@ export function DesktopOverlayComposeContextPublisher() {
         unlisten = await listen(
           DESKTOP_OVERLAY_REQUEST_COMPOSE_CONTEXT_EVENT,
           () => {
-            void emit(
-              DESKTOP_OVERLAY_COMPOSE_CONTEXT_EVENT,
-              snapshotComposeOverlayContext(contextRef.current),
-            );
+            // Capture the main tab that is answering — overlay echoes this on
+            // post-create navigate so a mid-flight tab switch cannot retarget.
+            const snapshot = snapshotComposeOverlayContext({
+              ...contextRef.current,
+              navOwner: captureWarmNavOwner(),
+            });
+            void emit(DESKTOP_OVERLAY_COMPOSE_CONTEXT_EVENT, snapshot);
           },
         );
       } catch {

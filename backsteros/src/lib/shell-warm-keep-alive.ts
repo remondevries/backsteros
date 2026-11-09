@@ -207,8 +207,11 @@ export function isKeepAlivePaneMounted(href: string): boolean {
  *   entry (shared window history while that tab is focused).
  * - In-app chrome Back/Forward stays per-tab via navigation-history stacks.
  */
-function onWarmKeepAlivePopstate(): void {
-  const href = currentWindowNavigationHref();
+/**
+ * Apply an OS Back/Forward landing. Exported for tests; live popstate uses
+ * {@link currentWindowNavigationHref}.
+ */
+export function applyWarmKeepAlivePopstateHref(href: string): void {
   const resolved = resolveAppHref(href);
   if (
     mountedKeepAliveSurfaces.has(resolved.surface) &&
@@ -233,6 +236,10 @@ function onWarmKeepAlivePopstate(): void {
   outletTransitionPending = true;
   assignVisibleKeepAliveSurface(null);
   emitWarmKeepAlive();
+}
+
+function onWarmKeepAlivePopstate(): void {
+  applyWarmKeepAlivePopstateHref(currentWindowNavigationHref());
 }
 
 function ensureWarmKeepAlivePopstate(): void {
@@ -669,4 +676,5 @@ export function resetKeepAliveForTests(): void {
   visibleKeepAliveSurface = null;
   outletTransitionPending = false;
   warmKeepAliveEpoch = 0;
+  warmKeepAlivePopstateInstalled = false;
 }

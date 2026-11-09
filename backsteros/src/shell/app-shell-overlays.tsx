@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useRef } from "react";
 import { useNavigate } from "@tanstack/react-router";
 
 import {
@@ -14,6 +14,11 @@ import { useAgentMail } from "../lib/agentmail-context";
 import { withAvatarSrc } from "../lib/avatar-src";
 import { buildComposeOverlayContext } from "../lib/compose-overlay-data";
 import { getDefaultAssigneeId } from "../lib/default-assignee";
+import { navigateToHrefIfWarmOwner } from "../lib/owned-warm-navigate";
+import {
+  captureWarmNavOwner,
+  type WarmNavOwner,
+} from "../lib/shell-warm-keep-alive";
 import {
   buildDocumentLinkOptions,
   buildEmailLinkOptions,
@@ -25,7 +30,6 @@ import {
   useDesktopWorkspacePeople,
   useDesktopWorkspaceProjects,
 } from "../lib/workspace-data";
-import { navigateToHref } from "../router/navigate-href";
 
 export function AppShellOverlays({
   composeOpen,
@@ -45,11 +49,17 @@ export function AppShellOverlays({
   contactAvatarSrc: Record<string, string>;
 }) {
   const routerNavigate = useNavigate();
+  // ComposeModal awaits create* then navigates — capture the submitting tab so
+  // a mid-flight tab switch cannot land the new entity on a sibling tab.
+  const composeSubmitOwnerRef = useRef<WarmNavOwner | null>(null);
   const navigate = (
     to: string,
     options?: { replace?: boolean; state?: unknown },
   ) => {
-    navigateToHref(routerNavigate, to, options);
+    const owner =
+      composeSubmitOwnerRef.current ?? captureWarmNavOwner();
+    composeSubmitOwnerRef.current = null;
+    navigateToHrefIfWarmOwner(routerNavigate, to, owner, options);
   };
   const agentMail = useAgentMail();
   const { projects, letters } = useDesktopWorkspaceProjects();
@@ -115,6 +125,7 @@ export function AppShellOverlays({
       letterLinkOptions={buildLetterLinkOptions(letters, projects)}
       emailLinkOptions={buildEmailLinkOptions(agentMail.messages)}
       onCreateTask={async (input) => {
+        composeSubmitOwnerRef.current = captureWarmNavOwner();
         if (input.projectId) {
           const project = projects.find(
             (entry) => entry.id === input.projectId,
@@ -170,6 +181,7 @@ export function AppShellOverlays({
         return { href };
       }}
       onCreateDocument={async (input) => {
+        composeSubmitOwnerRef.current = captureWarmNavOwner();
         if (input.target === "knowledge") {
           const created = await createKnowledgeDocument({
             title: input.title,

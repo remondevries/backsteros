@@ -52,16 +52,18 @@ describe("buildComposeOverlayContext", () => {
     assert.ok(context.projects[0]?.dueDate instanceof Date);
     assert.equal(context.contacts[0]?.name, "Ada");
     assert.equal(context.defaultAssigneeId, "c1");
+    assert.equal(context.navOwner, null);
     assert.equal(context.projectsById.get("p1")?.key, "BSH");
     assert.ok(Object.keys(context.documentFoldersByTarget).length > 0);
   });
 
-  it("round-trips through an IPC snapshot", () => {
+  it("round-trips through an IPC snapshot including navOwner", () => {
     const context = buildComposeOverlayContext({
       projects: [{ id: "p1", key: "BSH", name: "BacksterOS" }],
       contacts: [{ id: "c1", name: "Ada" }],
       documents: [],
       defaultAssigneeId: null,
+      navOwner: { tabId: "tab-a", generation: 3 },
     });
     const restored = composeOverlayContextFromSnapshot(
       composeOverlayContextToSnapshot(context),
@@ -70,5 +72,6 @@ describe("buildComposeOverlayContext", () => {
     assert.equal(restored.contacts[0]?.id, "c1");
     assert.equal(restored.projectsById.get("p1")?.name, "BacksterOS");
     assert.equal(restored.defaultAssigneeId, null);
+    assert.deepEqual(restored.navOwner, { tabId: "tab-a", generation: 3 });
   });
 });

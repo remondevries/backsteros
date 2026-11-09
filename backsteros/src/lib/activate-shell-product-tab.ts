@@ -10,15 +10,18 @@ import {
   type ProductTabsState,
 } from "@backsteros/ui/shell";
 
+import { pruneEmailComposeSessions } from "./email-compose-session";
 import { pruneProductTabUiState } from "./product-tab-ui-state";
 import { syncWarmKeepAliveProductTabs } from "./shell-warm-keep-alive";
 
 export function mirrorWarmKeepAliveTabsFromState(state: ProductTabsState): void {
+  const openIds = state.tabs.map((tab) => tab.id);
   syncWarmKeepAliveProductTabs({
     activeTabId: state.activeTabId,
     tabs: state.tabs.map((tab) => ({ id: tab.id, href: tab.href })),
   });
-  pruneProductTabUiState(state.tabs.map((tab) => tab.id));
+  pruneProductTabUiState(openIds);
+  pruneEmailComposeSessions(openIds);
 }
 
 /**

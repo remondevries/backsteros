@@ -25,6 +25,8 @@ export const DESKTOP_OVERLAY_COMPOSE_CONTEXT_EVENT =
 
 export type DesktopOverlayNavigatePayload = {
   href: string;
+  /** Main-window tab that started the overlay action; gates delayed navigate. */
+  owner?: { tabId: string; generation: number } | null;
 };
 
 export async function toggleDesktopOverlayPalette(): Promise<void> {
@@ -82,12 +84,14 @@ export async function resizeDesktopOverlayWindow(
 
 export async function completeDesktopOverlayNavigation(
   href: string,
+  owner?: { tabId: string; generation: number } | null,
 ): Promise<void> {
   try {
     const { emit } = await import("@tauri-apps/api/event");
 
     await emit(DESKTOP_OVERLAY_NAVIGATE_EVENT, {
       href,
+      ...(owner ? { owner } : {}),
     } satisfies DesktopOverlayNavigatePayload);
 
     await hideDesktopOverlayWindow();

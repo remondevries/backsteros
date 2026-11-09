@@ -121,7 +121,11 @@ export function writeEmailComposeSession(session: EmailComposeSession): void {
 }
 
 export function resetEmailComposeSession(): void {
-  const tabId = activeTabId();
+  resetEmailComposeSessionForTab(activeTabId());
+}
+
+/** Clear compose session for a specific product tab (send/close ownership). */
+export function resetEmailComposeSessionForTab(tabId: string | null): void {
   try {
     sessionStorage.removeItem(storageKeyForTab(tabId));
     if (!tabId) {
@@ -129,6 +133,23 @@ export function resetEmailComposeSession(): void {
     }
   } catch {
     // Ignore private mode / quota errors.
+  }
+}
+
+/** Drop compose sessions for closed product tabs so reopen cannot revive them. */
+export function pruneEmailComposeSessions(openTabIds: readonly string[]): void {
+  try {
+    const keep = new Set(openTabIds);
+    const keys: string[] = [];
+    for (let i = 0; i < sessionStorage.length; i += 1) {
+      const key = sessionStorage.key(i);
+      if (!key?.startsWith(`${COMPOSE_SESSION_KEY_PREFIX}.`)) continue;
+      const tabId = key.slice(COMPOSE_SESSION_KEY_PREFIX.length + 1);
+      if (tabId && !keep.has(tabId)) keys.push(key);
+    }
+    for (const key of keys) sessionStorage.removeItem(key);
+  } catch {
+    /* ignore */
   }
 }
 

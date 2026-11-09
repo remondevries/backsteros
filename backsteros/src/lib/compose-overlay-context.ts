@@ -28,12 +28,20 @@ export type ComposeOverlayContact = {
   avatarSrc: string | null;
 };
 
+/** Main-window warm tab owner echoed so post-create navigate cannot hit a sibling. */
+export type ComposeOverlayNavOwner = {
+  tabId: string;
+  generation: number;
+};
+
 export type ComposeOverlayContext = {
   projects: ComposeOverlayProject[];
   contacts: ComposeOverlayContact[];
   documentFoldersByTarget: ComposeDocumentFoldersByTarget;
   projectsById: Map<string, { id: string; key: string; name: string }>;
   defaultAssigneeId: string | null;
+  /** Captured on main when context is published; null for REST cold fallback. */
+  navOwner: ComposeOverlayNavOwner | null;
 };
 
 /** JSON-safe payload for main → overlay webview (no PowerSync in overlay). */
@@ -45,6 +53,7 @@ export type ComposeOverlayContextSnapshot = {
   documentFoldersByTarget: ComposeDocumentFoldersByTarget;
   projectsById: Array<[string, { id: string; key: string; name: string }]>;
   defaultAssigneeId: string | null;
+  navOwner: ComposeOverlayNavOwner | null;
 };
 
 export type ComposeOverlayDocumentFolderSource = {
@@ -96,6 +105,7 @@ export function buildComposeOverlayContext(input: {
   contacts: readonly ComposeOverlayContactSource[];
   documents: readonly ComposeOverlayDocumentFolderSource[];
   defaultAssigneeId?: string | null;
+  navOwner?: ComposeOverlayNavOwner | null;
 }): ComposeOverlayContext {
   const projects: ComposeOverlayProject[] = input.projects.map((project) => ({
     id: project.id,
@@ -145,6 +155,7 @@ export function buildComposeOverlayContext(input: {
       input.defaultAssigneeId !== undefined
         ? input.defaultAssigneeId
         : getDefaultAssigneeId(),
+    navOwner: input.navOwner ?? null,
   };
 }
 
@@ -160,6 +171,7 @@ export function composeOverlayContextToSnapshot(
     documentFoldersByTarget: context.documentFoldersByTarget,
     projectsById: [...context.projectsById.entries()],
     defaultAssigneeId: context.defaultAssigneeId,
+    navOwner: context.navOwner,
   };
 }
 
@@ -175,5 +187,6 @@ export function composeOverlayContextFromSnapshot(
     documentFoldersByTarget: snapshot.documentFoldersByTarget,
     projectsById: new Map(snapshot.projectsById),
     defaultAssigneeId: snapshot.defaultAssigneeId,
+    navOwner: snapshot.navOwner ?? null,
   };
 }

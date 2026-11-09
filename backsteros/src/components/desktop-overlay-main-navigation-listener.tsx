@@ -34,7 +34,11 @@ export function DesktopOverlayMainNavigationListener() {
             if (!href) {
               return;
             }
-            navigateToHref(navigate, href);
+            // Compose echoes main's submit-time owner; palette omits owner
+            // (intentional current-tab global command at event delivery).
+            navigateToHref(navigate, href, {
+              owner: event.payload?.owner ?? undefined,
+            });
           },
         );
       } catch {

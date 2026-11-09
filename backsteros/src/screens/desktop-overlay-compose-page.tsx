@@ -160,8 +160,11 @@ function ComposeOverlayController() {
     documentFoldersByTarget: {},
     projectsById: new Map(),
     defaultAssigneeId: getDefaultAssigneeId(),
+    navOwner: null,
   };
   const active = context ?? emptyContext;
+  // Same pattern as in-app ComposeModal: owner at submit start, navigate after await.
+  const submitOwnerRef = useRef(active.navOwner);
 
   return (
     <ComposeModal
@@ -176,16 +179,24 @@ function ComposeOverlayController() {
       contextError={contextError}
       projectsHref="/projects"
       onNavigate={(href) => {
-        void completeDesktopOverlayNavigation(href);
+        const owner = submitOwnerRef.current;
+        submitOwnerRef.current = null;
+        void completeDesktopOverlayNavigation(href, owner);
       }}
-      onCreateTask={async (input) =>
-        createComposeOverlayTask(client, input, active.projectsById, {
+      onCreateTask={async (input) => {
+        submitOwnerRef.current = active.navOwner;
+        return createComposeOverlayTask(client, input, active.projectsById, {
           fromTasksDueList: isComposeTasksPagePathname(pathname),
-        })
-      }
-      onCreateDocument={async (input) =>
-        createComposeOverlayDocument(client, input, active.projectsById)
-      }
+        });
+      }}
+      onCreateDocument={async (input) => {
+        submitOwnerRef.current = active.navOwner;
+        return createComposeOverlayDocument(
+          client,
+          input,
+          active.projectsById,
+        );
+      }}
     />
   );
 }

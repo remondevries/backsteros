@@ -55,6 +55,10 @@ function writeScroll(
 /**
  * Persist + restore scrollTop on a scroll container when the active product
  * tab changes (shared keep-alive tree). Saves the leaving tab before restore.
+ *
+ * Residual (intentionally not redesigned here): Communication list + Tasks list
+ * scrollports are not yet wired to this hook — only Inbox panel + main page
+ * scroll ({@link usePageScrollProductTabRestore}) are consumers today.
  */
 export function useProductTabScrollRestore(
   surface: ProductTabScrollSurface,
