@@ -8,9 +8,16 @@ import {
   nextRoomChromeOwnerId,
   nextVisitedRoomMeetingIds,
   resetOpenRoomMeetingIdsForTests,
+  resolveRoomTabSeparation,
   setOpenRoomMeetingIds,
+  shouldRegisterRoomChrome,
   subscribeOpenRoomMeetingIds,
 } from "./room-session-keep-alive.js";
+import {
+  clearRoomTabMedia,
+  getRoomTabMediaDiscrete,
+  setRoomTabMedia,
+} from "./room-tab-media-store.js";
 
 const isRoomPath = (href: string) =>
   /^\/calendar\/meetings\/[^/]+\/room(?:\?|$)/.test(href);
@@ -60,15 +67,12 @@ describe("room-session-keep-alive", () => {
   });
 
   test("tab switch keeps visited room mounted; close tears it down; no cross-room leak", () => {
-    // First visit room A.
     let visited = nextVisitedRoomMeetingIds([], ["meet-a"], "meet-a");
     assert.deepEqual(visited, ["meet-a"]);
 
-    // Background to a normal tab — A stays mounted while its product tab is open.
     visited = nextVisitedRoomMeetingIds(visited, ["meet-a"], null);
     assert.deepEqual(visited, ["meet-a"]);
 
-    // Open room B (both tabs open). A must remain; B mounts on visit.
     visited = nextVisitedRoomMeetingIds(
       visited,
       ["meet-a", "meet-b"],
@@ -76,7 +80,6 @@ describe("room-session-keep-alive", () => {
     );
     assert.deepEqual(visited, ["meet-a", "meet-b"]);
 
-    // Switch active back to A — both stay; no silent drop of B.
     visited = nextVisitedRoomMeetingIds(
       visited,
       ["meet-a", "meet-b"],
@@ -84,11 +87,9 @@ describe("room-session-keep-alive", () => {
     );
     assert.deepEqual(visited, ["meet-a", "meet-b"]);
 
-    // Close B's product tab — only B drops (no cross-room leakage).
     visited = nextVisitedRoomMeetingIds(visited, ["meet-a"], "meet-a");
     assert.deepEqual(visited, ["meet-a"]);
 
-    // Stale room tab in open set without a visit must not auto-mount.
     visited = nextVisitedRoomMeetingIds(
       visited,
       ["meet-a", "meet-stale"],
@@ -97,28 +98,166 @@ describe("room-session-keep-alive", () => {
     assert.deepEqual(visited, ["meet-a"]);
   });
 
-  test("chrome owner follows active room, survives normal tab, no cross-room leak", () => {
-    let owner = nextRoomChromeOwnerId(null, "meet-a", ["meet-a"]);
-    assert.equal(owner, "meet-a");
+  test("Room A → Tasks → Inbox → Room A: chrome/panels only on room; media stays", () => {
+    clearRoomTabMedia("meet-a");
+    setRoomTabMedia("meet-a", {
+      cameraPublished: true,
+      micEnabled: true,
+      audioLevel: 0.3,
+    });
 
-    // Room → normal tab: keep A as chrome owner while mounted.
-    owner = nextRoomChromeOwnerId(owner, null, ["meet-a"]);
-    assert.equal(owner, "meet-a");
+    let mounted = nextVisitedRoomMeetingIds([], ["meet-a"], "meet-a");
+    let sep = resolveRoomTabSeparation({
+      activeMeetingId: "meet-a",
+      mountedIds: mounted,
+    });
+    assert.equal(sep.chromeOwnerMeetingId, "meet-a");
+    assert.equal(sep.roomNavReplacementActive, true);
+    assert.equal(sep.roomLayerActive, true);
+    assert.equal(shouldRegisterRoomChrome(true, true), true);
 
-    // Visit B — B becomes owner; A stays mounted but does not keep chrome.
-    owner = nextRoomChromeOwnerId(owner, "meet-b", ["meet-a", "meet-b"]);
-    assert.equal(owner, "meet-b");
+    // → Tasks
+    mounted = nextVisitedRoomMeetingIds(mounted, ["meet-a"], null);
+    sep = resolveRoomTabSeparation({
+      activeMeetingId: null,
+      mountedIds: mounted,
+    });
+    assert.equal(sep.chromeOwnerMeetingId, null);
+    assert.equal(sep.roomNavReplacementActive, false);
+    assert.equal(sep.roomLayerActive, false);
+    assert.deepEqual(sep.mediaMountedMeetingIds, ["meet-a"]);
+    assert.equal(shouldRegisterRoomChrome(false, true), false);
+    assert.deepEqual(getRoomTabMediaDiscrete("meet-a"), {
+      cameraPublished: true,
+      micEnabled: true,
+    });
 
-    // Background again — still B (last focused), not A.
-    owner = nextRoomChromeOwnerId(owner, null, ["meet-a", "meet-b"]);
-    assert.equal(owner, "meet-b");
+    // → Inbox (still no room chrome / panels)
+    sep = resolveRoomTabSeparation({
+      activeMeetingId: null,
+      mountedIds: mounted,
+    });
+    assert.equal(sep.chromeOwnerMeetingId, null);
+    assert.equal(sep.roomNavReplacementActive, false);
+    assert.deepEqual(getRoomTabMediaDiscrete("meet-a"), {
+      cameraPublished: true,
+      micEnabled: true,
+    });
 
-    // Close B — fall back to A (still mounted).
-    owner = nextRoomChromeOwnerId(owner, null, ["meet-a"]);
-    assert.equal(owner, "meet-a");
+    // → Room A again
+    sep = resolveRoomTabSeparation({
+      activeMeetingId: "meet-a",
+      mountedIds: mounted,
+    });
+    assert.equal(sep.chromeOwnerMeetingId, "meet-a");
+    assert.equal(sep.roomNavReplacementActive, true);
+    assert.equal(sep.roomLayerActive, true);
+    assert.deepEqual(getRoomTabMediaDiscrete("meet-a"), {
+      cameraPublished: true,
+      micEnabled: true,
+    });
 
-    // Close last room — no chrome owner.
-    owner = nextRoomChromeOwnerId(owner, null, []);
-    assert.equal(owner, null);
+    clearRoomTabMedia("meet-a");
+  });
+
+  test("Room A → Room B: chrome follows active only; both keep media mounts", () => {
+    clearRoomTabMedia("meet-a");
+    clearRoomTabMedia("meet-b");
+    setRoomTabMedia("meet-a", {
+      cameraPublished: true,
+      micEnabled: false,
+      audioLevel: 0,
+    });
+    setRoomTabMedia("meet-b", {
+      cameraPublished: false,
+      micEnabled: true,
+      audioLevel: 0.1,
+    });
+
+    let mounted = nextVisitedRoomMeetingIds([], ["meet-a"], "meet-a");
+    mounted = nextVisitedRoomMeetingIds(
+      mounted,
+      ["meet-a", "meet-b"],
+      "meet-b",
+    );
+
+    let sep = resolveRoomTabSeparation({
+      activeMeetingId: "meet-b",
+      mountedIds: mounted,
+    });
+    assert.equal(sep.chromeOwnerMeetingId, "meet-b");
+    assert.deepEqual(sep.mediaMountedMeetingIds, ["meet-a", "meet-b"]);
+    assert.equal(nextRoomChromeOwnerId("meet-a", mounted), "meet-a");
+    assert.equal(nextRoomChromeOwnerId(null, mounted), null);
+
+    // Rapid A ↔ B
+    sep = resolveRoomTabSeparation({
+      activeMeetingId: "meet-a",
+      mountedIds: mounted,
+    });
+    assert.equal(sep.chromeOwnerMeetingId, "meet-a");
+    sep = resolveRoomTabSeparation({
+      activeMeetingId: "meet-b",
+      mountedIds: mounted,
+    });
+    assert.equal(sep.chromeOwnerMeetingId, "meet-b");
+
+    assert.deepEqual(getRoomTabMediaDiscrete("meet-a"), {
+      cameraPublished: true,
+      micEnabled: false,
+    });
+    assert.deepEqual(getRoomTabMediaDiscrete("meet-b"), {
+      cameraPublished: false,
+      micEnabled: true,
+    });
+
+    clearRoomTabMedia("meet-a");
+    clearRoomTabMedia("meet-b");
+  });
+
+  test("closing inactive/active room drops mount + chrome; survivor keeps media", () => {
+    clearRoomTabMedia("meet-a");
+    clearRoomTabMedia("meet-b");
+    setRoomTabMedia("meet-a", {
+      cameraPublished: true,
+      micEnabled: true,
+      audioLevel: 0.2,
+    });
+    setRoomTabMedia("meet-b", {
+      cameraPublished: true,
+      micEnabled: false,
+      audioLevel: 0,
+    });
+
+    let mounted = nextVisitedRoomMeetingIds(
+      ["meet-a", "meet-b"],
+      ["meet-a", "meet-b"],
+      "meet-a",
+    );
+
+    // Close inactive B while on A
+    mounted = nextVisitedRoomMeetingIds(mounted, ["meet-a"], "meet-a");
+    assert.deepEqual(mounted, ["meet-a"]);
+    clearRoomTabMedia("meet-b");
+    assert.deepEqual(getRoomTabMediaDiscrete("meet-b"), {
+      cameraPublished: false,
+      micEnabled: false,
+    });
+    assert.deepEqual(getRoomTabMediaDiscrete("meet-a"), {
+      cameraPublished: true,
+      micEnabled: true,
+    });
+
+    // Close active A
+    mounted = nextVisitedRoomMeetingIds(mounted, [], null);
+    assert.deepEqual(mounted, []);
+    assert.equal(
+      resolveRoomTabSeparation({
+        activeMeetingId: null,
+        mountedIds: mounted,
+      }).chromeOwnerMeetingId,
+      null,
+    );
+    clearRoomTabMedia("meet-a");
   });
 });

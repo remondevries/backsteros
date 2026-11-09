@@ -15,9 +15,7 @@ import {
 import { useDesktopApi } from "../lib/api-context";
 import { useDesktopAvatarSrcMap } from "../lib/avatar-src";
 import { getDefaultAssigneeId } from "../lib/default-assignee";
-import {
-  ROOM_CHROME_HEADER_PRIORITY,
-} from "../lib/room-session-keep-alive";
+import { shouldRegisterRoomChrome } from "../lib/room-session-keep-alive";
 import {
   clearRoomTabMedia,
   setRoomTabMedia,
@@ -33,18 +31,15 @@ import {
  * LiveKit-connected) while the product tab exists — even when another tab is
  * active. Only unmount/teardown when that room tab closes.
  *
- * Breadcrumb control bar is owned by the chrome-owner session (last focused
- * open room), not merely the active route — so toggles survive normal-tab
- * switches and stay bound to that LiveKit session.
+ * Visible chrome (breadcrumb toggles) registers only while this room route is
+ * the active product tab — never over Tasks/Inbox/other normal tabs.
  */
 export function MeetingRoomSession({
   meetingRouteParam,
   active,
-  ownsChrome,
 }: {
   meetingRouteParam: string;
   active: boolean;
-  ownsChrome: boolean;
 }) {
   const { client } = useDesktopApi();
   const { meetings, ready } = useDesktopWorkspaceMeta();
@@ -111,13 +106,10 @@ export function MeetingRoomSession({
     };
   }, [meetingEntityId]);
 
-  // Drop cached slots only when this session loses chrome ownership (another
-  // room takes over, or this room closes). Do not clear on route backgrounding.
-  useEffect(() => {
-    if (ownsChrome) return;
-    setHostChrome((current) => (current === null ? current : null));
-  }, [ownsChrome]);
+  const registerChrome = shouldRegisterRoomChrome(active, Boolean(meeting));
 
+  // Keep receiving Director chrome slots while mounted so returning to the room
+  // restores controls immediately — but only register them while `active`.
   useDesktopSectionBreadcrumb(
     [
       { label: "Agenda", href: "/calendar" },
@@ -130,14 +122,13 @@ export function MeetingRoomSession({
       { label: "Room" },
     ],
     {
-      enabled: ownsChrome && Boolean(meeting),
-      priority: ROOM_CHROME_HEADER_PRIORITY,
-      leading: ownsChrome ? (hostChrome?.roomOpen ?? null) : null,
-      center: ownsChrome ? (hostChrome?.presentation ?? null) : null,
-      actions: ownsChrome ? (hostChrome?.media ?? null) : null,
+      enabled: registerChrome,
+      leading: registerChrome ? (hostChrome?.roomOpen ?? null) : null,
+      center: registerChrome ? (hostChrome?.presentation ?? null) : null,
+      actions: registerChrome ? (hostChrome?.media ?? null) : null,
       hideEntityActionsSlot: true,
       className:
-        ownsChrome && hostChrome
+        registerChrome && hostChrome
           ? "meeting-room-breadcrumb-chrome"
           : undefined,
     },
@@ -162,9 +153,9 @@ export function MeetingRoomSession({
         className={`${rootClass} items-center justify-center gap-2 p-6 text-sm text-muted-foreground`}
         aria-busy="true"
         aria-hidden={active ? undefined : true}
+        inert={active ? undefined : true}
         data-meeting-room-state="loading"
         data-room-session-active={active ? "true" : "false"}
-        data-room-chrome-owner={ownsChrome ? "true" : "false"}
       >
         <p>Loading meeting room…</p>
       </div>
@@ -176,9 +167,9 @@ export function MeetingRoomSession({
       <div
         className={`${rootClass} items-center justify-center gap-2 p-6 text-sm`}
         aria-hidden={active ? undefined : true}
+        inert={active ? undefined : true}
         data-meeting-room-state="not-found"
         data-room-session-active={active ? "true" : "false"}
-        data-room-chrome-owner={ownsChrome ? "true" : "false"}
       >
         <p>Meeting not found.</p>
         <p className="text-muted-foreground">
@@ -192,9 +183,9 @@ export function MeetingRoomSession({
     <div
       className={rootClass}
       aria-hidden={active ? undefined : true}
+      inert={active ? undefined : true}
       data-meeting-room-state="ready"
       data-room-session-active={active ? "true" : "false"}
-      data-room-chrome-owner={ownsChrome ? "true" : "false"}
       data-meeting-id={meeting.id}
       style={{ height: "100%", minHeight: 0 }}
     >
@@ -208,7 +199,7 @@ export function MeetingRoomSession({
         }
         hostAvatarSrc={hostAvatarSrc}
         chromePlacement="host"
-        onHostChromeChange={ownsChrome ? handleHostChromeChange : undefined}
+        onHostChromeChange={handleHostChromeChange}
         onLocalMediaIndicatorChange={handleLocalMediaIndicatorChange}
         requestJson={client.requestJson.bind(client)}
       />

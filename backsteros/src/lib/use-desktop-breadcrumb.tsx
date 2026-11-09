@@ -53,10 +53,7 @@ export type UseDesktopSectionBreadcrumbOptions = {
    * e.g. Timetracking / calendar task overlay).
    */
   enabled?: boolean;
-  /**
-   * Chrome registration priority. Room sessions use a higher value so their
-   * control bar stays visible over normal-tab trails while the room is open.
-   */
+  /** Chrome registration priority when multiple trails register at once. */
   priority?: number;
 };
 

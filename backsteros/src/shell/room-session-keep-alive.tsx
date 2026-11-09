@@ -8,7 +8,6 @@ import {
 import {
   getOpenRoomMeetingIds,
   getOpenRoomMeetingIdsEpoch,
-  nextRoomChromeOwnerId,
   nextVisitedRoomMeetingIds,
   subscribeOpenRoomMeetingIds,
 } from "../lib/room-session-keep-alive";
@@ -16,15 +15,12 @@ import { MeetingRoomSession } from "../screens/meeting-room-session";
 
 /**
  * Keeps one Director session mounted per room tab that has been opened this
- * session. Visible only for the active room route; backgrounded sessions stay
- * LiveKit-connected so cam/mic + tab indicators survive tab switches.
+ * session. Visible room UI (Director + breadcrumb chrome) only while that room
+ * route is active; backgrounded sessions stay LiveKit-connected so cam/mic +
+ * tab indicators survive tab switches — without owning shell chrome/panels.
  *
  * Sessions are created on first visit (not merely because a stale room tab
  * exists in localStorage) and destroyed when that product tab closes.
- *
- * Exactly one mounted session owns the breadcrumb control bar (last focused
- * room while that tab remains open) so controls survive normal-tab switches
- * without leaking across rooms.
  */
 export function RoomSessionKeepAlive() {
   useSyncExternalStore(
@@ -41,7 +37,6 @@ export function RoomSessionKeepAlive() {
   }, [pathname]);
 
   const [visitedIds, setVisitedIds] = useState<string[]>([]);
-  const [chromeOwnerId, setChromeOwnerId] = useState<string | null>(null);
 
   useEffect(() => {
     setVisitedIds((current) => {
@@ -66,20 +61,6 @@ export function RoomSessionKeepAlive() {
     () => visitedIds.filter((id) => openIds.includes(id)),
     [visitedIds, openIds],
   );
-  const mountedIdKey = mountedIds.join("\0");
-
-  useEffect(() => {
-    setChromeOwnerId((current) => {
-      const next = nextRoomChromeOwnerId(
-        current,
-        activeMeetingId,
-        mountedIds,
-      );
-      return next === current ? current : next;
-    });
-    // mountedIdKey tracks membership; mountedIds is derived above.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeMeetingId, mountedIdKey]);
 
   if (mountedIds.length === 0) return null;
 
@@ -92,14 +73,13 @@ export function RoomSessionKeepAlive() {
         .filter(Boolean)
         .join(" ")}
       data-active-meeting-id={activeMeetingId ?? undefined}
-      data-chrome-owner-meeting-id={chromeOwnerId ?? undefined}
+      aria-hidden={activeMeetingId ? undefined : true}
     >
       {mountedIds.map((meetingId) => (
         <MeetingRoomSession
           key={meetingId}
           meetingRouteParam={meetingId}
           active={activeMeetingId === meetingId}
-          ownsChrome={chromeOwnerId === meetingId}
         />
       ))}
     </div>

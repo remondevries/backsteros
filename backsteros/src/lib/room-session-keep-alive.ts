@@ -4,6 +4,10 @@
  * Room routes are outlet-mounted today, so switching tabs would unmount
  * DirectorRoom and disconnect LiveKit. The keep-alive host mounts one session
  * per open room tab and only tears down when that tab closes.
+ *
+ * Visible room UI (breadcrumb toggles, meetings rail, Director pane) belongs
+ * only to the active room route. Backgrounded sessions keep LiveKit + tab
+ * media indicators — not shell chrome.
  */
 
 export type RoomSessionTabRef = {
@@ -68,26 +72,59 @@ export function nextVisitedRoomMeetingIds(
 }
 
 /**
- * Which mounted room owns the breadcrumb control bar.
- * Active room route always wins; on a normal tab keep the last owner while
- * that session stays mounted; otherwise fall back to the first mounted room.
+ * Which mounted room may register breadcrumb / host chrome.
+ * Only the active room route — never a backgrounded session on Tasks/Inbox.
  */
 export function nextRoomChromeOwnerId(
-  current: string | null,
   activeMeetingId: string | null,
   mountedIds: readonly string[],
 ): string | null {
   if (activeMeetingId && mountedIds.includes(activeMeetingId)) {
     return activeMeetingId;
   }
-  if (current && mountedIds.includes(current)) {
-    return current;
-  }
-  return mountedIds[0] ?? null;
+  return null;
 }
 
-/** Higher than normal page trails so backgrounded room chrome stays visible. */
-export const ROOM_CHROME_HEADER_PRIORITY = 10;
+/** True when this session should publish the room breadcrumb control bar. */
+export function shouldRegisterRoomChrome(
+  active: boolean,
+  hasMeeting: boolean,
+): boolean {
+  return active && hasMeeting;
+}
+
+/**
+ * Tab-separation snapshot used by shell + tests: visible room UI vs background
+ * media keepalive.
+ */
+export type RoomTabSeparationSnapshot = {
+  /** Meeting id allowed to register room breadcrumb chrome (or null). */
+  chromeOwnerMeetingId: string | null;
+  /** Meetings list replaces product nav only on a room route. */
+  roomNavReplacementActive: boolean;
+  /** Keep-alive Director layer is visually on top. */
+  roomLayerActive: boolean;
+  /** Sessions that stay LiveKit-connected (may include backgrounded rooms). */
+  mediaMountedMeetingIds: string[];
+};
+
+export function resolveRoomTabSeparation(input: {
+  activeMeetingId: string | null;
+  mountedIds: readonly string[];
+}): RoomTabSeparationSnapshot {
+  const mediaMountedMeetingIds = [...input.mountedIds];
+  const chromeOwnerMeetingId = nextRoomChromeOwnerId(
+    input.activeMeetingId,
+    input.mountedIds,
+  );
+  const onRoomRoute = Boolean(input.activeMeetingId);
+  return {
+    chromeOwnerMeetingId,
+    roomNavReplacementActive: onRoomRoute,
+    roomLayerActive: onRoomRoute,
+    mediaMountedMeetingIds,
+  };
+}
 
 export function setOpenRoomMeetingIds(next: readonly string[]): void {
   const normalized = next

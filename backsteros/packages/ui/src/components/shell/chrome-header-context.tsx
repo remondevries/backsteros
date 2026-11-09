@@ -100,8 +100,9 @@ export function useChromeHeader() {
 
 export type UseRegisterChromeHeaderOptions = {
   /**
-   * Higher priority wins when multiple screens register at once (e.g. a
-   * backgrounded room session keeping its control bar over a normal tab).
+   * Higher priority wins when multiple screens register at once. Room chrome
+   * must not use an elevated priority to override normal tabs — register only
+   * while the room route is active.
    */
   priority?: number;
 };
@@ -113,7 +114,7 @@ export type UseRegisterChromeHeaderOptions = {
  * clobber the host trail).
  *
  * Multiple registrants are tracked by id; the highest priority header is shown
- * so releasing a high-priority room chrome restores the underlying page trail
+ * so releasing one registration restores another still-registered trail
  * without requiring that page to remount.
  */
 export function useRegisterChromeHeader(
