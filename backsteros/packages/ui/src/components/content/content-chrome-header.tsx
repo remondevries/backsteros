@@ -83,6 +83,16 @@ export function ContentBreadcrumb({
 
 export type ContentChromeHeaderProps = {
   children: ReactNode;
+  /**
+   * Optional control rendered immediately after the breadcrumb trail
+   * (e.g. room open/close on Director room tabs).
+   */
+  leading?: ReactNode;
+  /**
+   * Optional truly-centered chrome (e.g. Local / Screenshare). Uses absolute
+   * centering so left/right columns stay balanced.
+   */
+  center?: ReactNode;
   actions?: ReactNode;
   /**
    * Optional right-side chrome that matches a content detail panel width
@@ -96,24 +106,36 @@ export type ContentChromeHeaderProps = {
 /** Fixed-height chrome row above page-scroll (web ContentChromeHeader). */
 export function ContentChromeHeader({
   children,
+  leading = null,
+  center = null,
   actions,
   trailingPanel = null,
   className = "",
 }: ContentChromeHeaderProps) {
   const hasTrailingPanel = trailingPanel != null;
+  const hasCenter = center != null;
   return (
     <div
       className={[
         "content-chrome-header",
         "app-breadcrumb-header",
         hasTrailingPanel ? "has-trailing-panel" : null,
+        hasCenter ? "has-center" : null,
         className,
       ]
         .filter(Boolean)
         .join(" ")}
     >
       <div className="content-chrome-header__primary">
-        <div className="content-chrome-header__main">{children}</div>
+        <div className="content-chrome-header__main">
+          {children}
+          {leading ? (
+            <div className="content-chrome-header__leading">{leading}</div>
+          ) : null}
+        </div>
+        {hasCenter ? (
+          <div className="content-chrome-header__center">{center}</div>
+        ) : null}
         {actions ? (
           <div className="content-chrome-header__actions">{actions}</div>
         ) : null}

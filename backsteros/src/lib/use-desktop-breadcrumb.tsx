@@ -31,6 +31,10 @@ function ChromeLink({
 }
 
 export type UseDesktopSectionBreadcrumbOptions = {
+  /** Control rendered immediately after the crumb trail (e.g. room open). */
+  leading?: ReactNode;
+  /** Truly-centered chrome (e.g. Local / Screenshare on room tabs). */
+  center?: ReactNode;
   /** Extra controls rendered in the chrome header before the ⋯ menu. */
   actions?: ReactNode;
   /**
@@ -62,6 +66,8 @@ export function useDesktopSectionBreadcrumb(
   const itemsKey = items
     .map((item) => `${item.label}\0${item.href ?? ""}`)
     .join("|");
+  const leading = options?.leading;
+  const center = options?.center;
   const actions = options?.actions;
   const hideEntityActionsSlot = options?.hideEntityActionsSlot ?? false;
   const trailingPanel = options?.trailingPanel;
@@ -70,18 +76,23 @@ export function useDesktopSectionBreadcrumb(
 
   const header = useMemo(() => {
     if (!enabled || items.length === 0) return null;
+    const hasActions = Boolean(actions) || !hideEntityActionsSlot;
     return (
       <ContentChromeHeader
         className={className}
+        leading={leading}
+        center={center}
         actions={
-          <>
-            {actions ? (
-              <div className="content-chrome-header__section-tabs">
-                {actions}
-              </div>
-            ) : null}
-            {hideEntityActionsSlot ? null : <EntityHeaderActionsSlot />}
-          </>
+          hasActions ? (
+            <>
+              {actions ? (
+                <div className="content-chrome-header__section-tabs">
+                  {actions}
+                </div>
+              ) : null}
+              {hideEntityActionsSlot ? null : <EntityHeaderActionsSlot />}
+            </>
+          ) : null
         }
         trailingPanel={trailingPanel}
       >
@@ -90,7 +101,16 @@ export function useDesktopSectionBreadcrumb(
     );
     // itemsKey tracks label/href identity for the trail.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [actions, className, enabled, hideEntityActionsSlot, itemsKey, trailingPanel]);
+  }, [
+    actions,
+    center,
+    className,
+    enabled,
+    hideEntityActionsSlot,
+    itemsKey,
+    leading,
+    trailingPanel,
+  ]);
 
   useRegisterChromeHeader(enabled ? header : false);
 }

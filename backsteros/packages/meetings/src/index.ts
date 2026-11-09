@@ -28,6 +28,7 @@ export {
 
 export {
   DirectorRoom,
+  type DirectorHostChromeSlots,
   type DirectorRoomProps,
   type LocalMediaIndicator,
   normalizeAudioLevel,

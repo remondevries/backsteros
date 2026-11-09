@@ -11,6 +11,7 @@
 }
 
 .content-chrome-header__primary {
+  position: relative;
   display: flex;
   min-width: 0;
   flex: 1;
@@ -30,6 +31,40 @@
   min-width: 0;
   flex: 1;
   align-items: center;
+  gap: 10px;
+  z-index: 1;
+}
+
+.content-chrome-header__leading {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 8px;
+}
+
+.content-chrome-header__center {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  z-index: 0;
+  display: flex;
+  max-width: min(46vw, 360px);
+  align-items: center;
+  justify-content: center;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.content-chrome-header__center > * {
+  pointer-events: auto;
+}
+
+.content-chrome-header.has-center .content-chrome-header__main,
+.content-chrome-header.has-center .content-chrome-header__actions {
+  /* Keep side columns equal so absolute center stays true-center. */
+  flex: 1 1 0;
+  min-width: 0;
 }
 
 .content-chrome-header__actions {
@@ -40,6 +75,7 @@
   align-self: stretch;
   gap: 8px;
   justify-content: flex-end;
+  z-index: 1;
   /* Tabs may shrink; never clip the trailing ⋯ trigger. */
   overflow: visible;
 }

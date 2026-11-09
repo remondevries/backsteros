@@ -466,6 +466,88 @@ html.meet-theme-dark {
   --meet-chrome-muted: #a3a3a3;
 }
 
+/* Shell hosts room controls in the breadcrumb — reclaim ribbon clearance. */
+.director.director--chrome-external {
+  --meet-toolbar-clearance: 0.6rem;
+}
+
+/*
+ * Director controls hosted in the desktop breadcrumb chrome (outside .director).
+ * Follow the shell theme so switches/tabs stay readable on light/dark chrome.
+ */
+.director-chrome-host {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  max-width: 100%;
+  -webkit-app-region: no-drag;
+  app-region: none;
+}
+
+.director-chrome-host--media {
+  justify-content: flex-end;
+}
+
+.director-chrome-host--media .director__ribbon-controls {
+  flex-wrap: nowrap;
+  justify-content: flex-end;
+  max-width: 100%;
+}
+
+.director-chrome-host .director__mode-tabs {
+  border-color: hsl(var(--border) / 0.9);
+  background: hsl(var(--muted) / 0.55);
+}
+
+.director-chrome-host .director__mode-tab {
+  color: hsl(var(--muted-foreground));
+}
+
+.director-chrome-host .director__mode-tab:hover {
+  color: hsl(var(--foreground));
+  background: hsl(var(--accent) / 0.55);
+}
+
+.director-chrome-host .director__mode-tab.is-active {
+  color: hsl(var(--foreground));
+  background: rgba(249, 115, 22, 0.18);
+  box-shadow: inset 0 0 0 1px rgba(249, 115, 22, 0.45);
+}
+
+.director-chrome-host .director__mode-tab.is-broadcasting:not(.is-active) {
+  color: hsl(var(--foreground));
+  background: rgba(34, 197, 94, 0.14);
+  box-shadow: inset 0 0 0 1px rgba(34, 197, 94, 0.45);
+}
+
+.director-chrome-host .director__mode-tab.is-focused:not(.is-active) {
+  color: hsl(var(--foreground));
+  box-shadow: inset 0 0 0 1px rgba(249, 115, 22, 0.55);
+}
+
+.director-chrome-host .director__switch {
+  background: hsl(var(--muted-foreground) / 0.28);
+  box-shadow: inset 0 1px 2px hsl(var(--foreground) / 0.12);
+}
+
+.director-chrome-host .director__switch[data-state="checked"] {
+  background: #f97316;
+}
+
+.director-chrome-host .director__device-select {
+  color: hsl(var(--foreground));
+  border-color: hsl(var(--border));
+  background: hsl(var(--background));
+  min-width: 5.5rem;
+  max-width: 9rem;
+}
+
+@media (max-width: 1100px) {
+  .director-chrome-host--media .director__device-select {
+    display: none;
+  }
+}
+
 .director__ribbon {
   position: absolute;
   top: 0;

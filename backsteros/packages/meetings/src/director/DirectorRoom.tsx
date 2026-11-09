@@ -6,6 +6,7 @@ import {
   useState,
   type CSSProperties,
   type PointerEvent as ReactPointerEvent,
+  type ReactNode,
 } from "react";
 import {
   DoorClosed,
@@ -354,6 +355,16 @@ export type LocalMediaIndicator = {
   audioLevel: number;
 };
 
+/** Chrome pieces when the shell hosts controls in the breadcrumb bar. */
+export type DirectorHostChromeSlots = {
+  /** Room open/close — sits beside the crumb trail. */
+  roomOpen: ReactNode;
+  /** Local / Screenshare — centered in the breadcrumb bar. */
+  presentation: ReactNode;
+  /** Mic, camera, stage theme — far right of the breadcrumb bar. */
+  media: ReactNode;
+};
+
 export type DirectorRoomProps = {
   meetingId: string;
   meetingTitle?: string | null;
@@ -370,6 +381,19 @@ export type DirectorRoomProps = {
   onLocalMediaIndicatorChange?: (
     next: LocalMediaIndicator | null,
   ) => void;
+  /**
+   * Where room controls render. `"ribbon"` (default) keeps the in-content
+   * Director ribbon (standalone BacksterMeet). `"host"` omits the ribbon and
+   * publishes the same controls via {@link onHostChromeChange} for the shell
+   * breadcrumb chrome.
+   */
+  chromePlacement?: "ribbon" | "host";
+  /**
+   * Receives room / presentation / media control nodes when
+   * `chromePlacement="host"`. Called with `null` on unmount or when placement
+   * is ribbon. Does not activate cam/mic.
+   */
+  onHostChromeChange?: (next: DirectorHostChromeSlots | null) => void;
   /** Authenticated BacksterOS core JSON helper (mints room tokens). */
   requestJson: <T>(path: string, init?: RequestInit) => Promise<T>;
 };
@@ -405,6 +429,8 @@ export function DirectorRoom({
   meetingStartAt,
   hostAvatarSrc = null,
   onLocalMediaIndicatorChange,
+  chromePlacement = "ribbon",
+  onHostChromeChange,
   requestJson,
 }: DirectorRoomProps) {
   const meetingId = meetingIdProp.trim() || null;
@@ -929,10 +955,10 @@ export function DirectorRoom({
     onToggleCamera: () => setCameraOn((current) => !current),
     onToggleMicrophone: () => setMuted((current) => !current),
     onOpenRoom: () => {
-      void onRoomOpenChange(true);
+      setRoomOpen(true);
     },
     onCloseRoom: () => {
-      void onRoomOpenChange(false);
+      setRoomOpen(false);
     },
     onLightMode: () => setStageTheme("light"),
     onDarkMode: () => setStageTheme("dark"),
@@ -994,8 +1020,153 @@ export function DirectorRoom({
     avatarRailPhase === "arming-out" || avatarRailPhase === "arming-in";
   const avatarRailHeld = avatarRailPhase === "held";
 
+  const hostChrome = chromePlacement === "host";
+
+  const roomOpenControl = (
+    <Switch
+      className="director__switch--room"
+      checked={roomOpen}
+      onCheckedChange={(open) => {
+        setRoomOpen(open);
+      }}
+      label={roomOpen ? "Room open" : "Room closed"}
+      icon={
+        roomOpen ? (
+          <DoorOpen className="director__switch-icon" />
+        ) : (
+          <DoorClosed className="director__switch-icon" />
+        )
+      }
+    />
+  );
+
+  const presentationControl = (
+    <PresentationModeTabs
+      selected={selectedPresentation}
+      broadcastKind={broadcastKind}
+      focusedIndex={pickerFocus}
+      onSelect={selectPresentation}
+    />
+  );
+
+  const mediaControls = (
+    <div className="director__ribbon-controls">
+      <div className="director__device-control">
+        <Switch
+          className="director__switch--media"
+          checked={!muted}
+          onCheckedChange={(on) => setMuted(!on)}
+          label={muted ? "Microphone off" : "Microphone on"}
+          icon={
+            muted ? (
+              <MicrophoneOff className="director__switch-icon" />
+            ) : (
+              <Microphone className="director__switch-icon" />
+            )
+          }
+        />
+        <MediaDeviceSelect
+          devices={audioInputs}
+          value={selectedAudioDeviceId}
+          disabled={muted || audioInputs.length === 0}
+          onValueChange={(deviceId) => {
+            console.log("[Director] audio input:", deviceId);
+            setSelectedAudioDeviceId(deviceId);
+          }}
+          emptyLabel="No microphones found"
+          ariaLabel="Microphone input"
+        />
+      </div>
+      <div className="director__device-control">
+        <Switch
+          className="director__switch--media"
+          checked={cameraOn}
+          onCheckedChange={setCameraOn}
+          label={cameraOn ? "Camera on" : "Camera off"}
+          icon={
+            cameraOn ? (
+              <Video className="director__switch-icon" />
+            ) : (
+              <VideoOff className="director__switch-icon" />
+            )
+          }
+        />
+        <MediaDeviceSelect
+          devices={videoInputs}
+          value={selectedDeviceId}
+          disabled={!cameraOn || videoInputs.length === 0}
+          onValueChange={(deviceId) => {
+            console.log("[Director] video input:", deviceId);
+            setSelectedDeviceId(deviceId);
+          }}
+          emptyLabel="No cameras found"
+          ariaLabel="Video input"
+        />
+      </div>
+      <Switch
+        checked={stageTheme === "dark"}
+        onCheckedChange={(dark) =>
+          setStageTheme(dark ? "dark" : "light")
+        }
+        label={stageTheme === "dark" ? "Dark stage" : "Light stage"}
+        icon={
+          stageTheme === "dark" ? (
+            <MoonSolid className="director__switch-icon" />
+          ) : (
+            <SunSolid className="director__switch-icon" />
+          )
+        }
+      />
+    </div>
+  );
+
+  const hostChromeSlots = useMemo<DirectorHostChromeSlots | null>(() => {
+    if (!hostChrome) return null;
+    return {
+      roomOpen: (
+        <div className="director-chrome-host director-chrome-host--leading">
+          {roomOpenControl}
+        </div>
+      ),
+      presentation: (
+        <div className="director-chrome-host director-chrome-host--center">
+          {presentationControl}
+        </div>
+      ),
+      media: (
+        <div className="director-chrome-host director-chrome-host--media">
+          {mediaControls}
+        </div>
+      ),
+    };
+    // Control trees intentionally rebuild when Director media/room state changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    hostChrome,
+    roomOpen,
+    selectedPresentation,
+    broadcastKind,
+    pickerFocus,
+    muted,
+    cameraOn,
+    audioInputs,
+    selectedAudioDeviceId,
+    videoInputs,
+    selectedDeviceId,
+    stageTheme,
+  ]);
+
+  useLayoutEffect(() => {
+    if (!onHostChromeChange) return;
+    onHostChromeChange(hostChromeSlots);
+    return () => {
+      onHostChromeChange(null);
+    };
+  }, [hostChromeSlots, onHostChromeChange]);
+
   const directorClass = [
     "director",
+    hostChrome ? "director--chrome-external" : null,
     stagePresentation ? "is-presentation" : null,
     isBroadcasting ? "is-presenting-live" : null,
     hostAudioOnlyLayout ? "is-host-audio-only" : null,
@@ -1268,10 +1439,6 @@ export function DirectorRoom({
     pip.setPointerCapture(event.pointerId);
   }
 
-  function onRoomOpenChange(open: boolean) {
-    setRoomOpen(open);
-  }
-
   return (
     <main className={directorClass} style={directorStyle}>
       <div className="director__main">
@@ -1290,108 +1457,20 @@ export function DirectorRoom({
           </span>
         </div>
       ) : null}
-      <header className="director__ribbon">
-        <div className="director__ribbon-meta">
-          <Switch
-            className="director__switch--room"
-            checked={roomOpen}
-            onCheckedChange={(open) => {
-              void onRoomOpenChange(open);
-            }}
-            label={roomOpen ? "Room open" : "Room closed"}
-            icon={
-              roomOpen ? (
-                <DoorOpen className="director__switch-icon" />
-              ) : (
-                <DoorClosed className="director__switch-icon" />
-              )
-            }
-          />
-          <h1 className="director__title">
-            {meetingTitle}
-          </h1>
-          <span className="director__ribbon-sep" aria-hidden>
-            ·
-          </span>
-          <p className="director__room-meta">
-            {roomMeta}
-          </p>
-        </div>
-        <PresentationModeTabs
-          selected={selectedPresentation}
-          broadcastKind={broadcastKind}
-          focusedIndex={pickerFocus}
-          onSelect={selectPresentation}
-        />
-        <div className="director__ribbon-controls">
-          <div className="director__device-control">
-            <Switch
-              className="director__switch--media"
-              checked={!muted}
-              onCheckedChange={(on) => setMuted(!on)}
-              label={muted ? "Microphone off" : "Microphone on"}
-              icon={
-                muted ? (
-                  <MicrophoneOff className="director__switch-icon" />
-                ) : (
-                  <Microphone className="director__switch-icon" />
-                )
-              }
-            />
-            <MediaDeviceSelect
-              devices={audioInputs}
-              value={selectedAudioDeviceId}
-              disabled={muted || audioInputs.length === 0}
-              onValueChange={(deviceId) => {
-                console.log("[Director] audio input:", deviceId);
-                setSelectedAudioDeviceId(deviceId);
-              }}
-              emptyLabel="No microphones found"
-              ariaLabel="Microphone input"
-            />
+      {hostChrome ? null : (
+        <header className="director__ribbon">
+          <div className="director__ribbon-meta">
+            {roomOpenControl}
+            <h1 className="director__title">{meetingTitle}</h1>
+            <span className="director__ribbon-sep" aria-hidden>
+              ·
+            </span>
+            <p className="director__room-meta">{roomMeta}</p>
           </div>
-          <div className="director__device-control">
-            <Switch
-              className="director__switch--media"
-              checked={cameraOn}
-              onCheckedChange={setCameraOn}
-              label={cameraOn ? "Camera on" : "Camera off"}
-              icon={
-                cameraOn ? (
-                  <Video className="director__switch-icon" />
-                ) : (
-                  <VideoOff className="director__switch-icon" />
-                )
-              }
-            />
-            <MediaDeviceSelect
-              devices={videoInputs}
-              value={selectedDeviceId}
-              disabled={!cameraOn || videoInputs.length === 0}
-              onValueChange={(deviceId) => {
-                console.log("[Director] video input:", deviceId);
-                setSelectedDeviceId(deviceId);
-              }}
-              emptyLabel="No cameras found"
-              ariaLabel="Video input"
-            />
-          </div>
-          <Switch
-            checked={stageTheme === "dark"}
-            onCheckedChange={(dark) =>
-              setStageTheme(dark ? "dark" : "light")
-            }
-            label={stageTheme === "dark" ? "Dark stage" : "Light stage"}
-            icon={
-              stageTheme === "dark" ? (
-                <MoonSolid className="director__switch-icon" />
-              ) : (
-                <SunSolid className="director__switch-icon" />
-              )
-            }
-          />
-        </div>
-      </header>
+          {presentationControl}
+          {mediaControls}
+        </header>
+      )}
 
       <div className="director__stage">
         {showMeetingDetails ? (

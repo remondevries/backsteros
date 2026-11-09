@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "@tanstack/react-router";
 import {
   DirectorRoom,
+  type DirectorHostChromeSlots,
   type LocalMediaIndicator,
 } from "@backsteros/meetings";
 import "@backsteros/meetings/director.css";
@@ -37,6 +38,9 @@ export function MeetingRoomPage() {
   const { meetings, ready } = useDesktopWorkspaceMeta();
   const { contacts } = useDesktopWorkspacePeople();
   const contactAvatarSrc = useDesktopAvatarSrcMap("contact", contacts);
+  const [hostChrome, setHostChrome] = useState<DirectorHostChromeSlots | null>(
+    null,
+  );
 
   const meeting = useMemo(() => {
     if (!meetingRouteParam) return null;
@@ -74,6 +78,13 @@ export function MeetingRoomPage() {
     [meetingEntityId],
   );
 
+  const handleHostChromeChange = useCallback(
+    (next: DirectorHostChromeSlots | null) => {
+      setHostChrome(next);
+    },
+    [],
+  );
+
   useEffect(() => {
     if (!meetingEntityId) return;
     return () => {
@@ -81,16 +92,25 @@ export function MeetingRoomPage() {
     };
   }, [meetingEntityId]);
 
-  useDesktopSectionBreadcrumb([
-    { label: "Agenda", href: "/calendar" },
+  useDesktopSectionBreadcrumb(
+    [
+      { label: "Agenda", href: "/calendar" },
+      {
+        label: displayId ?? "Meeting",
+        href: meeting
+          ? `/calendar/meetings/${encodeURIComponent(meeting.id)}`
+          : undefined,
+      },
+      { label: "Room" },
+    ],
     {
-      label: displayId ?? "Meeting",
-      href: meeting
-        ? `/calendar/meetings/${encodeURIComponent(meeting.id)}`
-        : undefined,
+      leading: hostChrome?.roomOpen ?? null,
+      center: hostChrome?.presentation ?? null,
+      actions: hostChrome?.media ?? null,
+      hideEntityActionsSlot: true,
+      className: hostChrome ? "meeting-room-breadcrumb-chrome" : undefined,
     },
-    { label: "Room" },
-  ]);
+  );
 
   if (!ready) {
     return (
@@ -144,6 +164,8 @@ export function MeetingRoomPage() {
           typeof meeting.startAt === "string" ? meeting.startAt : null
         }
         hostAvatarSrc={hostAvatarSrc}
+        chromePlacement="host"
+        onHostChromeChange={handleHostChromeChange}
         onLocalMediaIndicatorChange={handleLocalMediaIndicatorChange}
         requestJson={client.requestJson.bind(client)}
       />

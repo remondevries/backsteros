@@ -1,5 +1,6 @@
 export {
   DirectorRoom,
+  type DirectorHostChromeSlots,
   type DirectorRoomProps,
   type LocalMediaIndicator,
 } from "./DirectorRoom";
