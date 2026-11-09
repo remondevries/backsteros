@@ -17,6 +17,7 @@ import {
 } from "@backsteros/ui/navigation";
 
 import { CursorCreditsUsageBar } from "../components/cursor-credits-usage-bar";
+import { DevCoreBadge } from "../components/dev-core-badge";
 import { DevTrafficLights } from "../components/dev-traffic-lights";
 import { useWindowChromeDrag } from "../lib/window-drag";
 import { RouterLink } from "./app-shell-links";
@@ -150,6 +151,7 @@ function ShellChromeInner({
     // Provider stays mounted on settings (banner unmounts) so SSE/poll continue.
     <AgentDmNotificationsProvider>
       <DevTrafficLights hidden={windowFullscreen} />
+      <DevCoreBadge />
       <ProductAppShell
         className={windowFullscreen ? "is-window-fullscreen" : undefined}
         sidebar={sidebar}

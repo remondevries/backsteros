@@ -353,3 +353,22 @@
 .bos-dev-traffic-lights__zoom {
   background: #28c840;
 }
+
+/*
+ * Native DEBUG marker (Vite + Tauri). Window title is overlay-hidden on macOS,
+ * so this badge is how operators tell DEV (:8800) from installed prod.
+ */
+.bos-dev-core-badge {
+  position: fixed;
+  z-index: 90;
+  top: 10px;
+  right: 14px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  background: #0b3d2e;
+  color: #b6f5d4;
+  font: 600 11px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0.04em;
+  pointer-events: none;
+  user-select: none;
+}

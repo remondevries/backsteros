@@ -36,6 +36,7 @@ import {
   setOpenRoomMeetingIds,
 } from "../lib/room-session-keep-alive";
 import { navigateToHrefIfWarmOwner } from "../lib/owned-warm-navigate";
+import { resolveStartRoomTabDecision } from "../lib/start-room-tab";
 import { navigateToHref } from "../router/navigate-href";
 import {
   captureWarmNavOwner,
@@ -63,6 +64,9 @@ export function useShellTabs() {
     tabId: string;
     href: string;
   } | null>(null);
+  const tabsStateRef = useRef(tabsState);
+  tabsStateRef.current = tabsState;
+  const activateTabRef = useRef<(tabId: string) => void>(() => {});
 
   const tabsLocationKey = buildProductTabHref(
     location.pathname,
@@ -246,7 +250,7 @@ export function useShellTabs() {
   const activateTab = useCallback(
     (tabId: string) => {
       const prepared = prepareActivateShellProductTab({
-        tabsState,
+        tabsState: tabsStateRef.current,
         tabId,
         livePathname: location.pathname,
         liveSearch: search,
@@ -270,8 +274,9 @@ export function useShellTabs() {
         navigateToHref(navigate, prepared.navigateHref);
       }
     },
-    [location.pathname, search, navigate, tabsState],
+    [location.pathname, search, navigate],
   );
+  activateTabRef.current = activateTab;
 
   const closeTab = useCallback(
     (tabId: string) => {
@@ -324,6 +329,21 @@ export function useShellTabs() {
       const destination = formatResolvedAppHref(
         resolveAppHref(withEntityDetailPageLayout(href)),
       );
+      // Start room: reuse the existing room tab for this meeting instead of
+      // stacking a second Director host (keeps keep-alive + chrome coherent).
+      if (isMeetingRoomPath(destination)) {
+        const meetingId = parseMeetingRoomMeetingId(destination);
+        if (meetingId) {
+          const decision = resolveStartRoomTabDecision(
+            tabsStateRef.current.tabs,
+            meetingId,
+          );
+          if (decision.action === "activate") {
+            activateTabRef.current(decision.tabId);
+            return;
+          }
+        }
+      }
       const tab = createProductTab(destination);
       pendingTabSwitchRef.current = { tabId: tab.id, href: tab.href };
       setTabsState((current) => {

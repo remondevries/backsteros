@@ -33,6 +33,7 @@ import { DirectorSyncStatus } from "./components/DirectorSyncStatus";
 import { GuestPipVideo } from "./components/GuestPipVideo";
 import { PresentationModeTabs } from "./components/PresentationModeTabs";
 import { PresentationSurface } from "./components/PresentationSurface";
+import { shouldClearHostChromeOnLayoutCleanup } from "./host-chrome-publish";
 import {
   readStoredPresentationUrl,
   writeStoredPresentationUrl,
@@ -786,33 +787,12 @@ export function DirectorRoom({
     let cancelled = false;
 
     /**
-     * Browsers/WKWebView blank `device.label` until getUserMedia has succeeded
-     * once. Without that we only show "Camera 1" / "Microphone 1".
+     * Enumerate devices without calling getUserMedia. Labels may stay generic
+     * ("Camera 1") until the operator enables cam/mic — never auto-prompt on
+     * Start room (hangs WKWebView permission UX and violates no-auto-media).
      */
-    async function unlockDeviceLabels(): Promise<void> {
-      try {
-        const preliminary = await navigator.mediaDevices.enumerateDevices();
-        const av = preliminary.filter(
-          (device) =>
-            device.kind === "videoinput" || device.kind === "audioinput",
-        );
-        if (av.length === 0 || av.every((device) => device.label)) return;
-
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: true,
-          audio: true,
-        });
-        for (const track of stream.getTracks()) track.stop();
-      } catch (err) {
-        console.log("[Director] media permission for labels failed:", err);
-      }
-    }
-
     async function refreshMediaInputs() {
       try {
-        await unlockDeviceLabels();
-        if (cancelled) return;
-
         const devices = await navigator.mediaDevices.enumerateDevices();
         if (cancelled) return;
 
@@ -1163,13 +1143,27 @@ export function DirectorRoom({
     stageTheme,
   ]);
 
+  // Publish on slots rebuild; clear only on host teardown (not slots churn).
   useLayoutEffect(() => {
     if (!onHostChromeChange) return;
     onHostChromeChange(hostChromeSlots);
-    return () => {
-      onHostChromeChange(null);
-    };
   }, [hostChromeSlots, onHostChromeChange]);
+
+  useLayoutEffect(() => {
+    if (!onHostChromeChange) return;
+    const publish = onHostChromeChange;
+    return () => {
+      if (
+        shouldClearHostChromeOnLayoutCleanup({
+          // Slots may also be changing; teardown alone authorizes clear.
+          slotsIdentityChanged: true,
+          hostCallbackTeardown: true,
+        })
+      ) {
+        publish(null);
+      }
+    };
+  }, [onHostChromeChange]);
 
   const directorClass = [
     "director",
