@@ -375,8 +375,9 @@ export type DirectorRoomProps = {
    */
   hostAvatarSrc?: string | null;
   /**
-   * Local cam/mic/audio for shell room-tab indicators. Called with `null` on
-   * cleanup / disconnect — does not activate devices by itself.
+   * Local cam/mic/audio for shell room-tab indicators. Publishes idle
+   * `{false,false,0}` when disconnected; hosts clear on session unmount.
+   * Does not activate devices by itself.
    */
   onLocalMediaIndicatorChange?: (
     next: LocalMediaIndicator | null,
@@ -603,10 +604,18 @@ export function DirectorRoom({
 
   // Shell room-tab live pip — published local tracks only (never invent levels).
   // Layout effect so the top tab ring paints in the same frame as the avatar.
+  // Publish idle `{false,false}` when disconnected — do NOT call `null` here or
+  // from an effect-cleanup on callback identity change: that wiped the shell
+  // store during tab switches and made the pip vanish until the next publish.
+  // Real teardown clear lives in the host session unmount (`clearRoomTabMedia`).
   useLayoutEffect(() => {
     if (!onLocalMediaIndicatorChange) return;
     if (!meetingId || !connected || connectionError) {
-      onLocalMediaIndicatorChange(null);
+      onLocalMediaIndicatorChange({
+        cameraPublished: false,
+        micEnabled: false,
+        audioLevel: 0,
+      });
       return;
     }
     const cameraPublished = Boolean(cameraTrackOn && localCameraReady);
@@ -626,13 +635,6 @@ export function DirectorRoom({
     muted,
     onLocalMediaIndicatorChange,
   ]);
-
-  useEffect(() => {
-    if (!onLocalMediaIndicatorChange) return;
-    return () => {
-      onLocalMediaIndicatorChange(null);
-    };
-  }, [meetingId, onLocalMediaIndicatorChange]);
 
   useEffect(() => {
     const root = document.documentElement;

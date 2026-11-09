@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   DirectorRoom,
   type DirectorHostChromeSlots,
@@ -78,13 +78,21 @@ export function MeetingRoomSession({
   }, [contactAvatarSrc]);
 
   const meetingEntityId = meeting?.id ?? null;
+  const meetingEntityIdRef = useRef(meetingEntityId);
+  meetingEntityIdRef.current = meetingEntityId;
 
+  // Stable identity — Director used to clear the tab store on callback rebind
+  // cleanup, which blanked the pip for ~1s across tab switches.
   const handleLocalMediaIndicatorChange = useCallback(
     (next: LocalMediaIndicator | null) => {
-      if (!meetingEntityId) return;
-      setRoomTabMedia(meetingEntityId, next);
+      const id = meetingEntityIdRef.current;
+      if (!id) return;
+      // Ignore `null` (legacy / accidental cleanup). Idle snapshots and the
+      // session-unmount clear are the truthful teardown paths.
+      if (next === null) return;
+      setRoomTabMedia(id, next);
     },
-    [meetingEntityId],
+    [],
   );
 
   const handleHostChromeChange = useCallback(

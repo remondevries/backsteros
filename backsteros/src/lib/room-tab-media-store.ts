@@ -53,6 +53,11 @@ function emitAudio(meetingId: string, level: number): void {
   for (const listener of listeners) listener(level);
 }
 
+/**
+ * Apply a live media snapshot. Hosts should prefer idle `{false,false,0}` over
+ * `null` for transient disconnects; `null` is reserved for intentional teardown
+ * (`clearRoomTabMedia` on session unmount) so tab switches do not blank the pip.
+ */
 export function setRoomTabMedia(
   meetingId: string,
   next: RoomTabMediaIndicator | null,

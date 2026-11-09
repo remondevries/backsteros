@@ -25,7 +25,7 @@ import {
 
 /**
  * Top product-tab meeting glyph with live media chrome:
- * - one green pip fixed top-right while camera is published
+ * - one solid green pip fixed top-right while mic and/or camera is on
  * - green audio ring around that pip only while mic is unmuted
  * - no amber/orange states; ring keeps animating under reduced-motion
  */

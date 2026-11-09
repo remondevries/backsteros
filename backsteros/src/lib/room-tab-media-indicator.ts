@@ -3,6 +3,7 @@
  *
  * Visual contract (Remon, Nov 2026):
  * - One green dot, fixed top-right of the meeting-type glyph (never relocates).
+ * - Solid green fill whenever mic OR camera is enabled (including mic-only silence).
  * - No amber/orange pips or glyph-level outline.
  * - Audio-responsive green ring surrounds that small green dot only.
  * - Levels come from published mic state; never invent / enable devices.

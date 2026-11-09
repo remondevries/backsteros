@@ -515,8 +515,8 @@
 /*
  * Room tab (top product tabs):
  * - one green live pip fixed top-right (never relocates with media state)
- * - solid green fill while camera is published
- * - green audio ring around that pip only while mic is unmuted
+ * - solid green fill whenever mic OR camera is enabled (marker only mounts then)
+ * - green audio ring around that pip only while mic is unmuted (level via CSS var)
  * - green only (no warm accent tones); no outline on the meeting-type glyph
  * - this live ring intentionally keeps animating under reduced-motion
  */
@@ -536,14 +536,11 @@
   height: 5px;
   border-radius: 999px;
   pointer-events: none;
-  background: transparent;
+  /* Solid green whenever the marker is mounted (cam and/or mic on). */
+  background: #22c55e;
   --room-tab-audio-level: 0;
   /* Smooth expand/contract with measured mic energy; settle on silence. */
   transition: box-shadow 90ms linear;
-}
-
-.content-tab-room-icon__live.is-camera-on {
-  background: #22c55e;
 }
 
 .content-tab-room-icon__live.is-mic-on {

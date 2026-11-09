@@ -59,7 +59,7 @@ describe("room-tab-media-indicator", () => {
     // CSS locks the pip to top-right (no left cam / right mic split).
     const liveBlock = contentShellCss.slice(
       contentShellCss.indexOf(".content-tab-room-icon__live {"),
-      contentShellCss.indexOf(".content-tab-room-icon__live.is-camera-on"),
+      contentShellCss.indexOf(".content-tab-room-icon__live.is-mic-on"),
     );
     assert.match(liveBlock, /top:\s*-2px/);
     assert.match(liveBlock, /right:\s*-2px/);
@@ -67,23 +67,64 @@ describe("room-tab-media-indicator", () => {
     assert.doesNotMatch(liveBlock, /left:\s*-2px/);
   });
 
-  test("state colors are green-only — no amber/orange chrome", () => {
-    const cam = roomTabLiveMarkerClassNames({
-      cameraPublished: true,
-      micEnabled: false,
-    });
+  test("mic-only, cam-only, and both get solid green fill; fully off hides marker", () => {
+    assert.equal(
+      shouldShowRoomTabLiveMarker({
+        cameraPublished: false,
+        micEnabled: false,
+      }),
+      false,
+    );
+    assert.equal(
+      shouldShowRoomTabLiveMarker({
+        cameraPublished: true,
+        micEnabled: false,
+      }),
+      true,
+    );
+    assert.equal(
+      shouldShowRoomTabLiveMarker({
+        cameraPublished: false,
+        micEnabled: true,
+      }),
+      true,
+    );
+    assert.equal(
+      shouldShowRoomTabLiveMarker({
+        cameraPublished: true,
+        micEnabled: true,
+      }),
+      true,
+    );
+
+    const liveBlock = contentShellCss.slice(
+      contentShellCss.indexOf(".content-tab-room-icon__live {"),
+      contentShellCss.indexOf(".content-tab-room-icon__live.is-mic-on"),
+    );
+    assert.match(
+      liveBlock,
+      /background:\s*#22c55e/,
+      "mounted live pip is always solid green (mic-only silence included)",
+    );
+    assert.doesNotMatch(
+      contentShellCss,
+      /\.content-tab-room-icon__live\.is-camera-on\s*\{[^}]*background/s,
+      "fill must not depend on camera-only class anymore",
+    );
+
     const mic = roomTabLiveMarkerClassNames({
       cameraPublished: false,
       micEnabled: true,
     });
-    assert.deepEqual(cam, [
-      "content-tab-room-icon__live",
-      "is-camera-on",
-    ]);
     assert.deepEqual(mic, ["content-tab-room-icon__live", "is-mic-on"]);
-    assert.ok(!cam.includes("is-mic-on"));
-    assert.ok(!mic.includes("is-camera-on"));
+    const cam = roomTabLiveMarkerClassNames({
+      cameraPublished: true,
+      micEnabled: false,
+    });
+    assert.deepEqual(cam, ["content-tab-room-icon__live", "is-camera-on"]);
+  });
 
+  test("state colors are green-only — no amber/orange chrome", () => {
     const liveCssStart = contentShellCss.indexOf(
       ".content-tab-room-icon__live {",
     );
@@ -99,10 +140,6 @@ describe("room-tab-media-indicator", () => {
         `live pip CSS must not contain ${forbidden}`,
       );
     }
-    assert.match(
-      contentShellCss,
-      /\.content-tab-room-icon__live\.is-camera-on\s*\{[^}]*background:\s*#22c55e/s,
-    );
     assert.match(
       contentShellCss,
       /\.content-tab-room-icon__live\.is-mic-on\s*\{[^}]*rgb\(34 197 94/s,
@@ -133,28 +170,6 @@ describe("room-tab-media-indicator", () => {
   });
 
   test("marker mount mirrors truthful cam/mic; root has no pip children classes", () => {
-    assert.equal(
-      shouldShowRoomTabLiveMarker({
-        cameraPublished: false,
-        micEnabled: false,
-      }),
-      false,
-    );
-    assert.equal(
-      shouldShowRoomTabLiveMarker({
-        cameraPublished: true,
-        micEnabled: false,
-      }),
-      true,
-    );
-    assert.equal(
-      shouldShowRoomTabLiveMarker({
-        cameraPublished: false,
-        micEnabled: true,
-      }),
-      true,
-    );
-
     const root = roomTabIconRootClassNames({
       cameraPublished: true,
       micEnabled: true,
@@ -164,16 +179,16 @@ describe("room-tab-media-indicator", () => {
     assert.ok(!root.some((name) => name.includes("__mic")));
   });
 
-  test("tab-switch style persistence: per-room levels survive until clear", () => {
+  test("tab-switch persistence: idle snapshot keeps entry; null teardown clears; no cross-room leak", () => {
     const roomA = "meet-indicator-a";
     const roomB = "meet-indicator-b";
     clearRoomTabMedia(roomA);
     clearRoomTabMedia(roomB);
 
     setRoomTabMedia(roomA, {
-      cameraPublished: true,
+      cameraPublished: false,
       micEnabled: true,
-      audioLevel: 0.4,
+      audioLevel: 0,
     });
     setRoomTabMedia(roomB, {
       cameraPublished: true,
@@ -182,26 +197,29 @@ describe("room-tab-media-indicator", () => {
     });
 
     assert.deepEqual(getRoomTabMediaDiscrete(roomA), {
-      cameraPublished: true,
+      cameraPublished: false,
       micEnabled: true,
     });
-    assert.equal(getRoomTabMediaAudioLevel(roomA), 0.4);
     assert.equal(
-      getRoomTabMediaAudioLevel(roomB),
+      getRoomTabMediaAudioLevel(roomA),
       0,
-      "muted room B must not carry a speaking level",
+      "mic-only silence still shows marker (audio 0)",
     );
-    assert.deepEqual(
-      roomTabLiveMarkerClassNames(getRoomTabMediaDiscrete(roomA)),
-      ["content-tab-room-icon__live", "is-camera-on", "is-mic-on"],
-    );
-    assert.deepEqual(
-      roomTabLiveMarkerClassNames(getRoomTabMediaDiscrete(roomB)),
-      ["content-tab-room-icon__live", "is-camera-on"],
-    );
+    assert.ok(shouldShowRoomTabLiveMarker(getRoomTabMediaDiscrete(roomA)));
 
-    // Simulate backgrounding A (no clear) then closing A.
-    assert.equal(getRoomTabMediaAudioLevel(roomA), 0.4);
+    // Rapid tab-switch style: idle republish must not wipe mic-on state.
+    setRoomTabMedia(roomA, {
+      cameraPublished: false,
+      micEnabled: true,
+      audioLevel: 0,
+    });
+    assert.deepEqual(getRoomTabMediaDiscrete(roomA), {
+      cameraPublished: false,
+      micEnabled: true,
+    });
+
+    // Backgrounding A (no clear) then close A only.
+    assert.equal(getRoomTabMediaAudioLevel(roomB), 0);
     clearRoomTabMedia(roomA);
     assert.deepEqual(getRoomTabMediaDiscrete(roomA), {
       cameraPublished: false,
@@ -211,7 +229,25 @@ describe("room-tab-media-indicator", () => {
       cameraPublished: true,
       micEnabled: false,
     });
+    assert.ok(shouldShowRoomTabLiveMarker(getRoomTabMediaDiscrete(roomB)));
 
     clearRoomTabMedia(roomB);
+  });
+
+  test("null clear is teardown-only path; discrete survives until clearRoomTabMedia", () => {
+    const room = "meet-null-guard";
+    clearRoomTabMedia(room);
+    setRoomTabMedia(room, {
+      cameraPublished: true,
+      micEnabled: true,
+      audioLevel: 0.2,
+    });
+    // Host ignores Director null; store still accepts explicit clear.
+    assert.deepEqual(getRoomTabMediaDiscrete(room), {
+      cameraPublished: true,
+      micEnabled: true,
+    });
+    clearRoomTabMedia(room);
+    assert.equal(shouldShowRoomTabLiveMarker(getRoomTabMediaDiscrete(room)), false);
   });
 });

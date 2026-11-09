@@ -156,11 +156,23 @@ describe("room-tab-media-store", () => {
       micEnabled: true,
     });
 
-    clearRoomTabMedia(roomA);
+    // Idle snapshot (disconnect path) must zero devices without wiping the
+    // other room — and must not require a delayed latch.
+    setRoomTabMedia(roomA, {
+      cameraPublished: false,
+      micEnabled: false,
+      audioLevel: 0,
+    });
     assert.deepEqual(getRoomTabMediaDiscrete(roomA), {
       cameraPublished: false,
       micEnabled: false,
     });
+    assert.deepEqual(getRoomTabMediaDiscrete(roomB), {
+      cameraPublished: false,
+      micEnabled: true,
+    });
+
+    clearRoomTabMedia(roomA);
     assert.equal(getRoomTabMediaAudioLevel(roomA), 0);
     assert.deepEqual(
       getRoomTabMediaDiscrete(roomB),
