@@ -68,6 +68,12 @@ services:
       # Lemo Design portal staff hooks (meeting / invoice email).
       CLIENT_PORTAL_URL: ${CLIENT_PORTAL_URL:-}
       CLIENT_PORTAL_HOOK_SECRET: ${CLIENT_PORTAL_HOOK_SECRET:-}
+      # LiveKit meeting room tokens (Director / Start room). Secrets live in
+      # deploy/cloud/.env on the VPS — ~/.config/secrets/livekit.env is Mac-only.
+      LIVEKIT_URL: ${LIVEKIT_URL:-}
+      LIVEKIT_CLIENT_URL: ${LIVEKIT_CLIENT_URL:-}
+      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-}
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-}
       # Moneybird Manual send → portal invoice email webhook auth.
       MONEYBIRD_WEBHOOK_TOKEN: ${MONEYBIRD_WEBHOOK_TOKEN:-}
       MONEYBIRD_WEBHOOK_SECRET: ${MONEYBIRD_WEBHOOK_SECRET:-}

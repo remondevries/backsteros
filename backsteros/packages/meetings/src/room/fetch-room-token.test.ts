@@ -16,6 +16,7 @@ test("fetchMeetingRoomToken posts to core room-token and maps credentials", asyn
         url: "wss://client.lemo-design.com/livekit",
         room: "meet-1",
         meetingId: "meet-1",
+        identity: "host-owner-1",
         provider: "livekit" as const,
       };
     },

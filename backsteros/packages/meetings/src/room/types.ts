@@ -15,6 +15,8 @@ export type MeetingRoomCredentials = {
   /** SFU room name — always the BacksterOS meeting id. */
   room: string;
   meetingId: string;
+  /** LiveKit participant identity (unique per concurrent join). */
+  identity?: string;
   provider: MeetingRoomProviderId;
 };
 

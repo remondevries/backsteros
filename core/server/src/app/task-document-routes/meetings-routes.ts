@@ -30,6 +30,7 @@ import {
 } from "../route-deps.js";
 import type { Hono } from "../route-deps.js";
 import {
+  canMintMeetingHostRoomToken,
   LiveKitNotConfiguredError,
   mintMeetingLiveKitToken,
 } from "../../services/livekit-room-token.js";
@@ -281,19 +282,42 @@ export function registerMeetingsRoutes(app: Hono) {
     zValidator("json", createMeetingRoomTokenBodySchema),
     async (c) => {
       const auth = getAuth(c);
-      if (!can(auth, "tasks:read")) return c.json(forbidden(), 403);
+      const body = c.req.valid("json");
+      const role = body.role === "guest" ? "guest" : "host";
+      if (role === "host") {
+        // Owner session / Access key only — agent keys must not mint publish host JWTs.
+        if (!canMintMeetingHostRoomToken(auth)) {
+          return c.json(
+            {
+              error: {
+                code: "meeting_host_token_forbidden",
+                message:
+                  "Only the workspace owner may mint a meeting host room token",
+              },
+            },
+            403,
+          );
+        }
+      } else if (!can(auth, "tasks:read")) {
+        return c.json(forbidden(), 403);
+      }
       const meetingId = c.req.param("id");
       const meeting = await meetingService.getMeetingById(
         auth.workspaceId,
         meetingId,
       );
       if (!meeting) return c.json(notFound("Meeting"), 404);
-      const body = c.req.valid("json");
+      const participantKey =
+        body.participantKey?.trim() ||
+        auth.userId?.trim() ||
+        auth.apiKeyId?.trim() ||
+        null;
       try {
         const token = await mintMeetingLiveKitToken({
           meetingId: meeting.id,
-          role: body.role,
+          role,
           displayName: body.displayName,
+          participantKey,
         });
         return c.json(token);
       } catch (error) {

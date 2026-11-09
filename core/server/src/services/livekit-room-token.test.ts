@@ -2,13 +2,36 @@ import assert from "node:assert/strict";
 import { jwtVerify } from "jose";
 import { test } from "node:test";
 
+import type { AuthContext } from "../middleware/auth.js";
 import {
+  buildMeetingRoomParticipantIdentity,
+  canMintMeetingHostRoomToken,
   meetingLiveKitRoomName,
   mintMeetingLiveKitToken,
   parseDotenv,
   resolveLiveKitClientUrl,
   type LiveKitRoomConfig,
 } from "./livekit-room-token.js";
+
+const config: LiveKitRoomConfig = {
+  url: "wss://client.lemo-design.com/livekit",
+  apiKey: "devkey",
+  apiSecret: "secret",
+};
+
+function auth(partial: Partial<AuthContext>): AuthContext {
+  return {
+    kind: "api_key",
+    userId: "user-1",
+    clerkUserId: null,
+    apiKeyId: "key-1",
+    contactId: null,
+    workspaceId: "ws-1",
+    membershipRole: null,
+    scopes: [],
+    ...partial,
+  };
+}
 
 test("parseDotenv ignores comments and strips quotes", () => {
   const parsed = parseDotenv(
@@ -40,28 +63,139 @@ test("meetingLiveKitRoomName is the meeting id", () => {
   assert.throws(() => meetingLiveKitRoomName("  "));
 });
 
-test("mintMeetingLiveKitToken signs a host JWT for the meeting room", async () => {
-  const config: LiveKitRoomConfig = {
-    url: "wss://client.lemo-design.com/livekit",
-    apiKey: "devkey",
-    apiSecret: "secret",
-  };
-  const result = await mintMeetingLiveKitToken(
-    { meetingId: "meeting-abc", role: "host", displayName: "Director" },
+test("canMintMeetingHostRoomToken allows owner shell and Access keys, not agents", () => {
+  assert.equal(
+    canMintMeetingHostRoomToken(
+      auth({
+        kind: "local_shell",
+        userId: "owner",
+        apiKeyId: null,
+        membershipRole: "owner",
+        scopes: [],
+      }),
+    ),
+    true,
+  );
+  assert.equal(
+    canMintMeetingHostRoomToken(
+      auth({
+        scopes: ["settings:write", "tasks:write", "tasks:read"],
+        contactId: null,
+      }),
+    ),
+    true,
+  );
+  // Agent persona key (contact-bound), even if somehow overscoped.
+  assert.equal(
+    canMintMeetingHostRoomToken(
+      auth({
+        contactId: "agent-contact",
+        scopes: ["settings:write", "tasks:write", "tasks:read"],
+      }),
+    ),
+    false,
+  );
+  // Typical agent key: tasks only.
+  assert.equal(
+    canMintMeetingHostRoomToken(
+      auth({
+        contactId: "agent-contact",
+        scopes: ["tasks:read", "tasks:write"],
+      }),
+    ),
+    false,
+  );
+  assert.equal(
+    canMintMeetingHostRoomToken(
+      auth({
+        contactId: null,
+        scopes: ["tasks:read"],
+      }),
+    ),
+    false,
+  );
+  assert.equal(canMintMeetingHostRoomToken(null), false);
+});
+
+test("buildMeetingRoomParticipantIdentity is unique per key / random suffix", () => {
+  assert.equal(
+    buildMeetingRoomParticipantIdentity({
+      role: "host",
+      participantKey: "user-42",
+    }),
+    "host-user-42",
+  );
+  assert.equal(
+    buildMeetingRoomParticipantIdentity({
+      role: "guest",
+      participantKey: "contact/abc!",
+    }),
+    "guest-contactabc",
+  );
+  const a = buildMeetingRoomParticipantIdentity({
+    role: "host",
+    randomSuffix: () => "aaa111",
+  });
+  const b = buildMeetingRoomParticipantIdentity({
+    role: "host",
+    randomSuffix: () => "bbb222",
+  });
+  assert.equal(a, "host-aaa111");
+  assert.equal(b, "host-bbb222");
+  assert.notEqual(a, b);
+});
+
+test("mintMeetingLiveKitToken signs unique host JWTs for the same meeting room", async () => {
+  const first = await mintMeetingLiveKitToken(
+    {
+      meetingId: "meeting-abc",
+      role: "host",
+      displayName: "Director",
+      participantKey: "owner-1",
+    },
     config,
   );
-  assert.equal(result.provider, "livekit");
-  assert.equal(result.room, "meeting-abc");
-  assert.equal(result.meetingId, "meeting-abc");
-  assert.equal(result.url, config.url);
+  const second = await mintMeetingLiveKitToken(
+    {
+      meetingId: "meeting-abc",
+      role: "host",
+      displayName: "Director 2",
+      participantKey: "owner-2",
+    },
+    config,
+  );
+  assert.equal(first.room, "meeting-abc");
+  assert.equal(second.room, "meeting-abc");
+  assert.equal(first.identity, "host-owner-1");
+  assert.equal(second.identity, "host-owner-2");
+  assert.notEqual(first.identity, second.identity);
 
   const secret = new TextEncoder().encode(config.apiSecret);
-  const { payload } = await jwtVerify(result.token, secret, {
-    issuer: config.apiKey,
-  });
-  assert.equal(payload.sub, "host-director");
-  assert.equal(payload.name, "Director");
-  const video = payload.video as { room?: string; roomJoin?: boolean };
-  assert.equal(video.room, "meeting-abc");
-  assert.equal(video.roomJoin, true);
+  const firstPayload = (
+    await jwtVerify(first.token, secret, { issuer: config.apiKey })
+  ).payload;
+  const secondPayload = (
+    await jwtVerify(second.token, secret, { issuer: config.apiKey })
+  ).payload;
+  assert.equal(firstPayload.sub, "host-owner-1");
+  assert.equal(secondPayload.sub, "host-owner-2");
+  assert.equal(
+    (firstPayload.video as { room?: string }).room,
+    "meeting-abc",
+  );
+});
+
+test("mintMeetingLiveKitToken guest identities stay unique under one room", async () => {
+  const first = await mintMeetingLiveKitToken(
+    { meetingId: "meeting-abc", role: "guest", participantKey: "g1" },
+    config,
+  );
+  const second = await mintMeetingLiveKitToken(
+    { meetingId: "meeting-abc", role: "guest", participantKey: "g2" },
+    config,
+  );
+  assert.equal(first.identity, "guest-g1");
+  assert.equal(second.identity, "guest-g2");
+  assert.notEqual(first.identity, second.identity);
+  assert.equal(first.room, second.room);
 });

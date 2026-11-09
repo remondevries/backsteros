@@ -283,6 +283,8 @@ export const meetingRoomTokenSchema = z.object({
   url: z.string().min(1),
   room: z.string().min(1),
   meetingId: z.string().min(1),
+  /** LiveKit participant identity (unique per concurrent join). */
+  identity: z.string().min(1),
   /** Media backend id so clients can branch if RealtimeKit (etc.) replaces LiveKit. */
   provider: z.literal("livekit").default("livekit"),
 });
@@ -293,6 +295,11 @@ export const createMeetingRoomTokenBodySchema = z.object({
   /** Host (Director) vs guest identity; default host. */
   role: z.enum(["host", "guest"]).optional(),
   displayName: z.string().trim().min(1).max(120).optional(),
+  /**
+   * Optional stable participant key (user/contact id) for reconnects.
+   * When omitted, core mints a random suffix so identities do not collide.
+   */
+  participantKey: z.string().trim().min(1).max(120).optional(),
 });
 
 export type CreateMeetingRoomTokenBody = z.infer<

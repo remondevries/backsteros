@@ -4,11 +4,16 @@
  * Room name is always the meeting id so host + portal guests share one room.
  */
 
+import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
 import { SignJWT } from "jose";
+
+import { isAgentPersonaAuth } from "../lib/bunq-payment-proposal-auth.js";
+import { hasScope } from "../lib/crypto.js";
+import type { AuthContext } from "../middleware/auth.js";
 
 export type LiveKitRoomConfig = {
   /** WebSocket URL the client should connect to (shared SFU with portal guests). */
@@ -21,6 +26,11 @@ export type MintMeetingRoomTokenInput = {
   meetingId: string;
   role?: "host" | "guest";
   displayName?: string;
+  /**
+   * Stable participant key for reconnects (user id, contact id, etc.).
+   * When omitted, a random suffix is used so concurrent joins do not collide.
+   */
+  participantKey?: string | null;
 };
 
 export type MintMeetingRoomTokenResult = {
@@ -28,6 +38,7 @@ export type MintMeetingRoomTokenResult = {
   url: string;
   room: string;
   meetingId: string;
+  identity: string;
   provider: "livekit";
 };
 
@@ -137,6 +148,56 @@ export function meetingLiveKitRoomName(meetingId: string): string {
   return trimmed;
 }
 
+/**
+ * Host Director tokens: workspace owner session (local-shell) or owner-grade
+ * Access API key (`settings:write` + `tasks:write`). Agent persona keys never
+ * qualify — they are sanitized without settings:write.
+ */
+export function canMintMeetingHostRoomToken(
+  auth: AuthContext | null | undefined,
+): boolean {
+  if (!auth?.workspaceId) return false;
+  if (isAgentPersonaAuth(auth)) return false;
+  if (auth.kind === "local_shell") {
+    return Boolean(auth.userId || auth.clerkUserId);
+  }
+  if (auth.kind === "api_key") {
+    return (
+      Boolean(auth.userId) &&
+      hasScope(auth.scopes, "settings:write") &&
+      hasScope(auth.scopes, "tasks:write")
+    );
+  }
+  return false;
+}
+
+function sanitizeParticipantKey(value: string): string {
+  return value.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 48);
+}
+
+function randomParticipantSuffix(): string {
+  return randomUUID().replace(/-/g, "").slice(0, 12);
+}
+
+/**
+ * LiveKit identity must be unique per concurrent participant. Fixed strings
+ * like `host-director` cause the SFU to kick the previous join.
+ */
+export function buildMeetingRoomParticipantIdentity(input: {
+  role: "host" | "guest";
+  participantKey?: string | null;
+  randomSuffix?: () => string;
+}): string {
+  const fromKey = input.participantKey?.trim()
+    ? sanitizeParticipantKey(input.participantKey.trim())
+    : "";
+  const suffix =
+    fromKey ||
+    (input.randomSuffix ? input.randomSuffix() : randomParticipantSuffix());
+  const safe = suffix || "anon";
+  return `${input.role}-${safe}`;
+}
+
 export async function mintMeetingLiveKitToken(
   input: MintMeetingRoomTokenInput,
   config: LiveKitRoomConfig = loadLiveKitRoomConfig(),
@@ -147,8 +208,10 @@ export async function mintMeetingLiveKitToken(
   }
   const room = meetingLiveKitRoomName(meetingId);
   const role = input.role === "guest" ? "guest" : "host";
-  const identity =
-    role === "host" ? "host-director" : `guest-${meetingId.slice(0, 8)}`;
+  const identity = buildMeetingRoomParticipantIdentity({
+    role,
+    participantKey: input.participantKey,
+  });
   const name =
     input.displayName?.trim() ||
     (role === "host" ? "BacksterOS host" : "Guest");
@@ -177,6 +240,7 @@ export async function mintMeetingLiveKitToken(
     url: config.url,
     room,
     meetingId,
+    identity,
     provider: "livekit",
   };
 }

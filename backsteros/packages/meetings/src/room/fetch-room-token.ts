@@ -34,6 +34,7 @@ export async function fetchMeetingRoomToken(
     url: payload.url,
     room: payload.room,
     meetingId: payload.meetingId || meetingId,
+    identity: payload.identity,
     provider: payload.provider ?? "livekit",
   };
 }

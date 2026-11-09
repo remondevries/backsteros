@@ -104,6 +104,8 @@ docker compose -f deploy/cloud/docker-compose.yml exec backsteros sh
 | `BACKSTEROS_VAULT_PATH` | `/data/vault` (desktop-style cache; shared bytes are in R2 when configured) |
 | `BACKSTEROS_R2_*` | Private file bucket. When set, cloud serves markdown and blobs from R2 instead of `503 pdf_requires_local_core` |
 | `GITHUB_API_TOKEN` | Optional PAT for GitHub routes (local-shell desktop + portal API keys) |
+| `LIVEKIT_URL` / `LIVEKIT_CLIENT_URL` | LiveKit SFU URL for `POST /api/v1/meetings/:id/room-token`. Prefer `LIVEKIT_CLIENT_URL` (portal WSS) so host + guests share one SFU. |
+| `LIVEKIT_API_KEY` / `LIVEKIT_API_SECRET` | LiveKit API credentials (must match the SFU). Set in VPS `deploy/cloud/.env` — `~/.config/secrets/livekit.env` is Mac-only. |
 | `PORT` | `8788` |
 | `POWERSYNC_JWT_SECRET` | Signs `GET /api/v1/powersync/token`. Same value is rendered into the PowerSync JWKS. Already required. |
 | `POWERSYNC_URL` | Sync URL returned to non-loopback clients. Default `http://100.83.125.67:8080` (tailnet only). |
