@@ -84,8 +84,12 @@ function isEmailDetailTabPath(path: string): boolean {
   return path.startsWith("/email/") || path.startsWith("/drafts/");
 }
 
+/** Tasks list root keeps due/view so two Tasks tabs restore their filters. */
+const TASKS_TAB_SEARCH_KEYS = ["due", "view"] as const;
+
 function tabSearchKeysForPath(path: string): readonly string[] | null {
   if (path === "/calendar") return CALENDAR_TAB_SEARCH_KEYS;
+  if (path === "/tasks") return TASKS_TAB_SEARCH_KEYS;
   if (isEmailDetailTabPath(path)) return EMAIL_TAB_SEARCH_KEYS;
   if (path === "/contacts" || path.startsWith("/contacts/")) {
     return CONTACT_TAB_SEARCH_KEYS;

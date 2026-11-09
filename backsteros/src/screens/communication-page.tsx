@@ -93,6 +93,11 @@ import { useAgentMail } from "../lib/agentmail-context";
 import { useEmailDetailListPrefetch } from "../lib/use-email-detail-list-prefetch";
 import { patchEmailTaskListItem } from "../lib/email-list-tasks";
 import {
+  getProductTabUiState,
+  patchProductTabCommunicationUi,
+} from "../lib/product-tab-ui-state";
+import {
+  getWarmKeepAliveActiveProductTabId,
   useKeepAliveActive,
   useKeepAliveFrozen,
   useShellLocation,
@@ -146,18 +151,82 @@ function CommunicationPageBody() {
     enabled: keepAliveActive,
     channelFocused: keepAliveActive,
   });
-  const [chatContactCollapsed, setChatContactCollapsed] = useState(false);
-  const [chatContactExpanded, setChatContactExpanded] = useState(false);
+  const activeTabId = getWarmKeepAliveActiveProductTabId();
+  const tabCommUi = activeTabId
+    ? getProductTabUiState(activeTabId).communication
+    : null;
+  const [chatContactCollapsed, setChatContactCollapsed] = useState(
+    () => tabCommUi?.chatContactCollapsed ?? false,
+  );
+  const [chatContactExpanded, setChatContactExpanded] = useState(
+    () => tabCommUi?.chatContactExpanded ?? false,
+  );
   const [chatMainFaded, setChatMainFaded] = useState(false);
   /** Messages list checkbox multi-select — hides thread + contact rail. */
-  const [listBulkSelecting, setListBulkSelecting] = useState(false);
+  const [listBulkSelecting, setListBulkSelecting] = useState(
+    () => tabCommUi?.listBulkSelecting ?? false,
+  );
   /** Floating + → type launcher / compose in the center pane (create flow). */
-  const [createOpen, setCreateOpen] = useState(false);
+  const [createOpen, setCreateOpen] = useState(
+    () => tabCommUi?.createOpen ?? false,
+  );
   const [createKind, setCreateKind] = useState<CommunicationCreateKind | null>(
-    null,
+    () => (tabCommUi?.createKind as CommunicationCreateKind | null) ?? null,
   );
   /** To field from embedded compose — drives the right-rail party address. */
-  const [composeTo, setComposeTo] = useState("");
+  const [composeTo, setComposeTo] = useState(() => tabCommUi?.composeTo ?? "");
+  const prevCommTabIdRef = useRef(activeTabId);
+  useLayoutEffect(() => {
+    if (prevCommTabIdRef.current === activeTabId) return;
+    const prevId = prevCommTabIdRef.current;
+    if (prevId) {
+      patchProductTabCommunicationUi(prevId, {
+        composeTo,
+        createOpen,
+        createKind,
+        listBulkSelecting,
+        chatContactCollapsed,
+        chatContactExpanded,
+      });
+    }
+    prevCommTabIdRef.current = activeTabId;
+    const next = activeTabId
+      ? getProductTabUiState(activeTabId).communication
+      : null;
+    setComposeTo(next?.composeTo ?? "");
+    setCreateOpen(next?.createOpen ?? false);
+    setCreateKind((next?.createKind as CommunicationCreateKind | null) ?? null);
+    setListBulkSelecting(next?.listBulkSelecting ?? false);
+    setChatContactCollapsed(next?.chatContactCollapsed ?? false);
+    setChatContactExpanded(next?.chatContactExpanded ?? false);
+  }, [
+    activeTabId,
+    chatContactCollapsed,
+    chatContactExpanded,
+    composeTo,
+    createKind,
+    createOpen,
+    listBulkSelecting,
+  ]);
+  useEffect(() => {
+    if (!activeTabId) return;
+    patchProductTabCommunicationUi(activeTabId, {
+      composeTo,
+      createOpen,
+      createKind,
+      listBulkSelecting,
+      chatContactCollapsed,
+      chatContactExpanded,
+    });
+  }, [
+    activeTabId,
+    chatContactCollapsed,
+    chatContactExpanded,
+    composeTo,
+    createKind,
+    createOpen,
+    listBulkSelecting,
+  ]);
   const [composeParty, setComposeParty] = useState<{
     contactId: string | null;
     organizationId: string | null;

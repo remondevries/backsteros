@@ -186,6 +186,13 @@ describe("syncActiveTabToPath", () => {
 });
 
 describe("buildProductTabHref", () => {
+  test("keeps due and view on tasks list root", () => {
+    assert.equal(
+      buildProductTabHref("/tasks", "?due=overdue&view=list&x=1"),
+      "/tasks?due=overdue&view=list",
+    );
+  });
+
   test("keeps contact and organization overlay layout on tab hrefs", () => {
     assert.equal(
       buildProductTabHref("/contacts/39", "?contactLayout=page&x=1"),

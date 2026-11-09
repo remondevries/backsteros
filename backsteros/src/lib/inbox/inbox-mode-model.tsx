@@ -23,7 +23,6 @@ import {
   resolveInboxModeListItems,
   sortInboxItemsByAttentionStatus,
   taskBelongsInInbox,
-  useInboxListMode,
   type InboxEmailListItem,
   type InboxListItem,
   type InboxListMode,
@@ -48,6 +47,7 @@ import {
 } from "../workspace-data";
 import { dueDateValueToEpochMs } from "../workspace/row-mappers";
 import { buildInboxAttentionGroupOverrides } from "./build-inbox-session-list";
+import { useProductTabInboxListMode } from "../use-product-tab-inbox-list-mode";
 import { useInboxListSessionPin } from "./inbox-list-session-context";
 import { useInboxSessionList } from "./use-inbox-session-list";
 import { useInboxTriageNotifications } from "./use-inbox-triage-notifications";
@@ -129,7 +129,7 @@ export function InboxModeModelProvider({
   const { allTasks } = useDesktopWorkspaceTasks();
   const agentMail = useAgentMail();
   const { pinnedItems } = useInboxListSessionPin();
-  const [listMode, setListMode] = useInboxListMode();
+  const [listMode, setListMode] = useProductTabInboxListMode();
   const messagesActive = active && listMode === "messages";
   const chatInbox = useChatInbox({
     enabled: messagesActive,
