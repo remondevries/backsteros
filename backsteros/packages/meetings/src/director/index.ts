@@ -1,4 +1,11 @@
-export { DirectorRoom, type DirectorRoomProps } from "./DirectorRoom";
+export {
+  DirectorRoom,
+  type DirectorRoomProps,
+  type LocalMediaIndicator,
+} from "./DirectorRoom";
+export {
+  normalizeAudioLevel,
+} from "./AudioVolumeIndicator";
 export {
   useDirectorLiveKit,
   visitorNotice,

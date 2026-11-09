@@ -29,6 +29,8 @@ export {
 export {
   DirectorRoom,
   type DirectorRoomProps,
+  type LocalMediaIndicator,
+  normalizeAudioLevel,
   useDirectorLiveKit,
   useDirectorRoom,
   visitorNotice,

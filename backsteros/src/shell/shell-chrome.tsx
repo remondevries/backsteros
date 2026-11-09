@@ -24,6 +24,7 @@ import { renderAppShellTabIcon } from "./app-shell-tab-icon";
 import { ShellAgentDmBanner } from "./shell-agent-dm-banner";
 import { ShellChatPanelSlot } from "./shell-chat-panel-slot";
 import { ShellRoomMeetingsNav } from "./shell-room-meetings-nav";
+import { useResolveRoomTabTooltip } from "./room-tab-tooltip";
 import { AgentDmNotificationsProvider } from "./use-agent-dm-notifications";
 import type { useShellTabs } from "./use-shell-tabs";
 import type { resolveInboxSidebarIndicatorTone } from "@backsteros/ui/inbox";
@@ -87,6 +88,7 @@ function ShellChromeInner({
   } = tabs;
   const showSidePanelSlot = showSidePanel && Boolean(sidePanel);
   useWindowChromeDrag();
+  const resolveTabTooltip = useResolveRoomTabTooltip();
 
   const roomTabActive = isMeetingRoomPath(pathname);
   const roomMeetingId = roomTabActive
@@ -199,6 +201,7 @@ function ShellChromeInner({
             : null
         }
         renderTabIcon={renderAppShellTabIcon}
+        resolveTabTooltip={resolveTabTooltip}
         showSidePanel={showSidePanelSlot}
         sidePanel={sidePanel}
         sidePanelCollapsed={sidePanelCollapsed && !financeRail}

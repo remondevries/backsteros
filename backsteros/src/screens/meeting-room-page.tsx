@@ -1,6 +1,9 @@
-import { useMemo } from "react";
+import { useCallback, useEffect, useMemo } from "react";
 import { useParams } from "@tanstack/react-router";
-import { DirectorRoom } from "@backsteros/meetings";
+import {
+  DirectorRoom,
+  type LocalMediaIndicator,
+} from "@backsteros/meetings";
 import "@backsteros/meetings/director.css";
 import {
   formatMeetingDisplayId,
@@ -12,6 +15,10 @@ import {
 import { useDesktopApi } from "../lib/api-context";
 import { useDesktopAvatarSrcMap } from "../lib/avatar-src";
 import { getDefaultAssigneeId } from "../lib/default-assignee";
+import {
+  clearRoomTabMedia,
+  setRoomTabMedia,
+} from "../lib/room-tab-media-store";
 import { useDesktopSectionBreadcrumb } from "../lib/use-desktop-breadcrumb";
 import {
   useDesktopWorkspaceMeta,
@@ -56,6 +63,23 @@ export function MeetingRoomPage() {
     // Same resolution path as Settings → Account / entity avatars.
     return contactAvatarSrc[assigneeId] ?? null;
   }, [contactAvatarSrc]);
+
+  const meetingEntityId = meeting?.id ?? null;
+
+  const handleLocalMediaIndicatorChange = useCallback(
+    (next: LocalMediaIndicator | null) => {
+      if (!meetingEntityId) return;
+      setRoomTabMedia(meetingEntityId, next);
+    },
+    [meetingEntityId],
+  );
+
+  useEffect(() => {
+    if (!meetingEntityId) return;
+    return () => {
+      clearRoomTabMedia(meetingEntityId);
+    };
+  }, [meetingEntityId]);
 
   useDesktopSectionBreadcrumb([
     { label: "Agenda", href: "/calendar" },
@@ -120,6 +144,7 @@ export function MeetingRoomPage() {
           typeof meeting.startAt === "string" ? meeting.startAt : null
         }
         hostAvatarSrc={hostAvatarSrc}
+        onLocalMediaIndicatorChange={handleLocalMediaIndicatorChange}
         requestJson={client.requestJson.bind(client)}
       />
     </div>

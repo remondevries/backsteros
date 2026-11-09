@@ -345,6 +345,15 @@ function useNow(): Date | null {
   return now;
 }
 
+export type LocalMediaIndicator = {
+  /** Local participant has a published camera track (ready). */
+  cameraPublished: boolean;
+  /** Local microphone is enabled (not muted). */
+  micEnabled: boolean;
+  /** Live analyser / LiveKit level 0–1; 0 when muted. */
+  audioLevel: number;
+};
+
 export type DirectorRoomProps = {
   meetingId: string;
   meetingTitle?: string | null;
@@ -354,6 +363,13 @@ export type DirectorRoomProps = {
    * http). Never invent a photo — omit/null shows the person fallback.
    */
   hostAvatarSrc?: string | null;
+  /**
+   * Local cam/mic/audio for shell room-tab indicators. Called with `null` on
+   * cleanup / disconnect — does not activate devices by itself.
+   */
+  onLocalMediaIndicatorChange?: (
+    next: LocalMediaIndicator | null,
+  ) => void;
   /** Authenticated BacksterOS core JSON helper (mints room tokens). */
   requestJson: <T>(path: string, init?: RequestInit) => Promise<T>;
 };
@@ -388,6 +404,7 @@ export function DirectorRoom({
   meetingTitle: meetingTitleProp,
   meetingStartAt,
   hostAvatarSrc = null,
+  onLocalMediaIndicatorChange,
   requestJson,
 }: DirectorRoomProps) {
   const meetingId = meetingIdProp.trim() || null;
@@ -557,6 +574,38 @@ export function DirectorRoom({
       setCameraTrackOn(false);
     }
   }, [cameraOn, hostCamAnim]);
+
+  // Shell room-tab live pip — published local tracks only (never invent levels).
+  useEffect(() => {
+    if (!onLocalMediaIndicatorChange) return;
+    if (!meetingId || !connected || connectionError) {
+      onLocalMediaIndicatorChange(null);
+      return;
+    }
+    const cameraPublished = Boolean(cameraTrackOn && localCameraReady);
+    const micEnabled = !muted;
+    onLocalMediaIndicatorChange({
+      cameraPublished,
+      micEnabled,
+      audioLevel: micEnabled ? hostAudioLevel : 0,
+    });
+  }, [
+    cameraTrackOn,
+    connected,
+    connectionError,
+    hostAudioLevel,
+    localCameraReady,
+    meetingId,
+    muted,
+    onLocalMediaIndicatorChange,
+  ]);
+
+  useEffect(() => {
+    if (!onLocalMediaIndicatorChange) return;
+    return () => {
+      onLocalMediaIndicatorChange(null);
+    };
+  }, [meetingId, onLocalMediaIndicatorChange]);
 
   useEffect(() => {
     const root = document.documentElement;

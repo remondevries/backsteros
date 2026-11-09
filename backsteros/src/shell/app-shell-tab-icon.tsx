@@ -4,6 +4,9 @@ import {
   HistoryEntryIcon,
   isEmailPath,
   isInboxPath,
+  isMeetingFormat,
+  isMeetingRoomPath,
+  parseMeetingRoomMeetingId,
   resolveHistoryEntryDisplay,
   resolveProductTabTaskMeta,
   type ProductTab,
@@ -14,6 +17,7 @@ import {
 } from "../lib/agent/agent-list-indicators";
 import { useDesktopAgentStatusOptional } from "../lib/agent/agent-status-context";
 import { useDesktopWorkspaceTasks } from "../lib/workspace-data";
+import { RoomTabMediaIcon } from "./room-tab-media-icon";
 
 export function renderAppShellTabIcon(tab: ProductTab) {
   return createElement(AppShellTabIcon, { tab });
@@ -43,6 +47,17 @@ function AppShellTabIcon({ tab }: { tab: ProductTab }) {
       },
     });
   }
+
+  const meetingId = isMeetingRoomPath(tab.href)
+    ? parseMeetingRoomMeetingId(tab.href)
+    : null;
+  if (meetingId && tab.icon != null && isMeetingFormat(tab.icon)) {
+    return createElement(RoomTabMediaIcon, {
+      format: tab.icon,
+      meetingId,
+    });
+  }
+
   const meta = resolveProductTabTaskMeta(tab, allTasks);
   const liveTask = meta.taskId
     ? (allTasks.find((task) => task.id === meta.taskId) ?? null)

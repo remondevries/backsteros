@@ -31,6 +31,11 @@ export type ProductContentTabsProps = {
   /** Override default nav-family icons (e.g. document/letter glyphs on web). */
   renderTabIcon?: (tab: ProductTab) => ReactNode;
   /**
+   * Optional richer hover/status text (e.g. room cam/mic). Falls back to
+   * {@link ProductTab.title}.
+   */
+  resolveTabTooltip?: (tab: ProductTab) => string;
+  /**
    * When the product sidebar is collapsed, render history controls here so
    * recent / back / forward stay reachable next to the traffic lights.
    */
@@ -62,6 +67,7 @@ export function ProductContentTabs({
   onCloseTab,
   onOpenNewTab,
   renderTabIcon,
+  resolveTabTooltip,
   historyToolbar = null,
   chatPanelToggle = null,
 }: ProductContentTabsProps) {
@@ -82,6 +88,7 @@ export function ProductContentTabs({
           >
             {tabs.map((tab) => {
               const isActive = tab.id === activeTabId;
+              const tooltip = resolveTabTooltip?.(tab) ?? tab.title;
 
               return (
                 <span
@@ -103,7 +110,8 @@ export function ProductContentTabs({
                       onActivateTab(tab.id);
                     }
                   }}
-                  title={tab.title}
+                  title={tooltip}
+                  aria-label={tooltip}
                 >
                   <span className="content-tab-content">
                     {renderTabIcon ? (
