@@ -1,26 +1,36 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
-import { useLocation } from "@tanstack/react-router";
 import {
   isMeetingRoomPath,
   parseMeetingRoomMeetingId,
 } from "@backsteros/ui";
 
 import {
+  currentWindowNavigationHref,
+  parseNavigationPathname,
+} from "../lib/pending-navigation-routes";
+import {
   getOpenRoomMeetingIds,
   getOpenRoomMeetingIdsEpoch,
   nextVisitedRoomMeetingIds,
+  resolveActiveRoomMeetingId,
   subscribeOpenRoomMeetingIds,
 } from "../lib/room-session-keep-alive";
+import {
+  getVisibleKeepAliveSurface,
+  getWarmKeepAliveEpoch,
+  subscribeWarmKeepAlive,
+} from "../lib/shell-warm-keep-alive";
 import { MeetingRoomSession } from "../screens/meeting-room-session";
 
 /**
  * Keeps one Director session mounted per room tab that has been opened this
  * session. Visible room UI (Director + breadcrumb chrome) only while that room
- * route is active; backgrounded sessions stay LiveKit-connected so cam/mic +
- * tab indicators survive tab switches — without owning shell chrome/panels.
+ * route is the shell's trusted active location and no warm keep-alive section
+ * is covering the stage. Backgrounded sessions stay LiveKit-connected.
  *
- * Sessions are created on first visit (not merely because a stale room tab
- * exists in localStorage) and destroyed when that product tab closes.
+ * Active room id is resolved from the warm store + address bar — not TanStack
+ * alone — because warm flips away from a room Outlet leave the router stuck on
+ * `/…/room` while Inbox/Tasks already own the shell.
  */
 export function RoomSessionKeepAlive() {
   useSyncExternalStore(
@@ -28,13 +38,29 @@ export function RoomSessionKeepAlive() {
     getOpenRoomMeetingIdsEpoch,
     () => 0,
   );
+  useSyncExternalStore(
+    subscribeWarmKeepAlive,
+    getWarmKeepAliveEpoch,
+    () => 0,
+  );
+
   const openIds = getOpenRoomMeetingIds();
   const openIdKey = openIds.join("\0");
-  const { pathname } = useLocation();
-  const activeMeetingId = useMemo(() => {
-    if (!isMeetingRoomPath(pathname)) return null;
-    return parseMeetingRoomMeetingId(pathname);
-  }, [pathname]);
+  const visibleSurface = getVisibleKeepAliveSurface();
+  const windowPathname = parseNavigationPathname(
+    currentWindowNavigationHref(),
+  );
+
+  const activeMeetingId = useMemo(
+    () =>
+      resolveActiveRoomMeetingId({
+        visibleKeepAliveSurface: visibleSurface,
+        pathname: windowPathname,
+        isRoomPath: isMeetingRoomPath,
+        parseMeetingId: parseMeetingRoomMeetingId,
+      }),
+    [visibleSurface, windowPathname],
+  );
 
   const [visitedIds, setVisitedIds] = useState<string[]>([]);
 

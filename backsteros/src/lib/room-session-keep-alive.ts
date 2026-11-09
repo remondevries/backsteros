@@ -94,6 +94,27 @@ export function shouldRegisterRoomChrome(
 }
 
 /**
+ * Which room (if any) owns visible Director UI right now.
+ *
+ * Warm keep-alive flips (Inbox/Tasks/…) update `window.history` + the warm
+ * visible surface but intentionally leave TanStack on the previous Outlet URL
+ * (e.g. still `/…/room`). Room UI must follow warm visibility + the address
+ * bar — never TanStack alone — or the Director layer stays `is-active` and
+ * covers main content / sidepanels after Room → Inbox/Messages/Tasks.
+ */
+export function resolveActiveRoomMeetingId(input: {
+  visibleKeepAliveSurface: string | null;
+  /** Trusted location pathname (address bar / warm href), not a stale router match. */
+  pathname: string;
+  isRoomPath: (pathname: string) => boolean;
+  parseMeetingId: (pathname: string) => string | null;
+}): string | null {
+  if (input.visibleKeepAliveSurface != null) return null;
+  if (!input.isRoomPath(input.pathname)) return null;
+  return input.parseMeetingId(input.pathname);
+}
+
+/**
  * Tab-separation snapshot used by shell + tests: visible room UI vs background
  * media keepalive.
  */
