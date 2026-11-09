@@ -153,10 +153,14 @@ function UnauthenticatedPowerSyncProvider({
 }: {
   children: ReactNode;
 }) {
+  // Deliberate PowerSync-off (overlay, or DEV core on a non-:8788 port) must
+  // still look "signed in" to workspace REST hydrate. Status `unauthenticated`
+  // clears apiMeetings and leaves Start room on "Meeting not found".
   const value = useMemo<SyncState>(
     () => ({
       ...idleState,
-      status: "unauthenticated",
+      status: "idle",
+      ready: true,
       message: "PowerSync disabled",
     }),
     [],
