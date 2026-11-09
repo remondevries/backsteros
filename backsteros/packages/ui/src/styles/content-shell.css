@@ -514,54 +514,47 @@
 
 /*
  * Room tab (top product tabs):
- * - green cam pip = camera published
- * - amber mic pip = mic unmuted
- * - orange ring around the format icon grows with speech (host-avatar curve)
+ * - one green live pip fixed top-right (never relocates with media state)
+ * - solid green fill while camera is published
+ * - green audio ring around that pip only while mic is unmuted
+ * - green only (no warm accent tones); no outline on the meeting-type glyph
+ * - this live ring intentionally keeps animating under reduced-motion
  */
 .content-tab-room-icon {
   position: relative;
   overflow: visible;
   border-radius: 5px;
-  --avatar-audio-level: 0;
 }
 
-.content-tab-room-icon.is-mic-on {
-  /* Always-visible base ring when mic is live; speech widens/brightens it. */
-  box-shadow:
-    0 0 0 calc(1.5px + var(--avatar-audio-level, 0) * 2px)
-      rgb(249 115 22 / calc(0.55 + var(--avatar-audio-level, 0) * 0.4)),
-    0 0 0 calc(3px + var(--avatar-audio-level, 0) * 4px)
-      rgb(249 115 22 / calc(0.2 + var(--avatar-audio-level, 0) * 0.35)),
-    0 0 0 calc(5px + var(--avatar-audio-level, 0) * 6px)
-      rgb(249 115 22 / calc(var(--avatar-audio-level, 0) * 0.22));
-}
-
-.content-tab-room-icon__cam,
-.content-tab-room-icon__mic {
+.content-tab-room-icon__live {
   position: absolute;
+  top: -2px;
+  right: -2px;
+  left: auto;
   z-index: 1;
   width: 5px;
   height: 5px;
   border-radius: 999px;
   pointer-events: none;
+  background: transparent;
+  --room-tab-audio-level: 0;
+  /* Smooth expand/contract with measured mic energy; settle on silence. */
+  transition: box-shadow 90ms linear;
 }
 
-.content-tab-room-icon__cam {
-  top: -2px;
-  left: -2px;
+.content-tab-room-icon__live.is-camera-on {
   background: #22c55e;
 }
 
-.content-tab-room-icon__mic {
-  top: -2px;
-  right: -2px;
-  background: #f97316;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .content-tab-room-icon.is-mic-on {
-    box-shadow: 0 0 0 1.5px rgb(249 115 22 / 0.7);
-  }
+.content-tab-room-icon__live.is-mic-on {
+  /* Dot-only green ring — base when unmuted, grows with speech energy. */
+  box-shadow:
+    0 0 0 calc(1.25px + var(--room-tab-audio-level, 0) * 1.75px)
+      rgb(34 197 94 / calc(0.55 + var(--room-tab-audio-level, 0) * 0.4)),
+    0 0 0 calc(2.5px + var(--room-tab-audio-level, 0) * 3.5px)
+      rgb(34 197 94 / calc(0.2 + var(--room-tab-audio-level, 0) * 0.35)),
+    0 0 0 calc(4px + var(--room-tab-audio-level, 0) * 5.5px)
+      rgb(34 197 94 / calc(var(--room-tab-audio-level, 0) * 0.22));
 }
 
 .content-tab-close-fade {
