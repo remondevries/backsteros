@@ -13,15 +13,22 @@ import { useDesktopWorkspaceMeta } from "../lib/workspace-data";
 /**
  * Agenda meetings list for the product sidebar while a Director room tab is
  * active — reuses the calendar right-rail list styling/component.
+ *
+ * `keyboardNavigationEnabled` must follow the active room route. The pane stays
+ * mounted for crossfade, but leaving it enabled steals CONTENT-zone j/k from
+ * Inbox/Messages after Room → Inbox (exiting pane still has layout rects).
  */
 export function ShellRoomMeetingsNav({
   selectedMeetingId,
   tabs,
   onActivateTab,
+  keyboardNavigationEnabled = false,
 }: {
   selectedMeetingId: string | null;
   tabs: ProductTab[];
   onActivateTab: (tabId: string) => void;
+  /** True only while a room product tab is the active route. */
+  keyboardNavigationEnabled?: boolean;
 }) {
   const { meetings, ready } = useDesktopWorkspaceMeta();
 
@@ -55,7 +62,7 @@ export function ShellRoomMeetingsNav({
       selectedMeetingId={selectedMeetingId}
       onMeetingOpen={openMeetingRoom}
       emptyLabel="No Agenda meetings yet."
-      keyboardNavigationEnabled
+      keyboardNavigationEnabled={keyboardNavigationEnabled}
     />
   );
 }

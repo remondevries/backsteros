@@ -139,6 +139,7 @@ function ShellChromeInner({
           selectedMeetingId={roomMeetingId}
           tabs={tabsState.tabs}
           onActivateTab={activateTab}
+          keyboardNavigationEnabled={roomTabActive}
         />
       }
       navReplacementActive={roomTabActive}

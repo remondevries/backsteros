@@ -293,6 +293,9 @@ export function ProductSidebar({
             navReplacementActive ? "is-exiting" : "is-active",
           ].join(" ")}
           aria-hidden={navReplacementActive}
+          // Exiting panes keep absolute layout rects; inert makes list-keyboard
+          // visibility reject them when opacity checks are unavailable.
+          inert={navReplacementActive ? true : undefined}
         >
           <NavLinks
             activePathname={activePathname}
@@ -314,6 +317,7 @@ export function ProductSidebar({
               navReplacementActive ? "is-active" : "is-exiting",
             ].join(" ")}
             aria-hidden={!navReplacementActive}
+            inert={navReplacementActive ? undefined : true}
           >
             {navReplacement}
           </div>

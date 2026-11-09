@@ -67,4 +67,27 @@ describe("isListKeyboardNavContainerVisible", () => {
       true,
     );
   });
+
+  it("without checkVisibility, non-empty rects alone count as visible (inert required)", () => {
+    // Mirrors the exiting room-meetings sidebar pane: absolute + laid out, but
+    // engines that skip opacity-aware checkVisibility would still accept j/k
+    // unless the pane is inert / keep-alive-hidden.
+    assert.equal(
+      isListKeyboardNavContainerVisible(
+        fakeVisibleContainer({
+          checkVisibility: undefined,
+        }) as unknown as Element,
+      ),
+      true,
+    );
+    assert.equal(
+      isListKeyboardNavContainerVisible(
+        fakeVisibleContainer({
+          checkVisibility: undefined,
+          hiddenAncestor: true,
+        }) as unknown as Element,
+      ),
+      false,
+    );
+  });
 });
