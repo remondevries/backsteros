@@ -1,11 +1,13 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
   type ReactNode,
 } from "react";
+import { useNavigate } from "@tanstack/react-router";
 
 import {
   CommunicationMessagesList,
@@ -62,9 +64,15 @@ import {
   queueInboxOpenAfterRemoval,
 } from "../lib/inbox/inbox-open-after-removal";
 import { rememberSectionEntryHrefs } from "../lib/section-entry-store";
+import { navigateToHrefIfWarmOwner } from "../lib/owned-warm-navigate";
 import {
-  getWarmNavGeneration,
-  isWarmNavGenerationCurrent,
+  getProductTabUiState,
+  patchProductTabInboxUi,
+} from "../lib/product-tab-ui-state";
+import {
+  captureWarmNavOwner,
+  getWarmKeepAliveActiveProductTabId,
+  isWarmNavOwnerCurrent,
   useKeepAliveActive,
   useShellLocation,
 } from "../lib/shell-route-keep-alive";
@@ -92,17 +100,21 @@ function InboxSidePanelEmptyFigure({ mode }: { mode: InboxListMode }) {
  * {@link useInboxModeModel}; this component only owns presentation state.
  */
 export function DesktopInboxSidePanel({
-  onNavigate,
+  onNavigate: _onNavigate,
   renderTitleTrailing,
   isItemAgentWorking,
 }: {
+  /** Kept for call-site compatibility; panel navigates via owned warm navigate. */
   onNavigate: (href: string) => void;
   renderTitleTrailing?: (item: InboxListItem) => ReactNode;
   isItemAgentWorking?: (item: InboxListItem) => boolean;
 }) {
+  void _onNavigate;
   const listRef = useRef<HTMLElement>(null);
+  const routerNavigate = useNavigate();
   const keepAliveActive = useKeepAliveActive();
   const { pathname: shellPathname } = useShellLocation();
+  const activeTabId = getWarmKeepAliveActiveProductTabId();
   const {
     listMode,
     setListMode,
@@ -133,8 +145,11 @@ export function DesktopInboxSidePanel({
       }),
     [items, listMode, shellPathname],
   );
+  const tabInboxUi = activeTabId
+    ? getProductTabUiState(activeTabId).inbox
+    : null;
   const [collapsedGroups, setCollapsedGroups] = useState<ReadonlySet<string>>(
-    () => new Set(),
+    () => new Set(tabInboxUi?.collapsedGroupIds ?? []),
   );
   const [messagesKeyboardIds, setMessagesKeyboardIds] =
     useState<readonly string[]>(NO_IDS);
@@ -142,7 +157,38 @@ export function DesktopInboxSidePanel({
     useState<readonly string[]>(NO_IDS);
   const [messagesHighlightedId, setMessagesHighlightedId] = useState<
     string | null
-  >(null);
+  >(() => tabInboxUi?.messagesHighlightedId ?? null);
+  const lastOpenedHrefRef = useRef<string | null>(
+    tabInboxUi?.lastOpenedHref ?? null,
+  );
+  const prevTabIdRef = useRef(activeTabId);
+  useLayoutEffect(() => {
+    if (prevTabIdRef.current === activeTabId) return;
+    const prevId = prevTabIdRef.current;
+    if (prevId) {
+      patchProductTabInboxUi(prevId, {
+        collapsedGroupIds: [...collapsedGroups],
+        messagesHighlightedId,
+        lastOpenedHref: lastOpenedHrefRef.current,
+      });
+    }
+    prevTabIdRef.current = activeTabId;
+    const nextUi = activeTabId
+      ? getProductTabUiState(activeTabId).inbox
+      : null;
+    setCollapsedGroups(new Set(nextUi?.collapsedGroupIds ?? []));
+    setMessagesHighlightedId(nextUi?.messagesHighlightedId ?? null);
+    lastOpenedHrefRef.current = nextUi?.lastOpenedHref ?? null;
+  }, [activeTabId, collapsedGroups, messagesHighlightedId]);
+  // Persist highlight/collapse while staying on the same tab.
+  useEffect(() => {
+    if (!activeTabId) return;
+    patchProductTabInboxUi(activeTabId, {
+      collapsedGroupIds: [...collapsedGroups],
+      messagesHighlightedId,
+      lastOpenedHref: lastOpenedHrefRef.current,
+    });
+  }, [activeTabId, collapsedGroups, messagesHighlightedId]);
   // The Messages list unmounts on mode switch — drop its stale j/k state so
   // the open-on-highlight effect cannot reopen an old row on return.
   useEffect(() => {
@@ -213,9 +259,15 @@ export function DesktopInboxSidePanel({
   const openItem = useCallback(
     (itemId: string) => {
       const item = itemById.get(itemId);
-      if (item) onNavigate(getInboxItemHref(item, items));
+      if (!item) return;
+      const owner = captureWarmNavOwner();
+      navigateToHrefIfWarmOwner(
+        routerNavigate,
+        getInboxItemHref(item, items),
+        owner,
+      );
     },
-    [itemById, items, onNavigate],
+    [itemById, items, routerNavigate],
   );
 
   const { highlightedId: rowsHighlightedId } = useListKeyboardNavigation({
@@ -261,25 +313,22 @@ export function DesktopInboxSidePanel({
     }
     return target;
   }, [contentPathname, items, listMode, loading, pending]);
-  const lastOpenedHrefRef = useRef<string | null>(null);
   useEffect(() => {
     // Keep the dedupe key across freeze — clearing it made every thaw
     // re-navigate to openTarget (first row / mode seed) and yank content.
     if (!keepAliveActive) return;
     if (!openTarget) return;
-    // Capture tab-nav generation so a late open after switching away cannot
-    // rewrite the sibling Inbox/Messages tab's selection.
-    const generation = getWarmNavGeneration();
+    const owner = captureWarmNavOwner();
     if (
       lastOpenedHrefRef.current === openTarget.href &&
       inboxContentAlreadyShowsHref(openTarget.href)
     ) {
       return;
     }
-    if (!isWarmNavGenerationCurrent(generation)) return;
+    if (!isWarmNavOwnerCurrent(owner)) return;
     lastOpenedHrefRef.current = openTarget.href;
-    onNavigate(openTarget.href);
-  }, [keepAliveActive, onNavigate, openTarget]);
+    navigateToHrefIfWarmOwner(routerNavigate, openTarget.href, owner);
+  }, [keepAliveActive, openTarget, routerNavigate]);
 
   // Clear the dedupe key once the live content matches so revisits can reopen.
   useEffect(() => {
@@ -294,7 +343,7 @@ export function DesktopInboxSidePanel({
     if (!keepAliveActive) return;
     const queued = consumeInboxOpenAfterRemoval();
     if (!queued) return;
-    const generation = getWarmNavGeneration();
+    const owner = captureWarmNavOwner();
     if (queued.itemId) {
       setMessagesHighlightedId(queued.itemId);
     }
@@ -304,10 +353,10 @@ export function DesktopInboxSidePanel({
     ) {
       return;
     }
-    if (!isWarmNavGenerationCurrent(generation)) return;
+    if (!isWarmNavOwnerCurrent(owner)) return;
     lastOpenedHrefRef.current = queued.href;
-    onNavigate(queued.href);
-  }, [keepAliveActive, items, onNavigate, contentPathname]);
+    navigateToHrefIfWarmOwner(routerNavigate, queued.href, owner);
+  }, [keepAliveActive, items, routerNavigate, contentPathname]);
 
   // After delete/navigation, if j/k still points at a removed row, pull it onto
   // the open Messages row so open-on-highlight cannot reopen the deleted id.
@@ -337,22 +386,22 @@ export function DesktopInboxSidePanel({
     const item = itemById.get(highlightedId);
     if (!item) return;
     const href = getInboxItemHref(item, items);
-    const generation = getWarmNavGeneration();
+    const owner = captureWarmNavOwner();
     if (
       lastOpenedHrefRef.current === href &&
       inboxContentAlreadyShowsHref(href)
     ) {
       return;
     }
-    if (!isWarmNavGenerationCurrent(generation)) return;
+    if (!isWarmNavOwnerCurrent(owner)) return;
     lastOpenedHrefRef.current = href;
-    onNavigate(href);
+    navigateToHrefIfWarmOwner(routerNavigate, href, owner);
   }, [
     keepAliveActive,
     highlightedId,
     itemById,
     items,
-    onNavigate,
+    routerNavigate,
     shellSelectedId,
   ]);
 
@@ -408,8 +457,9 @@ export function DesktopInboxSidePanel({
     }
     queueInboxOpenAfterRemoval({ href: nextHref, itemId: nextId });
     // Do not stamp lastOpenedHrefRef until the outlet actually shows nextHref —
-    // otherwise open-on-highlight / queue consume skip the real navigate.
-    onNavigate(nextHref);
+    // otherwise open-on-highlight / void consume skip the real navigate.
+    const owner = captureWarmNavOwner();
+    navigateToHrefIfWarmOwner(routerNavigate, nextHref, owner);
     return {
       ok: true as const,
       target: {
@@ -420,7 +470,7 @@ export function DesktopInboxSidePanel({
     };
   }, [
     highlightedEmailItem,
-    onNavigate,
+    routerNavigate,
     setActiveZone,
     unpinInboxListItem,
   ]);

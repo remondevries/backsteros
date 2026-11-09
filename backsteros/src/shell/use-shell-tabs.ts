@@ -32,6 +32,7 @@ import {
   setOpenRoomMeetingIds,
 } from "../lib/room-session-keep-alive";
 import { navigateToHref } from "../router/navigate-href";
+import { pruneProductTabUiState } from "../lib/product-tab-ui-state";
 import {
   syncWarmKeepAliveProductTabs,
   useShellLocation,
@@ -43,6 +44,7 @@ function mirrorWarmKeepAliveTabs(state: ProductTabsState): void {
     activeTabId: state.activeTabId,
     tabs: state.tabs.map((tab) => ({ id: tab.id, href: tab.href })),
   });
+  pruneProductTabUiState(state.tabs.map((tab) => tab.id));
 }
 
 export function useShellTabs() {
@@ -243,9 +245,15 @@ export function useShellTabs() {
         pendingTabSwitchRef.current = { tabId, href: tab.href };
       }
 
-      // Mirror warm lastHref for the target tab BEFORE navigate — setState has
-      // not committed yet, and same-surface flips must not read the sibling tab.
-      const next = activateProductTab(tabsState, tabId);
+      // Flush the leaving tab’s live location into product-tab state before
+      // switching — otherwise chrome rAF lag leaves a stale bookmark that
+      // sync could prefer over warm (or lose on persistence).
+      const flushed = syncActiveTabToPath(
+        tabsState,
+        location.pathname,
+        search,
+      );
+      const next = activateProductTab(flushed, tabId);
       mirrorWarmKeepAliveTabs(next);
       setTabsState(next);
 

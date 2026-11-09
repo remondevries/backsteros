@@ -13,9 +13,11 @@ import {
 import { rememberSectionEntryFromNav } from "../lib/section-entry-store";
 import {
   dismissKeepAliveForOutletNavigation,
+  isWarmNavOwnerCurrent,
   rememberCommunicationPanelSelectionHref,
   rememberInboxPanelSelectionHref,
   tryWarmKeepAliveFlip,
+  type WarmNavOwner,
 } from "../lib/shell-warm-keep-alive";
 
 type AppNavigate = (options: NavigateOptions) => void;
@@ -60,13 +62,22 @@ export function parseAppHref(href: string): {
 export function navigateToHref(
   navigate: AppNavigate,
   href: string,
-  options?: { replace?: boolean; state?: unknown },
+  options?: { replace?: boolean; state?: unknown; owner?: WarmNavOwner | null },
 ): void {
+  // Stale async owners must not move the active tab (warm or TanStack).
+  if (options?.owner != null && !isWarmNavOwnerCurrent(options.owner)) {
+    return;
+  }
   const target = formatResolvedAppHref(resolveAppHref(href));
   // Warm flips skip TanStack state — cache list-return so breadcrumbs match Escape.
   rememberProjectNavFromHref(target, options?.state);
   rememberTaskListReturnHref(target, options?.state);
-  if (tryWarmKeepAliveFlip(target, { replace: options?.replace })) {
+  if (
+    tryWarmKeepAliveFlip(target, {
+      replace: options?.replace,
+      owner: options?.owner,
+    })
+  ) {
     return;
   }
   rememberSectionEntryFromNav(target);
@@ -77,8 +88,8 @@ export function navigateToHref(
   // the mirror from the router once the outlet lands.
   const isEmailOutlet = parseNavigationPathname(target).startsWith("/email/");
   if (!isEmailOutlet) {
-    rememberInboxPanelSelectionHref(target);
-    rememberCommunicationPanelSelectionHref(target);
+    rememberInboxPanelSelectionHref(target, options?.owner);
+    rememberCommunicationPanelSelectionHref(target, options?.owner);
   }
   dismissKeepAliveForOutletNavigation(target);
   const { pathname, search, hash } = parseAppHref(target);

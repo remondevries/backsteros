@@ -21,6 +21,7 @@ import {
 import { type PendingPageSurface } from "./pending-navigation-routes";
 import { isRoutePathActive } from "./shell-route-path-match";
 import {
+  captureWarmNavOwner,
   getVisibleKeepAliveSurface,
   getWarmKeepAliveEpoch,
   lastHrefForKeepAliveSurface,
@@ -111,6 +112,7 @@ function locationWithState(
 export {
   KEEP_ALIVE_SURFACES,
   dismissKeepAliveForOutletNavigation,
+  captureWarmNavOwner,
   getVisibleKeepAliveSurface,
   getWarmKeepAliveActiveProductTabId,
   getWarmKeepAliveEpoch,
@@ -120,9 +122,11 @@ export {
   isKeepAliveSurface,
   isWarmKeepAliveSectionFlip,
   isWarmNavGenerationCurrent,
+  isWarmNavOwnerCurrent,
   keepAliveDestinationShowsSidePanel,
   keepAliveSidePanelSurface,
   lastHrefForKeepAliveSurface,
+  lastHrefForProductTabId,
   markKeepAliveSurfaceMounted,
   partsFromKeepAliveHref,
   rememberKeepAliveHref,
@@ -138,6 +142,7 @@ export {
   tryWarmKeepAliveFlip,
   visibleKeepAliveHref,
 } from "./shell-warm-keep-alive";
+export type { WarmNavOwner } from "./shell-warm-keep-alive";
 
 export function useVisibleKeepAliveSurface(): PendingPageSurface | null {
   return useSyncExternalStore(
@@ -489,7 +494,9 @@ export function useKeepAliveSnapshots(
     // Only write the store from the router when History matches — after a
     // warm pushState the router is stale and must not clobber lastHref.
     if (routerAgreesWithWindow(pathname, searchStr)) {
-      rememberKeepAliveHref(surface, pathname, searchStr);
+      rememberKeepAliveHref(surface, pathname, searchStr, {
+        owner: captureWarmNavOwner() ?? undefined,
+      });
     }
     const parts = partsFromKeepAliveHref(lastHrefForKeepAliveSurface(surface));
     const next = snapshotFor(surface, parts.pathname, parts.searchStr);

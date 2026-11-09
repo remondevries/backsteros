@@ -200,6 +200,13 @@ export function isKeepAlivePaneMounted(href: string): boolean {
   );
 }
 
+/**
+ * Browser/OS Back/Forward semantics (product tabs):
+ * - Does **not** switch which product tab is active.
+ * - Updates the **active** tab’s warm bookmark + address bar for the history
+ *   entry (shared window history while that tab is focused).
+ * - In-app chrome Back/Forward stays per-tab via navigation-history stacks.
+ */
 function onWarmKeepAlivePopstate(): void {
   const href = currentWindowNavigationHref();
   const resolved = resolveAppHref(href);
@@ -207,10 +214,14 @@ function onWarmKeepAlivePopstate(): void {
     mountedKeepAliveSurfaces.has(resolved.surface) &&
     shouldKeepAliveSurface(resolved.surface, resolved.pathname)
   ) {
+    // Bind to the active product tab only — popstate never retargets siblings.
     rememberKeepAliveHref(
       resolved.surface,
       resolved.pathname,
       resolved.search,
+      activeProductTabId
+        ? { tabId: activeProductTabId, generation: warmNavGeneration }
+        : undefined,
     );
     outletTransitionPending = false;
     assignVisibleKeepAliveSurface(resolved.surface);
@@ -257,9 +268,46 @@ export type WarmKeepAliveProductTabRef = {
 };
 
 /**
+ * Whether a product-tab bookmark may replace an existing warm lastHref slot.
+ * Never regress: warm selection ahead of chrome/product-tab state must win
+ * (rapid Inbox A select → switch B → return A).
+ */
+function shouldAcceptProductTabHrefMirror(input: {
+  tabId: string;
+  incomingHref: string;
+  existingHref: string | undefined;
+  nextActiveTabId: string | null;
+}): boolean {
+  const { existingHref, incomingHref, tabId, nextActiveTabId } = input;
+  if (existingHref == null) return true;
+  if (existingHref === incomingHref) return true;
+  const existing = resolveAppHref(existingHref);
+  const incoming = resolveAppHref(incomingHref);
+  // Tab left the warm surface entirely (e.g. Inbox → Settings in that tab).
+  if (existing.surface !== incoming.surface) return true;
+  // Inactive tabs: product bookmarks often lag warm remember — never clobber.
+  if (tabId !== nextActiveTabId) return false;
+  // Active tab: accept only when the address bar already matches the bookmark
+  // (chrome/location caught up). If warm still matches the live URL, keep warm.
+  if (typeof window !== "undefined") {
+    const live = currentWindowNavigationHref();
+    const incomingLive =
+      normalizeNavigationHref(incomingHref) === live;
+    const existingLive =
+      normalizeNavigationHref(existingHref) === live;
+    if (incomingLive) return true;
+    if (existingLive) return false;
+  }
+  // Tests / no window: prefer existing warm over a divergent product bookmark.
+  return false;
+}
+
+/**
  * Mirror product-tab bookmarks into the warm store. Call whenever tabs change
  * and synchronously before navigate on activate/close so the first paint after
  * a tab switch reads that tab's selection — not a sibling tab's lastHref.
+ *
+ * Existing warm slots are authoritative when the product-tab href is stale.
  */
 export function syncWarmKeepAliveProductTabs(input: {
   activeTabId: string;
@@ -271,15 +319,26 @@ export function syncWarmKeepAliveProductTabs(input: {
       ? lastHrefForKeepAliveSurface(visibleKeepAliveSurface)
       : null;
 
+  const nextActive = input.activeTabId || null;
   const nextIds = new Set(input.tabs.map((tab) => tab.id));
   for (const id of [...lastHrefByTabId.keys()]) {
     if (!nextIds.has(id)) lastHrefByTabId.delete(id);
   }
   for (const tab of input.tabs) {
     const normalized = formatResolvedAppHref(resolveAppHref(tab.href));
+    const existing = lastHrefByTabId.get(tab.id);
+    if (
+      !shouldAcceptProductTabHrefMirror({
+        tabId: tab.id,
+        incomingHref: normalized,
+        existingHref: existing,
+        nextActiveTabId: nextActive,
+      })
+    ) {
+      continue;
+    }
     lastHrefByTabId.set(tab.id, normalized);
   }
-  const nextActive = input.activeTabId || null;
   if (nextActive !== prevActive) {
     warmNavGeneration += 1;
   }
@@ -298,6 +357,36 @@ export function syncWarmKeepAliveProductTabs(input: {
     lastKeepAliveHref.set(visibleKeepAliveSurface, nextVisibleHref);
     emitWarmKeepAlive();
   }
+}
+
+/** Test/read helper — warm bookmark for a specific product tab (if any). */
+export function lastHrefForProductTabId(tabId: string): string | null {
+  return lastHrefByTabId.get(tabId) ?? null;
+}
+
+/**
+ * Capture for async panel/data work. Stale owners must not navigate/remember
+ * after the user switched tabs.
+ */
+export type WarmNavOwner = {
+  tabId: string;
+  generation: number;
+};
+
+export function captureWarmNavOwner(): WarmNavOwner | null {
+  if (!activeProductTabId) return null;
+  return {
+    tabId: activeProductTabId,
+    generation: warmNavGeneration,
+  };
+}
+
+export function isWarmNavOwnerCurrent(owner: WarmNavOwner | null): boolean {
+  if (owner == null) return activeProductTabId == null;
+  return (
+    owner.tabId === activeProductTabId &&
+    isWarmNavGenerationCurrent(owner.generation)
+  );
 }
 
 export function getWarmKeepAliveActiveProductTabId(): string | null {
@@ -354,32 +443,35 @@ export function rememberKeepAliveHref(
   surface: PendingPageSurface,
   pathname: string,
   searchStr: string,
-  options?: { generation?: number; tabId?: string },
+  options?: { generation?: number; tabId?: string; owner?: WarmNavOwner },
 ): void {
-  if (
-    options?.generation != null &&
-    !isWarmNavGenerationCurrent(options.generation)
-  ) {
+  const owner = options?.owner;
+  const tabId = owner?.tabId ?? options?.tabId;
+  const generation = owner?.generation ?? options?.generation;
+  if (generation != null && !isWarmNavGenerationCurrent(generation)) {
     return;
   }
   if (
-    options?.tabId != null &&
+    tabId != null &&
     activeProductTabId != null &&
-    options.tabId !== activeProductTabId
+    tabId !== activeProductTabId
   ) {
     return;
   }
   const href = hrefFromParts(pathname, searchStr);
   lastKeepAliveHref.set(surface, href);
-  if (!activeProductTabId) return;
-  const tabHref = lastHrefByTabId.get(activeProductTabId);
-  // Bind only when the active tab already belongs to this surface (or is unset).
+  const bindTabId = tabId ?? activeProductTabId;
+  if (!bindTabId) return;
+  // Only bind onto the claimed/active tab when it belongs to this surface
+  // (or has no bookmark yet). Never write a sibling tab's slot.
+  if (activeProductTabId && bindTabId !== activeProductTabId) return;
+  const tabHref = lastHrefByTabId.get(bindTabId);
   if (tabHref) {
     const tabSurface = resolveAppHref(tabHref).surface;
     if (tabSurface !== surface) return;
   }
   lastHrefByTabId.set(
-    activeProductTabId,
+    bindTabId,
     formatResolvedAppHref(resolveAppHref(href)),
   );
 }
@@ -389,21 +481,29 @@ export function rememberKeepAliveHref(
  * not its own keep-alive surface. Mirror the email href onto the inbox pane
  * so selection + j/k stay on the open message instead of the previous task.
  */
-export function rememberInboxPanelSelectionHref(href: string): boolean {
-  return rememberEmailListPanelSelectionHref(href, "inbox");
+export function rememberInboxPanelSelectionHref(
+  href: string,
+  owner?: WarmNavOwner | null,
+): boolean {
+  return rememberEmailListPanelSelectionHref(href, "inbox", owner);
 }
 
 /**
  * Communication list stays mounted while viewing `/email/…?list=communication`.
  */
-export function rememberCommunicationPanelSelectionHref(href: string): boolean {
-  return rememberEmailListPanelSelectionHref(href, "communication");
+export function rememberCommunicationPanelSelectionHref(
+  href: string,
+  owner?: WarmNavOwner | null,
+): boolean {
+  return rememberEmailListPanelSelectionHref(href, "communication", owner);
 }
 
 function rememberEmailListPanelSelectionHref(
   href: string,
   list: "inbox" | "communication",
+  owner?: WarmNavOwner | null,
 ): boolean {
+  if (owner && !isWarmNavOwnerCurrent(owner)) return false;
   if (!mountedKeepAliveSurfaces.has(list)) return false;
   const resolved = resolveAppHref(href);
   if (!resolved.pathname.startsWith("/email/")) return false;
@@ -415,7 +515,9 @@ function rememberEmailListPanelSelectionHref(
   if (params.get("list") !== list) return false;
   const nextHref = formatResolvedAppHref(resolved);
   if (lastHrefForKeepAliveSurface(list) === nextHref) return false;
-  rememberKeepAliveHref(list, resolved.pathname, resolved.search);
+  rememberKeepAliveHref(list, resolved.pathname, resolved.search, {
+    owner: owner ?? undefined,
+  });
   // Callers often run from layout/nav; defer so we never notify React
   // subscribers synchronously inside another component's render.
   queueMicrotask(() => {
@@ -485,8 +587,11 @@ export function isWarmKeepAliveSectionFlip(href: string): boolean {
  */
 export function tryWarmKeepAliveFlip(
   href: string,
-  options?: { replace?: boolean },
+  options?: { replace?: boolean; owner?: WarmNavOwner | null },
 ): boolean {
+  if (options?.owner && !isWarmNavOwnerCurrent(options.owner)) {
+    return false;
+  }
   ensureWarmKeepAlivePopstate();
   const resolved = resolveAppHref(href);
   if (
@@ -507,7 +612,9 @@ export function tryWarmKeepAliveFlip(
     rememberSectionEntryFromNav(nextHref);
     return true;
   }
-  rememberKeepAliveHref(resolved.surface, resolved.pathname, resolved.search);
+  rememberKeepAliveHref(resolved.surface, resolved.pathname, resolved.search, {
+    owner: options?.owner ?? undefined,
+  });
   assignVisibleKeepAliveSurface(resolved.surface);
   outletTransitionPending = false;
   followWarmKeepAliveUrl(nextHref, replace);

@@ -28,6 +28,7 @@ import {
   KeepAliveOutletGate,
   KeepAlivePane,
   StableKeepAliveTree,
+  captureWarmNavOwner,
   isKeepAliveSurface,
   rememberInboxPanelSelectionHref,
   rememberCommunicationPanelSelectionHref,
@@ -196,7 +197,12 @@ function ShellRouteContent({
       rememberCommunicationPanelSelectionHref(href);
       return;
     }
-    rememberKeepAliveHref(surface, location.pathname, location.searchStr ?? "");
+    rememberKeepAliveHref(
+      surface,
+      location.pathname,
+      location.searchStr ?? "",
+      captureWarmNavOwner() ?? undefined,
+    );
     syncVisibleKeepAliveSurfaceFromRoute(surface);
   }, [location.pathname, location.searchStr, surface, trail]);
 
