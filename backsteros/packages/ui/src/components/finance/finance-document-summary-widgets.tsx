@@ -9,6 +9,7 @@ import {
   resolveMonthTotalCents,
   type DocumentSummaryLine,
 } from "../../finance/document-summary-stats.js";
+import { SkeletonBlock } from "../skeletons/skeleton-block.js";
 
 function formatEuroCents(cents: number): string {
   try {
@@ -62,13 +63,51 @@ function SummaryMetricCard({
       <header className="finance-doc-summary__metric-header">
         <h3 className="finance-doc-summary__metric-title">{title}</h3>
       </header>
-      <p className="finance-doc-summary__metric-value">
-        {loading ? "…" : formatEuroCents(amountCents)}
-      </p>
+      {loading ? (
+        <SkeletonBlock
+          className="finance-doc-summary__metric-value-skeleton"
+          as="span"
+        />
+      ) : (
+        <p className="finance-doc-summary__metric-value">
+          {formatEuroCents(amountCents)}
+        </p>
+      )}
       {subtitle ? (
         <p className="finance-doc-summary__metric-subtitle">{subtitle}</p>
       ) : null}
     </section>
+  );
+}
+
+function CustomersSummarySkeleton() {
+  return (
+    <div
+      className="finance-doc-summary__customers-skeleton"
+      role="status"
+      aria-live="polite"
+      aria-label="Loading customer totals"
+    >
+      <SkeletonBlock className="finance-doc-summary__share-bar-skeleton" />
+      <ul className="finance-doc-summary__share-legend" aria-hidden="true">
+        {Array.from({ length: 3 }, (_, index) => (
+          <li
+            key={index}
+            className="finance-doc-summary__share-row finance-doc-summary__share-row--skeleton"
+          >
+            <SkeletonBlock className="finance-doc-summary__share-dot-skeleton" />
+            <SkeletonBlock
+              className="finance-doc-summary__share-label-skeleton"
+              as="span"
+            />
+            <SkeletonBlock
+              className="finance-doc-summary__share-amount-skeleton"
+              as="span"
+            />
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 
@@ -127,6 +166,7 @@ export function FinanceDocumentSummaryWidgets({
   return (
     <div
       className={["finance-doc-summary", className].filter(Boolean).join(" ")}
+      aria-busy={loading || undefined}
     >
       <SummaryMetricCard
         title="Total this month"
@@ -147,7 +187,7 @@ export function FinanceDocumentSummaryWidgets({
           </h3>
         </header>
         {loading ? (
-          <p className="finance-doc-summary__empty">Loading…</p>
+          <CustomersSummarySkeleton />
         ) : customerShares.length === 0 ? (
           <p className="finance-doc-summary__empty">No customer totals yet.</p>
         ) : (

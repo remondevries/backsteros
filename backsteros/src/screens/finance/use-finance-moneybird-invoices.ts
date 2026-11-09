@@ -14,9 +14,17 @@ import {
   buildMoneybirdInvoicesFilter,
   type FinanceNavId,
 } from "@backsteros/ui";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { mergeInvoiceRevenueWithAccountExpenses } from "./finance-page-helpers";
+
+function invoicesListCacheKey(
+  page: number,
+  year: number,
+  statusIds: readonly string[],
+): string {
+  return `${page}|${year}|${statusIds.join(",")}`;
+}
 
 export function useFinanceMoneybirdInvoices({
   client,
@@ -52,6 +60,10 @@ export function useFinanceMoneybirdInvoices({
     BankAccountCashflowMonth[] | null
   >(null);
   const [moneybirdRevenueLoading, setMoneybirdRevenueLoading] = useState(false);
+  /** Last successfully fetched list key — reused when switching back to invoices. */
+  const invoicesListCacheKeyRef = useRef<string | null>(null);
+  /** Last successfully fetched revenue year — same cache behavior for widgets/chart. */
+  const invoicesRevenueCacheYearRef = useRef<number | null>(null);
   const [selectedMoneybirdInvoiceId, setSelectedMoneybirdInvoiceId] = useState<
     string | null
   >(null);
@@ -77,6 +89,14 @@ export function useFinanceMoneybirdInvoices({
 
   useEffect(() => {
     if (navId !== "invoices") return;
+    const cacheKey = invoicesListCacheKey(
+      moneybirdInvoicesPage,
+      moneybirdInvoicesYear,
+      moneybirdInvoiceStatusIds,
+    );
+    // Keep cached list/widgets when navigating back with the same filters.
+    if (invoicesListCacheKeyRef.current === cacheKey) return;
+
     let cancelled = false;
     setMoneybirdInvoicesLoading(true);
     setMoneybirdInvoicesError(null);
@@ -91,6 +111,7 @@ export function useFinanceMoneybirdInvoices({
           setMoneybirdInvoices([]);
           setMoneybirdInvoicesHasMore(false);
           setMoneybirdInvoicesTotalPages(1);
+          invoicesListCacheKeyRef.current = cacheKey;
           return;
         }
         const listParams = new URLSearchParams({
@@ -114,11 +135,13 @@ export function useFinanceMoneybirdInvoices({
             ? listBody.totalPages
             : Math.max(1, moneybirdInvoicesPage),
         );
+        invoicesListCacheKeyRef.current = cacheKey;
       } catch (error) {
         if (cancelled) return;
         setMoneybirdInvoices([]);
         setMoneybirdInvoicesHasMore(false);
         setMoneybirdInvoicesTotalPages(1);
+        invoicesListCacheKeyRef.current = null;
         setMoneybirdInvoicesError(
           error instanceof Error
             ? error.message
@@ -274,6 +297,9 @@ export function useFinanceMoneybirdInvoices({
 
   useEffect(() => {
     if (navId !== "invoices") return;
+    const year = moneybirdInvoicesYear;
+    if (invoicesRevenueCacheYearRef.current === year) return;
+
     let cancelled = false;
     setMoneybirdRevenueLoading(true);
     void (async () => {
@@ -286,9 +312,9 @@ export function useFinanceMoneybirdInvoices({
         if (!settings.connected) {
           setMoneybirdRevenueYear(null);
           setMoneybirdRevenueMonths(null);
+          invoicesRevenueCacheYearRef.current = year;
           return;
         }
-        const year = moneybirdInvoicesYear;
         const [revenueBody, cashflowBody] = await Promise.all([
           client.requestJson<MoneybirdInvoiceRevenue>(
             `/api/v1/finance/moneybird/invoice-revenue?year=${year}`,
@@ -307,10 +333,12 @@ export function useFinanceMoneybirdInvoices({
             cashflowBody?.months,
           ),
         );
+        invoicesRevenueCacheYearRef.current = year;
       } catch {
         if (cancelled) return;
         setMoneybirdRevenueYear(null);
         setMoneybirdRevenueMonths(null);
+        invoicesRevenueCacheYearRef.current = null;
       } finally {
         if (!cancelled) setMoneybirdRevenueLoading(false);
       }
@@ -321,6 +349,9 @@ export function useFinanceMoneybirdInvoices({
   }, [client, moneybirdInvoicesYear, navId]);
 
   const loadMoneybirdInvoicesPage = useCallback(async () => {
+    // Manual sync: bypass tab-switch cache.
+    invoicesListCacheKeyRef.current = null;
+    invoicesRevenueCacheYearRef.current = null;
     setMoneybirdInvoicesLoading(true);
     setMoneybirdInvoicesError(null);
     setMoneybirdRevenueLoading(true);
@@ -335,6 +366,12 @@ export function useFinanceMoneybirdInvoices({
         setMoneybirdInvoicesTotalPages(1);
         setMoneybirdRevenueYear(null);
         setMoneybirdRevenueMonths(null);
+        invoicesListCacheKeyRef.current = invoicesListCacheKey(
+          moneybirdInvoicesPage,
+          moneybirdInvoicesYear,
+          moneybirdInvoiceStatusIds,
+        );
+        invoicesRevenueCacheYearRef.current = moneybirdInvoicesYear;
         return;
       }
       const year = moneybirdInvoicesYear;
@@ -372,12 +409,20 @@ export function useFinanceMoneybirdInvoices({
           cashflowBody?.months,
         ),
       );
+      invoicesListCacheKeyRef.current = invoicesListCacheKey(
+        moneybirdInvoicesPage,
+        year,
+        moneybirdInvoiceStatusIds,
+      );
+      invoicesRevenueCacheYearRef.current = year;
     } catch (error) {
       setMoneybirdInvoices([]);
       setMoneybirdInvoicesHasMore(false);
       setMoneybirdInvoicesTotalPages(1);
       setMoneybirdRevenueYear(null);
       setMoneybirdRevenueMonths(null);
+      invoicesListCacheKeyRef.current = null;
+      invoicesRevenueCacheYearRef.current = null;
       setMoneybirdInvoicesError(
         error instanceof Error
           ? error.message

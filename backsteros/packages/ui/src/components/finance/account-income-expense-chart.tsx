@@ -15,9 +15,11 @@ import { useId, useMemo } from "react";
 
 import {
   accountChartHasYearActivity,
+  buildAccountIncomeExpenseChartAxisFrame,
   buildAccountIncomeExpenseChartSeries,
   buildAccountIncomeExpenseChartSeriesFromCashflow,
   buildMonthIncomeExpenseDailyChartSeries,
+  type AccountChartSeries,
 } from "../../finance/account-income-expense-chart-series.js";
 import { FinanceChartTooltip } from "./finance-chart-tooltip.js";
 import {
@@ -25,6 +27,9 @@ import {
   FinanceChartFadeIn,
   FinanceChartLoading,
 } from "./finance-chart-status.js";
+
+/** Fixed y-max while the series is empty so grid + axis ticks still paint. */
+const LOADING_AXIS_Y_MAX = 1000;
 
 export type AccountIncomeExpenseChartProps = {
   /** Preferred: server cashflow aggregate for the chart year. */
@@ -398,6 +403,19 @@ export function AccountIncomeExpenseChart({
   ]);
   const hasActivity = accountChartHasYearActivity(series);
 
+  const loadingAxisSeries = useMemo((): AccountChartSeries[] => {
+    if (scope === "month") return [];
+    const resolvedAsOf = asOf ?? new Date();
+    const built = buildAccountIncomeExpenseChartAxisFrame({
+      year: cashflowYear ?? resolvedAsOf.getFullYear(),
+      asOf: resolvedAsOf,
+      fullYear,
+    });
+    return showExpense
+      ? built
+      : built.filter((line) => line.id === "income");
+  }, [asOf, cashflowYear, fullYear, scope, showExpense]);
+
   const paints = useMemo(() => {
     const muted = readCssColor("--muted", "#888");
     const foreground = readCssColor("--foreground", "#111");
@@ -464,8 +482,13 @@ export function AccountIncomeExpenseChart({
     scope === "year" && Boolean(cashflowMonths && cashflowYear != null);
   const waitingForData =
     loading && !hasCashflow && transactions.length === 0;
+  /** Year charts can paint axes immediately; month scope still uses the text loader. */
+  const showLoadingAxisFrame =
+    waitingForData && scope === "year" && loadingAxisSeries.length > 0;
   const branch = waitingForData
-    ? "loading"
+    ? showLoadingAxisFrame
+      ? "chart"
+      : "loading"
     : !hasActivity
       ? "empty"
       : "chart";
@@ -492,18 +515,20 @@ export function AccountIncomeExpenseChart({
     );
   }
 
+  const renderSeries = showLoadingAxisFrame ? loadingAxisSeries : series;
+
   const labelByX = new Map<string, string>();
   const tooltipLabelByX = new Map<string, string>();
-  for (const line of series) {
+  for (const line of renderSeries) {
     for (const point of line.data) {
       labelByX.set(point.x, point.label);
       tooltipLabelByX.set(point.x, point.tooltipLabel ?? point.label);
     }
   }
 
-  const incomeLine = series.find((line) => line.id === "income");
+  const incomeLine = renderSeries.find((line) => line.id === "income");
   const expenseLine = showExpense
-    ? series.find((line) => line.id === "expense")
+    ? renderSeries.find((line) => line.id === "expense")
     : undefined;
   const nivoData: DefaultSeries[] = [];
   if (incomeLine) {
@@ -545,7 +570,11 @@ export function AccountIncomeExpenseChart({
     : CHART_MARGIN;
 
   return (
-    <section className={sectionClass} aria-label={ariaLabel}>
+    <section
+      className={sectionClass}
+      aria-label={ariaLabel}
+      aria-busy={showLoadingAxisFrame || undefined}
+    >
       <FinanceChartFadeIn className="finance-accounts-view__chart-plot">
         <ResponsiveLine
           data={nivoData}
@@ -554,7 +583,7 @@ export function AccountIncomeExpenseChart({
           yScale={{
             type: "linear",
             min: 0,
-            max: "auto",
+            max: showLoadingAxisFrame ? LOADING_AXIS_Y_MAX : "auto",
             stacked: false,
             nice: true,
           }}
@@ -578,8 +607,9 @@ export function AccountIncomeExpenseChart({
           curve="monotoneX"
           animate
           motionConfig={CHART_MOTION}
-          useMesh
-          enableSlices="x"
+          useMesh={!showLoadingAxisFrame}
+          enableSlices={showLoadingAxisFrame ? false : "x"}
+          isInteractive={!showLoadingAxisFrame}
           layers={[
             "grid",
             "markers",

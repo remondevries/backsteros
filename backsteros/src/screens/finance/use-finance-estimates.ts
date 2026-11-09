@@ -47,7 +47,12 @@ export function useFinanceEstimates({
     [navigate],
   );
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (options?: { force?: boolean }) => {
+    // Keep cached rows on screen when re-entering the tab; only the first
+    // load (or an explicit force) should flip the skeleton loading flag.
+    if (!options?.force && hasLoaded) {
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
@@ -69,13 +74,11 @@ export function useFinanceEstimates({
     } finally {
       setLoading(false);
     }
-  }, [client]);
+  }, [client, hasLoaded]);
 
   useEffect(() => {
-    if (navId !== "estimates") {
-      setHasLoaded(false);
-      return;
-    }
+    if (navId !== "estimates") return;
+    // Reuse in-memory estimates when switching back from invoices / other tabs.
     void refresh();
   }, [navId, refresh]);
 
@@ -173,7 +176,7 @@ export function useFinanceEstimates({
         setError(
           err instanceof Error ? err.message : "Failed to update estimate",
         );
-        void refresh();
+        void refresh({ force: true });
         throw err;
       }
     },

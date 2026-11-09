@@ -65,6 +65,7 @@ import {
   localCalendarYear,
 } from "./finance-month-navigator.js";
 import { SearchableDropdown } from "../dropdowns/searchable-dropdown.js";
+import { InvoicesListSkeleton } from "../skeletons/invoices-list-skeleton.js";
 
 type InvoiceDetailTab = "invoice" | "activity";
 
@@ -622,6 +623,10 @@ export function FinanceInvoicesView({
               <p className="finance-empty" role="alert">
                 {error}
               </p>
+            ) : null}
+
+            {loading && connected && invoices.length === 0 ? (
+              <InvoicesListSkeleton />
             ) : null}
 
             {!loading && invoices.length === 0 ? (

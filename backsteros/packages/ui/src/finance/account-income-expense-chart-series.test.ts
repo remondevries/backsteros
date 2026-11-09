@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   accountChartHasYearActivity,
   aggregateBankAccountCashflowMonths,
+  buildAccountIncomeExpenseChartAxisFrame,
   buildAccountIncomeExpenseChartSeries,
   buildAccountIncomeExpenseChartSeriesFromCashflow,
   buildMonthIncomeExpenseDailyChartSeries,
@@ -201,4 +202,16 @@ test("buildMonthIncomeExpenseDailyChartSeries omits transfer category payoffs", 
   assert.equal(income.data[9]?.y, 0);
   assert.equal(expense.data[4]?.y, 50);
   assert.equal(expense.data[9]?.y, 0);
+});
+
+test("buildAccountIncomeExpenseChartAxisFrame keeps month ticks without values", () => {
+  const series = buildAccountIncomeExpenseChartAxisFrame({
+    year: 2026,
+    asOf: new Date(2026, 9, 8),
+    fullYear: true,
+  });
+  assert.equal(series.length, 2);
+  assert.equal(series[0]?.data.length, 12);
+  assert.ok(series.every((line) => line.data.every((point) => point.y == null)));
+  assert.equal(accountChartHasYearActivity(series), false);
 });

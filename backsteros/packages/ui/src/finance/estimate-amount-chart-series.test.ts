@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import {
+  buildEstimateStatusAmountChartAxisFrame,
   buildEstimateStatusAmountChartSeries,
   buildEstimateStatusMonthContributions,
   estimateChartYears,
@@ -63,6 +64,20 @@ describe("buildEstimateStatusAmountChartSeries", () => {
     // Future months after asOf (Oct) are null on the full-year axis.
     assert.equal(byId.concept?.data[10]?.y, null);
     assert.equal(estimateStatusAmountChartHasData(series), true);
+  });
+});
+
+describe("buildEstimateStatusAmountChartAxisFrame", () => {
+  it("builds a full-year frame with null values and no activity", () => {
+    const series = buildEstimateStatusAmountChartAxisFrame({
+      year: 2026,
+      asOf: new Date(2026, 9, 8),
+      fullYear: true,
+    });
+    assert.equal(series.length, 4);
+    assert.equal(series[0]?.data.length, 12);
+    assert.ok(series.every((line) => line.data.every((point) => point.y == null)));
+    assert.equal(estimateStatusAmountChartHasData(series), false);
   });
 });
 

@@ -141,6 +141,13 @@ export type FinanceEstimatesViewProps = {
     patch: UpdateClientEstimateInput,
   ) => Promise<void>;
   creating?: boolean;
+  /**
+   * When set (org workspace embed), new estimates are locked to this org and
+   * the organization picker is hidden.
+   */
+  lockedOrganizationId?: string | null;
+  /** Skip the Finance section chrome when embedded in another page. */
+  embedded?: boolean;
 };
 
 type DocTab = "proposal" | "estimate";
@@ -335,6 +342,7 @@ function FinanceEstimateDetail({
   contactOptions,
   contactOrganizationById,
   onUpdateEstimate,
+  lockOrganization = false,
 }: {
   selected: ClientEstimate;
   error?: string | null;
@@ -353,6 +361,8 @@ function FinanceEstimateDetail({
     id: string,
     patch: UpdateClientEstimateInput,
   ) => Promise<void>;
+  /** Hide the organization property when the parent page already scopes to one org. */
+  lockOrganization?: boolean;
 }) {
   const [docTab, setDocTab] = useState<DocTab>("proposal");
   const propertiesPanelRef = useRef<HTMLElement | null>(null);
@@ -572,36 +582,38 @@ function FinanceEstimateDetail({
               />
             </PropertyFieldGroup>
 
-            <PropertyFieldGroup label="Organization">
-              <PropertyDropdown
-                value={selected.organizationId ?? DROPDOWN_NONE_VALUE}
-                options={organizationOptions}
-                onChange={(next) => {
-                  const resolved = resolveDropdownNone(next);
-                  const nextToIds = resolved
-                    ? toContactIds.filter(
-                        (id) =>
-                          (contactOrganizationById[id]?.trim() || null) ===
-                          resolved,
-                      )
-                    : [];
-                  void patchSelected({
-                    organizationId: resolved,
-                    clientLabel: resolved
-                      ? orgNameById.get(resolved) ?? null
-                      : null,
-                    toContactIds: nextToIds,
-                  });
-                }}
-                searchPlaceholder="Change organization…"
-                ariaLabel="Organization"
-                fallbackIcon={<OrganizationIcon size={14} />}
-                fallbackLabel={orgName || "No organization"}
-                mutedFallback={!selected.organizationId}
-                selectedDisplayLabel={orgName || "No organization"}
-                selectedDisplayIcon={selectedOrgOption?.icon}
-              />
-            </PropertyFieldGroup>
+            {lockOrganization ? null : (
+              <PropertyFieldGroup label="Organization">
+                <PropertyDropdown
+                  value={selected.organizationId ?? DROPDOWN_NONE_VALUE}
+                  options={organizationOptions}
+                  onChange={(next) => {
+                    const resolved = resolveDropdownNone(next);
+                    const nextToIds = resolved
+                      ? toContactIds.filter(
+                          (id) =>
+                            (contactOrganizationById[id]?.trim() || null) ===
+                            resolved,
+                        )
+                      : [];
+                    void patchSelected({
+                      organizationId: resolved,
+                      clientLabel: resolved
+                        ? orgNameById.get(resolved) ?? null
+                        : null,
+                      toContactIds: nextToIds,
+                    });
+                  }}
+                  searchPlaceholder="Change organization…"
+                  ariaLabel="Organization"
+                  fallbackIcon={<OrganizationIcon size={14} />}
+                  fallbackLabel={orgName || "No organization"}
+                  mutedFallback={!selected.organizationId}
+                  selectedDisplayLabel={orgName || "No organization"}
+                  selectedDisplayIcon={selectedOrgOption?.icon}
+                />
+              </PropertyFieldGroup>
+            )}
 
             <PropertyFieldGroup label="To">
               <SearchableDropdown
@@ -1086,13 +1098,18 @@ export function FinanceEstimatesView({
   onCreateEstimate,
   onUpdateEstimate,
   creating = false,
+  lockedOrganizationId = null,
+  embedded = false,
 }: FinanceEstimatesViewProps) {
+  const lockedOrgId = lockedOrganizationId?.trim() || null;
   const [collapsed, setCollapsed] = useState<Set<UiEstimateStatus>>(
     () => new Set(),
   );
   const [showCreate, setShowCreate] = useState(false);
   const [title, setTitle] = useState("");
-  const [organizationId, setOrganizationId] = useState("");
+  const [organizationId, setOrganizationId] = useState(
+    () => lockedOrgId ?? "",
+  );
   const [projectId, setProjectId] = useState("");
   const [authorContactId, setAuthorContactId] = useState("");
   const [versionLabel, setVersionLabel] = useState("1 (concept)");
@@ -1123,6 +1140,11 @@ export function FinanceEstimatesView({
       return current;
     });
   }, [chartYearBounds.earliestYear, chartYearBounds.latestYear]);
+
+  useEffect(() => {
+    if (!lockedOrgId) return;
+    setOrganizationId(lockedOrgId);
+  }, [lockedOrgId]);
 
   const selected = useMemo(
     () => estimates.find((row) => row.id === selectedEstimateId) ?? null,
@@ -1209,13 +1231,14 @@ export function FinanceEstimatesView({
   async function handleCreate() {
     const trimmed = title.trim();
     if (!trimmed) return;
+    const createOrganizationId = lockedOrgId || organizationId || undefined;
     const euros = Number.parseFloat(totalAmountEuros.replace(",", "."));
     const authorOption = contactOptions.find(
       (option) => option.value === authorContactId,
     );
     await onCreateEstimate({
       title: trimmed,
-      organizationId: organizationId || undefined,
+      organizationId: createOrganizationId,
       projectId: projectId || undefined,
       authorContactId: authorContactId || null,
       authorName: authorOption?.label,
@@ -1230,7 +1253,7 @@ export function FinanceEstimatesView({
     });
     setShowCreate(false);
     setTitle("");
-    setOrganizationId("");
+    setOrganizationId(lockedOrgId ?? "");
     setProjectId("");
     setCreateDueDate(null);
     setTotalAmountEuros("");
@@ -1246,15 +1269,21 @@ export function FinanceEstimatesView({
         contactOptions={contactOptions}
         contactOrganizationById={contactOrganizationById}
         onUpdateEstimate={onUpdateEstimate}
+        lockOrganization={Boolean(lockedOrgId)}
       />
     );
   }
 
-  return (
-    <EntityDetailLayout sectionLabel="Finance" title="Estimates">
-      <div className="finance-estimates-view">
+  const body = (
+      <div
+        className={[
+          "finance-estimates-view",
+          embedded ? "finance-estimates-view--embedded" : null,
+        ]
+          .filter(Boolean)
+          .join(" ")}
+      >
         {error ? <p className="finance-estimates-view__error">{error}</p> : null}
-        {loading ? <p className="finance-empty">Loading estimates…</p> : null}
 
         {!showCreate ? (
           <>
@@ -1313,20 +1342,22 @@ export function FinanceEstimatesView({
               />
             </label>
             <div className="finance-estimates-view__row">
-              <label className="finance-estimates-view__field">
-                <span>Organization</span>
-                <select
-                  value={organizationId}
-                  onChange={(event) => setOrganizationId(event.target.value)}
-                >
-                  <option value="">Select organization</option>
-                  {organizations.map((org) => (
-                    <option key={org.id} value={org.id}>
-                      {org.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              {lockedOrgId ? null : (
+                <label className="finance-estimates-view__field">
+                  <span>Organization</span>
+                  <select
+                    value={organizationId}
+                    onChange={(event) => setOrganizationId(event.target.value)}
+                  >
+                    <option value="">Select organization</option>
+                    {organizations.map((org) => (
+                      <option key={org.id} value={org.id}>
+                        {org.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
               <label className="finance-estimates-view__field">
                 <span>Project</span>
                 <select
@@ -1580,6 +1611,13 @@ export function FinanceEstimatesView({
           </ul>
         ) : null}
       </div>
+  );
+
+  if (embedded) return body;
+
+  return (
+    <EntityDetailLayout sectionLabel="Finance" title="Estimates">
+      {body}
     </EntityDetailLayout>
   );
 }

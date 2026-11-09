@@ -285,6 +285,37 @@ export function accountChartHasYearActivity(
 }
 
 /**
+ * Empty full-year (or through current month) axis frame for loading states —
+ * month ticks without values so the chart chrome can render before series data.
+ */
+export function buildAccountIncomeExpenseChartAxisFrame(input: {
+  year: number;
+  asOf?: Date;
+  fullYear?: boolean;
+}): AccountChartSeries[] {
+  const { year, asOf = new Date(), fullYear = true } = input;
+  const dataLastMonthIndex =
+    asOf.getFullYear() === year
+      ? asOf.getMonth()
+      : year < asOf.getFullYear()
+        ? 11
+        : 0;
+  const axisLastMonthIndex = fullYear ? 11 : dataLastMonthIndex;
+  const income: AccountChartPoint[] = [];
+  const expense: AccountChartPoint[] = [];
+  for (let monthIndex = 0; monthIndex <= axisLastMonthIndex; monthIndex++) {
+    const x = formatMonthKey(year, monthIndex);
+    const label = formatMonthLabel(year, monthIndex);
+    income.push({ x, label, y: null });
+    expense.push({ x, label, y: null });
+  }
+  return [
+    { id: "income", data: income },
+    { id: "expense", data: expense },
+  ];
+}
+
+/**
  * Sums income/expense months across accounts (same `YYYY-MM` keys).
  */
 export function aggregateBankAccountCashflowMonths(

@@ -10,6 +10,7 @@ import { animated, useSpring } from "@react-spring/web";
 import { useId, useMemo } from "react";
 
 import {
+  buildEstimateStatusAmountChartAxisFrame,
   buildEstimateStatusAmountChartSeries,
   buildEstimateStatusMonthContributions,
   estimateStatusAmountChartHasData,
@@ -25,8 +26,10 @@ import { FinanceChartTooltip } from "./finance-chart-tooltip.js";
 import {
   FinanceChartEmpty,
   FinanceChartFadeIn,
-  FinanceChartLoading,
 } from "./finance-chart-status.js";
+
+/** Fixed y-max while the series is empty so grid + axis ticks still paint. */
+const LOADING_AXIS_Y_MAX = 1000;
 
 export type EstimateStatusAmountChartProps = {
   estimates: ReadonlyArray<EstimateChartEstimate>;
@@ -378,12 +381,26 @@ export function EstimateStatusAmountChart({
     [asOf, estimates, year],
   );
 
+  const loadingAxisSeries = useMemo(
+    () =>
+      buildEstimateStatusAmountChartAxisFrame({
+        year,
+        asOf,
+        fullYear: true,
+      }),
+    [asOf, year],
+  );
+
   const contributions = useMemo(
     () => buildEstimateStatusMonthContributions(estimates, year),
     [estimates, year],
   );
 
   const hasActivity = estimateStatusAmountChartHasData(series);
+  const showLoadingAxisFrame = loading && estimates.length === 0;
+  const renderSeries: EstimateStatusChartSeries[] = showLoadingAxisFrame
+    ? loadingAxisSeries
+    : series;
   const paints = useMemo(() => {
     const muted = readCssColor("--muted", "#888");
     const foreground = readCssColor("--foreground", "#111");
@@ -435,33 +452,25 @@ export function EstimateStatusAmountChart({
 
   const labelById = useMemo(() => {
     const map = new Map<string, string>();
-    for (const line of series) map.set(line.id, line.label);
+    for (const line of renderSeries) map.set(line.id, line.label);
     return map;
-  }, [series]);
+  }, [renderSeries]);
 
   const colorById = useMemo(() => {
     const map = new Map<string, string>();
-    for (const line of series) map.set(line.id, line.color);
+    for (const line of renderSeries) map.set(line.id, line.color);
     return map;
-  }, [series]);
+  }, [renderSeries]);
 
   const gradientIdBySeries = useMemo(() => {
     const map = new Map<string, string>();
-    for (const line of series) {
+    for (const line of renderSeries) {
       map.set(line.id, `estimate-area-${line.id}-${idBase}`);
     }
     return map;
-  }, [idBase, series]);
+  }, [idBase, renderSeries]);
 
-  if (loading && estimates.length === 0) {
-    return (
-      <section className={sectionClass} aria-label={ariaLabel}>
-        <FinanceChartLoading />
-      </section>
-    );
-  }
-
-  if (!hasActivity) {
+  if (!showLoadingAxisFrame && !hasActivity) {
     return (
       <section className={sectionClass} aria-label={ariaLabel}>
         <FinanceChartEmpty>
@@ -472,25 +481,29 @@ export function EstimateStatusAmountChart({
   }
 
   const labelByX = new Map<string, string>();
-  for (const line of series) {
+  for (const line of renderSeries) {
     for (const point of line.data) {
       labelByX.set(point.x, point.label);
     }
   }
 
-  const nivoData: DefaultSeries[] = series.map((line) => ({
+  const nivoData: DefaultSeries[] = renderSeries.map((line) => ({
     id: line.id,
     data: line.data.map((point) => ({ x: point.x, y: point.y })),
   }));
 
-  const tickValues = series[0]?.data
+  const tickValues = renderSeries[0]?.data
     .map((point) => point.x)
     .filter((value): value is string => value != null);
 
-  const seriesColors = series.map((line) => line.color);
+  const seriesColors = renderSeries.map((line) => line.color);
 
   return (
-    <section className={sectionClass} aria-label={ariaLabel}>
+    <section
+      className={sectionClass}
+      aria-label={ariaLabel}
+      aria-busy={showLoadingAxisFrame || undefined}
+    >
       <FinanceChartFadeIn className="finance-accounts-view__chart-plot">
         <ResponsiveLine
           data={nivoData}
@@ -499,7 +512,7 @@ export function EstimateStatusAmountChart({
           yScale={{
             type: "linear",
             min: 0,
-            max: "auto",
+            max: showLoadingAxisFrame ? LOADING_AXIS_Y_MAX : "auto",
             stacked: false,
             nice: true,
           }}
@@ -523,8 +536,9 @@ export function EstimateStatusAmountChart({
           curve="monotoneX"
           animate
           motionConfig={CHART_MOTION}
-          useMesh
-          enableSlices="x"
+          useMesh={!showLoadingAxisFrame}
+          enableSlices={showLoadingAxisFrame ? false : "x"}
+          isInteractive={!showLoadingAxisFrame}
           layers={[
             "grid",
             "markers",

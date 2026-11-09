@@ -199,6 +199,41 @@ export function estimateStatusAmountChartHasData(
   );
 }
 
+/**
+ * Empty full-year axis frame for loading states — month ticks and status
+ * series ids without values so the chart chrome can render before totals.
+ */
+export function buildEstimateStatusAmountChartAxisFrame(input: {
+  year: number;
+  asOf?: Date;
+  fullYear?: boolean;
+}): EstimateStatusChartSeries[] {
+  const { year, asOf = new Date(), fullYear = true } = input;
+  const dataLastMonthIndex =
+    asOf.getFullYear() === year
+      ? asOf.getMonth()
+      : year < asOf.getFullYear()
+        ? 11
+        : 0;
+  const axisLastMonthIndex = fullYear ? 11 : dataLastMonthIndex;
+  return CLIENT_ESTIMATE_STATUS_ORDER.map((status) => {
+    const data: EstimateStatusChartPoint[] = [];
+    for (let monthIndex = 0; monthIndex <= axisLastMonthIndex; monthIndex++) {
+      data.push({
+        x: monthKey(year, monthIndex),
+        label: monthLabel(year, monthIndex),
+        y: null,
+      });
+    }
+    return {
+      id: status,
+      label: CLIENT_ESTIMATE_STATUS_LABELS[status],
+      color: ESTIMATE_STATUS_CHART_COLORS[status],
+      data,
+    };
+  });
+}
+
 /** Years that have at least one estimate with a parseable date. */
 export function estimateChartYears(
   estimates: ReadonlyArray<Pick<ClientEstimate, "documentDate">>,
