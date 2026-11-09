@@ -14,10 +14,12 @@ import {
   useShellChromeState,
 } from "./use-shell-chrome-state";
 import { useShellSidePanel } from "./use-shell-side-panel";
+import { usePageScrollProductTabRestore } from "../lib/use-page-scroll-product-tab-restore";
 import { useShellTabs } from "./use-shell-tabs";
 
 function AppShellInner({ children }: { children?: ReactNode }) {
   const tabs = useShellTabs();
+  usePageScrollProductTabRestore();
   const panel = useShellSidePanel();
   const chromeState = useShellChromeState();
   const pathname = panel.pathname;

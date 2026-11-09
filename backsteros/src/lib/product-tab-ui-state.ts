@@ -37,6 +37,8 @@ export type ProductTabUiState = {
   inbox: InboxProductTabUiState;
   communication: CommunicationProductTabUiState;
   tasks: TasksProductTabUiState;
+  /** Shared `.page-scroll` main column — one position per product tab. */
+  pageScrollTop: number;
 };
 
 const listeners = new Set<() => void>();
@@ -76,6 +78,7 @@ function emptyState(): ProductTabUiState {
     inbox: emptyInbox(),
     communication: emptyCommunication(),
     tasks: emptyTasks(),
+    pageScrollTop: 0,
   };
 }
 
@@ -138,6 +141,16 @@ export function patchProductTabTasksUi(
   stateByTabId.set(tabId, { ...current, tasks: nextTasks });
   emit();
   return nextTasks;
+}
+
+export function patchProductTabPageScroll(
+  tabId: string,
+  pageScrollTop: number,
+): void {
+  const current = getProductTabUiState(tabId);
+  if (current.pageScrollTop === pageScrollTop) return;
+  stateByTabId.set(tabId, { ...current, pageScrollTop });
+  emit();
 }
 
 /** Drop closed tabs so reopen gets a clean slice (new tab id). */
