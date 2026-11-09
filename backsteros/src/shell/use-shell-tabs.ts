@@ -30,6 +30,7 @@ import {
 } from "../lib/activate-shell-product-tab";
 import { withEntityDetailPageLayout } from "../lib/entity-detail-page-layout-href";
 import { formatResolvedAppHref, resolveAppHref } from "../lib/resolve-app-href";
+import { shouldClearPendingTabSwitch } from "../lib/product-tab-switch-pending";
 import {
   collectOpenRoomMeetingIds,
   setOpenRoomMeetingIds,
@@ -74,9 +75,19 @@ export function useShellTabs() {
 
     const pending = pendingTabSwitchRef.current;
     // While a switch is in flight, location may update before activeTabId.
-    // Never sync onto the previous tab — wait until activeTabId is the target.
+    // Never sync onto the previous tab — wait until activeTabId is the target
+    // and the live location matches the pending bookmark.
     if (pending && tabsState.activeTabId !== pending.tabId) {
       // Consume the location key without syncing.
+    } else if (
+      pending &&
+      !shouldClearPendingTabSwitch({
+        pending,
+        activeTabId: tabsState.activeTabId,
+        locationKey: tabsLocationKey,
+      })
+    ) {
+      // Active flipped early; location is still the previous route.
     } else {
       if (pending) {
         pendingTabSwitchRef.current = null;
@@ -92,11 +103,16 @@ export function useShellTabs() {
   );
 
   // Location may have landed (and been skipped) before activeTabId. Once the
-  // target tab is active, clear pending and catch the bookmark up if needed.
+  // target tab is active *and* location matches the pending bookmark, clear
+  // pending. Clearing earlier (active flipped, location still Room) rewrites
+  // a Task-email tab href to `/…/room`.
   const pendingAfterLocation = pendingTabSwitchRef.current;
   if (
-    pendingAfterLocation &&
-    pendingAfterLocation.tabId === tabsState.activeTabId
+    shouldClearPendingTabSwitch({
+      pending: pendingAfterLocation,
+      activeTabId: tabsState.activeTabId,
+      locationKey: tabsLocationKey,
+    })
   ) {
     pendingTabSwitchRef.current = null;
     if (activeTab && activeTab.href !== tabsLocationKey) {

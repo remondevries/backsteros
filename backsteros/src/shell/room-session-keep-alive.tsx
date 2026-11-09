@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { useRouterState } from "@tanstack/react-router";
 import {
   isMeetingRoomPath,
   parseMeetingRoomMeetingId,
@@ -28,9 +29,10 @@ import { MeetingRoomSession } from "../screens/meeting-room-session";
  * route is the shell's trusted active location and no warm keep-alive section
  * is covering the stage. Backgrounded sessions stay LiveKit-connected.
  *
- * Active room id is resolved from the warm store + address bar — not TanStack
- * alone — because warm flips away from a room Outlet leave the router stuck on
- * `/…/room` while Inbox/Tasks already own the shell.
+ * Active room id follows warm visibility + address bar for warm flips (TanStack
+ * can lag on `/…/room`). For outlet→outlet (Room → Task-email) it also reads
+ * the live router pathname so a lagging window cannot keep Director covering
+ * EmailPage.
  */
 export function RoomSessionKeepAlive() {
   useSyncExternalStore(
@@ -43,6 +45,9 @@ export function RoomSessionKeepAlive() {
     getWarmKeepAliveEpoch,
     () => 0,
   );
+  const routerPathname = useRouterState({
+    select: (state) => state.location.pathname,
+  });
 
   const openIds = getOpenRoomMeetingIds();
   const openIdKey = openIds.join("\0");
@@ -56,10 +61,11 @@ export function RoomSessionKeepAlive() {
       resolveActiveRoomMeetingId({
         visibleKeepAliveSurface: visibleSurface,
         pathname: windowPathname,
+        routerPathname,
         isRoomPath: isMeetingRoomPath,
         parseMeetingId: parseMeetingRoomMeetingId,
       }),
-    [visibleSurface, windowPathname],
+    [visibleSurface, windowPathname, routerPathname],
   );
 
   const [visitedIds, setVisitedIds] = useState<string[]>([]);

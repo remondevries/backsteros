@@ -101,15 +101,32 @@ export function shouldRegisterRoomChrome(
  * (e.g. still `/…/room`). Room UI must follow warm visibility + the address
  * bar — never TanStack alone — or the Director layer stays `is-active` and
  * covers main content / sidepanels after Room → Inbox/Messages/Tasks.
+ *
+ * Outlet→outlet is the inverse race (Room → Task-email): TanStack can commit
+ * `/email/…` while `window.location` still reports `/…/room`. When
+ * `routerPathname` is provided and has left the room, deactivate even if the
+ * address bar lags — otherwise Director stays `is-active` over EmailPage.
  */
 export function resolveActiveRoomMeetingId(input: {
   visibleKeepAliveSurface: string | null;
   /** Trusted location pathname (address bar / warm href), not a stale router match. */
   pathname: string;
+  /**
+   * Live TanStack pathname when available. Used to clear the Director layer
+   * after Room → other-outlet navigations where History briefly lags.
+   */
+  routerPathname?: string | null;
   isRoomPath: (pathname: string) => boolean;
   parseMeetingId: (pathname: string) => string | null;
 }): string | null {
   if (input.visibleKeepAliveSurface != null) return null;
+  if (
+    input.routerPathname != null &&
+    input.routerPathname !== "" &&
+    !input.isRoomPath(input.routerPathname)
+  ) {
+    return null;
+  }
   if (!input.isRoomPath(input.pathname)) return null;
   return input.parseMeetingId(input.pathname);
 }
