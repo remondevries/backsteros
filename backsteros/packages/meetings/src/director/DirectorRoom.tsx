@@ -602,7 +602,8 @@ export function DirectorRoom({
   }, [cameraOn, hostCamAnim]);
 
   // Shell room-tab live pip — published local tracks only (never invent levels).
-  useEffect(() => {
+  // Layout effect so the top tab ring paints in the same frame as the avatar.
+  useLayoutEffect(() => {
     if (!onLocalMediaIndicatorChange) return;
     if (!meetingId || !connected || connectionError) {
       onLocalMediaIndicatorChange(null);

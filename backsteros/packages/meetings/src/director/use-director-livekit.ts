@@ -33,10 +33,10 @@ const AUDIO_SIGNAL_GATE = 0.008;
 const AUDIO_SIGNAL_INTERVAL_MS = 45;
 const AUDIO_SIGNAL_TTL_MS = 140;
 
-/** Match guest VU / room-tab store quantization so rings update without spam. */
+/** Coarse enough to skip React spam, fine enough for speaking rings. */
 function quantizeAudioLevel(level: number): number {
   if (!Number.isFinite(level) || level <= 0) return 0;
-  return Math.round(Math.max(0, level) * 40) / 40;
+  return Math.round(Math.max(0, level) * 100) / 100;
 }
 
 export type GuestPhase = "lobby" | "ready" | "room";
