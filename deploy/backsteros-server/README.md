@@ -55,6 +55,10 @@ pnpm deploy:check --fetch                        # local, cloud, agents on origi
 Do not hand-run `docker save | ssh …` — the scripts tag images by commit, migrate,
 and finish with `deploy:check`.
 
+### Recent ships
+
+- **2026-11-09** — Clean testing base on `ac0ebe0d1c3c`: cloud-core + local-core `:8788` + agents door (`agent.backsteros.com`) + desktop `0.2.271`. Cloud `.env` gained `LIVEKIT_*` for room-token. VPS disk was pruned (unused Docker images) so agents rsync to `/tmp` could run. No bunq/payment changes.
+
 ## Retired
 
 - Hetzner `46.225.171.3` / Tailscale `100.75.45.22` as BacksterOS host — services moved to lemodesign
