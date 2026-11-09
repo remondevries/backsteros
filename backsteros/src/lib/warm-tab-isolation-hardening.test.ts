@@ -119,7 +119,7 @@ describe("mirror clobber (adversarial HIGH)", () => {
     assert.equal(leaving?.href, "/inbox/item-a-newer");
     assert.equal(tryWarmKeepAliveFlip("/inbox/item-b"), true);
 
-    state = activateLikeShell(state, tabA.id, "/inbox/item-b");
+    activateLikeShell(state, tabA.id, "/inbox/item-b");
     assert.equal(lastHrefForKeepAliveSurface("inbox"), "/inbox/item-a-newer");
   });
 });
