@@ -411,6 +411,56 @@ body.is-resizing .desktop-chat-panel__resize::after {
   color: color-mix(in srgb, var(--foreground) 82%, transparent);
 }
 
+.sidebar-nav-swap {
+  position: relative;
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.sidebar-nav-swap__pane {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  opacity: 1;
+  transition: opacity 180ms ease;
+}
+
+.sidebar-nav-swap__pane.is-exiting {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.sidebar-nav-swap__pane.is-active {
+  position: relative;
+  z-index: 1;
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.sidebar-nav-swap__pane--replacement {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.sidebar-nav-swap__pane--workspace .sidebar-sections {
+  min-height: 0;
+  flex: 1;
+  overflow-y: auto;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebar-nav-swap__pane {
+    transition: none;
+  }
+}
+
 .sidebar-sections {
   min-height: 0;
   flex: 1;

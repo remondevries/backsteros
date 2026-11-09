@@ -13,7 +13,6 @@ function isEditableTarget(target: EventTarget | null): boolean {
 /**
  * Two-key director shortcuts:
  * - g → p: toggle presentation / fullscreen camera
- * - r → l: toggle ring light
  * - c → o: toggle camera
  * - m → o: toggle microphone
  * - o → r: open room
@@ -24,7 +23,6 @@ function isEditableTarget(target: EventTarget | null): boolean {
 export function useDirectorGoShortcuts({
   enabled = true,
   onTogglePresentation,
-  onToggleRingLight,
   onToggleCamera,
   onToggleMicrophone,
   onOpenRoom,
@@ -34,7 +32,6 @@ export function useDirectorGoShortcuts({
 }: {
   enabled?: boolean;
   onTogglePresentation: () => void;
-  onToggleRingLight: () => void;
   onToggleCamera: () => void;
   onToggleMicrophone: () => void;
   onOpenRoom: () => void;
@@ -44,7 +41,6 @@ export function useDirectorGoShortcuts({
 }) {
   const actionsRef = useRef({
     onTogglePresentation,
-    onToggleRingLight,
     onToggleCamera,
     onToggleMicrophone,
     onOpenRoom,
@@ -54,7 +50,6 @@ export function useDirectorGoShortcuts({
   });
   actionsRef.current = {
     onTogglePresentation,
-    onToggleRingLight,
     onToggleCamera,
     onToggleMicrophone,
     onOpenRoom,
@@ -66,7 +61,7 @@ export function useDirectorGoShortcuts({
   useEffect(() => {
     if (!enabled) return;
 
-    const prefixes = new Set(["g", "r", "c", "m", "o", "l", "d"]);
+    const prefixes = new Set(["g", "c", "m", "o", "l", "d"]);
     let pendingPrefix: string | null = null;
     let prefixStartedAt = 0;
 
@@ -92,7 +87,6 @@ export function useDirectorGoShortcuts({
         const sequence = `${pendingPrefix}${key}`;
         const actions: Record<string, () => void> = {
           gp: actionsRef.current.onTogglePresentation,
-          rl: actionsRef.current.onToggleRingLight,
           co: actionsRef.current.onToggleCamera,
           mo: actionsRef.current.onToggleMicrophone,
           or: actionsRef.current.onOpenRoom,

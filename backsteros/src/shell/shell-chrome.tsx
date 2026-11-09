@@ -10,6 +10,8 @@ import {
   type ProductSidebarRecentPage,
 } from "@backsteros/ui/shell";
 import {
+  isMeetingRoomPath,
+  parseMeetingRoomMeetingId,
   resolveHistoryEntryDisplay,
   SETTINGS_SYNCING_HREF,
 } from "@backsteros/ui/navigation";
@@ -21,6 +23,7 @@ import { RouterLink } from "./app-shell-links";
 import { renderAppShellTabIcon } from "./app-shell-tab-icon";
 import { ShellAgentDmBanner } from "./shell-agent-dm-banner";
 import { ShellChatPanelSlot } from "./shell-chat-panel-slot";
+import { ShellRoomMeetingsNav } from "./shell-room-meetings-nav";
 import { AgentDmNotificationsProvider } from "./use-agent-dm-notifications";
 import type { useShellTabs } from "./use-shell-tabs";
 import type { resolveInboxSidebarIndicatorTone } from "@backsteros/ui/inbox";
@@ -85,6 +88,11 @@ function ShellChromeInner({
   const showSidePanelSlot = showSidePanel && Boolean(sidePanel);
   useWindowChromeDrag();
 
+  const roomTabActive = isMeetingRoomPath(pathname);
+  const roomMeetingId = roomTabActive
+    ? parseMeetingRoomMeetingId(pathname)
+    : null;
+
   const sidebar = settingsPage ? (
     <SettingsSidePanelNavView
       pathname={pathname}
@@ -124,6 +132,14 @@ function ShellChromeInner({
       })}
       onSelectRecentPage={(href) => history.navigateToHistoryEntry(href)}
       onCompose={onComposeOpen}
+      navReplacement={
+        <ShellRoomMeetingsNav
+          selectedMeetingId={roomMeetingId}
+          tabs={tabsState.tabs}
+          onActivateTab={activateTab}
+        />
+      }
+      navReplacementActive={roomTabActive}
     />
   );
 

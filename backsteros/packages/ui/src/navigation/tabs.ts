@@ -32,6 +32,24 @@ export function normalizeTabHref(href: string): string {
   return path!.replace(/\/+$/, "") || "/";
 }
 
+const MEETING_ROOM_PATH_RE = /^\/calendar\/meetings\/([^/]+)\/room$/;
+
+/** True for in-app Director room routes (`…/meetings/:id/room`). */
+export function isMeetingRoomPath(href: string): boolean {
+  return MEETING_ROOM_PATH_RE.test(normalizeTabHref(href));
+}
+
+/** Meeting id (or display slug) from a room tab href, if any. */
+export function parseMeetingRoomMeetingId(href: string): string | null {
+  const match = normalizeTabHref(href).match(MEETING_ROOM_PATH_RE);
+  if (!match?.[1]) return null;
+  try {
+    return decodeURIComponent(match[1]);
+  } catch {
+    return match[1];
+  }
+}
+
 /**
  * Query keys worth keeping on a product tab when returning to Calendar.
  * Includes open meeting overlay (`meeting` / `meetingLayout`) so tab switches
@@ -153,7 +171,7 @@ export function getTabTitleForHref(href: string): string {
   }
 
   // Interim label until RegisterPageTitle sets the meeting name (no "Room").
-  if (/^\/calendar\/meetings\/[^/]+\/room$/.test(normalized)) {
+  if (isMeetingRoomPath(normalized)) {
     return "Meeting";
   }
 

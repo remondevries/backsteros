@@ -10,8 +10,13 @@ import {
 } from "@backsteros/ui";
 
 import { useDesktopApi } from "../lib/api-context";
+import { useDesktopAvatarSrcMap } from "../lib/avatar-src";
+import { getDefaultAssigneeId } from "../lib/default-assignee";
 import { useDesktopSectionBreadcrumb } from "../lib/use-desktop-breadcrumb";
-import { useDesktopWorkspaceMeta } from "../lib/workspace-data";
+import {
+  useDesktopWorkspaceMeta,
+  useDesktopWorkspacePeople,
+} from "../lib/workspace-data";
 
 /**
  * In-app Director room for a meeting. Lazy-loaded so LiveKit stays out of the
@@ -23,6 +28,8 @@ export function MeetingRoomPage() {
   }) as { meetingId?: string };
   const { client } = useDesktopApi();
   const { meetings, ready } = useDesktopWorkspaceMeta();
+  const { contacts } = useDesktopWorkspacePeople();
+  const contactAvatarSrc = useDesktopAvatarSrcMap("contact", contacts);
 
   const meeting = useMemo(() => {
     if (!meetingRouteParam) return null;
@@ -42,6 +49,13 @@ export function MeetingRoomPage() {
   const formatIcon = meeting
     ? normalizeMeetingFormat(meeting.format)
     : null;
+
+  const hostAvatarSrc = useMemo(() => {
+    const assigneeId = getDefaultAssigneeId();
+    if (!assigneeId) return null;
+    // Same resolution path as Settings → Account / entity avatars.
+    return contactAvatarSrc[assigneeId] ?? null;
+  }, [contactAvatarSrc]);
 
   useDesktopSectionBreadcrumb([
     { label: "Agenda", href: "/calendar" },
@@ -105,6 +119,7 @@ export function MeetingRoomPage() {
         meetingStartAt={
           typeof meeting.startAt === "string" ? meeting.startAt : null
         }
+        hostAvatarSrc={hostAvatarSrc}
         requestJson={client.requestJson.bind(client)}
       />
     </div>

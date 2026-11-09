@@ -7,17 +7,15 @@ import {
   type CSSProperties,
   type PointerEvent as ReactPointerEvent,
 } from "react";
-import { invoke, isTauri } from "@tauri-apps/api/core";
 import {
   DoorClosed,
   DoorOpen,
-  Lamp,
-  LampSolid,
   Microphone,
   MicrophoneOff,
   MoonSolid,
   SunSolid,
   Video,
+  User,
   VideoOff,
 } from "@mynaui/icons-react";
 import {
@@ -65,9 +63,6 @@ import {
 import { usePresentationKeyboardNav } from "./use-presentation-keyboard-nav";
 
 const LOCALE = "en-GB";
-const TRAFFIC_LIGHT_BASE = { x: 16, y: 28 };
-const TRAFFIC_LIGHT_RING_INSET = 18;
-const TRAFFIC_LIGHT_ANIMATION_MS = 180;
 const PIP_FEED_SIZE_DEFAULT = 126;
 const PIP_FEED_SIZE_MIN = 88;
 const PIP_FEED_SIZE_MAX = 280;
@@ -361,6 +356,32 @@ function useNow(): Date | null {
   return now;
 }
 
+/** Camera-off host tile — real avatar or person glyph; never a broken-image icon. */
+function HostAvatarPhoto({ src }: { src: string | null }) {
+  const [failedSrc, setFailedSrc] = useState<string | null>(null);
+  const showPhoto = Boolean(src) && failedSrc !== src;
+
+  if (showPhoto && src) {
+    return (
+      <div className="director__host-avatar">
+        <img
+          className="director__host-avatar__photo"
+          src={src}
+          alt=""
+          onError={() => setFailedSrc(src)}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div className="director__host-avatar director__host-avatar--fallback">
+      <User className="director__host-avatar__fallback-icon" aria-hidden />
+    </div>
+  );
+}
+
+
 function App() {
   const {
     meetingId,
@@ -383,7 +404,6 @@ function App() {
     useState<AvatarRailPhase>("off");
   /** Freeze guest camera/image choices for the avatar-rail overlay lifetime. */
   const [avatarRailGuests, setAvatarRailGuests] = useState<GuestFeed[]>([]);
-  const [ringLight, setRingLight] = useState(false);
   /** Portal stage surround: dark #0e0000 / light #e4e3da */
   const [stageTheme, setStageTheme] = useState<"dark" | "light">("dark");
   /** When false, guests stay in lobby waiting; when true they may enter the room. */
@@ -434,7 +454,6 @@ function App() {
     startTop: number;
     startSize: number;
   } | null>(null);
-  const trafficLightPositionRef = useRef(TRAFFIC_LIGHT_BASE);
   const previousCameraOnRef = useRef(cameraOn);
   const hostCamAnimGenRef = useRef(0);
   const meetingSwitchGenRef = useRef(0);
@@ -541,42 +560,6 @@ function App() {
     root.classList.toggle("meet-theme-dark", stageTheme === "dark");
   }, [stageTheme]);
 
-  useEffect(() => {
-    if (!isTauri()) return;
-
-    const from = trafficLightPositionRef.current;
-    const inset = ringLight ? TRAFFIC_LIGHT_RING_INSET : 0;
-    const target = {
-      x: TRAFFIC_LIGHT_BASE.x + inset,
-      y: TRAFFIC_LIGHT_BASE.y + inset,
-    };
-    const startedAt = performance.now();
-    let frame = 0;
-    let commandFailed = false;
-
-    const animate = (now: number) => {
-      const progress = Math.min(
-        1,
-        (now - startedAt) / TRAFFIC_LIGHT_ANIMATION_MS,
-      );
-      const eased = 1 - Math.pow(1 - progress, 3);
-      const position = {
-        x: from.x + (target.x - from.x) * eased,
-        y: from.y + (target.y - from.y) * eased,
-      };
-      trafficLightPositionRef.current = position;
-      if (!commandFailed) {
-        void invoke("set_traffic_light_position", position).catch((error) => {
-          commandFailed = true;
-          console.warn("[Director] could not move traffic lights:", error);
-        });
-      }
-      if (progress < 1) frame = requestAnimationFrame(animate);
-    };
-
-    frame = requestAnimationFrame(animate);
-    return () => cancelAnimationFrame(frame);
-  }, [ringLight]);
 
   const stagePresentation =
     presentationMode || selectedPresentation !== null;
@@ -891,7 +874,6 @@ function App() {
 
   useDirectorGoShortcuts({
     onTogglePresentation: togglePresentationMode,
-    onToggleRingLight: () => setRingLight((current) => !current),
     onToggleCamera: () => setCameraOn((current) => !current),
     onToggleMicrophone: () => setMuted((current) => !current),
     onOpenRoom: () => {
@@ -977,7 +959,6 @@ function App() {
     avatarRailPhase === "poised-out" || avatarRailPhase === "sliding-out"
       ? "is-avatar-stack-swapped"
       : null,
-    ringLight ? "is-ring-light" : null,
     meetingsPanelOpen ? "is-meetings-open" : null,
     stageTheme === "light" ? "is-theme-light" : "is-theme-dark",
   ]
@@ -1434,18 +1415,6 @@ function App() {
               )
             }
           />
-          <Switch
-            checked={ringLight}
-            onCheckedChange={setRingLight}
-            label={ringLight ? "Ring light on" : "Ring light off"}
-            icon={
-              ringLight ? (
-                <LampSolid className="director__switch-icon" />
-              ) : (
-                <Lamp className="director__switch-icon" />
-              )
-            }
-          />
         </div>
       </header>
 
@@ -1546,13 +1515,7 @@ function App() {
               hidden={hostAvatarVisible || Boolean(connectionError)}
             />
             {hostAvatarVisible && !connectionError ? (
-              <div className="director__host-avatar">
-                <img
-                  className="director__host-avatar__photo"
-                  src="/host/avatar.png"
-                  alt=""
-                />
-              </div>
+              <HostAvatarPhoto src="/host/avatar.png" />
             ) : null}
             {connectionError ? (
               <div className="director__preview-empty">
@@ -1719,11 +1682,7 @@ function App() {
                 } as CSSProperties
               }
             >
-              <img
-                className="director__entering-avatar-video"
-                src="/host/avatar.png"
-                alt=""
-              />
+              <HostAvatarPhoto src="/host/avatar.png" />
               <span className="director__avatar-name-badge" title="You">
                 You
               </span>

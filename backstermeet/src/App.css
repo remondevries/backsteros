@@ -21,9 +21,6 @@
   --meet-stage-transition: var(--meet-stage-duration) var(--meet-stage-ease);
   /* Inset small corner feeds from the large panel edges */
   --meet-feed-corner-inset: 1.65rem;
-  /* Bright screen edge used as a soft ring / fill light for the host camera */
-  --meet-ring-light: #fff;
-  --meet-ring-light-width: 18px;
   /* Portal stage surround (globals.css :root / .dark) */
   --meet-stage-bg: #050505;
   --meet-stage-fg: #fafafa;
@@ -83,17 +80,12 @@ html.meet-theme-light .meet-brand {
   flex-direction: row;
   background: var(--meet-stage-bg);
   color: var(--meet-stage-fg);
-  border-style: solid;
-  border-color: transparent;
-  border-width: 0;
+  border: none;
   --pip-feed-size: 126px;
   /* Circular camera-off avatars scale with the stage */
   --avatar-circle-size: 8vh;
   --meetings-panel-width: min(370px, 90vw);
   transition:
-    border-color 180ms ease,
-    border-width 180ms ease,
-    box-shadow 180ms ease,
     background-color 220ms ease,
     color 220ms ease;
 }
@@ -469,11 +461,6 @@ html.meet-theme-dark {
   --meet-chrome-muted: #a3a3a3;
 }
 
-.director.is-ring-light {
-  border-width: var(--meet-ring-light-width);
-  border-color: var(--meet-ring-light);
-  box-shadow: inset 0 0 28px rgba(255, 255, 255, 0.35);
-}
 
 .director__ribbon {
   position: absolute;
@@ -2199,6 +2186,24 @@ html.meet-theme-dark {
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+
+.director__host-avatar--fallback {
+  display: grid;
+  place-items: center;
+  background: color-mix(in srgb, var(--meet-stage-fg) 12%, var(--meet-stage-bg));
+}
+
+.director__host-avatar__fallback-icon {
+  width: 42%;
+  height: 42%;
+  color: var(--meet-stage-fg);
+  opacity: 0.72;
+}
+
+.director__entering-avatar > .director__host-avatar {
+  position: absolute;
+  inset: 0;
 }
 
 .director.is-host-audio-only .director__preview .audio-vu--feed {

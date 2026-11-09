@@ -10,12 +10,11 @@ import {
 import {
   DoorClosed,
   DoorOpen,
-  Lamp,
-  LampSolid,
   Microphone,
   MicrophoneOff,
   MoonSolid,
   SunSolid,
+  User,
   Video,
   VideoOff,
 } from "@mynaui/icons-react";
@@ -350,14 +349,45 @@ export type DirectorRoomProps = {
   meetingId: string;
   meetingTitle?: string | null;
   meetingStartAt?: string | null;
+  /**
+   * Current-user avatar URL from BacksterOS image resolution (object URL /
+   * http). Never invent a photo — omit/null shows the person fallback.
+   */
+  hostAvatarSrc?: string | null;
   /** Authenticated BacksterOS core JSON helper (mints room tokens). */
   requestJson: <T>(path: string, init?: RequestInit) => Promise<T>;
 };
+
+/** Camera-off host tile — real avatar or person glyph; never a broken-image icon. */
+function HostAvatarPhoto({ src }: { src: string | null }) {
+  const [failedSrc, setFailedSrc] = useState<string | null>(null);
+  const showPhoto = Boolean(src) && failedSrc !== src;
+
+  if (showPhoto && src) {
+    return (
+      <div className="director__host-avatar">
+        <img
+          className="director__host-avatar__photo"
+          src={src}
+          alt=""
+          onError={() => setFailedSrc(src)}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div className="director__host-avatar director__host-avatar--fallback">
+      <User className="director__host-avatar__fallback-icon" aria-hidden />
+    </div>
+  );
+}
 
 export function DirectorRoom({
   meetingId: meetingIdProp,
   meetingTitle: meetingTitleProp,
   meetingStartAt,
+  hostAvatarSrc = null,
   requestJson,
 }: DirectorRoomProps) {
   const meetingId = meetingIdProp.trim() || null;
@@ -377,9 +407,9 @@ export function DirectorRoom({
     useState<AvatarRailPhase>("off");
   /** Freeze guest camera/image choices for the avatar-rail overlay lifetime. */
   const [avatarRailGuests, setAvatarRailGuests] = useState<GuestFeed[]>([]);
-  const [ringLight, setRingLight] = useState(false);
   /** Portal stage surround: dark #0e0000 / light #e4e3da */
   const [stageTheme, setStageTheme] = useState<"dark" | "light">("dark");
+  const resolvedHostAvatarSrc = hostAvatarSrc?.trim() || null;
   /** When false, guests stay in lobby waiting; when true they may enter the room. */
   const [roomOpen, setRoomOpen] = useState(false);
   /** Local picker UI (g+p). Does not sync to guests by itself. */
@@ -847,7 +877,6 @@ export function DirectorRoom({
 
   useDirectorGoShortcuts({
     onTogglePresentation: togglePresentationMode,
-    onToggleRingLight: () => setRingLight((current) => !current),
     onToggleCamera: () => setCameraOn((current) => !current),
     onToggleMicrophone: () => setMuted((current) => !current),
     onOpenRoom: () => {
@@ -933,7 +962,6 @@ export function DirectorRoom({
     avatarRailPhase === "poised-out" || avatarRailPhase === "sliding-out"
       ? "is-avatar-stack-swapped"
       : null,
-    ringLight ? "is-ring-light" : null,
     stageTheme === "light" ? "is-theme-light" : "is-theme-dark",
   ]
     .filter(Boolean)
@@ -1313,18 +1341,6 @@ export function DirectorRoom({
               )
             }
           />
-          <Switch
-            checked={ringLight}
-            onCheckedChange={setRingLight}
-            label={ringLight ? "Ring light on" : "Ring light off"}
-            icon={
-              ringLight ? (
-                <LampSolid className="director__switch-icon" />
-              ) : (
-                <Lamp className="director__switch-icon" />
-              )
-            }
-          />
         </div>
       </header>
 
@@ -1425,13 +1441,7 @@ export function DirectorRoom({
               hidden={hostAvatarVisible || Boolean(connectionError)}
             />
             {hostAvatarVisible && !connectionError ? (
-              <div className="director__host-avatar">
-                <img
-                  className="director__host-avatar__photo"
-                  src="/host/avatar.png"
-                  alt=""
-                />
-              </div>
+              <HostAvatarPhoto src={resolvedHostAvatarSrc} />
             ) : null}
             {connectionError ? (
               <div className="director__preview-empty">
@@ -1598,11 +1608,7 @@ export function DirectorRoom({
                 } as CSSProperties
               }
             >
-              <img
-                className="director__entering-avatar-video"
-                src="/host/avatar.png"
-                alt=""
-              />
+              <HostAvatarPhoto src={resolvedHostAvatarSrc} />
               <span className="director__avatar-name-badge" title="You">
                 You
               </span>

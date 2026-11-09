@@ -9,6 +9,8 @@ import {
   createProductTab,
   cycleProductTab,
   getTabTitleForHref,
+  isMeetingRoomPath,
+  parseMeetingRoomMeetingId,
   refreshOpenTabTaskStatuses,
   syncActiveTabTaskMeta,
   syncActiveTabToPath,
@@ -264,6 +266,23 @@ describe("getTabTitleForHref", () => {
     assert.equal(
       getTabTitleForHref("/calendar/meetings/abc-uuid/room"),
       "Meeting",
+    );
+  });
+});
+
+describe("isMeetingRoomPath", () => {
+  test("detects Director room routes only", () => {
+    assert.equal(
+      isMeetingRoomPath("/calendar/meetings/abc-uuid/room"),
+      true,
+    );
+    assert.equal(
+      isMeetingRoomPath("/calendar/meetings/abc-uuid"),
+      false,
+    );
+    assert.equal(
+      parseMeetingRoomMeetingId("/calendar/meetings/abc%2Fid/room"),
+      "abc/id",
     );
   });
 });

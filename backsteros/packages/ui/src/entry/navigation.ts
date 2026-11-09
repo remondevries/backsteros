@@ -59,6 +59,11 @@ export {
 } from "../navigation/resolve-history-entry-display.js";
 
 export {
+  isMeetingRoomPath,
+  parseMeetingRoomMeetingId,
+} from "../navigation/tabs.js";
+
+export {
   useNavigationHistory,
   type NavigationHistoryRecentPage,
   type UseNavigationHistoryResult,

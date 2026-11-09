@@ -73,6 +73,13 @@ export type ProductSidebarProps = {
   footerBanner?: ReactNode;
   /** Bottom-left footer (e.g. Cursor credits). Replaces the old search button. */
   footer?: ReactNode;
+  /**
+   * When set with {@link navReplacementActive}, crossfades over the standard
+   * Inbox/Journal/… nav (e.g. Agenda meetings list on a Director room tab).
+   */
+  navReplacement?: ReactNode;
+  /** Prefer the replacement pane over standard workspace nav. */
+  navReplacementActive?: boolean;
 };
 
 function NavLinks({
@@ -148,6 +155,8 @@ export function ProductSidebar({
   inboxHasItems = false,
   footerBanner,
   footer,
+  navReplacement = null,
+  navReplacementActive = false,
 }: ProductSidebarProps) {
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const profileMenuRef = useRef<HTMLDivElement>(null);
@@ -269,17 +278,47 @@ export function ProductSidebar({
         </button>
       </div>
 
-      <NavLinks
-        activePathname={activePathname}
-        Link={Link}
-        inboxIndicatorTone={
-          inboxIndicatorTone !== "none"
-            ? inboxIndicatorTone
-            : inboxHasItems
-              ? "muted"
-              : "none"
-        }
-      />
+      <div
+        className={[
+          "sidebar-nav-swap",
+          navReplacementActive ? "is-replacement-active" : null,
+        ]
+          .filter(Boolean)
+          .join(" ")}
+      >
+        <div
+          className={[
+            "sidebar-nav-swap__pane",
+            "sidebar-nav-swap__pane--workspace",
+            navReplacementActive ? "is-exiting" : "is-active",
+          ].join(" ")}
+          aria-hidden={navReplacementActive}
+        >
+          <NavLinks
+            activePathname={activePathname}
+            Link={Link}
+            inboxIndicatorTone={
+              inboxIndicatorTone !== "none"
+                ? inboxIndicatorTone
+                : inboxHasItems
+                  ? "muted"
+                  : "none"
+            }
+          />
+        </div>
+        {navReplacement ? (
+          <div
+            className={[
+              "sidebar-nav-swap__pane",
+              "sidebar-nav-swap__pane--replacement",
+              navReplacementActive ? "is-active" : "is-exiting",
+            ].join(" ")}
+            aria-hidden={!navReplacementActive}
+          >
+            {navReplacement}
+          </div>
+        ) : null}
+      </div>
 
       {footerBanner ? (
         <div className="sidebar-footer-banner">{footerBanner}</div>
