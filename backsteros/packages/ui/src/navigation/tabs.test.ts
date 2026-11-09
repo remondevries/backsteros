@@ -184,6 +184,20 @@ describe("syncActiveTabToPath", () => {
 });
 
 describe("buildProductTabHref", () => {
+  test("keeps contact and organization overlay layout on tab hrefs", () => {
+    assert.equal(
+      buildProductTabHref("/contacts/39", "?contactLayout=page&x=1"),
+      "/contacts/39?contactLayout=page",
+    );
+    assert.equal(
+      buildProductTabHref(
+        "/organizations/12",
+        "?orgLayout=page&crmGroup=g1&x=1",
+      ),
+      "/organizations/12?orgLayout=page&crmGroup=g1",
+    );
+  });
+
   test("keeps calendar chrome params and meeting overlay", () => {
     assert.equal(buildProductTabHref("/inbox", "?foo=1"), "/inbox");
     assert.equal(

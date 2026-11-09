@@ -58,18 +58,29 @@ const CALENDAR_TAB_SEARCH_KEYS = [
  */
 const EMAIL_TAB_SEARCH_KEYS = ["list"] as const;
 
+/** Contacts / orgs keep expand layout + CRM group so tab switches restore chrome. */
+const CONTACT_TAB_SEARCH_KEYS = ["contactLayout", "crmGroup"] as const;
+const ORGANIZATION_TAB_SEARCH_KEYS = ["orgLayout", "crmGroup"] as const;
+
 function isEmailDetailTabPath(path: string): boolean {
   return path.startsWith("/email/") || path.startsWith("/drafts/");
 }
 
+function tabSearchKeysForPath(path: string): readonly string[] | null {
+  if (path === "/calendar") return CALENDAR_TAB_SEARCH_KEYS;
+  if (isEmailDetailTabPath(path)) return EMAIL_TAB_SEARCH_KEYS;
+  if (path === "/contacts" || path.startsWith("/contacts/")) {
+    return CONTACT_TAB_SEARCH_KEYS;
+  }
+  if (path === "/organizations" || path.startsWith("/organizations/")) {
+    return ORGANIZATION_TAB_SEARCH_KEYS;
+  }
+  return null;
+}
+
 export function buildProductTabHref(pathname: string, search = ""): string {
   const path = normalizeTabHref(pathname);
-  const keys =
-    path === "/calendar"
-      ? CALENDAR_TAB_SEARCH_KEYS
-      : isEmailDetailTabPath(path)
-        ? EMAIL_TAB_SEARCH_KEYS
-        : null;
+  const keys = tabSearchKeysForPath(path);
   if (!keys) {
     return path;
   }
