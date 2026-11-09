@@ -263,7 +263,7 @@ describe("getTabTitleForHref", () => {
   test("labels the meeting Director room route", () => {
     assert.equal(
       getTabTitleForHref("/calendar/meetings/abc-uuid/room"),
-      "Meeting room",
+      "Meeting",
     );
   });
 });

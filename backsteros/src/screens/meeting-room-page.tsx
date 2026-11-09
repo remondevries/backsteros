@@ -2,7 +2,12 @@ import { useMemo } from "react";
 import { useParams } from "@tanstack/react-router";
 import { DirectorRoom } from "@backsteros/meetings";
 import "@backsteros/meetings/director.css";
-import { formatMeetingDisplayId, RegisterPageTitle } from "@backsteros/ui";
+import {
+  formatMeetingDisplayId,
+  normalizeMeetingFormat,
+  RegisterPageIcon,
+  RegisterPageTitle,
+} from "@backsteros/ui";
 
 import { useDesktopApi } from "../lib/api-context";
 import { useDesktopSectionBreadcrumb } from "../lib/use-desktop-breadcrumb";
@@ -32,7 +37,11 @@ export function MeetingRoomPage() {
   }, [meetingRouteParam, meetings]);
 
   const displayId = meeting ? formatMeetingDisplayId(meeting.number) : null;
-  const title = meeting?.title?.trim() || "Meeting room";
+  // Tab title is the meeting name only — format icon signals "room".
+  const title = meeting?.title?.trim() || "Meeting";
+  const formatIcon = meeting
+    ? normalizeMeetingFormat(meeting.format)
+    : null;
 
   useDesktopSectionBreadcrumb([
     { label: "Agenda", href: "/calendar" },
@@ -88,7 +97,8 @@ export function MeetingRoomPage() {
       data-meeting-room-state="ready"
       style={{ height: "100%", minHeight: 0 }}
     >
-      <RegisterPageTitle title={`${displayId ?? "Meeting"} · Room`} />
+      <RegisterPageTitle title={title} />
+      <RegisterPageIcon icon={formatIcon} />
       <DirectorRoom
         meetingId={meeting.id}
         meetingTitle={title}

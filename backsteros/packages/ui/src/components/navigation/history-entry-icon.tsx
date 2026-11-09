@@ -5,11 +5,13 @@ import type { ComponentType } from "react";
 import type { HistoryEntryDisplay } from "../../navigation/resolve-history-entry-display.js";
 import type { NavigationItemIconId } from "../../navigation/navigation.js";
 import type { TaskStatus } from "../../tasks/task-status.js";
+import { isMeetingFormat } from "../../meetings/meeting-format.js";
 import { ContactPersonIcon } from "../contacts/contact-person-icon.js";
 import { EntityAvatarIcon } from "../entity/entity-avatar-icon.js";
 import { DefaultProjectIcon } from "../projects/default-project-icon.js";
 import { DocumentIcon } from "../documents/document-icon.js";
 import { LetterIcon } from "../letters/letter-icon.js";
+import { MeetingFormatIcon } from "../meetings/meeting-format-icons.js";
 import { OrganizationIcon } from "../organizations/organization-icon.js";
 import { ProjectOcticon } from "../projects/project-octicon.js";
 import {
@@ -109,6 +111,19 @@ export function HistoryEntryIcon({
   taskStatus,
   working = false,
 }: HistoryEntryIconProps) {
+  // Meeting format keys (video_call / phone_call / in_person) from
+  // RegisterPageIcon — e.g. Director room tabs.
+  if (icon != null && isMeetingFormat(icon)) {
+    return (
+      <span
+        className={`app-side-panel-history-entry-icon ${ICON_CLASS}`}
+        aria-hidden="true"
+      >
+        <MeetingFormatIcon format={icon} size={14} />
+      </span>
+    );
+  }
+
   if (display.kind === "document") {
     return (
       <span className="app-side-panel-history-entry-icon" aria-hidden="true">

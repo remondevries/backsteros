@@ -152,8 +152,9 @@ export function getTabTitleForHref(href: string): string {
     return "Calendar";
   }
 
+  // Interim label until RegisterPageTitle sets the meeting name (no "Room").
   if (/^\/calendar\/meetings\/[^/]+\/room$/.test(normalized)) {
-    return "Meeting room";
+    return "Meeting";
   }
 
   // Keep the Messages section label for conversation / email rows — opaque
