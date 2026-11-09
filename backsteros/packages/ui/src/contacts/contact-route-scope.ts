@@ -3,10 +3,15 @@ import {
   getContactSectionSegment,
   type ContactSectionId,
 } from "./contact-sections.js";
+import { withCrmGroupSearch } from "./contact-group-filter.js";
 import { getContactsHref } from "../navigation/entity-routes.js";
 import { encodeTaskSlug } from "../inbox/inbox-items.js";
 import { formatLetterDisplayId } from "../letters/letters.js";
 import { formatMeetingDisplayId } from "../meetings/meetings.js";
+import {
+  ORGANIZATION_OVERLAY_LAYOUT_PARAM,
+  type OrganizationOverlayLayout,
+} from "../organizations/organization-overlay.js";
 import { INBOX_TASK_KEY } from "../tasks/task-display-id.js";
 
 export type ContactRouteScope =
@@ -59,15 +64,27 @@ export function getScopedContactBasePath(
 export function getOrganizationContactHref(
   organizationRouteParam: string,
   contact: { number?: number | null; key?: string | null; id?: string },
+  options?: {
+    layout?: OrganizationOverlayLayout;
+    groupId?: string | null;
+  },
 ): string {
   const contactRouteParam =
     contact.number != null
       ? String(contact.number)
       : (contact.key ?? contact.id ?? "");
-  return getScopedContactBasePath(contactRouteParam, {
+  const base = getScopedContactBasePath(contactRouteParam, {
     kind: "organization",
     organizationRouteParam,
   });
+  let search = "";
+  if (options?.layout === "page") {
+    search = `?${ORGANIZATION_OVERLAY_LAYOUT_PARAM}=page`;
+  }
+  if (options?.groupId) {
+    search = withCrmGroupSearch(search, options.groupId);
+  }
+  return `${base}${search}`;
 }
 
 export function getScopedContactSectionHref(

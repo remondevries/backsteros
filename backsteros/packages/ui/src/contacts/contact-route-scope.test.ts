@@ -2,10 +2,30 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  getOrganizationContactHref,
   getScopedContactEmailHref,
   isContactScopedEntityDetailPath,
   parseContactScopedEntityDetail,
 } from "./contact-route-scope.js";
+
+test("getOrganizationContactHref preserves expand layout search", () => {
+  assert.equal(
+    getOrganizationContactHref("acme", { number: 42 }),
+    "/organizations/acme/contacts/42",
+  );
+  assert.equal(
+    getOrganizationContactHref("acme", { number: 42 }, { layout: "page" }),
+    "/organizations/acme/contacts/42?orgLayout=page",
+  );
+  assert.equal(
+    getOrganizationContactHref(
+      "acme",
+      { number: 42 },
+      { layout: "page", groupId: "g1" },
+    ),
+    "/organizations/acme/contacts/42?orgLayout=page&crmGroup=g1",
+  );
+});
 
 test("isContactScopedEntityDetailPath matches nested entity details only", () => {
   assert.equal(isContactScopedEntityDetailPath("/contacts/c-1/tasks/t-1"), true);

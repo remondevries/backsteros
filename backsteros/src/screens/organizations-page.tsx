@@ -1,5 +1,7 @@
 import type {
   BankAccount,
+  ClientEstimate,
+  CreateClientEstimateInput,
   FinancialCategory,
   FinancialGoal,
   FinancialRecurring,
@@ -11,6 +13,7 @@ import type {
   MoneybirdSalesInvoiceSummary,
   MoneybirdSettings,
   Organization as ApiOrganization,
+  UpdateClientEstimateInput,
 } from "@backsteros/contracts";
 import {
   coerceOrganizationEmailEntries,
@@ -33,6 +36,7 @@ import {
   CrmActivityFeedView,
   EntityCommunicationListView,
   EntityDetailLayout,
+  FinanceEstimatesView,
   FinanceInvoicesView,
   normalizeContactSocialAccounts,
   OrganizationContactsListView,
@@ -52,7 +56,7 @@ import {
   ScopedLettersListView,
   buildOrganizationProjectsHref,
   resolveScopedLetterDetailHref,
-  getOrganizationContactHref,
+  getContactOverlayHref,
   getOrganizationOverlayHref,
   getOrganizationProjectHref,
   getOrganizationSectionHref,
@@ -106,7 +110,7 @@ import {
   useShellLocation,
   useShellParams,
 } from "../lib/shell-route-keep-alive";
-import { OrganizationEmbeddedContactPanel } from "../components/organization-embedded-contact-panel";
+import { requestOpenHrefInNewTab } from "../lib/open-href-in-new-tab";
 import { useOrganizationPropertyHandlers } from "../lib/crm/use-crm-property-handlers";
 import { useCrmSubjectGroupMembership } from "../lib/crm/use-crm-subject-group-membership";
 import { useEntityDetailOverlayTransition } from "../lib/crm/use-entity-detail-overlay-transition";
@@ -183,14 +187,9 @@ export function OrganizationsPage() {
   const keepAliveActive = useKeepAliveActive();
   const keepAliveFrozen = useKeepAliveFrozen();
   const location = useShellLocation();
-  const {
-    slug: routedSlug,
-    section: sectionParam,
-    contactSlug: nestedContactSlug,
-  } = useShellParams() as {
+  const { slug: routedSlug, section: sectionParam } = useShellParams() as {
     slug?: string;
     section?: string;
-    contactSlug?: string;
   };
   const workspace = useDesktopWorkspaceData();
   const communicationItems = useCommunicationListItems();
@@ -204,10 +203,6 @@ export function OrganizationsPage() {
   const { client } = useDesktopApi();
   const powerSync = useDesktopPowerSync();
   const { organizations, projects, letters, contacts } = workspace;
-  const nestedContact = useMemo(() => {
-    if (!nestedContactSlug) return null;
-    return resolveListItemFromSlug(contacts, nestedContactSlug);
-  }, [contacts, nestedContactSlug]);
   const organizationAvatarSrc = useDesktopAvatarSrcMap(
     "organization",
     keepAliveFrozen ? [] : organizations,
@@ -224,9 +219,8 @@ export function OrganizationsPage() {
     ? resolveListItemFromSlug(organizations, routedSlug)
     : null;
 
-  const overlayLayout: OrganizationOverlayLayout = nestedContactSlug
-    ? "page"
-    : parseOrganizationOverlayLayout(location.searchStr ?? "");
+  const overlayLayout: OrganizationOverlayLayout =
+    parseOrganizationOverlayLayout(location.searchStr ?? "");
   const selectedGroupId = parseCrmGroupId(location.searchStr ?? "");
   const groupsCatalog = useCrmGroupsCatalog(keepAliveActive);
   const effectiveGroupId = groupsCatalog.resolveGroupId(selectedGroupId);
@@ -380,6 +374,16 @@ export function OrganizationsPage() {
     FinancialRecurring[]
   >([]);
 
+  const [orgEstimates, setOrgEstimates] = useState<ClientEstimate[]>([]);
+  const [orgEstimatesLoading, setOrgEstimatesLoading] = useState(false);
+  const [orgEstimatesError, setOrgEstimatesError] = useState<string | null>(
+    null,
+  );
+  const [orgEstimatesCreating, setOrgEstimatesCreating] = useState(false);
+  const [selectedOrgEstimateId, setSelectedOrgEstimateId] = useState<
+    string | null
+  >(null);
+
   const [orgInvoices, setOrgInvoices] = useState<
     MoneybirdSalesInvoiceSummary[]
   >([]);
@@ -439,7 +443,10 @@ export function OrganizationsPage() {
 
   const visibleWorkspaceTabs = useMemo(
     () =>
-      resolveOrganizationWorkspaceTabs({ hasTransactions, hasInvoices }) as {
+      resolveOrganizationWorkspaceTabs({
+        hasTransactions,
+        hasInvoices,
+      }) as {
         id: OrganizationExpandedWorkspaceTabId;
         label: string;
       }[],
@@ -655,11 +662,10 @@ export function OrganizationsPage() {
 
   // Invalid section segment → overview. Legacy full-page workspace tabs
   // (`/projects`, `/contacts`, `/letters`, `/emails`, `/transactions`,
-  // `/invoices`) → expanded overlay layout with the matching workspace tab.
-  // Nested `/contacts/:contactSlug` stays on this page (right-rail contact).
+  // `/estimates`, `/invoices`) → expanded overlay layout with the matching
+  // workspace tab.
   useEffect(() => {
     if (!keepAliveActive) return;
-    if (nestedContactSlug) return;
     if (!selected || !sectionParam || !selectedSlugValue) return;
     if (
       sectionParam === "projects" ||
@@ -667,6 +673,7 @@ export function OrganizationsPage() {
       sectionParam === "letters" ||
       sectionParam === "emails" ||
       sectionParam === "transactions" ||
+      sectionParam === "estimates" ||
       sectionParam === "invoices"
     ) {
       setWorkspaceTab(sectionParam);
@@ -694,19 +701,12 @@ export function OrganizationsPage() {
     effectiveGroupId,
     keepAliveActive,
     navigate,
-    nestedContactSlug,
     sectionParam,
     selected,
     selectedGroupId,
     selectedSlugValue,
     setDetailCollapsed,
   ]);
-
-  useEffect(() => {
-    if (!nestedContactSlug) return;
-    setWorkspaceTab("contacts");
-    setDetailCollapsed(false);
-  }, [nestedContactSlug, setDetailCollapsed]);
 
   useDesktopSectionBreadcrumb(
     selected
@@ -718,23 +718,14 @@ export function OrganizationsPage() {
           {
             label: selected.name,
             href:
-              nestedContact && selectedSlugValue
-                ? getOrganizationOverlayHref(selectedSlugValue, {
-                    layout: "page",
+              profileSection === "overview" || !selectedSlugValue
+                ? undefined
+                : getOrganizationOverlayHref(selectedSlugValue, {
+                    layout: overlayLayout,
                     groupId: effectiveGroupId,
-                  })
-                : profileSection === "overview" || !selectedSlugValue
-                  ? undefined
-                  : getOrganizationOverlayHref(selectedSlugValue, {
-                      layout: overlayLayout,
-                      groupId: effectiveGroupId,
-                    }),
+                  }),
           },
-          ...(nestedContact
-            ? [{ label: nestedContact.name }]
-            : sectionLabel
-              ? [{ label: sectionLabel }]
-              : []),
+          ...(sectionLabel ? [{ label: sectionLabel }] : []),
         ]
       : [{ label: selectedGroupName ?? "Organizations" }],
     { enabled: keepAliveActive },
@@ -861,6 +852,114 @@ export function OrganizationsPage() {
       cancelled = true;
     };
   }, [client, overlayLayout, panelOrganizationId, workspaceTab]);
+
+  useEffect(() => {
+    if (
+      !panelOrganizationId ||
+      overlayLayout !== "page" ||
+      workspaceTab !== "estimates"
+    ) {
+      return;
+    }
+    let cancelled = false;
+    setOrgEstimatesLoading(true);
+    setOrgEstimatesError(null);
+    void (async () => {
+      try {
+        const body = await client.requestJson<{ estimates: ClientEstimate[] }>(
+          `/api/v1/finance/estimates?${new URLSearchParams({
+            organizationId: panelOrganizationId,
+          })}`,
+        );
+        if (cancelled) return;
+        setOrgEstimates(body.estimates ?? []);
+      } catch (error) {
+        if (cancelled) return;
+        setOrgEstimates([]);
+        setOrgEstimatesError(
+          error instanceof Error ? error.message : "Failed to load estimates",
+        );
+      } finally {
+        if (!cancelled) setOrgEstimatesLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [client, overlayLayout, panelOrganizationId, workspaceTab]);
+
+  useEffect(() => {
+    setSelectedOrgEstimateId(null);
+  }, [panelOrganizationId]);
+
+  const createOrgEstimate = useCallback(
+    async (input: CreateClientEstimateInput) => {
+      if (!panelOrganizationId) return;
+      setOrgEstimatesCreating(true);
+      setOrgEstimatesError(null);
+      try {
+        const created = await client.requestJson<ClientEstimate>(
+          "/api/v1/finance/estimates",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              ...input,
+              organizationId: panelOrganizationId,
+            }),
+          },
+        );
+        setOrgEstimates((prev) => [created, ...prev]);
+        setSelectedOrgEstimateId(created.id);
+      } catch (error) {
+        setOrgEstimatesError(
+          error instanceof Error ? error.message : "Failed to create estimate",
+        );
+        throw error;
+      } finally {
+        setOrgEstimatesCreating(false);
+      }
+    },
+    [client, panelOrganizationId],
+  );
+
+  const updateOrgEstimate = useCallback(
+    async (id: string, patch: UpdateClientEstimateInput) => {
+      setOrgEstimatesError(null);
+      setOrgEstimates((prev) =>
+        prev.map((row) => (row.id === id ? { ...row, ...patch } : row)),
+      );
+      try {
+        const updated = await client.requestJson<ClientEstimate>(
+          `/api/v1/finance/estimates/${encodeURIComponent(id)}`,
+          {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(patch),
+          },
+        );
+        setOrgEstimates((prev) =>
+          prev.map((row) =>
+            row.id === id
+              ? {
+                  ...updated,
+                  toContactIds:
+                    patch.toContactIds !== undefined
+                      ? patch.toContactIds
+                      : (updated.toContactIds ?? row.toContactIds ?? []),
+                }
+              : row,
+          ),
+        );
+      } catch (error) {
+        setOrgEstimatesError(
+          error instanceof Error ? error.message : "Failed to update estimate",
+        );
+        throw error;
+      }
+    },
+    [client],
+  );
 
   useEffect(() => {
     if (
@@ -1580,10 +1679,18 @@ export function OrganizationsPage() {
       return (
         <OrganizationContactsListView
           contacts={orgContacts}
-          selectedContactId={nestedContact?.id ?? null}
-          onSelectContact={(contact) =>
-            navigate(getOrganizationContactHref(organizationSlug, contact))
-          }
+          getContactHref={(contact) => {
+            // Standalone expanded contact: detail rail on the right +
+            // Meetings/Messages/Tasks/… workspace tabs in the content area.
+            const routeParam = getUniqueListItemRouteParam(contact, contacts);
+            return getContactOverlayHref(routeParam, { layout: "page" });
+          }}
+          onSelectContact={(contact) => {
+            const routeParam = getUniqueListItemRouteParam(contact, contacts);
+            const href = getContactOverlayHref(routeParam, { layout: "page" });
+            primeTabTitle(href, contact.name);
+            requestOpenHrefInNewTab(href);
+          }}
         />
       );
     }
@@ -1611,6 +1718,41 @@ export function OrganizationsPage() {
             onCreateOrganizationFromQuery={(query) =>
               workspace.createOrganization({ name: query })
             }
+          />
+        </div>
+      );
+    }
+
+    if (sectionId === "estimates") {
+      return (
+        <div className="organization-detail__finance-section">
+          <FinanceEstimatesView
+            embedded
+            lockedOrganizationId={panelOrganizationId}
+            estimates={orgEstimates}
+            organizations={orgListItem ? [orgListItem] : []}
+            projects={orgProjects.map((project) => ({
+              id: project.id,
+              name: project.name,
+              key: project.key,
+            }))}
+            contactOptions={orgContacts.map((contact) => ({
+              value: contact.id,
+              label: contact.name,
+            }))}
+            contactOrganizationById={Object.fromEntries(
+              orgContacts.map((contact) => [
+                contact.id,
+                contact.organizationId ?? panelOrganizationId,
+              ]),
+            )}
+            loading={orgEstimatesLoading}
+            error={orgEstimatesError}
+            selectedEstimateId={selectedOrgEstimateId}
+            onSelectedEstimateChange={setSelectedOrgEstimateId}
+            creating={orgEstimatesCreating}
+            onCreateEstimate={createOrgEstimate}
+            onUpdateEstimate={updateOrgEstimate}
           />
         </div>
       );
@@ -1917,12 +2059,7 @@ export function OrganizationsPage() {
         contentFaded={contentFaded}
         workspaceFaded={workspaceFaded}
         overlayLayout={overlayLayout}
-        title={
-          nestedContact?.name ??
-          panelOrganization?.name ??
-          selected?.name ??
-          "Organization"
-        }
+        title={panelOrganization?.name ?? selected?.name ?? "Organization"}
         onExpand={expandOverlay}
         onCollapse={collapseOverlay}
         onHide={hideDetail}
@@ -1934,18 +2071,6 @@ export function OrganizationsPage() {
           setWorkspaceTab(tab);
           setWorkspaceChatId(null);
           chatInbox.selectConversation(null);
-          if (
-            nestedContactSlug &&
-            tab !== "contacts" &&
-            selectedSlugValue
-          ) {
-            navigate(
-              getOrganizationOverlayHref(selectedSlugValue, {
-                layout: "page",
-                groupId: effectiveGroupId,
-              }),
-            );
-          }
         }}
         renderWorkspaceTab={(tab) => {
           if (workspaceChatId) {
@@ -1998,27 +2123,7 @@ export function OrganizationsPage() {
           return renderSection(tab);
         }}
       >
-        {nestedContact ? (
-          <OrganizationEmbeddedContactPanel
-            contact={
-              orgContacts.find((entry) => entry.id === nestedContact.id) ?? {
-                ...nestedContact,
-                avatarSrc:
-                  contactAvatarSrc[nestedContact.id] ??
-                  nestedContact.avatarSrc ??
-                  null,
-              }
-            }
-            active={keepAliveActive}
-            onSelectRelatedContact={(contactId) => {
-              const target = contacts.find((entry) => entry.id === contactId);
-              if (!target || !selectedSlugValue) return;
-              navigate(getOrganizationContactHref(selectedSlugValue, target));
-            }}
-          />
-        ) : (
-          renderOrganizationDetail()
-        )}
+        {renderOrganizationDetail()}
       </OrganizationDetailOverlay>
     </div>
   );

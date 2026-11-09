@@ -30,8 +30,12 @@ export function withEntityDetailPageLayout(href: string): string {
     return `${pathname}${query ? `?${query}` : ""}${hash ?? ""}`;
   }
 
+  // Org profile card only — nested `/contacts/` or `/projects/` are other
+  // surfaces (full-page contact / project), not the organization overlay.
   if (
-    /^\/organizations\/[^/]+/.test(pathname) &&
+    /^\/organizations\/[^/]+(?:\/(?:overview|details|activity))?$/.test(
+      pathname,
+    ) &&
     !pathname.startsWith("/organizations/new")
   ) {
     if (parseOrganizationOverlayLayout(searchStr) === "page") {

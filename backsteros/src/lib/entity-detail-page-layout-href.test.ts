@@ -37,4 +37,15 @@ describe("withEntityDetailPageLayout", () => {
       "/contacts/new",
     );
   });
+
+  it("leaves org-scoped contact and project detail hrefs unchanged", () => {
+    assert.equal(
+      withEntityDetailPageLayout("/organizations/acme/contacts/42"),
+      "/organizations/acme/contacts/42",
+    );
+    assert.equal(
+      withEntityDetailPageLayout("/organizations/acme/projects/bos"),
+      "/organizations/acme/projects/bos",
+    );
+  });
 });

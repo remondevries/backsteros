@@ -57,6 +57,34 @@ test("snapshotFor keeps nested contact letter/task/meeting slugs", () => {
   assert.equal(meeting.params.meetingSlug, "m-3");
 });
 
+test("snapshotFor parses org-scoped contact on organizations surface", () => {
+  const nested = snapshotFor(
+    "organizations",
+    "/organizations/acme/contacts/42",
+    "?orgLayout=page",
+  );
+  assert.equal(nested.params.slug, "acme");
+  assert.equal(nested.params.contactSlug, "42");
+  assert.equal(nested.params.section, undefined);
+
+  const section = snapshotFor(
+    "organizations",
+    "/organizations/acme/contacts/42/details",
+    "",
+  );
+  assert.equal(section.params.contactSlug, "42");
+  assert.equal(section.params.section, "details");
+
+  const orgSection = snapshotFor(
+    "organizations",
+    "/organizations/acme/contacts",
+    "",
+  );
+  assert.equal(orgSection.params.slug, "acme");
+  assert.equal(orgSection.params.section, "contacts");
+  assert.equal(orgSection.params.contactSlug, undefined);
+});
+
 test("snapshotFor still parses global letters slug", () => {
   const snapshot = snapshotFor("letters", "/letters/l-4", "");
   assert.equal(snapshot.params.slug, "l-4");

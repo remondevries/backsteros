@@ -46,6 +46,7 @@ export const ORGANIZATION_EXPANDED_WORKSPACE_TAB_IDS = [
   "letters",
   "emails",
   "transactions",
+  "estimates",
   "invoices",
 ] as const;
 
@@ -61,6 +62,7 @@ export const ORGANIZATION_EXPANDED_WORKSPACE_TABS: readonly {
   { id: "letters", label: "Letters" },
   { id: "emails", label: "Messages" },
   { id: "transactions", label: "Transactions" },
+  { id: "estimates", label: "Estimates" },
   { id: "invoices", label: "Invoices" },
 ];
 

@@ -13,6 +13,7 @@ export const ORGANIZATION_SECTION_IDS = [
   "emails",
   "contacts",
   "transactions",
+  "estimates",
   "invoices",
 ] as const;
 
@@ -40,6 +41,7 @@ export const ORGANIZATION_SECTIONS: readonly OrganizationSectionConfig[] = [
   { id: "emails", label: "Messages" },
   { id: "contacts", label: "Contacts" },
   { id: "transactions", label: "Transactions" },
+  { id: "estimates", label: "Estimates" },
   { id: "invoices", label: "Invoices" },
 ];
 
@@ -55,18 +57,25 @@ export const ORGANIZATION_BASE_SECTION_IDS = [
 
 export type VisibleOrganizationSectionsOptions = {
   hasTransactions?: boolean;
+  /**
+   * When false, hide Estimates. Defaults to true so orgs can create the first
+   * estimate from the workspace (unlike Moneybird invoices).
+   */
+  hasEstimates?: boolean;
   hasInvoices?: boolean;
 };
 
 /**
  * Organization pill tabs. Transactions / Invoices only appear when the org has
  * linked financial rows (or Moneybird invoices via `moneybirdContactId`).
+ * Estimates stay visible by default so new quotes can be created in-context.
  */
 export function resolveVisibleOrganizationSections(
   options: VisibleOrganizationSectionsOptions = {},
 ): OrganizationSectionConfig[] {
   return ORGANIZATION_SECTIONS.filter((section) => {
     if (section.id === "transactions") return Boolean(options.hasTransactions);
+    if (section.id === "estimates") return options.hasEstimates !== false;
     if (section.id === "invoices") return Boolean(options.hasInvoices);
     return true;
   });

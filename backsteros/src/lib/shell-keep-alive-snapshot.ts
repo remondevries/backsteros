@@ -106,8 +106,24 @@ export function snapshotFor(
     }
   }
   if (surface === "organizations") {
+    // /organizations/$slug/...
+    // /organizations/$slug/contacts/$contactSlug/...
     params.slug = parts[1];
-    params.section = parts[2];
+    if (parts[2] === "contacts" && parts[3]) {
+      params.contactSlug = parts[3];
+      params.section = parts[4];
+      if (parts[4] === "letters" && parts[5]) {
+        params.letterSlug = parts[5];
+      }
+      if (parts[4] === "tasks" && parts[5]) {
+        params.taskSlug = parts[5];
+      }
+      if (parts[4] === "meetings" && parts[5]) {
+        params.meetingSlug = parts[5];
+      }
+    } else {
+      params.section = parts[2];
+    }
   }
   if (surface === "letters") {
     params.slug = parts[1];

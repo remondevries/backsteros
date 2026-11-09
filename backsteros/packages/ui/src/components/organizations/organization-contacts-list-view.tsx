@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef } from "react";
+import { useRef, type MouseEvent } from "react";
 
 import type { ContactListItem } from "../../navigation/entity-routes.js";
 import {
@@ -16,16 +16,26 @@ import {
 
 export type OrganizationContactsListViewProps = {
   contacts: ContactListItem[];
+  /** Real contact detail href — required so rows are links (new-tab / Cmd-click). */
+  getContactHref: (contact: ContactListItem) => string;
   onSelectContact?: (contact: ContactListItem) => void;
   selectedContactId?: string | null;
 };
 
+function isModifiedClick(event: MouseEvent): boolean {
+  return event.metaKey || event.ctrlKey || event.shiftKey || event.altKey;
+}
+
 /**
  * Organization contacts list — name / subtitle rows with optional uploaded
  * avatar only (same rule as contacts/orgs side panels — no default icon).
+ *
+ * Rows are plain anchors (not ClientLink) so primary-click can open a new
+ * product tab without the shell link handler dismissing the org keep-alive.
  */
 export function OrganizationContactsListView({
   contacts,
+  getContactHref,
   onSelectContact,
   selectedContactId = null,
 }: OrganizationContactsListViewProps) {
@@ -72,12 +82,22 @@ export function OrganizationContactsListView({
           const subtitle = [contact.title, contact.email]
             .filter(Boolean)
             .join(" · ");
+          const href = getContactHref(contact);
           return (
             <li key={contact.id} {...keyboardNavItemProps(contact.id)}>
-              <button
-                type="button"
+              <a
+                href={href}
                 className={`organization-entity-row ${keyboardNavListItemClass(highlightedId === contact.id)}`}
-                onClick={() => onSelectContact?.(contact)}
+                onClick={(event) => {
+                  // Cmd/Ctrl-click keeps the real href so ModClickNewTabListener
+                  // can open a product tab. Plain click uses onSelectContact
+                  // (also new-tab from the org Contacts tab).
+                  if (isModifiedClick(event)) return;
+                  if (event.button !== 0) return;
+                  event.preventDefault();
+                  event.stopPropagation();
+                  onSelectContact?.(contact);
+                }}
               >
                 <EntityListAvatar
                   src={contact.avatarSrc}
@@ -94,7 +114,7 @@ export function OrganizationContactsListView({
                     </span>
                   ) : null}
                 </span>
-              </button>
+              </a>
             </li>
           );
         })}
