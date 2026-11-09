@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useSyncExternalStore } from "react";
 import {
+  DEFAULT_MEETING_FORMAT,
   MeetingFormatIcon,
   type MeetingFormat,
 } from "@backsteros/ui";
@@ -22,16 +23,16 @@ function prefersReducedMotion(): boolean {
 }
 
 /**
- * Meeting-format tab glyph with live media chrome:
- * - green cam pip (top-left) when the local camera track is published
- * - orange speaking ring around the format icon when mic is on (same gated
- *   curve as the host avatar in the room stage)
+ * Top product-tab meeting glyph with live media chrome (not the stage avatar):
+ * - green pip = camera published
+ * - amber pip = mic unmuted
+ * - orange ring around the glyph grows with speech energy
  */
 export function RoomTabMediaIcon({
-  format,
+  format = DEFAULT_MEETING_FORMAT,
   meetingId,
 }: {
-  format: MeetingFormat;
+  format?: MeetingFormat;
   meetingId: string;
 }) {
   useSyncExternalStore(
@@ -54,13 +55,12 @@ export function RoomTabMediaIcon({
           ? normalizeAudioLevel(rawLevel)
           : 0;
       root.style.setProperty("--avatar-audio-level", String(display));
+      root.dataset.audioLevel = display.toFixed(2);
     };
 
     paint(getRoomTabMediaAudioLevel(meetingId));
     const stop = subscribeRoomTabMediaAudio(meetingId, paint);
 
-    // Keep painting from the store every frame while mic is live so the tab
-    // ring cannot fall behind React effect scheduling / missed emits.
     let frame = 0;
     const tick = () => {
       if (micEnabledRef.current) {
@@ -92,12 +92,16 @@ export function RoomTabMediaIcon({
       ]
         .filter(Boolean)
         .join(" ")}
+      data-meeting-id={meetingId}
       aria-label={statusLabel}
       title={statusLabel}
     >
       <MeetingFormatIcon format={format} size={14} />
       {discrete.cameraPublished ? (
         <span className="content-tab-room-icon__cam" aria-hidden="true" />
+      ) : null}
+      {discrete.micEnabled ? (
+        <span className="content-tab-room-icon__mic" aria-hidden="true" />
       ) : null}
     </span>
   );

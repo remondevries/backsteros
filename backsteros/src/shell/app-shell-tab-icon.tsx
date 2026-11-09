@@ -1,6 +1,7 @@
 import { createElement } from "react";
 
 import {
+  DEFAULT_MEETING_FORMAT,
   HistoryEntryIcon,
   isEmailPath,
   isInboxPath,
@@ -51,9 +52,12 @@ function AppShellTabIcon({ tab }: { tab: ProductTab }) {
   const meetingId = isMeetingRoomPath(tab.href)
     ? parseMeetingRoomMeetingId(tab.href)
     : null;
-  if (meetingId && tab.icon != null && isMeetingFormat(tab.icon)) {
+  if (meetingId) {
     return createElement(RoomTabMediaIcon, {
-      format: tab.icon,
+      format:
+        tab.icon != null && isMeetingFormat(tab.icon)
+          ? tab.icon
+          : DEFAULT_MEETING_FORMAT,
       meetingId,
     });
   }
