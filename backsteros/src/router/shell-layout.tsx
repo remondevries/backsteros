@@ -18,6 +18,7 @@ import {
 } from "@backsteros/ui";
 
 import { AppShell } from "../shell/app-shell";
+import { RoomSessionKeepAlive } from "../shell/room-session-keep-alive";
 import {
   resolvePendingPageSurface,
   type PendingPageSurface,
@@ -232,6 +233,7 @@ function ShellRouteContent({
             </KeepAlivePane>
           );
         })}
+        <RoomSessionKeepAlive />
         <KeepAliveOutletGate showOutlet={showOutlet}>
           <div className="keep-alive-outlet">
             <MemoizedShellRouteTree trail={trail} />

@@ -127,4 +127,47 @@ describe("room-tab-media-store", () => {
       "Camera off, microphone on",
     );
   });
+
+  test("per-room indicators persist until clear; no cross-room leakage", () => {
+    const roomA = "meet-persist-a";
+    const roomB = "meet-persist-b";
+    clearRoomTabMedia(roomA);
+    clearRoomTabMedia(roomB);
+
+    setRoomTabMedia(roomA, {
+      cameraPublished: true,
+      micEnabled: true,
+      audioLevel: 0.25,
+    });
+    setRoomTabMedia(roomB, {
+      cameraPublished: false,
+      micEnabled: true,
+      audioLevel: 0.1,
+    });
+
+    // Backgrounding room A must not clear its discrete state by itself.
+    assert.deepEqual(getRoomTabMediaDiscrete(roomA), {
+      cameraPublished: true,
+      micEnabled: true,
+    });
+    assert.equal(getRoomTabMediaAudioLevel(roomA), 0.25);
+    assert.deepEqual(getRoomTabMediaDiscrete(roomB), {
+      cameraPublished: false,
+      micEnabled: true,
+    });
+
+    clearRoomTabMedia(roomA);
+    assert.deepEqual(getRoomTabMediaDiscrete(roomA), {
+      cameraPublished: false,
+      micEnabled: false,
+    });
+    assert.equal(getRoomTabMediaAudioLevel(roomA), 0);
+    assert.deepEqual(
+      getRoomTabMediaDiscrete(roomB),
+      { cameraPublished: false, micEnabled: true },
+      "clearing room A must not touch room B",
+    );
+
+    clearRoomTabMedia(roomB);
+  });
 });

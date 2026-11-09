@@ -12,10 +12,18 @@ import {
   useTabShortcuts,
   type ProductTabsState,
 } from "@backsteros/ui/shell";
+import {
+  isMeetingRoomPath,
+  parseMeetingRoomMeetingId,
+} from "@backsteros/ui";
 import { useNavigationHistory } from "@backsteros/ui/navigation";
 
 import { withEntityDetailPageLayout } from "../lib/entity-detail-page-layout-href";
 import { formatResolvedAppHref, resolveAppHref } from "../lib/resolve-app-href";
+import {
+  collectOpenRoomMeetingIds,
+  setOpenRoomMeetingIds,
+} from "../lib/room-session-keep-alive";
 import { navigateToHref } from "../router/navigate-href";
 import { useShellLocation } from "../lib/shell-route-keep-alive";
 import { loadTabsState, TABS_STORAGE_KEY } from "./app-shell-tabs";
@@ -147,6 +155,18 @@ export function useShellTabs() {
     },
     [],
   );
+
+  // Keep Director sessions mounted for every open room tab (not just the
+  // active route) so cam/mic survive backgrounding.
+  useEffect(() => {
+    setOpenRoomMeetingIds(
+      collectOpenRoomMeetingIds(
+        tabsState.tabs,
+        isMeetingRoomPath,
+        parseMeetingRoomMeetingId,
+      ),
+    );
+  }, [tabsState.tabs]);
 
   useEffect(() => {
     const payload = JSON.stringify(tabsState);
