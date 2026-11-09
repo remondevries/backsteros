@@ -4,31 +4,83 @@ import {
   createContext,
   useCallback,
   useContext,
+  useId,
   useLayoutEffect,
   useMemo,
   useState,
   type ReactNode,
 } from "react";
 
+export type ChromeHeaderRegistration = {
+  priority: number;
+  header: ReactNode;
+};
+
 type ChromeHeaderContextValue = {
   header: ReactNode;
-  setHeader: (next: ReactNode) => void;
+  setRegistration: (
+    id: string,
+    next: ChromeHeaderRegistration | null,
+  ) => void;
 };
 
 const ChromeHeaderContext = createContext<ChromeHeaderContextValue | null>(
   null,
 );
 
+/** Pick the highest-priority registration (stable tie → last write wins). */
+export function selectChromeHeader(
+  registrations: Iterable<ChromeHeaderRegistration>,
+): ReactNode {
+  let best: ReactNode = null;
+  let bestPriority = Number.NEGATIVE_INFINITY;
+  for (const entry of registrations) {
+    if (entry.priority >= bestPriority) {
+      bestPriority = entry.priority;
+      best = entry.header;
+    }
+  }
+  return best;
+}
+
 export function ChromeHeaderProvider({ children }: { children: ReactNode }) {
-  const [header, setHeaderState] = useState<ReactNode>(null);
-  const setHeader = useCallback((next: ReactNode) => {
-    // Bail out on same reference so registering a stable header does not
-    // recreate context and re-fire useRegisterChromeHeader.
-    setHeaderState((current) => (Object.is(current, next) ? current : next));
-  }, []);
+  const [registrations, setRegistrations] = useState(
+    () => new Map<string, ChromeHeaderRegistration>(),
+  );
+
+  const setRegistration = useCallback(
+    (id: string, next: ChromeHeaderRegistration | null) => {
+      setRegistrations((current) => {
+        const existing = current.get(id);
+        if (!next) {
+          if (!existing) return current;
+          const map = new Map(current);
+          map.delete(id);
+          return map;
+        }
+        if (
+          existing &&
+          existing.priority === next.priority &&
+          Object.is(existing.header, next.header)
+        ) {
+          return current;
+        }
+        const map = new Map(current);
+        map.set(id, next);
+        return map;
+      });
+    },
+    [],
+  );
+
+  const header = useMemo(
+    () => selectChromeHeader(registrations.values()),
+    [registrations],
+  );
+
   const value = useMemo(
-    () => ({ header, setHeader }),
-    [header, setHeader],
+    () => ({ header, setRegistration }),
+    [header, setRegistration],
   );
 
   return (
@@ -46,23 +98,39 @@ export function useChromeHeader() {
   return context.header;
 }
 
+export type UseRegisterChromeHeaderOptions = {
+  /**
+   * Higher priority wins when multiple screens register at once (e.g. a
+   * backgrounded room session keeping its control bar over a normal tab).
+   */
+  priority?: number;
+};
+
 /**
- * Register a chrome header for the current screen. Clears on unmount.
+ * Register a chrome header for the current screen. Clears on unmount / false.
  * No-op when provider is absent (keeps presentational views host-agnostic).
  * Pass `false` to skip registration entirely (nested overlays that must not
  * clobber the host trail).
  *
- * Depend on `setHeader` only — the context value object changes whenever the
- * header node updates, and listing `context` here caused Maximum update depth
- * (cleanup setHeader(null) → new context → effect → setHeader → …).
+ * Multiple registrants are tracked by id; the highest priority header is shown
+ * so releasing a high-priority room chrome restores the underlying page trail
+ * without requiring that page to remount.
  */
-export function useRegisterChromeHeader(header: ReactNode | false) {
-  const setHeader = useContext(ChromeHeaderContext)?.setHeader;
+export function useRegisterChromeHeader(
+  header: ReactNode | false,
+  options?: UseRegisterChromeHeaderOptions,
+) {
+  const setRegistration = useContext(ChromeHeaderContext)?.setRegistration;
+  const id = useId();
+  const priority = options?.priority ?? 0;
 
   useLayoutEffect(() => {
-    if (!setHeader) return;
-    if (header === false) return;
-    setHeader(header);
-    return () => setHeader(null);
-  }, [setHeader, header]);
+    if (!setRegistration) return;
+    if (header === false) {
+      setRegistration(id, null);
+      return () => setRegistration(id, null);
+    }
+    setRegistration(id, { priority, header });
+    return () => setRegistration(id, null);
+  }, [setRegistration, header, priority, id]);
 }

@@ -5,6 +5,7 @@ import {
   collectOpenRoomMeetingIds,
   getOpenRoomMeetingIds,
   getOpenRoomMeetingIdsEpoch,
+  nextRoomChromeOwnerId,
   nextVisitedRoomMeetingIds,
   resetOpenRoomMeetingIdsForTests,
   setOpenRoomMeetingIds,
@@ -94,5 +95,30 @@ describe("room-session-keep-alive", () => {
       null,
     );
     assert.deepEqual(visited, ["meet-a"]);
+  });
+
+  test("chrome owner follows active room, survives normal tab, no cross-room leak", () => {
+    let owner = nextRoomChromeOwnerId(null, "meet-a", ["meet-a"]);
+    assert.equal(owner, "meet-a");
+
+    // Room → normal tab: keep A as chrome owner while mounted.
+    owner = nextRoomChromeOwnerId(owner, null, ["meet-a"]);
+    assert.equal(owner, "meet-a");
+
+    // Visit B — B becomes owner; A stays mounted but does not keep chrome.
+    owner = nextRoomChromeOwnerId(owner, "meet-b", ["meet-a", "meet-b"]);
+    assert.equal(owner, "meet-b");
+
+    // Background again — still B (last focused), not A.
+    owner = nextRoomChromeOwnerId(owner, null, ["meet-a", "meet-b"]);
+    assert.equal(owner, "meet-b");
+
+    // Close B — fall back to A (still mounted).
+    owner = nextRoomChromeOwnerId(owner, null, ["meet-a"]);
+    assert.equal(owner, "meet-a");
+
+    // Close last room — no chrome owner.
+    owner = nextRoomChromeOwnerId(owner, null, []);
+    assert.equal(owner, null);
   });
 });

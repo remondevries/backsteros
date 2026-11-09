@@ -3797,8 +3797,11 @@ export {
 
 export {
   ChromeHeaderProvider,
+  selectChromeHeader,
   useChromeHeader,
   useRegisterChromeHeader,
+  type ChromeHeaderRegistration,
+  type UseRegisterChromeHeaderOptions,
 } from "./components/shell/chrome-header-context.js";
 
 export {

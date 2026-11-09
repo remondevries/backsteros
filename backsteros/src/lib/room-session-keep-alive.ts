@@ -67,6 +67,28 @@ export function nextVisitedRoomMeetingIds(
   return next;
 }
 
+/**
+ * Which mounted room owns the breadcrumb control bar.
+ * Active room route always wins; on a normal tab keep the last owner while
+ * that session stays mounted; otherwise fall back to the first mounted room.
+ */
+export function nextRoomChromeOwnerId(
+  current: string | null,
+  activeMeetingId: string | null,
+  mountedIds: readonly string[],
+): string | null {
+  if (activeMeetingId && mountedIds.includes(activeMeetingId)) {
+    return activeMeetingId;
+  }
+  if (current && mountedIds.includes(current)) {
+    return current;
+  }
+  return mountedIds[0] ?? null;
+}
+
+/** Higher than normal page trails so backgrounded room chrome stays visible. */
+export const ROOM_CHROME_HEADER_PRIORITY = 10;
+
 export function setOpenRoomMeetingIds(next: readonly string[]): void {
   const normalized = next
     .map((id) => id.trim())

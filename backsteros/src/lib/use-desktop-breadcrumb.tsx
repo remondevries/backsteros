@@ -53,6 +53,11 @@ export type UseDesktopSectionBreadcrumbOptions = {
    * e.g. Timetracking / calendar task overlay).
    */
   enabled?: boolean;
+  /**
+   * Chrome registration priority. Room sessions use a higher value so their
+   * control bar stays visible over normal-tab trails while the room is open.
+   */
+  priority?: number;
 };
 
 /**
@@ -73,6 +78,7 @@ export function useDesktopSectionBreadcrumb(
   const trailingPanel = options?.trailingPanel;
   const className = options?.className;
   const enabled = options?.enabled !== false;
+  const priority = options?.priority ?? 0;
 
   const header = useMemo(() => {
     if (!enabled || items.length === 0) return null;
@@ -112,5 +118,5 @@ export function useDesktopSectionBreadcrumb(
     trailingPanel,
   ]);
 
-  useRegisterChromeHeader(enabled ? header : false);
+  useRegisterChromeHeader(enabled ? header : false, { priority });
 }
