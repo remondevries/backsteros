@@ -21,7 +21,7 @@ function prefersReducedMotion(): boolean {
 }
 
 /**
- * Meeting-format tab glyph with a top live pip:
+ * Meeting-format tab glyph with a top-left live pip:
  * - green fill when the local camera track is published
  * - audio-level outline (avatar ring pattern) when mic is on and speaking
  * - mic-only stays outline-capable without a green fill
