@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 
 import {
   buildEmailMessagePartyAutoLinks,
+  buildOrphanEmailMessagePartyUnlinks,
   classifyStoredEmailMessageParty,
   collectMailboxContactIds,
   matchEmailMessageParty,
@@ -597,5 +598,66 @@ describe("email-message-party", () => {
       },
     });
     assert.deepEqual(next, {});
+  });
+
+  it("null-unlinks orphan message_parties keys no longer in the live thread", () => {
+    const orphanId =
+      "<10E99EFD-5FC0-41EB-965A-790EE9FA0B8F@quicknet.nl>";
+    const liveId =
+      "<YMt-Q000000000000000000000000000000000000000000000TMNA1800NZTw3zvkRgSQQpI9mWtxjQ@sfdc.net>";
+    assert.deepEqual(
+      buildOrphanEmailMessagePartyUnlinks({
+        messages: [{ messageId: liveId }],
+        existing: {
+          [orphanId]: {
+            contactId: "yvonne",
+            organizationId: "o-quicknet",
+          },
+          [liveId]: {
+            contactId: "jeroen",
+            organizationId: "o-moneybird",
+          },
+        },
+      }),
+      {
+        [orphanId]: { contactId: null, organizationId: null },
+      },
+    );
+
+    const ours = new Set(["accounts@lemo-design.com"]);
+    const next = buildEmailMessagePartyAutoLinks({
+      messages: [
+        {
+          messageId: liveId,
+          from: "adyen@sfdc.net",
+          to: ["accounts@lemo-design.com"],
+        },
+      ],
+      ourMailboxEmails: ours,
+      contacts: [
+        {
+          id: "jeroen",
+          organizationId: "o-moneybird",
+          email: "jeroen@moneybird.nl",
+          emails: [],
+        },
+      ],
+      organizations: [
+        { id: "o-moneybird", email: "info@moneybird.nl", emails: [] },
+      ],
+      existing: {
+        [orphanId]: {
+          contactId: "yvonne",
+          organizationId: "o-quicknet",
+        },
+        [liveId]: {
+          contactId: "jeroen",
+          organizationId: "o-moneybird",
+        },
+      },
+    });
+    assert.deepEqual(next, {
+      [orphanId]: { contactId: null, organizationId: null },
+    });
   });
 });

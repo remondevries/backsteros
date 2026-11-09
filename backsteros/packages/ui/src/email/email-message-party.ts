@@ -173,6 +173,33 @@ export function classifyStoredEmailMessageParty(input: {
 }
 
 /**
+ * Explicit unlinks for message_parties keys that are no longer in the live
+ * thread. Metadata merge cannot delete keys, so orphans are cleared to
+ * `{ contactId: null, organizationId: null }` — same shape as a manual unlink —
+ * so they stop polluting list-card partyContactIds.
+ */
+export function buildOrphanEmailMessagePartyUnlinks(input: {
+  messages: readonly { messageId?: string | null }[];
+  existing: EmailMessagePartyMap | null | undefined;
+}): EmailMessagePartyMap {
+  const existing = input.existing ?? {};
+  const activeIds = new Set<string>();
+  for (const entry of input.messages) {
+    const id = entry.messageId?.trim();
+    if (id) activeIds.add(id);
+  }
+  const next: EmailMessagePartyMap = {};
+  for (const [rawId, party] of Object.entries(existing)) {
+    const messageId = rawId.trim();
+    if (!messageId || activeIds.has(messageId)) continue;
+    // Already an explicit unlink — nothing to write.
+    if (isExplicitEmailPartyUnlink(party)) continue;
+    next[messageId] = { contactId: null, organizationId: null };
+  }
+  return next;
+}
+
+/**
  * Propose auto-link parties from each message’s From address. Contact first,
  * else organization. Sent vs received does not change the rule — From only.
  *
@@ -180,6 +207,10 @@ export function classifyStoredEmailMessageParty(input: {
  * Keeps explicit unlinks and links that still match the address. Replaces
  * stale mismatches (e.g. a thread-level seed on the wrong From). Unknown
  * addresses stay unlinked, same as a single-message thread with no match.
+ *
+ * Also emits explicit unlinks for orphan messageIds that are no longer in the
+ * live thread (stale Message-ID keys that would otherwise keep wrong faces on
+ * the Messages list card).
  */
 export function buildEmailMessagePartyAutoLinks(input: {
   messages: readonly {
@@ -193,7 +224,12 @@ export function buildEmailMessagePartyAutoLinks(input: {
   organizations: readonly MatchableOrganization[];
   existing: EmailMessagePartyMap | null | undefined;
 }): EmailMessagePartyMap {
-  const next: EmailMessagePartyMap = {};
+  const next: EmailMessagePartyMap = {
+    ...buildOrphanEmailMessagePartyUnlinks({
+      messages: input.messages,
+      existing: input.existing,
+    }),
+  };
   const existing = input.existing ?? {};
 
   for (const entry of input.messages) {
