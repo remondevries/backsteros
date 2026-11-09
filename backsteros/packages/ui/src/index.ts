@@ -708,6 +708,7 @@ export {
 } from "./email/email-message-html.js";
 export {
   buildEmailMessagePartyAutoLinks,
+  buildOrphanEmailMessagePartyUnlinks,
   classifyStoredEmailMessageParty,
   collectMailboxContactIds,
   contactHasEmailAddress,
@@ -794,6 +795,11 @@ export {
   calendarChangeToMeetingPatch,
   calendarSelectionToMeetingRange,
   calendarEntityFromEvent,
+  calendarEventDurationMs,
+  calendarEventHasExpandedContent,
+  calendarEventHasFullExpandedContent,
+  CALENDAR_EVENT_EXPANDED_MIN_DURATION_MS,
+  CALENDAR_EVENT_FULL_EXPANDED_MIN_DURATION_MS,
   isCalendarMeetingDuplicateModifier,
   meetingCalendarEventClassNames,
   isMeetingCurrentlyActive,
@@ -1966,6 +1972,7 @@ export {
   type EstimateStatusGroup,
 } from "./finance/estimate-status.js";
 export {
+  buildEstimateStatusAmountChartAxisFrame,
   buildEstimateStatusAmountChartSeries,
   buildEstimateStatusMonthContributions,
   estimateChartYears,
@@ -2045,6 +2052,7 @@ export {
 export {
   accountChartHasYearActivity,
   aggregateBankAccountCashflowMonths,
+  buildAccountIncomeExpenseChartAxisFrame,
   buildAccountIncomeExpenseChartSeries,
   buildAccountIncomeExpenseChartSeriesFromCashflow,
   buildMonthIncomeExpenseDailyChartSeries,
@@ -5481,6 +5489,10 @@ export {
   ProjectsListSkeleton,
   type ProjectsListSkeletonProps,
 } from "./components/skeletons/projects-list-skeleton.js";
+export {
+  InvoicesListSkeleton,
+  type InvoicesListSkeletonProps,
+} from "./components/skeletons/invoices-list-skeleton.js";
 export { MainPaneSkeletonShell } from "./components/skeletons/main-pane-skeleton-shell.js";
 export { InboxListSkeleton } from "./components/skeletons/inbox-list-skeleton.js";
 export { AreasListSkeleton } from "./components/skeletons/areas-list-skeleton.js";
