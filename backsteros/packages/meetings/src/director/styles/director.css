@@ -504,9 +504,6 @@ html.meet-theme-dark {
 }
 
 .director-chrome-host .director__device-select {
-  color: hsl(var(--foreground));
-  border-color: hsl(var(--border));
-  background: hsl(var(--background));
   min-width: 5.5rem;
   max-width: 9rem;
 }
@@ -694,30 +691,28 @@ html.meet-theme-dark {
   min-width: 0;
 }
 
+/* Wrapper around shared PropertyDropdown for mic/camera device pickers. */
 .director__device-select {
   flex: 1 1 auto;
   min-width: 7.5rem;
   max-width: 12rem;
-  height: 1.5rem;
-  border: 1px solid rgba(255, 255, 255, 0.25);
-  border-radius: 6px;
-  padding: 0 0.55rem;
-  font: inherit;
-  font-size: 0.75rem;
-  color: #f2f2f2;
-  background: rgba(0, 0, 0, 0.55);
-  cursor: pointer;
+  min-height: 0;
 }
 
-.director.is-theme-light .director__device-select {
-  color: #15041f;
-  border-color: rgba(21, 4, 31, 0.18);
-  background: rgba(255, 255, 255, 0.72);
+.director__device-select .property-dropdown,
+.director__device-select .property-dropdown-fallback {
+  max-width: 100%;
 }
 
-.director__device-select:disabled {
-  opacity: 0.5;
-  cursor: default;
+.director__device-select .property-dropdown-trigger,
+.director__device-select .property-dropdown-fallback {
+  max-width: 100%;
+}
+
+.director__device-select .property-dropdown-trigger__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .director__stage {

@@ -1,3 +1,6 @@
+import { useMemo } from "react";
+import { PropertyDropdown } from "@backsteros/ui";
+
 export type MediaDeviceOption = {
   deviceId: string;
   label: string;
@@ -13,7 +16,8 @@ type MediaDeviceSelectProps = {
 };
 
 /**
- * Native device picker matching portal lobby/room `device-control select`.
+ * Mic/camera picker using the shared PropertyDropdown (same as task/entity
+ * property selects across the desktop shell).
  */
 export function MediaDeviceSelect({
   devices,
@@ -23,23 +27,34 @@ export function MediaDeviceSelect({
   emptyLabel,
   ariaLabel,
 }: MediaDeviceSelectProps) {
+  const options = useMemo(
+    () =>
+      devices.map((device) => ({
+        value: device.deviceId,
+        label: device.label.trim() || device.deviceId,
+      })),
+    [devices],
+  );
+
+  const selected = options.some((option) => option.value === value)
+    ? value
+    : null;
+
   return (
-    <select
-      className="director__device-select"
-      aria-label={ariaLabel}
-      disabled={disabled || devices.length === 0}
-      value={devices.some((device) => device.deviceId === value) ? value : ""}
-      onChange={(event) => onValueChange(event.target.value)}
-    >
-      {devices.length === 0 ? (
-        <option value="">{emptyLabel}</option>
-      ) : (
-        devices.map((device) => (
-          <option key={device.deviceId} value={device.deviceId}>
-            {device.label}
-          </option>
-        ))
-      )}
-    </select>
+    <div className="director__device-select">
+      <PropertyDropdown
+        value={selected}
+        options={options}
+        onChange={onValueChange}
+        disabled={disabled || devices.length === 0}
+        searchPlaceholder="Search devices…"
+        ariaLabel={ariaLabel}
+        fallbackLabel={emptyLabel}
+        triggerVariant="inlineChip"
+        panelAlign="end"
+        panelWidth={280}
+        hideTriggerIcon
+      />
+    </div>
   );
 }
