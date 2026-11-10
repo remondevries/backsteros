@@ -270,6 +270,7 @@ function FinancePageBody() {
     setSelectedEstimateId,
     createEstimate,
     updateEstimate,
+    deleteEstimate,
   } = useFinanceEstimates({
     client,
     navId,
@@ -642,6 +643,7 @@ function FinancePageBody() {
         creating={estimatesCreating}
         onCreateEstimate={createEstimate}
         onUpdateEstimate={updateEstimate}
+        onDeleteEstimate={deleteEstimate}
       />
     );
   } else if (navId === "investments") {

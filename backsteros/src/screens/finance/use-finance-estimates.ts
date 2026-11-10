@@ -183,6 +183,33 @@ export function useFinanceEstimates({
     [client, refresh],
   );
 
+  const deleteEstimate = useCallback(
+    async (id: string) => {
+      setError(null);
+      try {
+        await client.requestJson(
+          `/api/v1/finance/estimates/${encodeURIComponent(id)}`,
+          { method: "DELETE" },
+        );
+        setEstimates((prev) => prev.filter((row) => row.id !== id));
+        if (estimateIdFromPath === id) {
+          void navigate({
+            to: "/finance/$slug",
+            params: { slug: "estimates" },
+            replace: true,
+          });
+        }
+        return { ok: true as const };
+      } catch (err) {
+        const message =
+          err instanceof Error ? err.message : "Failed to delete estimate";
+        setError(message);
+        return { ok: false as const, error: message };
+      }
+    },
+    [client, estimateIdFromPath, navigate],
+  );
+
   return {
     estimates,
     estimatesLoading: loading,
@@ -192,6 +219,7 @@ export function useFinanceEstimates({
     setSelectedEstimateId,
     createEstimate,
     updateEstimate,
+    deleteEstimate,
     refreshEstimates: refresh,
   };
 }

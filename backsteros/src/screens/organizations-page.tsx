@@ -961,6 +961,27 @@ export function OrganizationsPage() {
     [client],
   );
 
+  const deleteOrgEstimate = useCallback(
+    async (id: string) => {
+      setOrgEstimatesError(null);
+      try {
+        await client.requestJson(
+          `/api/v1/finance/estimates/${encodeURIComponent(id)}`,
+          { method: "DELETE" },
+        );
+        setOrgEstimates((prev) => prev.filter((row) => row.id !== id));
+        setSelectedOrgEstimateId((current) => (current === id ? null : current));
+        return { ok: true as const };
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Failed to delete estimate";
+        setOrgEstimatesError(message);
+        return { ok: false as const, error: message };
+      }
+    },
+    [client],
+  );
+
   useEffect(() => {
     if (
       !panelOrganizationId ||
@@ -1753,6 +1774,7 @@ export function OrganizationsPage() {
             creating={orgEstimatesCreating}
             onCreateEstimate={createOrgEstimate}
             onUpdateEstimate={updateOrgEstimate}
+            onDeleteEstimate={deleteOrgEstimate}
           />
         </div>
       );

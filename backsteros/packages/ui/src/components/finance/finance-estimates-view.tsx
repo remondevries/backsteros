@@ -75,6 +75,8 @@ import { projectTypeDropdownFilter } from "../../dropdowns/searchable-dropdown-o
 import { PropertyDropdown } from "../dropdowns/property-dropdown.js";
 import { SearchableDropdown } from "../dropdowns/searchable-dropdown.js";
 import type { SearchableDropdownOption } from "../dropdowns/searchable-dropdown.js";
+import { RegisterEntityDeleteAction } from "../entity-actions/register-entity-delete-action.js";
+import type { EntityDeleteResult } from "../entity-actions/entity-header-actions-context.js";
 import { EntityDetailLayout } from "../entity/entity-detail-layout.js";
 import { EntityListAvatar } from "../entity/entity-list-avatar.js";
 import { EntityPropertiesSection } from "../entity/entity-properties-section.js";
@@ -140,6 +142,8 @@ export type FinanceEstimatesViewProps = {
     id: string,
     patch: UpdateClientEstimateInput,
   ) => Promise<void>;
+  /** Soft-delete from the breadcrumb ⋯ menu (same pattern as tasks). */
+  onDeleteEstimate?: (id: string) => Promise<EntityDeleteResult>;
   creating?: boolean;
   /**
    * When set (org workspace embed), new estimates are locked to this org and
@@ -1097,6 +1101,7 @@ export function FinanceEstimatesView({
   onSelectedEstimateChange,
   onCreateEstimate,
   onUpdateEstimate,
+  onDeleteEstimate,
   creating = false,
   lockedOrganizationId = null,
   embedded = false,
@@ -1259,18 +1264,44 @@ export function FinanceEstimatesView({
     setTotalAmountEuros("");
   }
 
-  if (selected) {
+  // Detail selection (URL or list) must never flash the overview chart/widgets
+  // skeleton while the estimate row is still resolving from the list fetch.
+  if (selectedEstimateId) {
+    if (!selected) {
+      return (
+        <div
+          className="finance-estimates-view finance-estimates-view--detail"
+          aria-busy={loading || undefined}
+        />
+      );
+    }
+    const displayId = formatEstimateDisplayId(selected.number);
+    const titleLabel = selected.title.trim() || "Untitled estimate";
     return (
-      <FinanceEstimateDetail
-        selected={selected}
-        error={error}
-        organizations={organizations}
-        projects={projects}
-        contactOptions={contactOptions}
-        contactOrganizationById={contactOrganizationById}
-        onUpdateEstimate={onUpdateEstimate}
-        lockOrganization={Boolean(lockedOrgId)}
-      />
+      <>
+        {onDeleteEstimate ? (
+          <RegisterEntityDeleteAction
+            entityLabel={
+              displayId !== "ES-?"
+                ? `estimate ${displayId}`
+                : `estimate "${titleLabel}"`
+            }
+            confirmLabel="Delete estimate"
+            actionVerb="Delete"
+            onDelete={() => onDeleteEstimate(selected.id)}
+          />
+        ) : null}
+        <FinanceEstimateDetail
+          selected={selected}
+          error={error}
+          organizations={organizations}
+          projects={projects}
+          contactOptions={contactOptions}
+          contactOrganizationById={contactOrganizationById}
+          onUpdateEstimate={onUpdateEstimate}
+          lockOrganization={Boolean(lockedOrgId)}
+        />
+      </>
     );
   }
 
