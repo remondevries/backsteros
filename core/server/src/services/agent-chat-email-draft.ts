@@ -219,7 +219,6 @@ export async function defaultResolveEmailDraftRecipient(
     .select({
       id: contacts.id,
       name: contacts.name,
-      firstName: contacts.firstName,
       email: contacts.email,
     })
     .from(contacts)
@@ -474,11 +473,15 @@ async function resolveRecipientList(
 function recipientFirstName(
   to: ChatThreadMessageEmailDraftRecipient[],
 ): string | null {
-  const first = to[0];
-  if (!first) return null;
-  const name = first.name?.trim();
-  if (!name) return null;
-  return name.split(/\s+/).filter(Boolean)[0] ?? null;
+  const names = to.map((recipient) => {
+    const name = recipient.name?.trim();
+    if (!name || name.includes("@")) return null;
+    return name.split(/\s+/).filter(Boolean)[0] ?? null;
+  });
+  const joined = names
+    .filter((name): name is string => Boolean(name))
+    .join(" & ");
+  return joined || null;
 }
 
 /**

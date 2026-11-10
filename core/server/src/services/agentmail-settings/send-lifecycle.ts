@@ -468,6 +468,19 @@ export function recipientFirstNameFromContact(
   return "";
 }
 
+/**
+ * Join resolved To greeting names with ` & ` (no commas — mid-line commas break
+ * greeting strippers). Omits empty entries.
+ */
+export function joinGreetingFirstNames(
+  names: readonly (string | null | undefined)[],
+): string {
+  return names
+    .map((name) => name?.trim())
+    .filter((name): name is string => Boolean(name))
+    .join(" & ");
+}
+
 export function shouldWrapEmailStartBody(input: {
   wrap?: boolean;
   raw?: boolean;
@@ -538,17 +551,35 @@ export async function startEmailThread(
   const wrap = shouldWrapEmailStartBody(input);
   const status = resolveEmailStartStatus(input.status);
 
-  let contact: StartEmailContact | null = null;
+  let linkedContact: StartEmailContact | null = null;
   if (input.contactId) {
-    contact = await deps.loadContact(workspaceId, input.contactId);
-    if (!contact) {
+    linkedContact = await deps.loadContact(workspaceId, input.contactId);
+    if (!linkedContact) {
       throw new AgentMailApiError(404, "", "Contact not found");
     }
-  } else {
-    contact = await deps.resolveContactByEmail(workspaceId, to[0]!);
   }
-  const recipientFirstName = recipientFirstNameFromContact(contact);
-  const contactId = contact?.id ?? input.contactId ?? null;
+
+  let primaryContact: StartEmailContact | null = linkedContact;
+  const greetingNames: string[] = [];
+  const linkedEmail = linkedContact?.email?.trim().toLowerCase() || null;
+  const linkedMatchesATo = Boolean(
+    linkedEmail &&
+      to.some((address) => address.trim().toLowerCase() === linkedEmail),
+  );
+  for (let index = 0; index < to.length; index += 1) {
+    const email = to[index]!;
+    const contact =
+      linkedContact && linkedEmail && email.trim().toLowerCase() === linkedEmail
+        ? linkedContact
+        : !linkedMatchesATo && index === 0 && linkedContact
+          ? linkedContact
+          : await deps.resolveContactByEmail(workspaceId, email);
+    if (index === 0 && !primaryContact) primaryContact = contact;
+    const name = recipientFirstNameFromContact(contact);
+    if (name) greetingNames.push(name);
+  }
+  const recipientFirstName = joinGreetingFirstNames(greetingNames);
+  const contactId = primaryContact?.id ?? input.contactId ?? null;
 
   if (isDryRun) {
     const stored = await deps.getStoredCredentials(workspaceId);

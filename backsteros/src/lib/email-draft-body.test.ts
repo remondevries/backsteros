@@ -117,3 +117,27 @@ test("resolveEditableEmailDraftBody strips shell without rewrite-collapse", () =
     7,
   );
 });
+
+test("extractAgentReplyBody strips multi-To ampersand greeting (OS-172)", () => {
+  const body = [
+    "Aan Ewout & Lars,",
+    "",
+    "Hierbij de update.",
+    "",
+    "Met vriendelijke groet,",
+    "Remon",
+  ].join("\n");
+  const resolved = extractAgentReplyBody(body);
+  assert.equal(resolved, "Hierbij de update.");
+  assert.doesNotMatch(resolved, /Ewout/);
+  assert.doesNotMatch(resolved, /Lars/);
+});
+
+test("resolveEditableEmailDraftBody strips multi-To ampersand greeting (OS-172)", () => {
+  const resolved = resolveEditableEmailDraftBody({
+    greeting: "Aan Ewout & Lars,",
+    signOff: "Met vriendelijke groet,\nRemon",
+    body: "Hierbij de update.",
+  });
+  assert.equal(resolved, "Hierbij de update.");
+});

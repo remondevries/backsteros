@@ -128,13 +128,43 @@ export function composeContactFirstName(
 }
 
 /**
+ * Resolve one To party's greeting name: contact first name, else display-name
+ * first token, else organization name. Never uses an email local-part.
+ */
+export function composeRecipientGreetingName(input: {
+  firstName?: string | null;
+  name?: string | null;
+  organizationName?: string | null;
+}): string | null {
+  return (
+    composeContactFirstName(input.firstName) ||
+    composeContactFirstName(input.name) ||
+    input.organizationName?.trim() ||
+    null
+  );
+}
+
+/**
+ * Join resolved To greeting names with ` & ` (no commas — mid-line commas break
+ * greeting strippers). Omits empty entries; returns null when none remain.
+ */
+export function joinComposeGreetingFirstNames(
+  names: readonly (string | null | undefined)[],
+): string | null {
+  const parts = names
+    .map((name) => name?.trim())
+    .filter((name): name is string => Boolean(name));
+  return parts.length > 0 ? parts.join(" & ") : null;
+}
+
+/**
  * Preview greeting + sign-off for compose. Uses `Unknown` when no To contact
  * first name / organization name is available yet.
  */
 export function renderComposePreviewShell(input: {
   templates: EmailComposeReplyTemplates;
   language: EmailComposeShellLanguage;
-  /** Contact first name, organization name, or null → Unknown. */
+  /** Contact first name(s), organization name, or null → Unknown. */
   firstName?: string | null;
   signOffName: string;
 }): { greeting: string; signOff: string } {

@@ -6,6 +6,7 @@ import {
   NAMELESS_EMAIL_GREETING_EN,
 } from "./email-reply-assembler.js";
 import {
+  joinGreetingFirstNames,
   recipientFirstNameFromContact,
   resolveEmailStartStatus,
   shouldWrapEmailStartBody,
@@ -43,6 +44,36 @@ describe("OS-146 email start compose greeting", () => {
     assert.equal(assembled.greeting, "Hi Remon,");
     assert.match(assembled.text, /^Hi Remon,/);
     assert.match(assembled.text, /Sincerely,\nRemon de Vries, Lemo-Design/);
+  });
+
+  it("joins multiple To first names with ampersands (OS-172)", () => {
+    assert.equal(joinGreetingFirstNames(["Ewout", "Lars"]), "Ewout & Lars");
+    assert.equal(
+      joinGreetingFirstNames(["Ada", null, "Lars", "", "Ewout"]),
+      "Ada & Lars & Ewout",
+    );
+    assert.equal(joinGreetingFirstNames([null, ""]), "");
+
+    const two = assembleComposeEmail({
+      to: ["ewout@example.com", "lars@example.com"],
+      subject: "Hello",
+      body: "Can we talk?",
+      templates,
+      recipientFirstName: joinGreetingFirstNames(["Ewout", "Lars"]),
+    });
+    assert.equal(two.greeting, "Hi Ewout & Lars,");
+
+    const three = assembleComposeEmail({
+      to: ["ada@example.com", "lars@example.com", "ewout@example.com"],
+      subject: "Hello",
+      body: "Can we talk?",
+      templates: {
+        ...templates,
+        greetingTemplateEn: "To {firstName},",
+      },
+      recipientFirstName: joinGreetingFirstNames(["Ada", "Lars", "Ewout"]),
+    });
+    assert.equal(three.greeting, "To Ada & Lars & Ewout,");
   });
 
   it("wrap:false / raw sends the body as-is", () => {

@@ -5,6 +5,8 @@ import {
   assembleComposeLetterBody,
   COMPOSE_UNKNOWN_FIRST_NAME,
   composeContactFirstName,
+  composeRecipientGreetingName,
+  joinComposeGreetingFirstNames,
   languageFromMailboxEmail,
   pickComposeShellLanguage,
   renderComposePreviewShell,
@@ -112,6 +114,77 @@ describe("email-compose-shell", () => {
   it("composeContactFirstName takes the first token", () => {
     assert.equal(composeContactFirstName("Ada Lovelace"), "Ada");
     assert.equal(composeContactFirstName(null), null);
+  });
+
+  it("joinComposeGreetingFirstNames joins with ampersands (OS-172)", () => {
+    assert.equal(joinComposeGreetingFirstNames(["Ewout"]), "Ewout");
+    assert.equal(
+      joinComposeGreetingFirstNames(["Ewout", "Lars"]),
+      "Ewout & Lars",
+    );
+    assert.equal(
+      joinComposeGreetingFirstNames(["Ada", "Lars", "Ewout"]),
+      "Ada & Lars & Ewout",
+    );
+    assert.equal(
+      joinComposeGreetingFirstNames(["Ewout", null, "Lars", ""]),
+      "Ewout & Lars",
+    );
+    assert.equal(joinComposeGreetingFirstNames([null, ""]), null);
+  });
+
+  it("composeRecipientGreetingName prefers firstName then display then org", () => {
+    assert.equal(
+      composeRecipientGreetingName({
+        firstName: "Ada",
+        name: "Ada Lovelace",
+        organizationName: "Lemo",
+      }),
+      "Ada",
+    );
+    assert.equal(
+      composeRecipientGreetingName({
+        firstName: null,
+        name: "Ada Lovelace",
+        organizationName: "Lemo",
+      }),
+      "Ada",
+    );
+    assert.equal(
+      composeRecipientGreetingName({
+        firstName: null,
+        name: null,
+        organizationName: "Lemo Design",
+      }),
+      "Lemo Design",
+    );
+  });
+
+  it("renders multi-To greetings with ampersands (OS-172)", () => {
+    const templates = resolveComposeReplyTemplates({
+      greetingTemplateEn: "To {firstName},",
+      greetingTemplateNl: "Aan {firstName},",
+      signOffTemplateEn: "Best,\n{name}",
+      signOffTemplateNl: "Met vriendelijke groet,\n{name}",
+    });
+    assert.equal(
+      renderComposePreviewShell({
+        templates,
+        language: "nl",
+        firstName: joinComposeGreetingFirstNames(["Ewout", "Lars"]),
+        signOffName: "Remon",
+      }).greeting,
+      "Aan Ewout & Lars,",
+    );
+    assert.equal(
+      renderComposePreviewShell({
+        templates,
+        language: "en",
+        firstName: joinComposeGreetingFirstNames(["Ada", "Lars", "Ewout"]),
+        signOffName: "Remon",
+      }).greeting,
+      "To Ada & Lars & Ewout,",
+    );
   });
 
   it("assembleComposeLetterBody joins greeting, body, and sign-off", () => {

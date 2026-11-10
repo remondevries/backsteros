@@ -11,7 +11,8 @@ import {
   ContactPersonIcon,
   OrganizationIcon,
   buildEmailRecipientDropdownOptions,
-  composeContactFirstName,
+  composeRecipientGreetingName,
+  joinComposeGreetingFirstNames,
   normalizeEmailRecipients,
   pickComposeShellLanguage,
   renderComposePreviewShell,
@@ -200,17 +201,23 @@ export function DesktopCommunicationEmailCompose({
     return people.contacts.find((contact) => contact.id === id) ?? null;
   }, [selectedMailbox?.contactId, people.contacts]);
 
-  const toContact = useMemo(() => {
+  const toAddresses = useMemo(
+    () => normalizeEmailRecipients(composeTo),
+    [composeTo],
+  );
+
+  const linkedToContact = useMemo(() => {
     const linkedId = toContactId?.trim();
-    if (linkedId) {
-      return (
-        people.contacts.find((contact) => contact.id === linkedId) ?? null
-      );
-    }
-    const address = normalizeEmailRecipients(composeTo)[0] ?? null;
+    if (!linkedId) return null;
+    return people.contacts.find((contact) => contact.id === linkedId) ?? null;
+  }, [toContactId, people.contacts]);
+
+  const toContact = useMemo(() => {
+    if (linkedToContact) return linkedToContact;
+    const address = toAddresses[0] ?? null;
     if (!address) return null;
     return findContactByEmailAddress(people.contacts, address) ?? null;
-  }, [composeTo, toContactId, people.contacts]);
+  }, [linkedToContact, toAddresses, people.contacts]);
 
   const toOrganization = useMemo(() => {
     const linkedId =
@@ -234,12 +241,58 @@ export function DesktopCommunicationEmailCompose({
       contactLanguages: toContact?.languages,
       fromEmailAddress: selectedMailbox?.email,
     });
-    // Contact first name wins; org-only links use the organization name.
-    const firstName =
-      composeContactFirstName(toContact?.firstName) ||
-      composeContactFirstName(toContact?.name) ||
-      toOrganization?.name?.trim() ||
-      null;
+    const linkedOrgId = toOrganizationId?.trim() || null;
+    const resolveOrgName = (organizationId: string | null | undefined) => {
+      const id = organizationId?.trim();
+      if (!id) return null;
+      return (
+        people.organizations.find((organization) => organization.id === id)
+          ?.name ?? null
+      );
+    };
+    // Join every resolvable To name with ` & `. Linked rail contact/org apply
+    // to the matching address, or to the sole To when there is only one.
+    const names =
+      toAddresses.length === 0
+        ? [
+            composeRecipientGreetingName({
+              firstName: linkedToContact?.firstName,
+              name: linkedToContact?.name,
+              organizationName:
+                resolveOrgName(linkedOrgId) ||
+                resolveOrgName(linkedToContact?.organizationId),
+            }),
+          ]
+        : toAddresses.map((address) => {
+            const byEmail =
+              findContactByEmailAddress(people.contacts, address) ?? null;
+            const linkedMatches = Boolean(
+              linkedToContact &&
+                findContactByEmailAddress([linkedToContact], address),
+            );
+            const contact =
+              linkedMatches || (toAddresses.length === 1 && linkedToContact)
+                ? linkedToContact
+                : byEmail;
+            const organizationName =
+              resolveOrgName(
+                (contact &&
+                linkedToContact &&
+                contact.id === linkedToContact.id
+                  ? linkedOrgId
+                  : null) ||
+                  (toAddresses.length === 1 ? linkedOrgId : null) ||
+                  contact?.organizationId,
+              ) ||
+              (toAddresses.length === 1 ? toOrganization?.name : null) ||
+              null;
+            return composeRecipientGreetingName({
+              firstName: contact?.firstName,
+              name: contact?.name,
+              organizationName,
+            });
+          });
+    const firstName = joinComposeGreetingFirstNames(names);
     const signOffName =
       fromContact?.name?.trim() ||
       selectedMailbox?.contactName?.trim() ||
@@ -254,13 +307,16 @@ export function DesktopCommunicationEmailCompose({
   }, [
     agentMail.replyTemplates,
     fromContact?.name,
+    linkedToContact,
+    people.contacts,
+    people.organizations,
     selectedMailbox?.contactName,
     selectedMailbox?.displayName,
     selectedMailbox?.email,
-    toContact?.firstName,
+    toAddresses,
     toContact?.languages,
-    toContact?.name,
     toOrganization?.name,
+    toOrganizationId,
   ]);
 
   const conceptDraftActionsDisabled = conceptSaving || conceptBodySaving;

@@ -33,6 +33,7 @@ import { EmailDraftSignOffShell } from "../email/email-draft-sign-off-shell.js";
 import { InboxItemTypeIcon } from "../inbox/inbox-item-type-icon.js";
 import {
   composeContactFirstName,
+  joinComposeGreetingFirstNames,
   pickComposeShellLanguage,
   renderComposePreviewShell,
   resolveComposeReplyTemplates,
@@ -256,12 +257,14 @@ export function ChatEmailDraftCard({ part }: { part: ChatUiCardPart }) {
       };
     }
     const templates = resolveComposeReplyTemplates(compose?.replyTemplates);
-    const toRecipient = data?.to[0];
     const language = pickComposeShellLanguage({
       fromEmailAddress: selectedMailbox?.email ?? data?.from?.email,
     });
-    const firstName =
-      composeContactFirstName(toRecipient?.name) || null;
+    const firstName = joinComposeGreetingFirstNames(
+      (data?.to ?? []).map((recipient) =>
+        composeContactFirstName(recipient.name),
+      ),
+    );
     const signOffName =
       selectedMailbox?.contactName?.trim() ||
       selectedMailbox?.displayName?.trim() ||
