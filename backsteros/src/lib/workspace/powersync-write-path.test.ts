@@ -96,6 +96,20 @@ test("mustDualWriteRestAfterCrudFlush for due-date clears and health checks", ()
     true,
   );
   assert.equal(
+    mustDualWriteRestAfterCrudFlush("meetings", { title: "Renamed standup" }),
+    true,
+  );
+  assert.equal(
+    mustDualWriteRestAfterCrudFlush("meetings", {
+      startAt: "2026-11-10T10:00:00.000Z",
+    }),
+    true,
+  );
+  assert.equal(
+    mustDualWriteRestAfterCrudFlush("meetings", { status: "done" }),
+    false,
+  );
+  assert.equal(
     mustDualWriteRestAfterCrudFlush("documents", { icon: "code" }),
     false,
   );

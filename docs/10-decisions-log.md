@@ -594,8 +594,9 @@ Boot graph, gaps, risks, and the first implementation slice: [17-desktop-without
 4. Thin Google Calendar HTTP client in `core/server` (no `googleapis` dependency). Sync on demand (Settings + calendar page open) over a rolling window; tokens never go to PowerSync / client SQLite.
 5. Desktop loads events via REST (`GET /api/v1/external-calendar-events`) and merges into the FullCalendar feed. PowerSync publication deferred.
 6. **Push notifications (added):** `events.watch` → public HTTPS webhook (`GOOGLE_CALENDAR_WEBHOOK_BASE_URL`, e.g. `https://api.local.backsteros.com/api/v1/webhooks/google-calendar`). On `exists`, core re-syncs the rolling window. Channels renew when under 24h remain. Manual Sync / calendar-open remain as backup (Google push is not 100% reliable).
-7. **Convert to Event (ships with OS-104):** optional 1:1 link `meetings.external_calendar_event_id`. Title/start/end/location sync both ways (Google patch on meeting update; pull updates the linked meeting). Linked meetings show as editable agenda chips; the Google block is hidden while linked. Backster still owns project/attendees/notes.
-8. **Out of scope for v1:** CalDAV/ICS providers, RSVP bridging, auto-convert every remote event to a meeting, portal free/busy.
+7. **Convert to Event (ships with OS-104):** optional 1:1 link `meetings.external_calendar_event_id`. Title/start/end/location sync both ways (Google patch on meeting update; pull updates the linked meeting). Linked meetings show as editable agenda chips; the Google block is hidden while linked. Backster still owns project/attendees/notes. Meeting title/schedule patches dual-write REST so Google push runs on the core that owns `external_calendar_events` (not PowerSync-published).
+8. **Sync with Google Calendar (meeting → Google):** from the meeting ⋯ menu, create a Google event for an unlinked Backster meeting (`POST /api/v1/meetings/:id/sync-google-calendar`), store `external_calendar_events`, and set the link. Uses the first selected calendar (else primary). Re-selecting the action on an already-linked meeting re-pushes schedule.
+9. **Out of scope for v1:** CalDAV/ICS providers, RSVP bridging, auto-convert every remote event to a meeting, portal free/busy.
 
 **Later:** ICS/CalDAV; portal free/busy; attendee-email suggestions.
 

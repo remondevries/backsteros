@@ -328,6 +328,56 @@ export class GoogleCalendarClient {
   }
 
   /**
+   * Create a timed or all-day event.
+   * https://developers.google.com/calendar/api/v3/reference/events/insert
+   */
+  async createEvent(input: {
+    calendarId: string;
+    summary: string;
+    description?: string | null;
+    location?: string | null;
+    start: GoogleCalendarEventDate;
+    end: GoogleCalendarEventDate;
+  }): Promise<GoogleCalendarEvent> {
+    const calendarId = encodeURIComponent(input.calendarId);
+    const body: Record<string, unknown> = {
+      summary: input.summary,
+      start: input.start,
+      end: input.end,
+    };
+    if (input.description !== undefined) {
+      body.description = input.description;
+    }
+    if (input.location !== undefined) {
+      body.location = input.location;
+    }
+    const response = await fetch(
+      `${GOOGLE_CALENDAR_API_BASE}/calendars/${calendarId}/events`,
+      {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${this.accessToken}`,
+          "content-type": "application/json",
+          accept: "application/json",
+        },
+        body: JSON.stringify(body),
+      },
+    );
+    if (!response.ok) {
+      const text = await response.text();
+      let message = text.trim() || `Google API HTTP ${response.status}`;
+      try {
+        const json = JSON.parse(text) as { error?: { message?: string } };
+        if (json.error?.message) message = json.error.message;
+      } catch {
+        // keep text
+      }
+      throw new GoogleCalendarApiError(message, response.status, text);
+    }
+    return (await response.json()) as GoogleCalendarEvent;
+  }
+
+  /**
    * Patch title / start / end on an existing event (including recurring instances).
    * https://developers.google.com/calendar/api/v3/reference/events/patch
    */

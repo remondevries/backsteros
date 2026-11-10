@@ -6,10 +6,14 @@ import {
   formatMeetingDisplayId,
   MeetingDetailView,
   RegisterEntityDeleteAction,
+  RegisterEntityMenuItems,
   RegisterPageTitle,
+  type EntityExtraMenuItem,
 } from "@backsteros/ui";
 
 import { useDesktopApi } from "../lib/api-context";
+import { useExternalCalendarEventHtmlLink } from "../lib/use-external-calendar-event-html-link";
+import { syncMeetingToGoogleCalendar } from "../lib/sync-meeting-to-google-calendar";
 import { useDesktopSectionBreadcrumb } from "../lib/use-desktop-breadcrumb";
 import { useDesktopMeetingNotes } from "../lib/use-meeting-notes";
 import { useMeetingDetailViewProps } from "../lib/use-meeting-detail-props";
@@ -181,6 +185,53 @@ export function MeetingDetailPage({
     softDeleteMeeting,
   ]);
 
+  const handleSyncWithGoogleCalendar = useCallback(async () => {
+    if (!meeting) {
+      return { ok: false as const, error: "Meeting is required." };
+    }
+    if (meeting.startAt == null || meeting.startAt === "") {
+      return {
+        ok: false as const,
+        error: "Add a start time before syncing to Google Calendar.",
+      };
+    }
+    try {
+      const result = await syncMeetingToGoogleCalendar(client, meeting.id);
+      await patchWorkspaceMeeting(meeting.id, {
+        externalCalendarEventId: result.externalCalendarEventId,
+      });
+      return { ok: true as const };
+    } catch (error) {
+      return {
+        ok: false as const,
+        error:
+          error instanceof Error
+            ? error.message
+            : "Failed to sync with Google Calendar.",
+      };
+    }
+  }, [client, meeting, patchWorkspaceMeeting]);
+
+  const googleSyncMenuItems = useMemo((): EntityExtraMenuItem[] => {
+    if (!meeting || meeting.externalCalendarEventId?.trim()) return [];
+    return [
+      {
+        id: "sync-google-calendar",
+        label: "Sync with Google Calendar",
+        confirm: {
+          entityLabel: `"${meeting.title}" to Google Calendar`,
+          confirmLabel: "Sync",
+          actionVerb: "Sync",
+        },
+        onSelect: handleSyncWithGoogleCalendar,
+      },
+    ];
+  }, [handleSyncWithGoogleCalendar, meeting]);
+
+  const googleCalendarHtmlLink = useExternalCalendarEventHtmlLink(
+    meeting?.externalCalendarEventId,
+  );
+
   if (!ready) {
     return <div className="flex min-h-0 flex-1" />;
   }
@@ -204,6 +255,7 @@ export function MeetingDetailPage({
       <RegisterPageTitle
         title={displayId ? `${displayId} ${meeting.title}` : meeting.title}
       />
+      <RegisterEntityMenuItems items={googleSyncMenuItems} />
       <RegisterEntityDeleteAction
         entityLabel={`meeting ${displayId ?? meeting.title}`}
         onDelete={handleDeleteMeeting}
@@ -235,6 +287,7 @@ export function MeetingDetailPage({
         {...meetingContactNavigation}
         onStartRoom={handleStartRoom}
         roomGuestUrl={guestMeetUrl(meeting.id)}
+        googleCalendarHtmlLink={googleCalendarHtmlLink}
       />
     </div>
   );

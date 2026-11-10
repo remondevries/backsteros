@@ -1056,6 +1056,11 @@ export function useWorkspaceEntityPatching({
             "budgets" in values ||
             (table === "documents" &&
               Object.prototype.hasOwnProperty.call(values, "title")) ||
+            (table === "meetings" &&
+              (Object.prototype.hasOwnProperty.call(values, "title") ||
+                Object.prototype.hasOwnProperty.call(values, "startAt") ||
+                Object.prototype.hasOwnProperty.call(values, "endAt") ||
+                Object.prototype.hasOwnProperty.call(values, "location"))) ||
             (table === "tasks" && typeof values.status === "string") ||
             (table === "tasks" && taskPatchChangesTaskScope(values)) ||
             (table === "letters" && letterPatchRequiresVaultRelocate(values)));

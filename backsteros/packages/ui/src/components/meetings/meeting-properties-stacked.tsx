@@ -37,6 +37,8 @@ export type MeetingPropertiesStackedProps = Omit<
 > & {
   /** Optional control beside the tracked-time pill (e.g. Start room). */
   timerTrailing?: ReactNode;
+  /** Google Calendar event URL when the meeting is linked. */
+  googleCalendarHtmlLink?: string | null;
 };
 
 function resolveOrganizationTriggerIcon(
@@ -113,6 +115,7 @@ export function MeetingPropertiesStacked({
   onCreateContactFromQuery,
   timerSession = null,
   timerTrailing = null,
+  googleCalendarHtmlLink = null,
 }: MeetingPropertiesStackedProps) {
   const {
     disabled,
@@ -373,6 +376,19 @@ export function MeetingPropertiesStacked({
         </PropertyFieldGroup>
 
       </EntityPropertiesSection>
+
+      {googleCalendarHtmlLink?.trim() ? (
+        <EntityPropertiesSection title="Google Calendar">
+          <a
+            className="meeting-properties-stacked__google-link"
+            href={googleCalendarHtmlLink.trim()}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            View in Google Calendar
+          </a>
+        </EntityPropertiesSection>
+      ) : null}
     </div>
   );
 }

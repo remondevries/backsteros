@@ -51,8 +51,10 @@ import {
   readTimetrackingPeriodFromSearch,
   resolveTimetrackingChartPeriod,
   RegisterEntityDeleteAction,
+  RegisterEntityMenuItems,
   EntityHeaderActionsSlot,
   RegisterPageTitle,
+  type EntityExtraMenuItem,
   ResizableSidePanel,
   ProjectOcticon,
   requestOpenComposeModal,
@@ -79,6 +81,8 @@ import {
 import { TimetrackingSessionsDetail } from "../components/timetracking-sessions-detail";
 import { DesktopCollapsibleRightSidePanelLayout } from "../components/desktop-journal-day-layout";
 import { useDesktopApi } from "../lib/api-context";
+import { useExternalCalendarEventHtmlLink } from "../lib/use-external-calendar-event-html-link";
+import { syncMeetingToGoogleCalendar } from "../lib/sync-meeting-to-google-calendar";
 import { useMeetingSchedulingSettings } from "../lib/use-meeting-scheduling-settings";
 import { useDesktopSectionBreadcrumb } from "../lib/use-desktop-breadcrumb";
 import { useMeetingDetailViewProps } from "../lib/use-meeting-detail-props";
@@ -1090,6 +1094,64 @@ function CalendarPageBody() {
     workspace,
   ]);
 
+  const handleSyncWithGoogleCalendar = useCallback(async () => {
+    if (!meeting) {
+      return { ok: false as const, error: "Meeting is required." };
+    }
+    if (meeting.startAt == null || meeting.startAt === "") {
+      return {
+        ok: false as const,
+        error: "Add a start time before syncing to Google Calendar.",
+      };
+    }
+    try {
+      const result = await syncMeetingToGoogleCalendar(client, meeting.id);
+      await workspace.patchMeeting(meeting.id, {
+        externalCalendarEventId: result.externalCalendarEventId,
+      });
+      void refreshExternalCalendarEvents({ forceSync: false });
+      return { ok: true as const };
+    } catch (error) {
+      return {
+        ok: false as const,
+        error:
+          error instanceof Error
+            ? error.message
+            : "Failed to sync with Google Calendar.",
+      };
+    }
+  }, [client, meeting, refreshExternalCalendarEvents, workspace]);
+
+  const googleSyncMenuItems = useMemo((): EntityExtraMenuItem[] => {
+    if (!meeting || meeting.externalCalendarEventId?.trim()) return [];
+    return [
+      {
+        id: "sync-google-calendar",
+        label: "Sync with Google Calendar",
+        confirm: {
+          entityLabel: `"${meeting.title}" to Google Calendar`,
+          confirmLabel: "Sync",
+          actionVerb: "Sync",
+        },
+        onSelect: handleSyncWithGoogleCalendar,
+      },
+    ];
+  }, [handleSyncWithGoogleCalendar, meeting]);
+
+  const linkedExternalHtmlLink = useMemo(() => {
+    const externalId = meeting?.externalCalendarEventId?.trim();
+    if (!externalId) return null;
+    return (
+      externalCalendarEvents.find((event) => event.id === externalId)
+        ?.htmlLink?.trim() || null
+    );
+  }, [externalCalendarEvents, meeting?.externalCalendarEventId]);
+
+  const googleCalendarHtmlLink = useExternalCalendarEventHtmlLink(
+    meeting?.externalCalendarEventId,
+    { initialHtmlLink: linkedExternalHtmlLink },
+  );
+
   const handleTaskReschedule = (taskId: string, patch: TaskCalendarPatch) => {
     void workspace.patchTask(taskId, patch);
   };
@@ -1468,6 +1530,7 @@ function CalendarPageBody() {
                   displayId ? `${displayId} ${meeting.title}` : meeting.title
                 }
               />
+              <RegisterEntityMenuItems items={googleSyncMenuItems} />
               <RegisterEntityDeleteAction
                 entityLabel={`meeting ${displayId ?? meeting.title}`}
                 onDelete={handleDeleteMeeting}
@@ -1796,6 +1859,9 @@ function CalendarPageBody() {
                 {...meetingContactNavigation}
                 onStartRoom={meetingDraft ? undefined : handleStartRoom}
                 roomGuestUrl={meetingDraft ? null : roomGuestUrl}
+                googleCalendarHtmlLink={
+                  meetingDraft ? null : googleCalendarHtmlLink
+                }
               />
               <CalendarTaskDetailOverlay
                 open={Boolean(
@@ -1854,6 +1920,7 @@ function CalendarPageBody() {
         {...meetingContactNavigation}
         onStartRoom={handleStartRoom}
         roomGuestUrl={roomGuestUrl}
+        googleCalendarHtmlLink={googleCalendarHtmlLink}
         headerMoreAction={<EntityHeaderActionsSlot />}
       />
       <CalendarTaskDetailOverlay

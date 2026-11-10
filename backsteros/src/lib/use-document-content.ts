@@ -6,8 +6,10 @@ import {
   documentOpenUnavailableMessage,
   fetchDocumentContent,
   peekDocumentContentCache,
+  shouldMissDocumentContentCache,
   writeDocumentContentCache,
 } from "./document-content-cache";
+import { shouldHardLoadDocumentContent } from "./document-content-load-mode";
 import { saveVerifiedDocumentContent } from "./document-content-save";
 import { usePowerSyncQuery } from "./powersync-context";
 import { DOCUMENT_VERSION_ROW_COMPARATOR } from "./powersync-row-comparators";
@@ -20,6 +22,7 @@ export {
   peekDocumentContentCache,
   prefetchDocumentContent,
 } from "./document-content-cache";
+export { shouldHardLoadDocumentContent } from "./document-content-load-mode";
 
 /** Coalesce bursty agent patches into one content refresh. */
 const SSE_REFETCH_DEBOUNCE_MS = 150;
@@ -45,6 +48,7 @@ function asOptionalString(value: unknown): string | null {
  *
  * - `loading` — no *verified* body for this id yet (cold open / day switch)
  * - `refreshing` — revalidate while showing a previously verified body
+ *   (PowerSync version/checksum catch-up after save — never remount skeleton)
  * - **Never** paints LRU/vault bytes (or their contentVersion) until checksum
  *   verification succeeds — poisoned cache cannot be edited or saved.
  *
@@ -126,9 +130,28 @@ export function useDesktopDocumentContent(
       return;
     }
 
+    const cached = peekDocumentContentCache(documentId);
+    const mode = shouldHardLoadDocumentContent({
+      localContentVersion: contentVersionRef.current,
+      syncedContentVersion,
+      knownChecksum,
+      cachedChecksumTrusted:
+        cached != null &&
+        !shouldMissDocumentContentCache(cached, knownChecksum),
+    });
+    // Save just wrote this version into local state + LRU; PowerSync catch-up
+    // must not tear down the editor for a no-op revalidate.
+    if (mode === "skip") {
+      return;
+    }
+
     let cancelled = false;
     const fetchId = documentId;
-    setLoading(true);
+    if (mode === "refresh") {
+      setRefreshing(true);
+    } else {
+      setLoading(true);
+    }
 
     void fetchDocumentContent(client, fetchId, {
       storageKey,

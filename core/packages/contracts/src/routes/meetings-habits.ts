@@ -129,6 +129,21 @@ export const meetingsHabitsRoutes: AppRouter = c.router({
     },
     summary: "Update a meeting",
   },
+  syncMeetingToGoogleCalendar: {
+    method: "POST",
+    path: "/api/v1/meetings/:id/sync-google-calendar",
+    pathParams: s.idParamsSchema,
+    body: z.object({}).optional(),
+    responses: {
+      200: s.syncMeetingToGoogleCalendarResultSchema,
+      400: badRequestSchema,
+      401: errorSchema,
+      403: errorSchema,
+      404: errorSchema,
+    },
+    summary:
+      "Create (or re-push) a Google Calendar event for a Backster meeting and link it",
+  },
   deleteMeeting: {
     method: "DELETE",
     path: "/api/v1/meetings/:id",

@@ -245,6 +245,8 @@ export type MeetingDetailViewProps = {
   onExpand?: () => void;
   /** Collapse full-width page layout back to the narrow panel. */
   onCollapse?: () => void;
+  /** Google Calendar event URL when the meeting is linked. */
+  googleCalendarHtmlLink?: string | null;
 };
 
 export function MeetingDetailView({
@@ -293,6 +295,7 @@ export function MeetingDetailView({
   headerMoreAction: _headerMoreAction,
   onStartRoom,
   roomGuestUrl,
+  googleCalendarHtmlLink = null,
 }: MeetingDetailViewProps) {
   const [uncontrolledTab, setUncontrolledTab] =
     useState<MeetingContentTab>("summary");
@@ -392,6 +395,7 @@ export function MeetingDetailView({
     onCreateContactFromQuery,
     timerSession,
   };
+  const googleLink = googleCalendarHtmlLink?.trim() || null;
 
   const titleEditor = (
     <OverviewNameEditor
@@ -600,6 +604,7 @@ export function MeetingDetailView({
             <MeetingPropertiesStacked
               {...propertiesProps}
               timerTrailing={startRoomAction}
+              googleCalendarHtmlLink={googleLink}
             />
           }
           dock={
@@ -635,6 +640,16 @@ export function MeetingDetailView({
         {...propertiesProps}
         triggerVariant={triggerVariant}
       />
+      {googleLink ? (
+        <a
+          className="meeting-properties-stacked__google-link meeting-detail-view__google-link"
+          href={googleLink}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          View in Google Calendar
+        </a>
+      ) : null}
       <div className="meeting-detail-view__content meeting-detail-view__content--page">
         {contentTabNav}
         {contentEditor}

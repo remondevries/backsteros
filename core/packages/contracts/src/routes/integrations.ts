@@ -539,6 +539,18 @@ export const integrationsRoutes: AppRouter = c.router({
     },
     summary: "List synced external calendar events for the agenda",
   },
+  getExternalCalendarEvent: {
+    method: "GET",
+    path: "/api/v1/external-calendar-events/:id",
+    pathParams: s.idParamsSchema,
+    responses: {
+      200: s.externalCalendarEventSchema,
+      401: errorSchema,
+      403: errorSchema,
+      404: errorSchema,
+    },
+    summary: "Get one synced external calendar event (includes Google htmlLink)",
+  },
   deleteExternalCalendarEvent: {
     method: "DELETE",
     path: "/api/v1/external-calendar-events/:id",

@@ -655,39 +655,84 @@ export async function updateMeeting(
     organizationId: row.organizationId,
   }, executor);
 
-  const scheduleTouched =
-    input.title !== undefined ||
-    input.startAt !== undefined ||
-    input.endAt !== undefined ||
-    input.location !== undefined;
-  if (scheduleTouched && row.externalCalendarEventId) {
-    const linked = {
-      title: row.title,
-      startAt: row.startAt,
-      endAt: row.endAt,
-      location: row.location ?? null,
-      externalCalendarEventId: row.externalCalendarEventId,
-    };
-    // Mirror locally before returning so clients never wait on Google.
-    try {
-      await mirrorLinkedMeetingScheduleLocally(workspaceId, linked);
-    } catch (error) {
-      console.warn(
-        "[google-calendar] local mirror linked meeting failed:",
-        error instanceof Error ? error.message : error,
-      );
-    }
-    void pushLinkedMeetingScheduleToGoogle(workspaceId, linked).catch(
-      (error) => {
-        console.warn(
-          "[google-calendar] push linked meeting failed:",
-          error instanceof Error ? error.message : error,
-        );
-      },
-    );
+  if (meetingGoogleScheduleFieldsTouched(input)) {
+    await syncLinkedMeetingGoogleSchedule(workspaceId, row);
   }
 
   return toMeeting(row);
+}
+
+/** Title / start / end / location — fields mirrored onto a linked Google event. */
+export function meetingGoogleScheduleFieldsTouched(
+  input: Pick<
+    UpdateMeetingInput,
+    "title" | "startAt" | "endAt" | "location"
+  >,
+): boolean {
+  return (
+    input.title !== undefined ||
+    input.startAt !== undefined ||
+    input.endAt !== undefined ||
+    input.location !== undefined
+  );
+}
+
+/**
+ * Mirror + push linked Google schedule for a meeting row on this core.
+ * Safe no-op when unlinked or when `external_calendar_events` is missing here
+ * (PowerSync does not publish that table — REST dual-write must hit the core
+ * that owns the Google sync rows).
+ */
+export async function syncLinkedMeetingGoogleSchedule(
+  workspaceId: string,
+  meeting: Pick<
+    DbMeeting,
+    | "title"
+    | "startAt"
+    | "endAt"
+    | "location"
+    | "externalCalendarEventId"
+  >,
+): Promise<void> {
+  const linkId = meeting.externalCalendarEventId?.trim();
+  if (!linkId || !meeting.startAt) return;
+  const linked = {
+    title: meeting.title,
+    startAt: meeting.startAt,
+    endAt: meeting.endAt,
+    location: meeting.location ?? null,
+    externalCalendarEventId: linkId,
+  };
+  // Mirror locally before returning so clients never wait on Google.
+  try {
+    await mirrorLinkedMeetingScheduleLocally(workspaceId, linked);
+  } catch (error) {
+    console.warn(
+      "[google-calendar] local mirror linked meeting failed:",
+      error instanceof Error ? error.message : error,
+    );
+  }
+  void pushLinkedMeetingScheduleToGoogle(workspaceId, linked).catch((error) => {
+    console.warn(
+      "[google-calendar] push linked meeting failed:",
+      error instanceof Error ? error.message : error,
+    );
+  });
+}
+
+/** Fire-and-forget wrapper for REST paths that should not block the response. */
+export function queueLinkedMeetingGoogleScheduleSync(
+  workspaceId: string,
+  meeting: Pick<
+    DbMeeting,
+    | "title"
+    | "startAt"
+    | "endAt"
+    | "location"
+    | "externalCalendarEventId"
+  >,
+): void {
+  void syncLinkedMeetingGoogleSchedule(workspaceId, meeting);
 }
 
 export async function recordAttendeePortalEmail(

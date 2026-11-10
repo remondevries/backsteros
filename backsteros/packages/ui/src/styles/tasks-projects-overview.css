@@ -226,11 +226,13 @@
   overflow: auto;
 }
 
+/* Above sticky list chrome (column headers z-index 20, status groups 15)
+ * so List/Board never paints under scrolling rows. */
 .content-view-mode-toggle {
   position: absolute;
   right: 16px;
   bottom: 16px;
-  z-index: 10;
+  z-index: 30;
   pointer-events: none;
 }
 

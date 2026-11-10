@@ -1028,6 +1028,41 @@ export async function listExternalCalendarEvents(
   );
 }
 
+export async function getExternalCalendarEvent(
+  workspaceId: string,
+  eventId: string,
+): Promise<ExternalCalendarEvent | null> {
+  const trimmedId = eventId.trim();
+  if (!trimmedId) return null;
+
+  const [row] = await db
+    .select()
+    .from(externalCalendarEvents)
+    .where(
+      and(
+        eq(externalCalendarEvents.id, trimmedId),
+        eq(externalCalendarEvents.workspaceId, workspaceId),
+        isNull(externalCalendarEvents.deletedAt),
+      ),
+    )
+    .limit(1);
+  if (!row) return null;
+
+  const [link] = await db
+    .select({ meetingId: meetings.id })
+    .from(meetings)
+    .where(
+      and(
+        eq(meetings.workspaceId, workspaceId),
+        eq(meetings.externalCalendarEventId, row.id),
+        isNull(meetings.deletedAt),
+      ),
+    )
+    .limit(1);
+
+  return toExternalEvent(row, link?.meetingId ?? null);
+}
+
 type LinkedMeetingSchedule = {
   title: string;
   startAt: Date | null;
@@ -1188,6 +1223,201 @@ export type DeleteExternalCalendarEventResult = {
   remoteDeleted: boolean;
   deletedMeetings: (typeof meetings.$inferSelect)[];
 };
+
+export type SyncMeetingToGoogleCalendarServiceResult = {
+  meeting: typeof meetings.$inferSelect;
+  externalCalendarEventId: string;
+  alreadySynced: boolean;
+  htmlLink: string | null;
+};
+
+async function resolveGoogleCalendarWriteTarget(
+  workspaceId: string,
+): Promise<{ client: GoogleCalendarClient; calendarId: string }> {
+  const row = await getSecretRow(workspaceId);
+  const accessToken = await getGoogleCalendarAccessToken(workspaceId);
+  const client = new GoogleCalendarClient(accessToken);
+  const calendars = await client.listCalendars();
+  const selected = selectedCalendarIds(row);
+  const targets =
+    selected.length > 0
+      ? calendars.filter((cal) => selected.includes(cal.id))
+      : calendars.filter((cal) => cal.primary);
+  const effectiveTargets =
+    targets.length > 0
+      ? targets
+      : calendars.slice(0, 1).filter((cal) => Boolean(cal.id));
+  const calendarId = effectiveTargets[0]?.id?.trim() || "";
+  if (!calendarId) {
+    throw new Error("No Google Calendar is available to sync to.");
+  }
+  return { client, calendarId };
+}
+
+/**
+ * Create a Google Calendar event for a Backster meeting (or re-push schedule
+ * when already linked). Stores `external_calendar_events` and sets
+ * `meetings.external_calendar_event_id`.
+ */
+export async function syncMeetingToGoogleCalendar(
+  workspaceId: string,
+  meetingId: string,
+): Promise<SyncMeetingToGoogleCalendarServiceResult | null> {
+  const trimmedMeetingId = meetingId.trim();
+  if (!trimmedMeetingId) return null;
+
+  const [meeting] = await db
+    .select()
+    .from(meetings)
+    .where(
+      and(
+        eq(meetings.workspaceId, workspaceId),
+        eq(meetings.id, trimmedMeetingId),
+        isNull(meetings.deletedAt),
+      ),
+    )
+    .limit(1);
+  if (!meeting) return null;
+
+  const existingLink = meeting.externalCalendarEventId?.trim() || null;
+  if (existingLink) {
+    if (!meeting.startAt) {
+      throw new Error(
+        "Meeting needs a start time before syncing to Google Calendar.",
+      );
+    }
+    await pushLinkedMeetingScheduleToGoogle(workspaceId, {
+      title: meeting.title,
+      startAt: meeting.startAt,
+      endAt: meeting.endAt,
+      location: meeting.location ?? null,
+      externalCalendarEventId: existingLink,
+    });
+    const [external] = await db
+      .select({ htmlLink: externalCalendarEvents.htmlLink })
+      .from(externalCalendarEvents)
+      .where(
+        and(
+          eq(externalCalendarEvents.id, existingLink),
+          eq(externalCalendarEvents.workspaceId, workspaceId),
+        ),
+      )
+      .limit(1);
+    return {
+      meeting,
+      externalCalendarEventId: existingLink,
+      alreadySynced: true,
+      htmlLink: external?.htmlLink?.trim() || null,
+    };
+  }
+
+  if (!meeting.startAt) {
+    throw new Error(
+      "Meeting needs a start time before syncing to Google Calendar.",
+    );
+  }
+
+  const endAt =
+    meeting.endAt && !Number.isNaN(meeting.endAt.getTime())
+      ? meeting.endAt
+      : new Date(meeting.startAt.getTime() + 60 * 60 * 1000);
+
+  const { client, calendarId } =
+    await resolveGoogleCalendarWriteTarget(workspaceId);
+  const created = await client.createEvent({
+    calendarId,
+    summary: meeting.title.trim() || "Meeting",
+    description: meeting.summary?.trim() || null,
+    location: meeting.location ?? null,
+    start: { dateTime: meeting.startAt.toISOString() },
+    end: { dateTime: endAt.toISOString() },
+  });
+  const externalId = created.id?.trim();
+  if (!externalId) {
+    throw new Error("Google Calendar did not return an event id.");
+  }
+
+  const times = mapEventTimes(created);
+  const id = externalCalendarEventId(
+    workspaceId,
+    GOOGLE_CALENDAR_PROVIDER,
+    calendarId,
+    externalId,
+  );
+  const title = created.summary?.trim() || meeting.title.trim() || "Meeting";
+  const now = new Date();
+
+  await db
+    .insert(externalCalendarEvents)
+    .values({
+      id,
+      workspaceId,
+      provider: GOOGLE_CALENDAR_PROVIDER,
+      calendarId,
+      externalId,
+      icalUid: created.iCalUID?.trim() || null,
+      title,
+      description: created.description?.trim() || meeting.summary || null,
+      location: created.location?.trim() || meeting.location || null,
+      status: created.status?.trim() || null,
+      htmlLink: created.htmlLink?.trim() || null,
+      startAt: times.startAt ?? meeting.startAt,
+      endAt: times.endAt ?? endAt,
+      allDay: times.allDay,
+      startDate: times.startDate,
+      endDate: times.endDate,
+      etag: created.etag?.trim() || null,
+      raw: created,
+      deletedAt: null,
+      updatedAt: now,
+    })
+    .onConflictDoUpdate({
+      target: externalCalendarEvents.id,
+      set: {
+        icalUid: created.iCalUID?.trim() || null,
+        title,
+        description: created.description?.trim() || meeting.summary || null,
+        location: created.location?.trim() || meeting.location || null,
+        status: created.status?.trim() || null,
+        htmlLink: created.htmlLink?.trim() || null,
+        startAt: times.startAt ?? meeting.startAt,
+        endAt: times.endAt ?? endAt,
+        allDay: times.allDay,
+        startDate: times.startDate,
+        endDate: times.endDate,
+        etag: created.etag?.trim() || null,
+        raw: created,
+        deletedAt: null,
+        updatedAt: now,
+      },
+    });
+
+  const [updatedMeeting] = await db
+    .update(meetings)
+    .set({
+      externalCalendarEventId: id,
+      updatedAt: now,
+    })
+    .where(
+      and(
+        eq(meetings.workspaceId, workspaceId),
+        eq(meetings.id, meeting.id),
+        isNull(meetings.deletedAt),
+      ),
+    )
+    .returning();
+
+  if (!updatedMeeting) {
+    throw new Error("Could not link meeting to Google Calendar event.");
+  }
+
+  return {
+    meeting: updatedMeeting,
+    externalCalendarEventId: id,
+    alreadySynced: false,
+    htmlLink: created.htmlLink?.trim() || null,
+  };
+}
 
 /**
  * Remove a synced external calendar event from Google (when applicable) and

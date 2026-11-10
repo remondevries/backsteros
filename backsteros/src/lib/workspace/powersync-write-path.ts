@@ -82,6 +82,18 @@ export function mustDualWriteRestAfterCrudFlush(
   if (table === "documents" && Object.prototype.hasOwnProperty.call(values, "title")) {
     return true;
   }
+  // Linked Google meetings: title/schedule must hit REST on the core that owns
+  // `external_calendar_events` (not PowerSync-published). Cloud-only apply
+  // cannot push renames when Google sync rows live on local-core.
+  if (
+    table === "meetings" &&
+    (Object.prototype.hasOwnProperty.call(values, "title") ||
+      Object.prototype.hasOwnProperty.call(values, "startAt") ||
+      Object.prototype.hasOwnProperty.call(values, "endAt") ||
+      Object.prototype.hasOwnProperty.call(values, "location"))
+  ) {
+    return true;
+  }
   // Spaces publish fields — PowerSync apply historically dropped these; keep
   // REST dual-write so portal contact targeting cannot silently no-op.
   if (

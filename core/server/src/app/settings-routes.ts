@@ -668,6 +668,18 @@ export function registerSettingsRoutes(app: Hono) {
       ),
     });
   });
+  app.get("/api/v1/external-calendar-events/:id", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "tasks:read") && !can(auth, "settings:read")) {
+      return c.json(forbidden(), 403);
+    }
+    const event = await googleCalendarSettingsService.getExternalCalendarEvent(
+      auth.workspaceId,
+      c.req.param("id"),
+    );
+    if (!event) return c.json(notFound("External calendar event"), 404);
+    return c.json(event);
+  });
   app.delete("/api/v1/external-calendar-events/:id", async (c) => {
     const auth = getAuth(c);
     if (!can(auth, "tasks:write") && !can(auth, "settings:write")) {

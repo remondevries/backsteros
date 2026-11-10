@@ -274,6 +274,19 @@ export type CreateMeetingInput = z.infer<typeof createMeetingSchema>;
 
 export type UpdateMeetingInput = z.infer<typeof updateMeetingSchema>;
 
+/** Result of pushing a Backster meeting onto Google Calendar (create or re-push). */
+export const syncMeetingToGoogleCalendarResultSchema = z.object({
+  meeting: meetingSchema,
+  externalCalendarEventId: z.string().min(1),
+  /** True when the meeting was already linked — schedule was re-pushed. */
+  alreadySynced: z.boolean(),
+  htmlLink: z.string().nullable().optional(),
+});
+
+export type SyncMeetingToGoogleCalendarResult = z.infer<
+  typeof syncMeetingToGoogleCalendarResultSchema
+>;
+
 /**
  * Join credentials for a live meeting room (LiveKit today; media backend may change).
  * Room name is always the meeting id. Minted only by core — never by the client.

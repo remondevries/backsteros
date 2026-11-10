@@ -2246,6 +2246,32 @@ html.is-calendar-month-event-dragging .fc-event-dragging:not(.calendar-month-eve
   gap: 10px;
 }
 
+.meeting-properties-stacked__google-link {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  margin: 0;
+  padding: 4px 0;
+  border: none;
+  background: transparent;
+  color: var(--foreground);
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  line-height: 1.3;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.meeting-properties-stacked__google-link:hover {
+  color: color-mix(in srgb, var(--foreground) 78%, transparent);
+}
+
+.meeting-detail-view__google-link {
+  margin: 0 12px 4px;
+}
+
 .meeting-properties-stacked .entity-properties-section {
   padding: 10px 8px;
   gap: 8px;

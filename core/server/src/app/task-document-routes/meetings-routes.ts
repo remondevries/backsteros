@@ -1,4 +1,5 @@
 import {
+  GoogleCalendarApiError,
   ListQueryError,
   MEETINGS_LIST_PAGINATED_ONLY_KEYS,
   buildMeetingRestPayload,
@@ -9,6 +10,7 @@ import {
   createMeetingSchema,
   forbidden,
   getAuth,
+  googleCalendarSettingsService,
   ignoredLegacyListKeys,
   isForeignKeyViolation,
   isRestLeaderFirstWrite,
@@ -212,7 +214,22 @@ export function registerMeetingsRoutes(app: Hono) {
             operation: "upsert",
             payload: buildMeetingRestPayload(meetingId, patch),
           });
-          const row = await meetingService.getMeetingById(auth.workspaceId, meetingId);
+          const dbRow = await meetingService.getMeetingRow(
+            auth.workspaceId,
+            meetingId,
+          );
+          // Leader apply may run on a core without `external_calendar_events`
+          // (REST-only). Push from this core after the write lands locally.
+          if (
+            dbRow &&
+            meetingService.meetingGoogleScheduleFieldsTouched(patch)
+          ) {
+            meetingService.queueLinkedMeetingGoogleScheduleSync(
+              auth.workspaceId,
+              dbRow,
+            );
+          }
+          const row = dbRow ? meetingService.toMeeting(dbRow) : null;
           if (row) {
             publishMeetingLive(auth, row.id, {
               projectId: row.projectId ?? null,
@@ -277,6 +294,58 @@ export function registerMeetingsRoutes(app: Hono) {
       }
     },
   );
+
+  app.post("/api/v1/meetings/:id/sync-google-calendar", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "tasks:write") && !can(auth, "settings:write")) {
+      return c.json(forbidden(), 403);
+    }
+    try {
+      const result =
+        await googleCalendarSettingsService.syncMeetingToGoogleCalendar(
+          auth.workspaceId,
+          c.req.param("id"),
+        );
+      if (!result) return c.json(notFound("Meeting"), 404);
+
+      if (!result.alreadySynced) {
+        if (isRestLeaderFirstWrite()) {
+          await commitRestEntityWrite({
+            workspaceId: auth.workspaceId,
+            entity: "meeting",
+            entityId: result.meeting.id,
+            operation: "upsert",
+            payload: buildMeetingRestPayload(result.meeting.id, {
+              externalCalendarEventId: result.externalCalendarEventId,
+            }),
+          });
+        } else {
+          await recordMeetingRestSyncEvent(
+            auth.workspaceId,
+            result.meeting,
+            "upsert",
+          );
+        }
+        publishMeetingLive(auth, result.meeting.id, {
+          projectId: result.meeting.projectId ?? null,
+          operation: "upsert",
+        });
+      }
+
+      return c.json({
+        meeting: meetingService.toMeeting(result.meeting),
+        externalCalendarEventId: result.externalCalendarEventId,
+        alreadySynced: result.alreadySynced,
+        htmlLink: result.htmlLink,
+      });
+    } catch (error) {
+      const message =
+        error instanceof GoogleCalendarApiError || error instanceof Error
+          ? error.message
+          : "Could not sync meeting to Google Calendar";
+      return c.json({ error: message, code: "bad_request" }, 400);
+    }
+  });
 
   app.post(
     "/api/v1/meetings/:id/room-token",
