@@ -20,6 +20,11 @@ describe("formatMoneyInput", () => {
     assert.equal(formatMoneyInput("100,50"), "100,50");
   });
 
+  it("reformats pasted comma thousands to dotted thousands", () => {
+    assert.equal(formatMoneyInput("14,155"), "14.155");
+    assert.equal(formatMoneyInput("1,000,000"), "1.000.000");
+  });
+
   it("reformats pasted dotted thousands", () => {
     assert.equal(formatMoneyInput("182.000.000"), "182.000.000");
   });
@@ -35,6 +40,15 @@ describe("parseMoneyInput", () => {
   it("parses decimal comma", () => {
     assert.equal(parseMoneyInput("100,50"), 10_050);
     assert.equal(parseMoneyInput("1.000,25"), 100_025);
+  });
+
+  it("treats a single comma with exactly 3 digits as thousands", () => {
+    assert.equal(parseMoneyInput("14,155"), 1_415_500);
+    assert.equal(parseMoneyInput("1,000"), 100_000);
+  });
+
+  it("parses multi-comma thousands", () => {
+    assert.equal(parseMoneyInput("1,000,000"), 100_000_000);
   });
 
   it("treats a single dot with 1–2 decimals as a decimal", () => {

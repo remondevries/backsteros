@@ -38,6 +38,11 @@ import {
   estimateChartYears,
   parseEstimateDocumentDate,
 } from "../../finance/estimate-amount-chart-series.js";
+import {
+  formatMoneyInput,
+  moneyCentsToInput,
+  parseMoneyInput,
+} from "../../finance/money-input.js";
 import type { OrganizationListItem } from "../../navigation/entity-routes.js";
 import { formatDueDateInputValue } from "../../tasks/task-due-date.js";
 import type { DocumentSummaryLine } from "../../finance/document-summary-stats.js";
@@ -755,24 +760,31 @@ function FinanceEstimateDetail({
               <input
                 className="finance-estimates-view__property-input"
                 inputMode="decimal"
-                defaultValue={
-                  selected.totalAmountCents != null
-                    ? (selected.totalAmountCents / 100).toFixed(2)
-                    : ""
-                }
+                defaultValue={moneyCentsToInput(selected.totalAmountCents, {
+                  allowZero: true,
+                })}
                 key={`amount-${selected.id}-${selected.totalAmountCents ?? "null"}`}
-                placeholder="0.00"
+                placeholder="0,00"
                 onBlur={(event) => {
                   const raw = event.target.value.trim();
                   if (!raw) {
+                    event.target.value = "";
                     if (selected.totalAmountCents != null) {
                       void patchSelected({ totalAmountCents: null });
                     }
                     return;
                   }
-                  const euros = Number.parseFloat(raw.replace(",", "."));
-                  if (!Number.isFinite(euros)) return;
-                  const cents = Math.round(euros * 100);
+                  const cents = parseMoneyInput(raw);
+                  if (cents == null) {
+                    event.target.value = moneyCentsToInput(
+                      selected.totalAmountCents,
+                      { allowZero: true },
+                    );
+                    return;
+                  }
+                  event.target.value = moneyCentsToInput(cents, {
+                    allowZero: true,
+                  });
                   if (cents === selected.totalAmountCents) return;
                   void patchSelected({ totalAmountCents: cents });
                 }}
@@ -1237,7 +1249,6 @@ export function FinanceEstimatesView({
     const trimmed = title.trim();
     if (!trimmed) return;
     const createOrganizationId = lockedOrgId || organizationId || undefined;
-    const euros = Number.parseFloat(totalAmountEuros.replace(",", "."));
     const authorOption = contactOptions.find(
       (option) => option.value === authorContactId,
     );
@@ -1249,9 +1260,7 @@ export function FinanceEstimatesView({
       authorName: authorOption?.label,
       versionLabel: versionLabel.trim() || undefined,
       documentDate: serializeEstimateDueDate(createDueDate) ?? undefined,
-      totalAmountCents: Number.isFinite(euros)
-        ? Math.round(euros * 100)
-        : null,
+      totalAmountCents: parseMoneyInput(totalAmountEuros),
       proposalMarkdown,
       estimateMarkdown,
       status: "concept",
@@ -1439,8 +1448,11 @@ export function FinanceEstimatesView({
                 <span>Total amount (€)</span>
                 <input
                   value={totalAmountEuros}
-                  onChange={(event) => setTotalAmountEuros(event.target.value)}
-                  placeholder="760.00"
+                  inputMode="decimal"
+                  onChange={(event) =>
+                    setTotalAmountEuros(formatMoneyInput(event.target.value))
+                  }
+                  placeholder="760,00"
                 />
               </label>
             </div>

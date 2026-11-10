@@ -45,11 +45,24 @@ function normalizeMoneyTyping(
 
   const commaIdx = cleaned.lastIndexOf(",");
   if (commaIdx >= 0) {
-    const integerDigits = cleaned.slice(0, commaIdx).replace(/\D/g, "");
-    const fractionDigits = cleaned
+    const commaCount = (cleaned.match(/,/g) ?? []).length;
+    const afterCommaDigits = cleaned
       .slice(commaIdx + 1)
-      .replace(/\D/g, "")
-      .slice(0, 2);
+      .replace(/\D/g, "");
+    // `14,155` / `1,000,000` — comma thousands (same 3-digit rule as dots).
+    if (
+      !cleaned.includes(".") &&
+      (commaCount > 1 || afterCommaDigits.length === 3)
+    ) {
+      return {
+        integerDigits: cleaned.replace(/\D/g, ""),
+        fractionDigits: "",
+        hasFractionSep: false,
+        negative,
+      };
+    }
+    const integerDigits = cleaned.slice(0, commaIdx).replace(/\D/g, "");
+    const fractionDigits = afterCommaDigits.slice(0, 2);
     return {
       integerDigits,
       fractionDigits,
@@ -118,7 +131,22 @@ export function parseMoneyInput(
   if (!normalized) return options?.signed ? 0 : null;
 
   if (normalized.includes(",")) {
-    normalized = normalized.replace(/\./g, "").replace(",", ".");
+    const commas = normalized.match(/,/g) ?? [];
+    if (commas.length > 1 && !normalized.includes(".")) {
+      // `1,000,000` → thousands
+      normalized = normalized.replace(/,/g, "");
+    } else if (commas.length === 1 && !normalized.includes(".")) {
+      const [, frac = ""] = normalized.split(",");
+      // `14,155` (exactly 3 frac digits) → thousands; `100,50` → decimal
+      if (frac.length === 3) {
+        normalized = normalized.replace(/,/g, "");
+      } else {
+        normalized = normalized.replace(",", ".");
+      }
+    } else {
+      // Mixed `1.000,50` — last comma is the decimal.
+      normalized = normalized.replace(/\./g, "").replace(",", ".");
+    }
   } else {
     const dots = normalized.match(/\./g) ?? [];
     if (dots.length > 1) {
