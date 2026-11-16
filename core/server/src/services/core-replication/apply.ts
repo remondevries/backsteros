@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 
 import { db, sqlClient } from "../../db/index.js";
 import {
@@ -46,6 +46,7 @@ import {
   taskNumberKeeper,
   taskNumberScopeId,
 } from "./task-number-conflicts.js";
+import { mergeEntityCounter } from "./entity-counter-merge.js";
 import { getTableSpec, rowIdFromPk, type KnownTable, type TableSpec } from "./tables.js";
 import {
   publishProjectUpdateWorkspaceUpdated,
@@ -684,6 +685,9 @@ async function applyEntityCounterRow(
   const entity = String(row.entity);
   const scopeId = String(row.scope_id);
   const remoteNext = Number(row.next_value);
+  if (!Number.isFinite(remoteNext)) {
+    return "skipped";
+  }
 
   const [existing] = await db
     .select({ updatedAt: entityCounters.updatedAt, nextValue: entityCounters.nextValue })
@@ -697,7 +701,13 @@ async function applyEntityCounterRow(
     )
     .limit(1);
 
-  if (existing && existing.updatedAt >= remoteUpdatedAt) {
+  // Counters are monotonic high-water marks: merge (max next_value, max
+  // updated_at) instead of LWW so ties and out-of-order rows never roll back.
+  const merged = mergeEntityCounter(existing ?? null, {
+    nextValue: remoteNext,
+    updatedAt: remoteUpdatedAt,
+  });
+  if (existing && !merged.changed) {
     return "skipped";
   }
 
@@ -707,8 +717,8 @@ async function applyEntityCounterRow(
       workspaceId,
       entity,
       scopeId,
-      nextValue: remoteNext,
-      updatedAt: remoteUpdatedAt,
+      nextValue: merged.nextValue,
+      updatedAt: merged.updatedAt,
     })
     .onConflictDoUpdate({
       target: [
@@ -717,8 +727,10 @@ async function applyEntityCounterRow(
         entityCounters.scopeId,
       ],
       set: {
-        nextValue: Math.max(existing?.nextValue ?? 0, remoteNext),
-        updatedAt: remoteUpdatedAt,
+        // greatest() in SQL too: a concurrent local bump between the read and
+        // this write must not be overwritten by the merged snapshot.
+        nextValue: sql`greatest(${entityCounters.nextValue}, ${merged.nextValue})`,
+        updatedAt: sql`greatest(${entityCounters.updatedAt}, ${merged.updatedAt.toISOString()}::timestamptz)`,
       },
     });
 
