@@ -5,11 +5,15 @@ import {
   assertIncomeCategoryKind,
   bookedOnWithinDays,
   collectPendingMirrorCandidates,
+  defaultKindForCategoryName,
   detectOwnAccountTransfer,
   isCounterpartyOwnAccount,
+  isEligibleMirrorCounterpart,
   isIncomeNamedCategory,
   isMirrorTransferPair,
   normalizeAccountRef,
+  pickTransferCategoryId,
+  selectMirrorCounterpart,
 } from "./own-account-transfer.js";
 
 describe("normalizeAccountRef", () => {
@@ -98,20 +102,277 @@ describe("isMirrorTransferPair", () => {
       bookedOnWithinDays("2026-07-27", "2026-07-31", 3),
       false,
     );
-    assert.equal(
-      isMirrorTransferPair(
+  });
+});
+
+describe("tightened mirror-pair detection (A2)", () => {
+  const own = new Set(["NL80INGB0008304884", "NL43INGB0663319099"]);
+
+  it("rejects Mercedes lease −570.81 vs internal Lemo-Design transfer (no IBAN/payee confirm)", () => {
+    const mirror = selectMirrorCounterpart(
+      {
+        id: "mercedes",
+        bankAccountId: "ing-business",
+        amountCents: -57_081,
+        bookedOn: "2025-10-20",
+        payee: "Mercedes-Benz Financial Services",
+        counterparty: "NL00MBFS0000000001",
+      },
+      [
         {
-          bankAccountId: "a",
-          amountCents: -100,
-          bookedOn: "2026-07-27",
+          id: "lemo-transfer",
+          bankAccountId: "bank24",
+          amountCents: 57_081,
+          bookedOn: "2025-10-20",
+          payee: "Lemo-Design",
+          counterparty: null,
+          categoryKind: "transfer",
+          categoryId: "cat-transfer",
         },
+      ],
+      own,
+      { sourceAccountRef: "NL80INGB0008304884" },
+    );
+    assert.equal(mirror, null);
+  });
+
+  it("rejects restaurant CCV*Anne&Max −42.35 vs client Jansen +42.35", () => {
+    const mirror = selectMirrorCounterpart(
+      {
+        id: "anne",
+        bankAccountId: "amex-gold",
+        amountCents: -4_235,
+        bookedOn: "2025-08-16",
+        payee: "CCV*Anne&Max",
+        counterparty: null,
+      },
+      [
+        {
+          id: "jansen",
+          bankAccountId: "ing-business",
+          amountCents: 4_235,
+          bookedOn: "2025-08-16",
+          payee: "Jansen Hoveniers",
+          counterparty: "NL00BANK0123456789",
+          categoryKind: "income",
+          categoryId: "cat-income",
+        },
+      ],
+      own,
+    );
+    assert.equal(mirror, null);
+  });
+
+  it("rejects Thuisbezorgd −24.20 vs BTA invoice +24.20", () => {
+    assert.equal(
+      detectOwnAccountTransfer({
+        id: "thuis",
+        bankAccountId: "bank24",
+        amountCents: -2_420,
+        bookedOn: "2025-03-12",
+        payee: "Thuisbezorgd.nl",
+        counterparty: null,
+        ownAccountRefs: own,
+        mirrorCandidates: [
+          {
+            id: "bta",
+            bankAccountId: "ing-business",
+            amountCents: 2_420,
+            bookedOn: "2025-03-13",
+            payee: "BTA Diensten",
+            categoryKind: "income",
+            categoryId: "cat-income",
+          },
+        ],
+      }),
+      null,
+    );
+  });
+
+  it("rejects Albert Heijn −10.29 vs Reset4U +10.29", () => {
+    assert.equal(
+      selectMirrorCounterpart(
+        {
+          id: "ah",
+          bankAccountId: "bank24",
+          amountCents: -1_029,
+          bookedOn: "2024-07-12",
+          payee: "Albert Heijn 1234",
+        },
+        [
+          {
+            id: "r4u",
+            bankAccountId: "ing-business",
+            amountCents: 1_029,
+            bookedOn: "2024-07-12",
+            payee: "Reset4U",
+            categoryKind: "income",
+            categoryId: "cat-income",
+          },
+        ],
+        own,
+      ),
+      null,
+    );
+  });
+
+  it("rejects Belastingdienst tax payments vs coincidental opposite amounts", () => {
+    assert.equal(
+      selectMirrorCounterpart(
+        {
+          id: "tax",
+          bankAccountId: "bank24",
+          amountCents: -227_600,
+          bookedOn: "2022-07-01",
+          payee: "Belastingdienst",
+        },
+        [
+          {
+            id: "other",
+            bankAccountId: "ing-business",
+            amountCents: 227_600,
+            bookedOn: "2022-07-02",
+            payee: "Some client",
+            categoryKind: "income",
+            categoryId: "cat-income",
+          },
+        ],
+        own,
+      ),
+      null,
+    );
+  });
+
+  it("skips voided/refused settlement counterparts", () => {
+    assert.equal(
+      isEligibleMirrorCounterpart(
+        { amountCents: -50_000, payee: "X" },
         {
           bankAccountId: "b",
-          amountCents: 100,
-          bookedOn: "2026-07-31",
+          amountCents: 50_000,
+          bookedOn: "2026-01-01",
+          categoryId: null,
+          settlementState: "refused",
         },
+        own,
       ),
       false,
+    );
+  });
+
+  it("pairs 1:1 preferring the closest date and consuming the counterpart", () => {
+    const used = new Set<string>();
+    const first = selectMirrorCounterpart(
+      {
+        id: "debit-1",
+        bankAccountId: "ing-business",
+        amountCents: -64_553,
+        bookedOn: "2026-07-27",
+        payee: "American Express Europe SA",
+      },
+      [
+        {
+          id: "credit-far",
+          bankAccountId: "amex-gold",
+          amountCents: 64_553,
+          bookedOn: "2026-07-29",
+          payee: "HARTELIJK BEDANKT VOOR UW BETALING",
+          categoryId: null,
+        },
+        {
+          id: "credit-near",
+          bankAccountId: "amex-gold",
+          amountCents: 64_553,
+          bookedOn: "2026-07-27",
+          payee: "HARTELIJK BEDANKT VOOR UW BETALING",
+          categoryId: null,
+        },
+      ],
+      own,
+      { usedCandidateIds: used },
+    );
+    assert.equal(first?.id, "credit-near");
+    used.add(first!.id!);
+    const second = selectMirrorCounterpart(
+      {
+        id: "debit-2",
+        bankAccountId: "ing-business",
+        amountCents: -64_553,
+        bookedOn: "2026-07-28",
+        payee: "American Express Europe SA",
+      },
+      [
+        {
+          id: "credit-far",
+          bankAccountId: "amex-gold",
+          amountCents: 64_553,
+          bookedOn: "2026-07-29",
+          payee: "HARTELIJK BEDANKT VOOR UW BETALING",
+          categoryId: null,
+        },
+        {
+          id: "credit-near",
+          bankAccountId: "amex-gold",
+          amountCents: 64_553,
+          bookedOn: "2026-07-27",
+          payee: "HARTELIJK BEDANKT VOOR UW BETALING",
+          categoryId: null,
+        },
+      ],
+      own,
+      { usedCandidateIds: used },
+    );
+    assert.equal(second?.id, "credit-far");
+  });
+
+  it("still matches Amex thank-you ↔ ING debit via payee confirmation", () => {
+    assert.equal(
+      detectOwnAccountTransfer({
+        id: "ing-amex",
+        bankAccountId: "ing-business",
+        amountCents: -64_553,
+        bookedOn: "2026-07-27",
+        payee: "American Express Europe SA Netherlands Branch",
+        counterparty: "NL63DEUT0265188040",
+        ownAccountRefs: own,
+        sourceAccountRef: "NL80INGB0008304884",
+        mirrorCandidates: [
+          {
+            id: "amex-credit",
+            bankAccountId: "amex-gold",
+            amountCents: 64_553,
+            bookedOn: "2026-07-27",
+            payee: "HARTELIJK BEDANKT VOOR UW BETALING",
+            categoryKind: "expense",
+            categoryId: "cat-other",
+          },
+        ],
+      }),
+      "mirror_pair",
+    );
+  });
+
+  it("matches uncategorized opposite amounts above the small-amount floor", () => {
+    assert.equal(
+      detectOwnAccountTransfer({
+        id: "a",
+        bankAccountId: "ing-business",
+        amountCents: -150_00,
+        bookedOn: "2026-07-27",
+        payee: "Internal move",
+        ownAccountRefs: own,
+        mirrorCandidates: [
+          {
+            id: "b",
+            bankAccountId: "bank24",
+            amountCents: 150_00,
+            bookedOn: "2026-07-27",
+            payee: "From business",
+            categoryId: null,
+          },
+        ],
+      }),
+      "mirror_pair",
     );
   });
 });
@@ -134,28 +395,6 @@ describe("detectOwnAccountTransfer", () => {
     );
   });
 
-  it("detects mirror pairs before falling back to payee", () => {
-    assert.equal(
-      detectOwnAccountTransfer({
-        counterparty: "NL63DEUT0265188040",
-        payee: "American Express Europe SA Netherlands Branch",
-        amountCents: -64_553,
-        bankAccountId: "ing-business",
-        bookedOn: "2026-07-27",
-        ownAccountRefs: own,
-        sourceAccountRef: "NL80INGB0008304884",
-        mirrorCandidates: [
-          {
-            bankAccountId: "amex-gold",
-            amountCents: 64_553,
-            bookedOn: "2026-07-27",
-          },
-        ],
-      }),
-      "mirror_pair",
-    );
-  });
-
   it("falls back to payee heuristic for Amex thank-you credits", () => {
     assert.equal(
       detectOwnAccountTransfer({
@@ -170,33 +409,23 @@ describe("detectOwnAccountTransfer", () => {
     );
   });
 
-  it("returns null for ordinary merchants", () => {
-    assert.equal(
-      detectOwnAccountTransfer({
-        counterparty: "NL00BANK0123456789",
-        payee: "LINEAR.APP COVINA",
-        amountCents: -28_59,
-        bankAccountId: "ing-business",
-        bookedOn: "2026-07-27",
-        ownAccountRefs: own,
-      }),
-      null,
-    );
-  });
-
-  it("matches opposite amounts inside a pending import batch", () => {
+  it("matches opposite amounts inside a pending import batch when uncategorized", () => {
     const pending = [
       {
         id: "1",
         bankAccountId: "ing-business",
-        amountCents: -64_553,
+        amountCents: -150_00,
         bookedOn: "2026-07-27",
+        payee: "Move",
+        categoryId: null as string | null,
       },
       {
         id: "2",
         bankAccountId: "amex-gold",
-        amountCents: 64_553,
+        amountCents: 150_00,
         bookedOn: "2026-07-27",
+        payee: "Move",
+        categoryId: null as string | null,
       },
     ];
     assert.equal(collectPendingMirrorCandidates(pending, pending[0]!).length, 1);
@@ -204,7 +433,6 @@ describe("detectOwnAccountTransfer", () => {
       detectOwnAccountTransfer({
         ...pending[0]!,
         counterparty: null,
-        payee: "Something",
         ownAccountRefs: own,
         mirrorCandidates: collectPendingMirrorCandidates(pending, pending[0]!),
       }),
@@ -213,10 +441,12 @@ describe("detectOwnAccountTransfer", () => {
   });
 });
 
-describe("income category kind guard", () => {
-  it("flags Income-named categories", () => {
+describe("income category kind guard (A12)", () => {
+  it("matches Income and Income Personal, not Income tax", () => {
     assert.equal(isIncomeNamedCategory("Income"), true);
     assert.equal(isIncomeNamedCategory("Income Personal"), true);
+    assert.equal(isIncomeNamedCategory("Income tax"), false);
+    assert.equal(isIncomeNamedCategory("Income Tax Personal"), false);
     assert.equal(isIncomeNamedCategory("Lemo-Design"), false);
   });
 
@@ -226,6 +456,52 @@ describe("income category kind guard", () => {
       /CATEGORY_INCOME_KIND_MISMATCH/,
     );
     assert.doesNotThrow(() => assertIncomeCategoryKind("Income", "income"));
+    assert.doesNotThrow(() => assertIncomeCategoryKind("Income tax", "expense"));
     assert.doesNotThrow(() => assertIncomeCategoryKind("Other", "expense"));
+  });
+
+  it("defaults kind=income for Income-named creates", () => {
+    assert.equal(defaultKindForCategoryName("Income"), "income");
+    assert.equal(defaultKindForCategoryName("Income Personal"), "income");
+    assert.equal(defaultKindForCategoryName("Income tax"), "expense");
+    assert.equal(defaultKindForCategoryName("Other", "transfer"), "transfer");
+  });
+});
+
+describe("pickTransferCategoryId", () => {
+  const rows = [
+    { id: "transfer", name: "Transfer", parentId: null },
+    { id: "cc-pay", name: "Creditcard payments", parentId: "transfer" },
+    { id: "amex", name: "Amex", parentId: "transfer" },
+  ];
+
+  it("resolves bank↔bank to Transfer, not Creditcard payments", () => {
+    assert.equal(
+      pickTransferCategoryId(rows, {
+        bankAccountType: "checking",
+        counterpartAccountType: "savings",
+      }),
+      "transfer",
+    );
+  });
+
+  it("resolves card involvement to Creditcard payments", () => {
+    assert.equal(
+      pickTransferCategoryId(rows, {
+        bankAccountType: "checking",
+        counterpartAccountType: "credit_card",
+      }),
+      "cc-pay",
+    );
+  });
+
+  it("prefers account-named transfer children when hints match", () => {
+    assert.equal(
+      pickTransferCategoryId(rows, {
+        bankAccountName: "Amex Gold",
+        bankAccountType: "credit_card",
+      }),
+      "amex",
+    );
   });
 });

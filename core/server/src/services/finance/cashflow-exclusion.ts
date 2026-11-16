@@ -23,7 +23,7 @@ import {
   isCounterpartyOwnAccount,
   isOwnAccountTransferPayee,
   OWN_ACCOUNT_TRANSFER_CREDIT_PAYEE,
-  OWN_ACCOUNT_TRANSFER_DEBIT_PAYEE,
+  OWN_ACCOUNT_TRANSFER_DEBIT_PAYEE_PG,
 } from "./own-account-transfer.js";
 
 export type CashflowCategoryMeta = {
@@ -113,7 +113,8 @@ export function ownAccountTransferPayeeSql(): SQL {
   );
   const debit = and(
     sql`${financialTransactions.amountCents} < 0`,
-    sql`${financialTransactions.payee} ~* ${OWN_ACCOUNT_TRANSFER_DEBIT_PAYEE.source}`,
+    // Postgres word boundary is `\y` — JS `\b` is backspace in ~*.
+    sql`${financialTransactions.payee} ~* ${OWN_ACCOUNT_TRANSFER_DEBIT_PAYEE_PG}`,
   );
   const match = or(credit, debit);
   if (!match) {

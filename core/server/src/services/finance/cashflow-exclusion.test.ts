@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import { isCashflowCategory } from "./cashflow-exclusion.js";
+import { OWN_ACCOUNT_TRANSFER_DEBIT_PAYEE_PG } from "./own-account-transfer.js";
 
 describe("isCashflowCategory", () => {
   it("counts uncategorized as cashflow", () => {
@@ -44,5 +45,12 @@ describe("isCashflowCategory", () => {
       }),
       true,
     );
+  });
+});
+
+describe("OWN_ACCOUNT_TRANSFER_DEBIT_PAYEE_PG (A4)", () => {
+  it("uses Postgres \\y word boundaries so 'AH' does not match inside longer tokens", () => {
+    assert.match(OWN_ACCOUNT_TRANSFER_DEBIT_PAYEE_PG, /\\y/);
+    assert.doesNotMatch(OWN_ACCOUNT_TRANSFER_DEBIT_PAYEE_PG, /\\b/);
   });
 });

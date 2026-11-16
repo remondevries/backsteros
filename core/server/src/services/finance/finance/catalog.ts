@@ -19,7 +19,10 @@ import {
 } from "../../../db/schema.js";
 import { newId } from "../../../lib/crypto.js";
 import { balanceAffectingTransactionSql } from "../cashflow-exclusion.js";
-import { assertIncomeCategoryKind } from "../own-account-transfer.js";
+import {
+  assertIncomeCategoryKind,
+  defaultKindForCategoryName,
+} from "../own-account-transfer.js";
 import { advanceMonthlyNextDate } from "../recurring-next-date.js";
 export type DbExecutor = Pick<typeof db, "select" | "insert" | "update" | "delete">;
 
@@ -221,7 +224,8 @@ export async function createFinancialCategory(
     executor,
   );
   const parentId = parent?.id ?? null;
-  const kind = input.kind ?? parent?.kind ?? "expense";
+  const kind =
+    input.kind ?? defaultKindForCategoryName(input.name, parent?.kind ?? null);
   assertIncomeCategoryKind(input.name, kind);
   const listing =
     input.listing ??

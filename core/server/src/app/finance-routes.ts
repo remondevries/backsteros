@@ -917,17 +917,23 @@ export function registerFinanceRoutes(app: Hono) {
       try {
         if (isRestLeaderFirstWrite()) {
           // Validate Income-named ↔ kind locally before forwarding.
-          const { assertIncomeCategoryKind } = await import(
-            "../services/finance/own-account-transfer.js"
-          );
-          assertIncomeCategoryKind(body.name, body.kind ?? "expense");
+          const {
+            assertIncomeCategoryKind,
+            defaultKindForCategoryName,
+          } = await import("../services/finance/own-account-transfer.js");
+          const kind =
+            body.kind ?? defaultKindForCategoryName(body.name, null);
+          assertIncomeCategoryKind(body.name, kind);
           const categoryId = newId();
           await commitRestEntityWrite({
             workspaceId: auth.workspaceId,
             entity: "financial_category",
             entityId: categoryId,
             operation: "upsert",
-            payload: buildFinancialCategoryRestPayload(categoryId, body),
+            payload: buildFinancialCategoryRestPayload(categoryId, {
+              ...body,
+              kind,
+            }),
           });
           const row = await financeService.getFinancialCategoryById(
             auth.workspaceId,

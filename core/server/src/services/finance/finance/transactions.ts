@@ -882,13 +882,44 @@ export async function importBankCsv(
     }
   }
 
-  await assignTransferCategoriesOnImport(workspaceId, pending);
+  const transferAssign = await assignTransferCategoriesOnImport(
+    workspaceId,
+    pending,
+  );
 
   try {
-    inserted = await commitFinancialTransactionCreates(workspaceId, pending);    duplicates += Math.max(0, pending.length - inserted);
+    inserted = await commitFinancialTransactionCreates(workspaceId, pending);
+    duplicates += Math.max(0, pending.length - inserted);
   } catch {
     errors += pending.length;
     inserted = 0;
+  }
+
+  // A3: when the new leg matches an earlier uncategorized counterpart, promote it.
+  if (transferAssign.counterpartIdsToRecategorize.length > 0) {
+    const byCategory = new Map<string, string[]>();
+    for (const id of transferAssign.counterpartIdsToRecategorize) {
+      const categoryId = transferAssign.transferCategoryIdByRowId.get(id);
+      if (!categoryId) continue;
+      const list = byCategory.get(categoryId) ?? [];
+      list.push(id);
+      byCategory.set(categoryId, list);
+    }
+    for (const [categoryId, ids] of byCategory) {
+      await batchUpdateTransactions(workspaceId, ids, { categoryId });
+      for (const id of ids) {
+        const row = await getTransactionById(workspaceId, id);
+        if (!row) continue;
+        const { recordFinancialTransactionRestSyncEvent } = await import(
+          "../../sync.js"
+        );
+        await recordFinancialTransactionRestSyncEvent(
+          workspaceId,
+          row,
+          "upsert",
+        );
+      }
+    }
   }
 
   // Insert-only: core replication cursors this table on created_at, so the

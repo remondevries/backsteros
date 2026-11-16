@@ -344,12 +344,45 @@ export async function syncBankAccountFromMoneybird(
   }
 
   if (pendingInserts.length > 0) {
-    await assignTransferCategoriesOnImport(workspaceId, pendingInserts);
+    const transferAssign = await assignTransferCategoriesOnImport(
+      workspaceId,
+      pendingInserts,
+    );
     inserted = await commitFinancialTransactionCreates(
       workspaceId,
       pendingInserts,
     );
     duplicates += pendingInserts.length - inserted;
+    // A3: promote uncategorized earlier half of a newly detected mirror pair.
+    if (transferAssign.counterpartIdsToRecategorize.length > 0) {
+      const { batchUpdateTransactions, getTransactionById } = await import(
+        "./finance.js"
+      );
+      const { recordFinancialTransactionRestSyncEvent } = await import(
+        "../sync.js"
+      );
+      const byCategory = new Map<string, string[]>();
+      for (const id of transferAssign.counterpartIdsToRecategorize) {
+        const categoryId = transferAssign.transferCategoryIdByRowId.get(id);
+        if (!categoryId) continue;
+        const list = byCategory.get(categoryId) ?? [];
+        list.push(id);
+        byCategory.set(categoryId, list);
+      }
+      for (const [categoryId, ids] of byCategory) {
+        await batchUpdateTransactions(workspaceId, ids, { categoryId });
+        for (const id of ids) {
+          const row = await getTransactionById(workspaceId, id);
+          if (row) {
+            await recordFinancialTransactionRestSyncEvent(
+              workspaceId,
+              row,
+              "upsert",
+            );
+          }
+        }
+      }
+    }
   }
   if (pendingUpdates.length > 0) {
     updated = await commitFinancialTransactionLedgerRefreshes(
