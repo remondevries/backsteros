@@ -127,11 +127,13 @@ export type LiveAgentChatHandlers = {
     messageId: string,
     decision: "approved" | "rejected",
     note?: string,
+    approverCode?: string,
   ) => Promise<AnswerChatThreadMessageChoicesResult>;
   /** OS-169 — dedicated Remon reconciliation ack before Retry payment. */
   acknowledgeBunqPaymentUnknownOutcome?: (
     proposalId: string,
     proposalHash: string,
+    approverCode?: string,
   ) => Promise<void>;
   answerForm?: (
     threadId: string,
@@ -1078,11 +1080,12 @@ export function LiveAgentChatPanel({
   );
 
   const onAcknowledgePaymentUnknownOutcome = useCallback(
-    async (proposalId: string, proposalHash: string) => {
+    async (proposalId: string, proposalHash: string, approverCode?: string) => {
       if (!liveAgentChat?.acknowledgeBunqPaymentUnknownOutcome) return;
       await liveAgentChat.acknowledgeBunqPaymentUnknownOutcome(
         proposalId,
         proposalHash,
+        approverCode,
       );
     },
     [liveAgentChat],
@@ -1093,6 +1096,7 @@ export function LiveAgentChatPanel({
       messageId: string,
       decision: "approved" | "rejected",
       note?: string,
+      approverCode?: string,
     ) => {
       if (!liveAgentId || !liveAgentChat?.answerApproval || !liveThreadId) {
         return;
@@ -1132,6 +1136,7 @@ export function LiveAgentChatPanel({
           messageId,
           decision,
           note,
+          approverCode,
         );
         dispatchLive({
           type: "pushMessage",

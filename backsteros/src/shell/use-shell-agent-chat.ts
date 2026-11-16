@@ -99,11 +99,13 @@ export type ShellAgentChatApi = {
     messageId: string,
     decision: "approved" | "rejected",
     note?: string,
+    approverCode?: string,
   ) => Promise<AnswerChatThreadMessageResult>;
   /** OS-169 — Remon explicit unknown-outcome ack before Retry payment. */
   acknowledgeBunqPaymentUnknownOutcome: (
     proposalId: string,
     proposalHash: string,
+    approverCode?: string,
   ) => Promise<void>;
   answerForm: (
     threadId: string,
@@ -327,6 +329,7 @@ export function useShellAgentChat(): ShellAgentChatApi {
       messageId: string,
       decision: "approved" | "rejected",
       note?: string,
+      approverCode?: string,
     ) => {
       return shellChatRequestJson<AnswerChatThreadMessageResult>(
         apiUrl,
@@ -337,6 +340,7 @@ export function useShellAgentChat(): ShellAgentChatApi {
           body: JSON.stringify({
             decision,
             ...(note?.trim() ? { note: note.trim() } : {}),
+            ...(approverCode?.trim() ? { approverCode: approverCode.trim() } : {}),
           }),
         },
       );
@@ -345,14 +349,17 @@ export function useShellAgentChat(): ShellAgentChatApi {
   );
 
   const acknowledgeBunqPaymentUnknownOutcome = useCallback(
-    async (proposalId: string, proposalHash: string) => {
+    async (proposalId: string, proposalHash: string, approverCode?: string) => {
       await shellChatRequestJson<{ proposal: { id: string } }>(
         apiUrl,
         client,
         `/api/v1/finance/bunq/payment-proposals/${encodeURIComponent(proposalId)}/acknowledge-unknown-outcome`,
         {
           method: "POST",
-          body: JSON.stringify({ proposalHash }),
+          body: JSON.stringify({
+            proposalHash,
+            ...(approverCode?.trim() ? { approverCode: approverCode.trim() } : {}),
+          }),
         },
       );
     },

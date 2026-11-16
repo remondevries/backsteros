@@ -383,6 +383,7 @@ export function registerAgentChatRoutes(app: Hono) {
             postAuth,
             undefined,
             auth,
+            parsed.data.approverCode,
           );
           return c.json(result, 201);
         }

@@ -1,4 +1,6 @@
 import { and, asc, desc, eq, inArray, isNull } from "drizzle-orm";
+
+import { requirePaymentApproverCode } from "../lib/bunq-payment-proposal-chat-binding.js";
 import {
   chatThreadLinkPreviewSchema,
   chatThreadMessageApprovalAnswerSchema,
@@ -1388,6 +1390,26 @@ export async function postChatThreadMessage(
   });
 
   if (isAgentReply && agent) {
+    // OS-167 C1: never trust agent-supplied payment card display. Rebuild from
+    // the DB proposal and refuse foreign / non-pending / wrong-thread cards.
+    let approvalToStore: ChatThreadMessageApproval | undefined = options.approval;
+    let paymentProposalToLink: string | null = null;
+    if (options.approval?.paymentProposal) {
+      const { prepareAgentPostedPaymentApproval } = await import(
+        "./bunq-payment-proposals.js"
+      );
+      const prepared = await prepareAgentPostedPaymentApproval({
+        workspaceId,
+        threadId,
+        agentId: agent.id,
+        claimed: {
+          proposalId: options.approval.paymentProposal.proposalId,
+          proposalHash: options.approval.paymentProposal.proposalHash,
+        },
+      });
+      approvalToStore = prepared.approval as ChatThreadMessageApproval;
+      paymentProposalToLink = prepared.proposalId;
+    }
     const emailDraftDeps = options.emailDraftDeps ?? defaultChatEmailDraftDeps;
     const resolvedEmailDraft = options.emailDraft
       ? await resolveChatThreadEmailDraft(
@@ -1411,7 +1433,7 @@ export async function postChatThreadMessage(
         status: "done",
         choices: options.choices ?? null,
         choicesAnswer: null,
-        approval: options.approval ?? null,
+        approval: approvalToStore ?? null,
         approvalAnswer: null,
         form: options.form ?? null,
         formAnswer: null,
@@ -1423,6 +1445,26 @@ export async function postChatThreadMessage(
         updatedAt: now,
       })
       .returning();
+
+    if (paymentProposalToLink) {
+      const { linkBunqPaymentProposalChatMessage } = await import(
+        "./bunq-payment-proposals.js"
+      );
+      const linked = await linkBunqPaymentProposalChatMessage(
+        workspaceId,
+        paymentProposalToLink,
+        threadId,
+        messageId,
+      );
+      if (!linked) {
+        // Lost the race to another card — soft-delete this one, refuse.
+        await db
+          .update(chatThreadMessages)
+          .set({ deletedAt: now, updatedAt: now })
+          .where(eq(chatThreadMessages.id, messageId));
+        throw conflict("Payment proposal already has an approval card");
+      }
+    }
 
     const draftAttachmentIds = resolvedEmailDraft?.attachmentIds ?? [];
     const messageAttachmentIds = [
@@ -1443,7 +1485,7 @@ export async function postChatThreadMessage(
 
     const mentionText = [
       text,
-      approvalMentionSource(options.approval),
+      approvalMentionSource(approvalToStore),
       formMentionSource(options.form),
       emailDraftMentionSource(resolvedEmailDraft),
     ]
@@ -1932,6 +1974,7 @@ export async function answerChatThreadMessageApproval(
   auth: PostMessageAuth,
   deps: DeliverDeps = {},
   paymentApproverAuth?: import("../middleware/auth.js").AuthContext,
+  approverCode?: string,
 ): Promise<AnswerChatThreadMessageResult> {
   const [row] = await db
     .select()
@@ -1961,22 +2004,36 @@ export async function answerChatThreadMessageApproval(
   const trimmedNote = note?.trim() || undefined;
 
   let paymentProposalResult: { status: string } | null = null;
+  // Display card for the answer — rebuilt from the DB for payment cards.
+  let answeredApproval: ChatThreadMessageApproval = approval;
   if (approval.paymentProposal) {
     if (!paymentApproverAuth) {
       throw badRequest(
         "Authenticated Remon session is required to answer a payment proposal",
       );
     }
-    const { handleChatPaymentProposalAnswer } = await import(
-      "./bunq-payment-proposals.js"
-    );
+    const code = requirePaymentApproverCode(approverCode);
+    const {
+      handleChatPaymentProposalAnswer,
+      resolveChatPaymentProposalForAnswer,
+    } = await import("./bunq-payment-proposals.js");
+    // Re-fetch from DB: the stored card (agent-posted) is not trusted for the
+    // hash or display. The proposal must be linked to exactly this message.
+    const resolved = await resolveChatPaymentProposalForAnswer({
+      workspaceId,
+      threadId,
+      messageId,
+      proposalId: approval.paymentProposal.proposalId,
+    });
+    answeredApproval = resolved.approval as ChatThreadMessageApproval;
     paymentProposalResult = await handleChatPaymentProposalAnswer({
       workspaceId,
       auth: paymentApproverAuth,
-      proposalId: approval.paymentProposal.proposalId,
-      proposalHash: approval.paymentProposal.proposalHash,
+      proposalId: resolved.proposal.id,
+      proposalHash: resolved.proposal.proposalHash,
       decision,
       note: trimmedNote,
+      approverCode: code,
     });
   }
 
@@ -2072,7 +2129,7 @@ export async function answerChatThreadMessageApproval(
   }
 
   const body = formatApprovalAnswerBody(
-    approval.title,
+    answeredApproval.title,
     decision,
     trimmedNote,
   );

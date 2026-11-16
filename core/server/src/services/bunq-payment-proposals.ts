@@ -43,6 +43,10 @@ import {
   isAgentPersonaAuth,
 } from "../lib/bunq-payment-proposal-auth.js";
 import {
+  assertAgentMayPostPaymentCard,
+  assertPaymentCardBoundToProposal,
+} from "../lib/bunq-payment-proposal-chat-binding.js";
+import {
   canAcceptFreshPaymentApproval,
 } from "../lib/bunq-payment-proposal-outcome.js";
 import {
@@ -416,13 +420,17 @@ export async function listBunqPaymentProposals(
   return rows.map(toProposal);
 }
 
+/**
+ * Bind the proposal to exactly one chat card. Only links while unlinked (or
+ * re-linking the same message) so a second agent post cannot steal the binding.
+ */
 export async function linkBunqPaymentProposalChatMessage(
   workspaceId: string,
   proposalId: string,
   chatThreadId: string,
   chatMessageId: string,
-): Promise<void> {
-  await db
+): Promise<boolean> {
+  const rows = await db
     .update(bunqPaymentProposals)
     .set({
       chatThreadId,
@@ -433,8 +441,61 @@ export async function linkBunqPaymentProposalChatMessage(
       and(
         eq(bunqPaymentProposals.workspaceId, workspaceId),
         eq(bunqPaymentProposals.id, proposalId),
+        sql`(${bunqPaymentProposals.chatMessageId} is null or ${bunqPaymentProposals.chatMessageId} = ${chatMessageId})`,
       ),
-    );
+    )
+    .returning({ id: bunqPaymentProposals.id });
+  return rows.length > 0;
+}
+
+/**
+ * Agent posts `approval.paymentProposal`: everything the agent displayed is
+ * discarded. Validates ownership / status / thread against the DB row and
+ * returns a card rebuilt from that row.
+ */
+export async function prepareAgentPostedPaymentApproval(input: {
+  workspaceId: string;
+  threadId: string;
+  agentId: string;
+  claimed: { proposalId: string; proposalHash?: string | null };
+}): Promise<{
+  proposalId: string;
+  approval: ReturnType<typeof buildApprovalCard>;
+}> {
+  const proposal = await getBunqPaymentProposal(
+    input.workspaceId,
+    input.claimed.proposalId,
+  );
+  assertAgentMayPostPaymentCard(proposal, {
+    agentId: input.agentId,
+    threadId: input.threadId,
+    claimedProposalHash: input.claimed.proposalHash,
+  });
+  return { proposalId: proposal.id, approval: buildApprovalCard(proposal) };
+}
+
+/**
+ * Owner answers a payment card: re-read the proposal, require this exact
+ * message is the linked card, and rebuild the card from the DB.
+ */
+export async function resolveChatPaymentProposalForAnswer(input: {
+  workspaceId: string;
+  threadId: string;
+  messageId: string;
+  proposalId: string;
+}): Promise<{
+  proposal: BunqPaymentProposal;
+  approval: ReturnType<typeof buildApprovalCard>;
+}> {
+  const proposal = await getBunqPaymentProposal(
+    input.workspaceId,
+    input.proposalId,
+  );
+  assertPaymentCardBoundToProposal(proposal, {
+    threadId: input.threadId,
+    messageId: input.messageId,
+  });
+  return { proposal, approval: buildApprovalCard(proposal) };
 }
 
 /**
@@ -623,7 +684,10 @@ export async function approveBunqPaymentProposal(
 ): Promise<BunqPaymentProposal> {
   assertFeatureEnabled();
   const ownerUserId = await resolveWorkspaceOwnerUserId(workspaceId);
-  const approverUserId = assertRemonPaymentApprover(auth, ownerUserId);
+  const approverUserId = assertRemonPaymentApprover(auth, ownerUserId, {
+    proposalHash: input.proposalHash,
+    approverCode: input.approverCode,
+  });
 
   const now = deps.now?.() ?? new Date();
   let approvedAmount: string;
@@ -732,7 +796,10 @@ export async function rejectBunqPaymentProposal(
 ): Promise<BunqPaymentProposal> {
   assertFeatureEnabled();
   const ownerUserId = await resolveWorkspaceOwnerUserId(workspaceId);
-  assertRemonPaymentApprover(auth, ownerUserId);
+  assertRemonPaymentApprover(auth, ownerUserId, {
+    proposalHash: input.proposalHash,
+    approverCode: input.approverCode,
+  });
   const now = new Date();
 
   const updated = await db.transaction(async (tx) => {
@@ -790,7 +857,10 @@ export async function acknowledgeBunqPaymentUnknownOutcome(
 ): Promise<BunqPaymentProposal> {
   assertFeatureEnabled();
   const ownerUserId = await resolveWorkspaceOwnerUserId(workspaceId);
-  const acknowledgerUserId = assertRemonPaymentApprover(auth, ownerUserId);
+  const acknowledgerUserId = assertRemonPaymentApprover(auth, ownerUserId, {
+    proposalHash: input.proposalHash,
+    approverCode: input.approverCode,
+  });
   const now = new Date();
 
   const updated = await db.transaction(async (tx) => {
@@ -812,15 +882,18 @@ export async function acknowledgeBunqPaymentUnknownOutcome(
       );
     }
 
-    if (
-      input.confirmPaymentAlreadyExists === true &&
-      row.bunqPaymentId != null &&
-      row.bunqPaymentId.trim() !== ""
-    ) {
+    const confirmedPaymentId =
+      input.bunqPaymentId?.trim() ||
+      (row.bunqPaymentId != null && row.bunqPaymentId.trim() !== ""
+        ? row.bunqPaymentId.trim()
+        : null);
+
+    if (input.confirmPaymentAlreadyExists === true && confirmedPaymentId) {
       const [executed] = await tx
         .update(bunqPaymentProposals)
         .set({
           status: "executed",
+          bunqPaymentId: confirmedPaymentId,
           unknownOutcomeAcknowledgedAt: now,
           unknownOutcomeAcknowledgedByUserId: acknowledgerUserId,
           executionError: null,
@@ -879,6 +952,7 @@ export async function handleChatPaymentProposalAnswer(
     proposalHash: string;
     decision: "approved" | "rejected";
     note?: string;
+    approverCode: string;
   },
   deps: BunqPaymentProposalDeps = {},
 ): Promise<BunqPaymentProposal | null> {
@@ -899,6 +973,7 @@ export async function handleChatPaymentProposalAnswer(
       input.auth,
       {
         proposalHash: input.proposalHash,
+        approverCode: input.approverCode,
         // Only after dedicated ack endpoint — never from Approve click alone.
         ...(priorAck ? { acknowledgeUnknownOutcome: true } : {}),
       },
@@ -909,6 +984,10 @@ export async function handleChatPaymentProposalAnswer(
     input.workspaceId,
     input.proposalId,
     input.auth,
-    { proposalHash: input.proposalHash, note: input.note },
+    {
+      proposalHash: input.proposalHash,
+      approverCode: input.approverCode,
+      note: input.note,
+    },
   );
 }

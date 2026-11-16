@@ -31,6 +31,34 @@ test("blocks sync, PTY, ops, and API key admin", () => {
   assert.equal(isRouteAllowed("PATCH", "/api/v1/settings/agentmail"), false);
 });
 
+test("blocks bunq payment approve, reject, and ack on the public door", () => {
+  const id = "prop_1";
+  assert.equal(
+    isRouteAllowed("POST", `/api/v1/finance/bunq/payment-proposals/${id}/approve`),
+    false,
+  );
+  assert.equal(
+    isRouteAllowed("POST", `/api/v1/finance/bunq/payment-proposals/${id}/reject`),
+    false,
+  );
+  assert.equal(
+    isRouteAllowed(
+      "POST",
+      `/api/v1/finance/bunq/payment-proposals/${id}/acknowledge-unknown-outcome`,
+    ),
+    false,
+  );
+  // Create / list still go through the door (Ralph proposes); core scopes apply.
+  assert.equal(
+    isRouteAllowed("POST", "/api/v1/finance/bunq/payment-proposals"),
+    true,
+  );
+  assert.equal(
+    isRouteAllowed("GET", `/api/v1/finance/bunq/payment-proposals/${id}`),
+    true,
+  );
+});
+
 test("allows file-task mailbox on the public door", () => {
   assert.equal(isRouteAllowed("POST", "/api/v1/file-task-callbacks"), true);
   assert.equal(

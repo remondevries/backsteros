@@ -15,6 +15,8 @@ import {
   agents,
   apiKeys,
   bunqPaymentProposals,
+  chatThreadMessages,
+  chatThreads,
   contacts,
   users,
   workspaces,
@@ -25,8 +27,13 @@ import {
   generateBunqSigningKeyPair,
 } from "../lib/bunq-client.js";
 import { apiKeyLookupPrefix, hashApiKey } from "../lib/crypto.js";
+import { computeBunqPaymentApproverCode } from "../lib/bunq-payment-approver-stepup.js";
 import { hashBunqPaymentProposal } from "../lib/bunq-payment-proposal.js";
 import type { AuthContext } from "../middleware/auth.js";
+import {
+  answerChatThreadMessageApproval,
+  postChatThreadMessage,
+} from "../services/agent-chat.js";
 import {
   acknowledgeBunqPaymentUnknownOutcome,
   approveBunqPaymentProposal,
@@ -38,6 +45,14 @@ process.env.BACKSTEROS_INTEGRATION_TEST = "1";
 process.env.BUNQ_PAYMENT_PROPOSALS_ENABLED = "true";
 // Never allow live production payment writes in this suite.
 delete process.env.BUNQ_ALLOW_LIVE_PAYMENT_WRITES;
+
+// Hash-bound Remon step-up (test-only secret; never a real credential).
+const APPROVER_SECRET = "integration-approver-totp-secret";
+const OWNER_KEY_REF = "integration-owner-key-ref";
+process.env.BUNQ_PAYMENT_APPROVER_TOTP_SECRET = APPROVER_SECRET;
+process.env.BUNQ_PAYMENT_APPROVER_API_KEY_IDS = OWNER_KEY_REF;
+const approverCode = (proposalHash: string) =>
+  computeBunqPaymentApproverCode(APPROVER_SECRET, proposalHash);
 
 const id = (prefix: string) => `${prefix}-${randomUUID()}`;
 const agentSecret = () => `sk_agent_${randomUUID().replaceAll("-", "")}`;
@@ -52,7 +67,7 @@ function ownerAuth(userId: string, workspaceId: string): AuthContext {
     kind: "api_key",
     userId,
     clerkUserId: null,
-    apiKeyId: id("owner-key-ref"),
+    apiKeyId: OWNER_KEY_REF,
     contactId: null,
     workspaceId,
     membershipRole: "owner",
@@ -219,14 +234,14 @@ test("OS-167: concurrent Approve & Pay → exactly one bunq payment execution", 
       workspaceId,
       created.proposal.id,
       remon,
-      { proposalHash },
+      { proposalHash, approverCode: approverCode(proposalHash) },
       deps,
     ),
     approveBunqPaymentProposal(
       workspaceId,
       created.proposal.id,
       remon,
-      { proposalHash },
+      { proposalHash, approverCode: approverCode(proposalHash) },
       deps,
     ),
   ]);
@@ -270,7 +285,7 @@ test("OS-167: concurrent Approve & Pay → exactly one bunq payment execution", 
     workspaceId,
     created.proposal.id,
     remon,
-    { proposalHash },
+    { proposalHash, approverCode: approverCode(proposalHash) },
     deps,
   );
   assert.equal(replay.status, "executed");
@@ -377,7 +392,7 @@ test("OS-167: ambiguous bunq outcome → needs_reconciliation; no second send wi
     workspaceId,
     created.proposal.id,
     remon,
-    { proposalHash },
+    { proposalHash, approverCode: approverCode(proposalHash) },
     ambiguousDeps,
   );
   assert.equal(first.status, "needs_reconciliation");
@@ -391,7 +406,7 @@ test("OS-167: ambiguous bunq outcome → needs_reconciliation; no second send wi
         workspaceId,
         created.proposal.id,
         remon,
-        { proposalHash, acknowledgeUnknownOutcome: true },
+        { proposalHash, approverCode: approverCode(proposalHash), acknowledgeUnknownOutcome: true },
         ambiguousDeps,
       ),
     (error: unknown) =>
@@ -412,6 +427,7 @@ test("OS-167: ambiguous bunq outcome → needs_reconciliation; no second send wi
         proposalId: created.proposal.id,
         proposalHash,
         decision: "approved",
+        approverCode: approverCode(proposalHash),
       }),
     (error: unknown) =>
       error instanceof Error &&
@@ -429,7 +445,7 @@ test("OS-167: ambiguous bunq outcome → needs_reconciliation; no second send wi
         workspaceId,
         created.proposal.id,
         agentAuth(workspaceId, agentKeyId, contactId),
-        { proposalHash },
+        { proposalHash, approverCode: approverCode(proposalHash) },
       ),
     (error: unknown) =>
       error instanceof Error &&
@@ -440,7 +456,7 @@ test("OS-167: ambiguous bunq outcome → needs_reconciliation; no second send wi
     workspaceId,
     created.proposal.id,
     remon,
-    { proposalHash },
+    { proposalHash, approverCode: approverCode(proposalHash) },
   );
   assert.equal(acked.status, "needs_reconciliation");
   assert.ok(acked.unknownOutcomeAcknowledgedAt);
@@ -452,7 +468,7 @@ test("OS-167: ambiguous bunq outcome → needs_reconciliation; no second send wi
         workspaceId,
         created.proposal.id,
         remon,
-        { proposalHash },
+        { proposalHash, approverCode: approverCode(proposalHash) },
         ambiguousDeps,
       ),
     (error: unknown) =>
@@ -475,7 +491,7 @@ test("OS-167: ambiguous bunq outcome → needs_reconciliation; no second send wi
     workspaceId,
     created.proposal.id,
     remon,
-    { proposalHash, acknowledgeUnknownOutcome: true },
+    { proposalHash, approverCode: approverCode(proposalHash), acknowledgeUnknownOutcome: true },
     successDeps,
   );
   assert.equal(second.status, "executed");
@@ -494,7 +510,7 @@ test("OS-167: ambiguous bunq outcome → needs_reconciliation; no second send wi
     workspaceId,
     created.proposal.id,
     remon,
-    { proposalHash, acknowledgeUnknownOutcome: true },
+    { proposalHash, approverCode: approverCode(proposalHash), acknowledgeUnknownOutcome: true },
     successDeps,
   );
   assert.equal(replay.status, "executed");
@@ -601,7 +617,7 @@ test("OS-169: chat Approve after dedicated ack retries with same idempotency key
     workspaceId,
     created.proposal.id,
     remon,
-    { proposalHash },
+    { proposalHash, approverCode: approverCode(proposalHash) },
     ambiguousDeps,
   );
   assert.equal(first.status, "needs_reconciliation");
@@ -611,7 +627,7 @@ test("OS-169: chat Approve after dedicated ack retries with same idempotency key
     workspaceId,
     created.proposal.id,
     remon,
-    { proposalHash },
+    { proposalHash, approverCode: approverCode(proposalHash) },
   );
 
   const [before] = await db
@@ -633,6 +649,7 @@ test("OS-169: chat Approve after dedicated ack retries with same idempotency key
       proposalId: created.proposal.id,
       proposalHash,
       decision: "approved",
+      approverCode: approverCode(proposalHash),
     },
     successDeps,
   );
@@ -737,7 +754,7 @@ test("OS-167: expired pending proposal cannot Approve & Pay", async (context) =>
         workspaceId,
         created.proposal.id,
         ownerAuth(userId, workspaceId),
-        { proposalHash },
+        { proposalHash, approverCode: approverCode(proposalHash) },
         {
           getPaymentClient: async () => mockPaymentClient({ mode: "success" }),
         },
@@ -745,4 +762,364 @@ test("OS-167: expired pending proposal cannot Approve & Pay", async (context) =>
     (error: unknown) =>
       error instanceof Error && /expired/i.test(error.message),
   );
+});
+
+test("C1: agent card is rebuilt from DB; answer needs approverCode and the linked message", async (context) => {
+  const userId = id("user");
+  const workspaceId = id("workspace");
+  const contactId = id("contact");
+  const agentId = id("ralph-agent");
+  const threadId = id("thread");
+  process.env.BUNQ_PAYMENT_PROPOSAL_AGENT_ID = agentId;
+  const agentKeyId = id("agent-key");
+  const agentKeySecret = agentSecret();
+
+  context.after(async () => {
+    await db
+      .delete(bunqPaymentProposals)
+      .where(eq(bunqPaymentProposals.workspaceId, workspaceId));
+    await db
+      .delete(chatThreadMessages)
+      .where(eq(chatThreadMessages.workspaceId, workspaceId));
+    await db.delete(chatThreads).where(eq(chatThreads.workspaceId, workspaceId));
+    await db.delete(agents).where(eq(agents.workspaceId, workspaceId));
+    await db.delete(apiKeys).where(eq(apiKeys.workspaceId, workspaceId));
+    await db.delete(contacts).where(eq(contacts.workspaceId, workspaceId));
+    await db.delete(workspaces).where(eq(workspaces.id, workspaceId));
+    await db.delete(users).where(eq(users.id, userId));
+  });
+
+  await db.insert(users).values({
+    id: userId,
+    clerkId: id("clerk"),
+    email: `remon-${randomUUID()}@example.test`,
+    displayName: "Remon",
+  });
+  await db.insert(workspaces).values({
+    id: workspaceId,
+    name: "bunq chat card",
+    slug: id("bunq-card"),
+    ownerUserId: userId,
+  });
+  await db.insert(contacts).values({
+    id: contactId,
+    workspaceId,
+    key: id("c"),
+    name: "Ralph",
+    firstName: "Ralph",
+    lastName: "",
+  });
+  await db.insert(apiKeys).values({
+    id: agentKeyId,
+    workspaceId,
+    userId: null,
+    contactId,
+    name: "Ralph",
+    prefix: apiKeyLookupPrefix(agentKeySecret),
+    keyHash: hashApiKey(agentKeySecret),
+    scopes: [...AGENT_KEY_SCOPES],
+  });
+  await db.insert(agents).values({
+    id: agentId,
+    workspaceId,
+    contactId,
+    apiKeyId: agentKeyId,
+    name: "Ralph",
+    enabled: true,
+  });
+  await db.insert(chatThreads).values({ id: threadId, workspaceId, agentId });
+
+  const paymentFields = {
+    recipientName: "Ada Lovelace",
+    recipientIban: "NL91ABNA0417164300",
+    amountValue: "9.99",
+    amountCurrency: "EUR",
+    memo: "Chat card",
+    sourceMonetaryAccountId: "77",
+  };
+  const { proposalHash } = hashBunqPaymentProposal(paymentFields);
+  const created = await createBunqPaymentProposal(
+    workspaceId,
+    agentAuth(workspaceId, agentKeyId, contactId),
+    { ...paymentFields, idempotencyKey: `card-${randomUUID()}` },
+  );
+
+  const agentPost = {
+    apiKeyId: agentKeyId,
+    authorContactId: contactId,
+    authorName: null,
+  };
+
+  // Agent lies about everything displayed — all of it must be discarded.
+  const posted = await postChatThreadMessage(
+    workspaceId,
+    threadId,
+    "Please approve",
+    agentPost,
+    {},
+    {
+      approval: {
+        title: "Pay EUR 0.01 to Charity",
+        kind: "payment",
+        summary: "Pay 0.01 EUR to Charity",
+        fields: [{ label: "IBAN", value: "NL00EVIL0000000000" }],
+        destructive: false,
+        paymentProposal: {
+          proposalId: created.proposal.id,
+          proposalHash,
+        },
+      },
+    },
+  );
+  const message = posted.message;
+  assert.equal(message.approval?.summary, "Pay 9.99 EUR to Ada Lovelace");
+  assert.equal(
+    message.approval?.fields?.find((f) => f.label === "IBAN")?.value,
+    "NL91ABNA0417164300",
+  );
+  assert.equal(message.approval?.paymentProposal?.proposalHash, proposalHash);
+
+  const [linked] = await db
+    .select()
+    .from(bunqPaymentProposals)
+    .where(eq(bunqPaymentProposals.id, created.proposal.id))
+    .limit(1);
+  assert.equal(linked?.chatMessageId, message.id);
+  assert.equal(linked?.chatThreadId, threadId);
+
+  // A claimed hash that does not match the stored proposal is refused.
+  await assert.rejects(
+    () =>
+      postChatThreadMessage(workspaceId, threadId, "again", agentPost, {}, {
+        approval: {
+          title: "x",
+          kind: "payment",
+          summary: "x",
+          destructive: false,
+          paymentProposal: {
+            proposalId: created.proposal.id,
+            proposalHash: "f".repeat(64),
+          },
+        },
+      }),
+    (error: unknown) => (error as { status?: number }).status === 400,
+  );
+
+  // A second card for the same proposal is refused (already linked).
+  await assert.rejects(
+    () =>
+      postChatThreadMessage(workspaceId, threadId, "again", agentPost, {}, {
+        approval: {
+          title: "x",
+          kind: "payment",
+          summary: "x",
+          destructive: false,
+          paymentProposal: {
+            proposalId: created.proposal.id,
+            proposalHash,
+          },
+        },
+      }),
+    (error: unknown) => (error as { status?: number }).status === 409,
+  );
+
+  const remon = ownerAuth(userId, workspaceId);
+  const remonPost = {
+    apiKeyId: null,
+    authorContactId: null,
+    authorName: "Remon",
+  };
+
+  // No approverCode → refused before anything happens.
+  await assert.rejects(
+    () =>
+      answerChatThreadMessageApproval(
+        workspaceId,
+        threadId,
+        message.id,
+        "rejected",
+        undefined,
+        remonPost,
+        {},
+        remon,
+      ),
+    (error: unknown) => (error as { status?: number }).status === 400,
+  );
+
+  // Wrong code → 403.
+  await assert.rejects(
+    () =>
+      answerChatThreadMessageApproval(
+        workspaceId,
+        threadId,
+        message.id,
+        "rejected",
+        undefined,
+        remonPost,
+        {},
+        remon,
+        approverCode(proposalHash) === "000000" ? "000001" : "000000",
+      ),
+    (error: unknown) => (error as { status?: number }).status === 403,
+  );
+
+  // Proposal linked to a different message → card is not the bound one.
+  const other = await postChatThreadMessage(
+    workspaceId,
+    threadId,
+    "unrelated agent message",
+    agentPost,
+  );
+  await db
+    .update(bunqPaymentProposals)
+    .set({ chatMessageId: other.message.id })
+    .where(eq(bunqPaymentProposals.id, created.proposal.id));
+  await assert.rejects(
+    () =>
+      answerChatThreadMessageApproval(
+        workspaceId,
+        threadId,
+        message.id,
+        "rejected",
+        undefined,
+        remonPost,
+        {},
+        remon,
+        approverCode(proposalHash),
+      ),
+    (error: unknown) => (error as { status?: number }).status === 403,
+  );
+  await db
+    .update(bunqPaymentProposals)
+    .set({ chatMessageId: message.id })
+    .where(eq(bunqPaymentProposals.id, created.proposal.id));
+
+  // Correct code + bound message → reject (no money moves).
+  const answered = await answerChatThreadMessageApproval(
+    workspaceId,
+    threadId,
+    message.id,
+    "rejected",
+    undefined,
+    remonPost,
+    {},
+    remon,
+    approverCode(proposalHash),
+  );
+  assert.equal(answered.message.approvalAnswer?.decision, "rejected");
+  const [after] = await db
+    .select({ status: bunqPaymentProposals.status })
+    .from(bunqPaymentProposals)
+    .where(eq(bunqPaymentProposals.id, created.proposal.id))
+    .limit(1);
+  assert.equal(after?.status, "rejected");
+});
+
+test("C1: approve without a valid approverCode is refused", async (context) => {
+  const userId = id("user");
+  const workspaceId = id("workspace");
+  const contactId = id("contact");
+  const agentId = id("ralph-agent");
+  process.env.BUNQ_PAYMENT_PROPOSAL_AGENT_ID = agentId;
+  const agentKeyId = id("agent-key");
+  const agentKeySecret = agentSecret();
+
+  context.after(async () => {
+    await db
+      .delete(bunqPaymentProposals)
+      .where(eq(bunqPaymentProposals.workspaceId, workspaceId));
+    await db.delete(agents).where(eq(agents.workspaceId, workspaceId));
+    await db.delete(apiKeys).where(eq(apiKeys.workspaceId, workspaceId));
+    await db.delete(contacts).where(eq(contacts.workspaceId, workspaceId));
+    await db.delete(workspaces).where(eq(workspaces.id, workspaceId));
+    await db.delete(users).where(eq(users.id, userId));
+  });
+
+  await db.insert(users).values({
+    id: userId,
+    clerkId: id("clerk"),
+    email: `remon-${randomUUID()}@example.test`,
+    displayName: "Remon",
+  });
+  await db.insert(workspaces).values({
+    id: workspaceId,
+    name: "bunq stepup",
+    slug: id("bunq-step"),
+    ownerUserId: userId,
+  });
+  await db.insert(contacts).values({
+    id: contactId,
+    workspaceId,
+    key: id("c"),
+    name: "Ralph",
+    firstName: "Ralph",
+    lastName: "",
+  });
+  await db.insert(apiKeys).values({
+    id: agentKeyId,
+    workspaceId,
+    userId: null,
+    contactId,
+    name: "Ralph",
+    prefix: apiKeyLookupPrefix(agentKeySecret),
+    keyHash: hashApiKey(agentKeySecret),
+    scopes: [...AGENT_KEY_SCOPES],
+  });
+  await db.insert(agents).values({
+    id: agentId,
+    workspaceId,
+    contactId,
+    apiKeyId: agentKeyId,
+    name: "Ralph",
+    enabled: true,
+  });
+
+  const paymentFields = {
+    recipientName: "Ada",
+    recipientIban: "NL91ABNA0417164300",
+    amountValue: "2.00",
+    amountCurrency: "EUR",
+    memo: "step-up",
+    sourceMonetaryAccountId: "5",
+  };
+  const { proposalHash } = hashBunqPaymentProposal(paymentFields);
+  const created = await createBunqPaymentProposal(
+    workspaceId,
+    agentAuth(workspaceId, agentKeyId, contactId),
+    { ...paymentFields, idempotencyKey: `step-${randomUUID()}` },
+  );
+  const counter = { n: 0 };
+  const deps = {
+    getPaymentClient: async () => mockPaymentClient({ mode: "count", counter }),
+  };
+
+  // Valid Access key id but wrong code → no payment.
+  await assert.rejects(
+    () =>
+      approveBunqPaymentProposal(
+        workspaceId,
+        created.proposal.id,
+        ownerAuth(userId, workspaceId),
+        {
+          proposalHash,
+          approverCode:
+            approverCode(proposalHash) === "000000" ? "000001" : "000000",
+        },
+        deps,
+      ),
+    (error: unknown) => (error as { status?: number }).status === 403,
+  );
+  // Access key that is not allowlisted → no payment, even with a valid code.
+  await assert.rejects(
+    () =>
+      approveBunqPaymentProposal(
+        workspaceId,
+        created.proposal.id,
+        { ...ownerAuth(userId, workspaceId), apiKeyId: "not-allowlisted" },
+        { proposalHash, approverCode: approverCode(proposalHash) },
+        deps,
+      ),
+    (error: unknown) => (error as { status?: number }).status === 403,
+  );
+  assert.equal(counter.n, 0);
 });

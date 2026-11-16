@@ -367,6 +367,11 @@ export const approveBunqPaymentProposalInputSchema = z.object({
    */
   proposalHash: z.string().trim().length(64),
   /**
+   * Hash-bound Remon step-up code (6 digits). Bearer Access keys alone are
+   * never enough to approve.
+   */
+  approverCode: z.string().trim().regex(/^\d{6}$/),
+  /**
    * Optional amount ≤ proposed. Omit to transfer the full proposed amount.
    */
   amountValue: z.string().trim().min(1).max(32).optional(),
@@ -381,15 +386,28 @@ export const approveBunqPaymentProposalInputSchema = z.object({
 export const acknowledgeBunqPaymentUnknownOutcomeInputSchema = z.object({
   proposalHash: z.string().trim().length(64),
   /**
+   * Hash-bound Remon step-up code (6 digits).
+   */
+  approverCode: z.string().trim().regex(/^\d{6}$/),
+  /**
    * When true and the row already has a known bunq payment id, mark executed
    * (reconciled) and never resubmit. Otherwise only records the ack so Retry
    * / Approve & Pay may proceed with the same idempotency key.
    */
   confirmPaymentAlreadyExists: z.boolean().optional(),
+  /**
+   * Optional bunq payment id Remon supplies after reconciling in the bunq app.
+   * When set with confirmPaymentAlreadyExists, marks the proposal executed.
+   */
+  bunqPaymentId: z.string().trim().min(1).max(64).optional(),
 });
 
 export const rejectBunqPaymentProposalInputSchema = z.object({
   proposalHash: z.string().trim().length(64),
+  /**
+   * Hash-bound Remon step-up code (6 digits).
+   */
+  approverCode: z.string().trim().regex(/^\d{6}$/),
   note: z.string().trim().min(1).max(500).optional(),
 });
 

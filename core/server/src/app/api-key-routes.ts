@@ -12,6 +12,7 @@ import {
   type ApiKeyRequestLog,
 } from "@backsteros/contracts";
 
+import { evaluateApiKeySecretAccess } from "../lib/api-key-secret-access.js";
 import { toApiKey } from "../lib/mappers.js";
 import { requestClientAddress } from "../lib/request-address.js";
 import type { AuthContext } from "../middleware/auth.js";
@@ -72,6 +73,30 @@ export function registerApiKeyRoutes(app: Hono) {
         ? await apiKeyService.apiKeyContactIsWorkspaceOwner(auth)
         : false;
     return canManageApiKeys(auth, { contactIsWorkspaceOwner });
+  }
+
+  /**
+   * Agent persona keys (and the payment-proposal agent key) may only be
+   * revealed/rotated from the local shell. Missing keys fall through (404).
+   */
+  async function denyApiKeySecretAccess(
+    auth: AuthContext,
+    keyId: string,
+  ): Promise<{
+    status: 403;
+    body: { error: string; code: "forbidden" };
+  } | null> {
+    const target = await apiKeyService.getApiKeySecretAccessTarget(
+      auth.workspaceId,
+      keyId,
+    );
+    if (!target) return null;
+    const decision = evaluateApiKeySecretAccess(auth, target);
+    if (decision.allowed) return null;
+    return {
+      status: 403,
+      body: { error: decision.reason, code: "forbidden" },
+    };
   }
 
   app.get("/api/v1/api-keys", async (c) => {
@@ -266,6 +291,9 @@ export function registerApiKeyRoutes(app: Hono) {
       );
     }
 
+    const denied = await denyApiKeySecretAccess(auth, c.req.param("id"));
+    if (denied) return c.json(denied.body, denied.status);
+
     const secret = await apiKeyService.revealApiKeySecret(
       auth.workspaceId,
       c.req.param("id"),
@@ -284,6 +312,9 @@ export function registerApiKeyRoutes(app: Hono) {
         auth.kind === "api_key" ? 403 : 401,
       );
     }
+
+    const denied = await denyApiKeySecretAccess(auth, c.req.param("id"));
+    if (denied) return c.json(denied.body, denied.status);
 
     try {
       const rotated = await apiKeyService.rotateApiKey(

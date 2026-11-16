@@ -4,6 +4,10 @@
  */
 
 import type { AuthContext } from "../middleware/auth.js";
+import {
+  resolveBunqPaymentApproverTotpSecret,
+  verifyBunqPaymentApproverCode,
+} from "./bunq-payment-approver-stepup.js";
 
 /** Agent persona keys are API keys bound to a contact (never Access/door keys). */
 export function isAgentPersonaAuth(
@@ -48,12 +52,41 @@ export function assertAgentAllowedToProposeBunqPayments(
 }
 
 /**
- * Remon only — authenticated workspace owner (local-shell or Access key).
+ * Explicit Remon device / Access keys allowed to attempt payment approval.
+ * Comma-separated api_key ids. Empty → no API key may approve (local_shell only,
+ * and still requires step-up).
+ */
+export function resolveBunqPaymentApproverApiKeyIds(
+  env: NodeJS.ProcessEnv = process.env,
+): ReadonlySet<string> {
+  const raw = env.BUNQ_PAYMENT_APPROVER_API_KEY_IDS?.trim() ?? "";
+  if (!raw) return new Set();
+  return new Set(
+    raw
+      .split(",")
+      .map((part) => part.trim())
+      .filter((part) => part.length > 0),
+  );
+}
+
+export type PaymentApproverStepUp = {
+  /** 6-digit code bound to proposalHash (HMAC step-up). */
+  approverCode: string;
+  proposalHash: string;
+  nowMs?: number;
+};
+
+/**
+ * Remon only — workspace owner with a dedicated approver credential.
+ * Bearer API keys alone are never enough: require hash-bound step-up code.
+ * App Access keys outside BUNQ_PAYMENT_APPROVER_API_KEY_IDS are refused.
  * Agent persona keys (Ralph) are always refused.
  */
 export function assertRemonPaymentApprover(
   auth: AuthContext,
   workspaceOwnerUserId: string,
+  stepUp: PaymentApproverStepUp,
+  env: NodeJS.ProcessEnv = process.env,
 ): string {
   if (isAgentPersonaAuth(auth)) {
     throw forbidden("Ralph cannot approve bunq payment proposals");
@@ -64,13 +97,43 @@ export function assertRemonPaymentApprover(
       "Only the authenticated workspace owner (Remon) may approve bunq payments",
     );
   }
-  if (auth.kind === "local_shell") {
-    return userId;
+
+  if (auth.kind === "api_key") {
+    if (auth.contactId != null) {
+      throw forbidden(
+        "Only the authenticated workspace owner (Remon) may approve bunq payments",
+      );
+    }
+    const allowlist = resolveBunqPaymentApproverApiKeyIds(env);
+    const keyId = auth.apiKeyId?.trim() ?? "";
+    if (!keyId || !allowlist.has(keyId)) {
+      throw forbidden(
+        "This Access key is not allowed to approve bunq payments (configure BUNQ_PAYMENT_APPROVER_API_KEY_IDS)",
+      );
+    }
+  } else if (auth.kind !== "local_shell") {
+    throw forbidden(
+      "Only the authenticated workspace owner (Remon) may approve bunq payments",
+    );
   }
-  if (auth.kind === "api_key" && auth.contactId == null) {
-    return userId;
+
+  const secret = resolveBunqPaymentApproverTotpSecret(env);
+  if (!secret) {
+    throw forbidden(
+      "bunq payment approval requires BUNQ_PAYMENT_APPROVER_TOTP_SECRET (hash-bound step-up)",
+    );
   }
-  throw forbidden(
-    "Only the authenticated workspace owner (Remon) may approve bunq payments",
+  const ok = verifyBunqPaymentApproverCode(
+    secret,
+    stepUp.proposalHash,
+    stepUp.approverCode,
+    stepUp.nowMs ?? Date.now(),
   );
+  if (!ok) {
+    throw forbidden(
+      "Invalid or expired payment approver code for this proposal hash",
+    );
+  }
+
+  return userId;
 }

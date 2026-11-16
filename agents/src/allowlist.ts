@@ -11,6 +11,8 @@ export const BLOCKED_PATH_PATTERNS: RegExp[] = [
   /^\/api\/v1\/agent-pty(?:\/|$)/,
   /^\/api\/v1\/api-keys(?:\/|$)/,
   /^\/api\/v1\/settings(?:\/|$)/,
+  // Payment approve / reject / ack must never go through the public agents door.
+  /^\/api\/v1\/finance\/bunq\/payment-proposals\/[^/]+\/(approve|reject|acknowledge-unknown-outcome)(?:\/|$)/,
 ];
 
 export function isRouteAllowed(method: string, pathname: string): boolean {

@@ -26,12 +26,15 @@ export type ChatApprovalAnswerFn = (
   messageId: string,
   decision: "approved" | "rejected",
   note?: string,
+  /** Hash-bound 6-digit Remon step-up code — required for payment cards. */
+  approverCode?: string,
 ) => void | Promise<void>;
 
 /** OS-169 — dedicated Remon reconciliation ack (never inferred from Approve). */
 export type ChatPaymentUnknownOutcomeAckFn = (
   proposalId: string,
   proposalHash: string,
+  approverCode?: string,
 ) => void | Promise<void>;
 
 const ChatApprovalAnswerContext = createContext<ChatApprovalAnswerFn | null>(
@@ -166,6 +169,7 @@ export function ChatApprovalCard({ part }: { part: ChatUiCardPart }) {
   const [noteOpen, setNoteOpen] = useState(false);
   const [note, setNote] = useState("");
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const [approverCode, setApproverCode] = useState("");
 
   const locked = Boolean(data?.answer) || data?.dismissed === true;
   const paymentProposal = data?.paymentProposal;
@@ -174,6 +178,9 @@ export function ChatApprovalCard({ part }: { part: ChatUiCardPart }) {
   const unknownAcked =
     localAcked || paymentProposal?.unknownOutcomeAcknowledged === true;
   const approveBlockedByAck = requiresUnknownAck && !unknownAcked;
+  const isPaymentCard = Boolean(paymentProposal);
+  const approverCodeValid = /^\d{6}$/.test(approverCode.trim());
+  const blockedByApproverCode = isPaymentCard && !approverCodeValid;
 
   const submit = useCallback(
     async (decision: "approved" | "rejected", withNote?: string) => {
@@ -181,6 +188,7 @@ export function ChatApprovalCard({ part }: { part: ChatUiCardPart }) {
       if (decision === "approved" && requiresUnknownAck && !unknownAcked) {
         return;
       }
+      if (isPaymentCard && !approverCodeValid) return;
       setSubmitting(true);
       try {
         const trimmed = withNote?.trim();
@@ -188,27 +196,46 @@ export function ChatApprovalCard({ part }: { part: ChatUiCardPart }) {
           data.messageId,
           decision,
           trimmed && trimmed.length > 0 ? trimmed : undefined,
+          isPaymentCard ? approverCode.trim() : undefined,
         );
       } finally {
         setSubmitting(false);
       }
     },
-    [data, onAnswer, requiresUnknownAck, submitting, unknownAcked],
+    [
+      approverCode,
+      approverCodeValid,
+      data,
+      isPaymentCard,
+      onAnswer,
+      requiresUnknownAck,
+      submitting,
+      unknownAcked,
+    ],
   );
 
   const acknowledgeUnknown = useCallback(async () => {
     if (!paymentProposal || !onAckUnknown || acking || unknownAcked) return;
+    if (!approverCodeValid) return;
     setAcking(true);
     try {
       await onAckUnknown(
         paymentProposal.proposalId,
         paymentProposal.proposalHash,
+        approverCode.trim(),
       );
       setLocalAcked(true);
     } finally {
       setAcking(false);
     }
-  }, [acking, onAckUnknown, paymentProposal, unknownAcked]);
+  }, [
+    acking,
+    approverCode,
+    approverCodeValid,
+    onAckUnknown,
+    paymentProposal,
+    unknownAcked,
+  ]);
 
   if (!data) return null;
 
@@ -225,7 +252,9 @@ export function ChatApprovalCard({ part }: { part: ChatUiCardPart }) {
         "chat-ui-approval-card__btn",
         data.destructive ? "is-danger" : "is-primary",
       ].join(" ")}
-      disabled={submitting || !onAnswer || approveBlockedByAck}
+      disabled={
+        submitting || !onAnswer || approveBlockedByAck || blockedByApproverCode
+      }
       onClick={() => void submit("approved")}
     >
       {approveLabel}
@@ -321,12 +350,36 @@ export function ChatApprovalCard({ part }: { part: ChatUiCardPart }) {
               <input
                 type="checkbox"
                 checked={unknownAcked}
-                disabled={acking || submitting || unknownAcked || !onAckUnknown}
+                disabled={
+                  acking ||
+                  submitting ||
+                  unknownAcked ||
+                  !onAckUnknown ||
+                  blockedByApproverCode
+                }
                 onChange={() => {
                   if (!unknownAcked) void acknowledgeUnknown();
                 }}
               />
               <span>{ackLabel}</span>
+            </label>
+          ) : null}
+          {isPaymentCard ? (
+            <label className="chat-ui-approval-card__approver-code">
+              <span>Approver code (6 digits for this payment hash)</span>
+              <input
+                type="text"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                pattern="[0-9]{6}"
+                maxLength={6}
+                value={approverCode}
+                disabled={submitting}
+                aria-label="Payment approver code"
+                onChange={(event) =>
+                  setApproverCode(event.target.value.replace(/\D/g, "").slice(0, 6))
+                }
+              />
             </label>
           ) : null}
           <div className="chat-ui-approval-card__actions">
@@ -348,7 +401,7 @@ export function ChatApprovalCard({ part }: { part: ChatUiCardPart }) {
             <button
               type="button"
               className="chat-ui-approval-card__btn is-default"
-              disabled={submitting || !onAnswer}
+              disabled={submitting || !onAnswer || blockedByApproverCode}
               onClick={() => void submit("rejected")}
             >
               {rejectLabel}
@@ -379,7 +432,12 @@ export function ChatApprovalCard({ part }: { part: ChatUiCardPart }) {
           <button
             type="button"
             className="chat-ui-approval-card__note-submit"
-            disabled={submitting || !onAnswer || note.trim().length === 0}
+            disabled={
+              submitting ||
+              !onAnswer ||
+              note.trim().length === 0 ||
+              blockedByApproverCode
+            }
             aria-label={rejectLabel}
             onClick={() => void submit("rejected", note)}
           >

@@ -15,6 +15,7 @@ import { logger } from "../lib/logger.js";
 import {
   apiKeyAuditLogs,
   apiKeyRequestLogs,
+  agents,
   apiKeys,
   contacts,
   users,
@@ -34,6 +35,8 @@ import {
   decryptWebhookSecret,
   encryptWebhookSecret,
 } from "../lib/auto-review-webhook.js";
+import type { ApiKeySecretAccessTarget } from "../lib/api-key-secret-access.js";
+import { resolveAllowedBunqPaymentProposalAgentId } from "../lib/bunq-payment-proposal-auth.js";
 import {
   clearApiKeyLastUsedTouch,
   rememberApiKeyLastUsedTouch,
@@ -604,6 +607,46 @@ export async function updateApiKey(
 
     return row;
   });
+}
+
+/**
+ * Target facts for reveal/rotate policy (agent persona key? payment agent key?).
+ * Null when the key does not exist / is revoked (caller returns 404).
+ */
+export async function getApiKeySecretAccessTarget(
+  workspaceId: string,
+  id: string,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<ApiKeySecretAccessTarget | null> {
+  const [row] = await db
+    .select({ id: apiKeys.id, contactId: apiKeys.contactId })
+    .from(apiKeys)
+    .where(
+      and(
+        eq(apiKeys.id, id),
+        eq(apiKeys.workspaceId, workspaceId),
+        isNull(apiKeys.revokedAt),
+      ),
+    )
+    .limit(1);
+  if (!row) return null;
+  const paymentAgentId = resolveAllowedBunqPaymentProposalAgentId(env);
+  let isPaymentProposalAgentKey = false;
+  if (paymentAgentId) {
+    const [agent] = await db
+      .select({ id: agents.id })
+      .from(agents)
+      .where(
+        and(
+          eq(agents.workspaceId, workspaceId),
+          eq(agents.id, paymentAgentId),
+          eq(agents.apiKeyId, id),
+        ),
+      )
+      .limit(1);
+    isPaymentProposalAgentKey = Boolean(agent);
+  }
+  return { contactId: row.contactId, isPaymentProposalAgentKey };
 }
 
 /**

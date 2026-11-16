@@ -952,6 +952,11 @@ export const answerChatThreadMessageChoicesInputSchema = z.object({
 export const answerChatThreadMessageApprovalInputSchema = z.object({
   decision: chatThreadMessageApprovalDecisionSchema,
   note: z.string().trim().min(1).max(500).optional(),
+  /**
+   * Required when the card carries a bunq paymentProposal — hash-bound
+   * Remon step-up code (6 digits). Ignored for non-payment cards.
+   */
+  approverCode: z.string().trim().regex(/^\d{6}$/).optional(),
 });
 
 /** Owner submits an assistant form card (once). */
