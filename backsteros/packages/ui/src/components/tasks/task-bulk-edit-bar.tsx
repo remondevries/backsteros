@@ -49,6 +49,8 @@ export type TaskBulkEditBarProps = {
   onApply: (patch: TaskBulkPatch) => void | Promise<void>;
   /** Soft-delete selected tasks (same confirm flow as finance bulk delete). */
   onDelete?: () => void | Promise<void>;
+  /** Noun in the delete confirm copy (default: task). */
+  deleteEntityLabel?: string;
   showProject?: boolean;
   showAssignee?: boolean;
   projectOptions?: SearchableDropdownOption<string>[];
@@ -73,6 +75,7 @@ export function TaskBulkEditBar({
   onSelectAll,
   onApply,
   onDelete,
+  deleteEntityLabel = "task",
   showProject = true,
   showAssignee = true,
   projectOptions = [],
@@ -225,8 +228,8 @@ export function TaskBulkEditBar({
     >
     <FinanceBulkBar
       selectionCount={selectionCount}
-      ariaLabel="Bulk edit selected tasks"
-      deleteEntityLabel="task"
+      ariaLabel={`Bulk edit selected ${deleteEntityLabel}s`}
+      deleteEntityLabel={deleteEntityLabel}
       dockClassName="finance-bulk-bar-dock task-bulk-bar-dock"
       showSelectAll={Boolean(onSelectAll)}
       onSelectAll={onSelectAll}

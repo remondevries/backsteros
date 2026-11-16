@@ -91,7 +91,11 @@ import {
 } from "../lib/task-link-picker-options";
 import { useAgentMail } from "../lib/agentmail-context";
 import { useEmailDetailListPrefetch } from "../lib/use-email-detail-list-prefetch";
+import { deleteEmailMessage } from "../lib/delete-email-message";
+import { forgetEmailListRemoval } from "../lib/email-list-pending-removals";
 import { patchEmailTaskListItem } from "../lib/email-list-tasks";
+import { dispatchEmailListRemove } from "../lib/use-agentmail-mailboxes";
+import { requestMailboxReload } from "./email/email-page-helpers";
 import {
   getProductTabUiState,
   patchProductTabCommunicationUi,
@@ -1431,6 +1435,97 @@ function CommunicationPageBody() {
     [],
   );
 
+  const handleMessagesBulkDelete = useCallback(
+    async (tasks: readonly TaskItemRowTask[]) => {
+      const conversationIds = new Set(
+        chatInbox.conversations.map((entry) => entry.id),
+      );
+      const supportIds = new Set(chatSupportTasks.map((entry) => entry.id));
+      const deletedIds: string[] = [];
+
+      for (const task of tasks) {
+        if (isEmailTaskListItem(task)) {
+          const inboxId = task.emailInboxId?.trim() || "";
+          const draftId = task.emailDraftId?.trim() || "";
+          if (inboxId && draftId) {
+            dispatchEmailListRemove({
+              inboxId,
+              messageId: draftId,
+            });
+            try {
+              await client.requestJson(
+                `/api/v1/email/inboxes/${encodeURIComponent(inboxId)}/drafts/${encodeURIComponent(draftId)}`,
+                { method: "DELETE" },
+              );
+              deletedIds.push(task.id);
+            } catch (error) {
+              forgetEmailListRemoval({
+                inboxId,
+                messageId: draftId,
+              });
+              requestMailboxReload();
+              throw error instanceof Error
+                ? error
+                : new Error("Could not delete draft.");
+            }
+            continue;
+          }
+          if (!inboxId || !task.emailMessageId?.trim()) {
+            continue;
+          }
+          const result = await deleteEmailMessage(client, {
+            inboxId,
+            messageId: task.emailMessageId,
+            threadId: task.emailThreadId ?? null,
+          });
+          if (!result.ok) {
+            throw new Error(result.error || "Could not delete email.");
+          }
+          deletedIds.push(task.id);
+          continue;
+        }
+
+        if (supportIds.has(task.id)) {
+          await workspace.softDeleteTask(task.id);
+          deletedIds.push(task.id);
+          continue;
+        }
+
+        if (conversationIds.has(task.id)) {
+          const result = await chatInbox.deleteConversation(task.id);
+          if (!result.ok) {
+            throw new Error(result.error || "Could not delete conversation.");
+          }
+          deletedIds.push(task.id);
+        }
+      }
+
+      const openId =
+        selectedEmailId ??
+        selectedSupportId ??
+        selectedChatConversationId ??
+        null;
+      if (openId && deletedIds.includes(openId)) {
+        setOptimisticChatItemId(null);
+        navigateToHref(navigate, resolveRemovalHref(openId), {
+          replace: true,
+        });
+      }
+    },
+    [
+      chatInbox,
+      chatSupportTasks,
+      client,
+      navigate,
+      resolveRemovalHref,
+      selectedChatConversationId,
+      selectedEmailId,
+      selectedSupportId,
+      setOptimisticChatItemId,
+      workspace,
+    ],
+  );
+
   const resetComposeState = useCallback(() => {
     setComposeTo("");
     setComposeParty({ contactId: null, organizationId: null });
@@ -1778,6 +1873,7 @@ function CommunicationPageBody() {
             onSelectEmail={selectEmail}
             onSelectSupport={selectSupport}
             onBulkApply={handleMessagesBulkApply}
+            onBulkDelete={handleMessagesBulkDelete}
             onBulkSelectionChange={setListBulkSelecting}
             onSend={chatInbox.sendMessage}
             createOpen={createOpen}

@@ -828,6 +828,7 @@ export function CommunicationChatView({
           selectedTasks={selectedBulkTasks}
           projectOptions={[...projectFilterOptions]}
           assigneeOptions={[...assigneeOptions]}
+          deleteEntityLabel="message"
           onClear={clearSelection}
           onSelectAll={
             selectedIds.size < listItemIds.length ? selectAll : undefined
