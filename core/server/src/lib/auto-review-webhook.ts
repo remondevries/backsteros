@@ -186,17 +186,101 @@ export function canEncryptWebhookSecret(
   return !requiresConfiguredWebhookEncryptionKey(env);
 }
 
+function keyFromMaterial(material: string): Buffer {
+  return createHash("sha256").update(material).digest();
+}
+
 function encryptionKey(env: NodeJS.ProcessEnv = process.env): Buffer {
   const material = webhookEncryptionKeyMaterial(env);
   if (material) {
-    return createHash("sha256").update(material).digest();
+    return keyFromMaterial(material);
   }
   if (requiresConfiguredWebhookEncryptionKey(env)) {
     throw new Error(
       "BACKSTEROS_SECRET_ENCRYPTION_KEY (or CORE_REPLICATION_SECRET) is required to encrypt auto-review webhook secrets in production/cloud",
     );
   }
-  return createHash("sha256").update(DEV_FALLBACK_KEY).digest();
+  return keyFromMaterial(DEV_FALLBACK_KEY);
+}
+
+/**
+ * Decrypt-side key cascade: any `leading` materials first (e.g. a dedicated
+ * bunq key), then BACKSTEROS_SECRET_ENCRYPTION_KEY, then CORE_REPLICATION_SECRET
+ * (deduplicated). The public dev constant is only a candidate when no real key
+ * is configured and the env does not require one.
+ */
+export function webhookDecryptionKeyMaterials(
+  env: NodeJS.ProcessEnv = process.env,
+  leading: ReadonlyArray<string | null | undefined> = [],
+): string[] {
+  const out: string[] = [];
+  for (const candidate of [
+    ...leading,
+    env.BACKSTEROS_SECRET_ENCRYPTION_KEY,
+    env.CORE_REPLICATION_SECRET,
+  ]) {
+    const trimmed = candidate?.trim();
+    if (trimmed && !out.includes(trimmed)) out.push(trimmed);
+  }
+  if (out.length === 0 && !requiresConfiguredWebhookEncryptionKey(env)) {
+    out.push(DEV_FALLBACK_KEY);
+  }
+  return out;
+}
+
+/** AES-256-GCM seal with an explicit key material (`v1:<iv>:<tag>:<data>`). */
+export function encryptSecretWithKeyMaterial(
+  plaintext: string,
+  keyMaterial: string,
+): string {
+  const iv = randomBytes(12);
+  const cipher = createCipheriv("aes-256-gcm", keyFromMaterial(keyMaterial), iv);
+  const encrypted = Buffer.concat([
+    cipher.update(plaintext, "utf8"),
+    cipher.final(),
+  ]);
+  const tag = cipher.getAuthTag();
+  return `v1:${iv.toString("base64url")}:${tag.toString("base64url")}:${encrypted.toString("base64url")}`;
+}
+
+/**
+ * Try each key material in order; `null` when malformed or none authenticate.
+ * Silent — callers decide whether to warn.
+ */
+export function decryptSecretWithKeyMaterials(
+  ciphertext: string | null | undefined,
+  materials: readonly string[],
+): string | null {
+  const raw = ciphertext?.trim() ?? "";
+  if (!raw) return null;
+  const parts = raw.split(":");
+  if (parts.length !== 4 || parts[0] !== "v1") return null;
+  let iv: Buffer;
+  let tag: Buffer;
+  let data: Buffer;
+  try {
+    iv = Buffer.from(parts[1]!, "base64url");
+    tag = Buffer.from(parts[2]!, "base64url");
+    data = Buffer.from(parts[3]!, "base64url");
+  } catch {
+    return null;
+  }
+  for (const material of materials) {
+    try {
+      const decipher = createDecipheriv(
+        "aes-256-gcm",
+        keyFromMaterial(material),
+        iv,
+      );
+      decipher.setAuthTag(tag);
+      return Buffer.concat([decipher.update(data), decipher.final()]).toString(
+        "utf8",
+      );
+    } catch {
+      /* try the next key */
+    }
+  }
+  return null;
 }
 
 export function encryptWebhookSecret(
@@ -228,24 +312,20 @@ export function decryptWebhookSecret(
   if (!raw) return null;
   const parts = raw.split(":");
   if (parts.length !== 4 || parts[0] !== "v1") return null;
-  try {
-    const iv = Buffer.from(parts[1]!, "base64url");
-    const tag = Buffer.from(parts[2]!, "base64url");
-    const data = Buffer.from(parts[3]!, "base64url");
-    const decipher = createDecipheriv("aes-256-gcm", encryptionKey(env), iv);
-    decipher.setAuthTag(tag);
-    return Buffer.concat([decipher.update(data), decipher.final()]).toString(
-      "utf8",
+  // Cascade: BACKSTEROS_SECRET_ENCRYPTION_KEY → CORE_REPLICATION_SECRET, so a
+  // secret sealed under either remains readable after the primary changes.
+  const plaintext = decryptSecretWithKeyMaterials(
+    raw,
+    webhookDecryptionKeyMaterials(env),
+  );
+  if (plaintext !== null) return plaintext;
+  if (!decryptFailureWarned) {
+    decryptFailureWarned = true;
+    console.warn(
+      "[auto-review] webhook secret decrypt failed (wrong or rotated encryption key); treating as not configured",
     );
-  } catch {
-    if (!decryptFailureWarned) {
-      decryptFailureWarned = true;
-      console.warn(
-        "[auto-review] webhook secret decrypt failed (wrong or rotated encryption key); treating as not configured",
-      );
-    }
-    return null;
   }
+  return null;
 }
 
 /** Reset the one-shot decrypt warning (unit tests). */

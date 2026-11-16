@@ -187,6 +187,39 @@ describe("auto-review webhook helpers", () => {
     assert.equal(decryptWebhookSecret("v1:bad:tag:data", env), null);
   });
 
+  it("decrypt falls back from BACKSTEROS_SECRET_ENCRYPTION_KEY to CORE_REPLICATION_SECRET", () => {
+    resetDecryptFailureWarnedForTests();
+    // Sealed when only CORE_REPLICATION_SECRET was configured.
+    const legacy = encryptWebhookSecret("legacy-hook", {
+      CORE_REPLICATION_SECRET: "replication-secret",
+    });
+    // Later a dedicated primary key is introduced; the old value stays readable.
+    const rotated = {
+      BACKSTEROS_SECRET_ENCRYPTION_KEY: "new-primary",
+      CORE_REPLICATION_SECRET: "replication-secret",
+    };
+    assert.equal(decryptWebhookSecret(legacy, rotated), "legacy-hook");
+    // Encrypt keeps using primary || CORE_REPLICATION_SECRET (no bunq-only key).
+    const sealed = encryptWebhookSecret("fresh", {
+      ...rotated,
+      BACKSTEROS_BUNQ_SECRET_ENCRYPTION_KEY: "bunq-only",
+    });
+    assert.equal(
+      decryptWebhookSecret(sealed, {
+        BACKSTEROS_SECRET_ENCRYPTION_KEY: "new-primary",
+      }),
+      "fresh",
+    );
+    // Neither key matches → null, not a throw.
+    assert.equal(
+      decryptWebhookSecret(legacy, {
+        BACKSTEROS_SECRET_ENCRYPTION_KEY: "x",
+        CORE_REPLICATION_SECRET: "y",
+      }),
+      null,
+    );
+  });
+
   it("refuses the public fallback encryption key in production/cloud", () => {
     assert.equal(
       canEncryptWebhookSecret({ NODE_ENV: "production" }),

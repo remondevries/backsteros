@@ -111,6 +111,20 @@ docker compose -f deploy/cloud/docker-compose.yml exec backsteros sh
 | `POWERSYNC_URL` | Sync URL returned to non-loopback clients. Default `http://100.83.125.67:8080` (tailnet only). |
 | `POWERSYNC_DB_PASSWORD` | `powersync_role` password. Not the API secret. Min 16 characters. Lives only in the VPS `.env`. |
 
+## bunq secrets encryption + payment env
+
+| Variable | Purpose |
+| --- | --- |
+| `BACKSTEROS_BUNQ_SECRET_ENCRYPTION_KEY` | Dedicated key for bunq/integration secrets at rest. **Cloud-only**: set it in the VPS `deploy/cloud/.env` only; never copy it to the Mac / local-core. |
+| `BACKSTEROS_SECRET_ENCRYPTION_KEY` | Shared key (auto-review webhook secrets; legacy bunq key). |
+| `BUNQ_PAYMENT_APPROVER_TOTP_SECRET`, `BUNQ_PAYMENT_APPROVER_API_KEY_IDS` | Payment approver identity. **Leave unset while payments are off.** |
+| `BUNQ_PAYMENT_DAILY_CAP_EUR`, `BUNQ_PAYMENT_MAX_OPEN_PROPOSALS`, `BUNQ_PAYMENT_NEW_PAYEE_POLICY`, `BUNQ_PAYMENT_ALLOWED_IBANS` | Guardrails; empty falls back to the code defaults. |
+
+- **Encrypt:** bunq secrets are sealed with `BACKSTEROS_BUNQ_SECRET_ENCRYPTION_KEY` when set, else `BACKSTEROS_SECRET_ENCRYPTION_KEY`, else `CORE_REPLICATION_SECRET`.
+- **Decrypt fallback:** bunq key → `BACKSTEROS_SECRET_ENCRYPTION_KEY` → `CORE_REPLICATION_SECRET`, so values written under the old key stay readable. The next write re-encrypts them with the dedicated key. Auto-review webhook secrets keep using `BACKSTEROS_SECRET_ENCRYPTION_KEY` (then `CORE_REPLICATION_SECRET`) and do not need the bunq key.
+- **Rollback:** `src/scripts/decrypt-bunq-secrets-for-rollback.ts` (dry-run by default, `--apply` to write, cloud only) turns `v1:` bunq columns back into plaintext for older builds. Keep the old keys set while running it.
+- Payment flags (`BUNQ_PAYMENT_PROPOSALS_ENABLED`, `BUNQ_ALLOW_LIVE_PAYMENT_WRITES`) still default to `false`; this section changes none of them.
+
 ## PowerSync (product clients)
 
 **Enabled 2026-09-19.** The `powersync` profile is up beside cloud Postgres. A normal `docker compose up` still does not start it; use `--profile powersync`.
