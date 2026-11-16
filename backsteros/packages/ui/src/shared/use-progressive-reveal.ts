@@ -46,6 +46,10 @@ export function useProgressiveReveal(
   visibleCountRef.current = visibleCount;
   const onReachEndRef = useRef(options?.onReachEnd);
   onReachEndRef.current = options?.onReachEnd;
+  const sentinelNodeRef = useRef<HTMLElement | null>(null);
+  const intersectingRef = useRef(false);
+  const stepRef = useRef(step);
+  stepRef.current = step;
 
   // Reset the window when the underlying query changes (new entity / filters).
   useEffect(() => {
@@ -62,29 +66,48 @@ export function useProgressiveReveal(
     });
   }, [totalCount, initial]);
 
+  /**
+   * IntersectionObserver only fires on threshold transitions. Revealing more
+   * rows pushes the sentinel down while it can stay inside `rootMargin`, so
+   * `isIntersecting` never flips and loading stalls mid-list. Drain while the
+   * sentinel remains in range (and again when totals grow after a server page).
+   */
+  const drainWhileIntersecting = useCallback(() => {
+    if (!intersectingRef.current) return;
+    if (visibleCountRef.current < totalRef.current) {
+      setVisibleCount((current) =>
+        Math.min(current + stepRef.current, totalRef.current),
+      );
+      return;
+    }
+    onReachEndRef.current?.();
+  }, []);
+
+  useEffect(() => {
+    drainWhileIntersecting();
+  }, [visibleCount, totalCount, drainWhileIntersecting]);
+
   const observerRef = useRef<IntersectionObserver | null>(null);
   const sentinelRef = useCallback(
     (node: HTMLElement | null) => {
       observerRef.current?.disconnect();
       observerRef.current = null;
+      sentinelNodeRef.current = node;
+      intersectingRef.current = false;
       if (!node || typeof IntersectionObserver === "undefined") return;
       const observer = new IntersectionObserver(
         (entries) => {
-          if (!entries.some((entry) => entry.isIntersecting)) return;
-          if (visibleCountRef.current < totalRef.current) {
-            setVisibleCount((current) =>
-              Math.min(current + step, totalRef.current),
-            );
-          } else {
-            onReachEndRef.current?.();
-          }
+          const intersecting = entries.some((entry) => entry.isIntersecting);
+          intersectingRef.current = intersecting;
+          if (!intersecting) return;
+          drainWhileIntersecting();
         },
         { rootMargin },
       );
       observer.observe(node);
       observerRef.current = observer;
     },
-    [rootMargin, step],
+    [drainWhileIntersecting, rootMargin],
   );
 
   useEffect(() => {
