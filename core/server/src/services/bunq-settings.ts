@@ -34,6 +34,14 @@ import {
   type BunqMonetaryAccount,
   type BunqPayment,
 } from "../lib/bunq-client.js";
+import {
+  BUNQ_ENCRYPTED_SECRET_FIELDS,
+  decryptBunqSecret,
+  encryptBunqSecret,
+  encryptBunqSecretPatch,
+  isEncryptedBunqSecret,
+  type BunqEncryptedSecretField,
+} from "../lib/bunq-secret-crypto.js";
 import { isBunqPaymentProposalsEnabled } from "../lib/bunq-payment-proposal.js";
 import { isBunqPaymentSimulationEnabled } from "../lib/bunq-payment-simulation.js";
 import {
@@ -60,6 +68,20 @@ type BunqSecretRow = {
   bunqLastConnectedAt: Date | null;
 };
 
+/**
+ * Decrypts secret columns on read. Legacy plaintext passes through; an
+ * encrypted value that cannot be decrypted reads as not configured.
+ */
+function decryptSecretRow(row: BunqSecretRow): BunqSecretRow {
+  return {
+    ...row,
+    bunqApiKey: decryptBunqSecret(row.bunqApiKey),
+    bunqSigningPrivateKeyPem: decryptBunqSecret(row.bunqSigningPrivateKeyPem),
+    bunqInstallationToken: decryptBunqSecret(row.bunqInstallationToken),
+    bunqSessionToken: decryptBunqSecret(row.bunqSessionToken),
+  };
+}
+
 async function getSecretRow(workspaceId: string): Promise<BunqSecretRow | null> {
   const [row] = await db
     .select({
@@ -79,7 +101,42 @@ async function getSecretRow(workspaceId: string): Promise<BunqSecretRow | null> 
     .from(workspaceIntegrationSecrets)
     .where(eq(workspaceIntegrationSecrets.workspaceId, workspaceId))
     .limit(1);
-  return row ?? null;
+  return row ? decryptSecretRow(row) : null;
+}
+
+/**
+ * Re-write any legacy plaintext bunq secret encrypted in place (H2). Safe to
+ * call repeatedly; returns the number of columns converted.
+ */
+export async function encryptLegacyBunqSecrets(
+  workspaceId: string,
+): Promise<number> {
+  const [raw] = await db
+    .select({
+      bunqApiKey: workspaceIntegrationSecrets.bunqApiKey,
+      bunqSigningPrivateKeyPem:
+        workspaceIntegrationSecrets.bunqSigningPrivateKeyPem,
+      bunqInstallationToken: workspaceIntegrationSecrets.bunqInstallationToken,
+      bunqSessionToken: workspaceIntegrationSecrets.bunqSessionToken,
+    })
+    .from(workspaceIntegrationSecrets)
+    .where(eq(workspaceIntegrationSecrets.workspaceId, workspaceId))
+    .limit(1);
+  if (!raw) return 0;
+  const patch: Partial<Record<BunqEncryptedSecretField, string>> = {};
+  for (const field of BUNQ_ENCRYPTED_SECRET_FIELDS) {
+    const value = raw[field];
+    if (value && value.trim() && !isEncryptedBunqSecret(value)) {
+      patch[field] = encryptBunqSecret(value);
+    }
+  }
+  const changed = Object.keys(patch).length;
+  if (changed === 0) return 0;
+  await db
+    .update(workspaceIntegrationSecrets)
+    .set({ ...patch, updatedAt: new Date() })
+    .where(eq(workspaceIntegrationSecrets.workspaceId, workspaceId));
+  return changed;
 }
 
 function normalizeOptionalSecret(
@@ -193,18 +250,20 @@ async function upsertBunqRow(
     patch.bunqEnvironment != null
       ? assertBunqEnvironment(patch.bunqEnvironment)
       : undefined;
+  // Secrets are encrypted at rest (v1: AES-256-GCM) before they hit the row.
+  const encryptedPatch = encryptBunqSecretPatch(patch);
   await db
     .insert(workspaceIntegrationSecrets)
     .values({
       workspaceId,
       bunqEnvironment: environment ?? BUNQ_SANDBOX_ENVIRONMENT,
-      ...patch,
+      ...encryptedPatch,
       ...(environment ? { bunqEnvironment: environment } : {}),
     })
     .onConflictDoUpdate({
       target: workspaceIntegrationSecrets.workspaceId,
       set: {
-        ...patch,
+        ...encryptedPatch,
         ...(environment ? { bunqEnvironment: environment } : {}),
         updatedAt: new Date(),
       },
@@ -348,6 +407,8 @@ async function persistClientContext(
 export async function connectBunq(
   workspaceId: string,
 ): Promise<BunqSettings> {
+  // Opportunistically upgrade legacy plaintext rows to encrypted-at-rest.
+  await encryptLegacyBunqSecrets(workspaceId).catch(() => 0);
   let row = await getSecretRow(workspaceId);
   if (!normalizeOptionalSecret(row?.bunqApiKey)) {
     throw new BunqApiError(400, "", "bunq API key is not configured");

@@ -1429,6 +1429,13 @@
       "when": 1796380000000,
       "tag": "0202_projects_workspace_key_soft_unique",
       "breakpoints": true
+    },
+    {
+      "idx": 204,
+      "version": "7",
+      "when": 1796390000000,
+      "tag": "0203_bunq_payment_security",
+      "breakpoints": true
     }
   ]
 }

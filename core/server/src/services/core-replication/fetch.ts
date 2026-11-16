@@ -6,6 +6,7 @@ import {
   toIso,
 } from "./cursors.js";
 import { sanitizeAgentsRowForReplication } from "./agent-replication.js";
+import { sanitizeWorkspaceIntegrationSecretsRowForReplication } from "./integration-secrets-replication.js";
 import { sanitizeWorkspaceSettingsRowForReplication } from "./machine-local-settings.js";
 import {
   getTableSpec,
@@ -19,7 +20,7 @@ import type { ReplicationChange, ReplicationCursor } from "./types.js";
 
 const PAGE_SIZE = 100;
 
-function sanitizeOutboundRow(
+export function sanitizeOutboundRow(
   table: string,
   row: Record<string, unknown>,
 ): Record<string, unknown> {
@@ -28,6 +29,9 @@ function sanitizeOutboundRow(
   }
   if (table === "agents") {
     return sanitizeAgentsRowForReplication(row);
+  }
+  if (table === "workspace_integration_secrets") {
+    return sanitizeWorkspaceIntegrationSecretsRowForReplication(row);
   }
   return row;
 }

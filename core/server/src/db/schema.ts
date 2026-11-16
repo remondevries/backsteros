@@ -191,6 +191,13 @@ export const workspaceIntegrationSecrets = pgTable(
     bunqLastConnectedAt: timestamp("bunq_last_connected_at", {
       withTimezone: true,
     }),
+    /**
+     * Kill switch for personal bunq payments (M4). Cloud-authoritative: bunq_*
+     * columns never replicate, so a local core cannot flip this off.
+     */
+    bunqPaymentsPaused: boolean("bunq_payments_paused")
+      .notNull()
+      .default(false),
     /** Google Calendar OAuth (ADR-037) — never returned in full. */
     googleCalendarClientId: text("google_calendar_client_id"),
     googleCalendarClientSecret: text("google_calendar_client_secret"),
@@ -3646,6 +3653,13 @@ export const bunqPaymentProposals = pgTable(
     unknownOutcomeAcknowledgedByUserId: text(
       "unknown_outcome_acknowledged_by_user_id",
     ).references(() => users.id, { onDelete: "set null" }),
+    /** Attribution (M2): which Access key approved / rejected. */
+    approvedByApiKeyId: text("approved_by_api_key_id"),
+    rejectedByUserId: text("rejected_by_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    rejectedByApiKeyId: text("rejected_by_api_key_id"),
+    rejectedAt: timestamp("rejected_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -3678,3 +3692,43 @@ export const bunqPaymentProposals = pgTable(
 );
 
 export type DbBunqPaymentProposal = typeof bunqPaymentProposals.$inferSelect;
+
+/**
+ * Append-only audit trail of every bunq payment proposal transition (M2).
+ * DB trigger blocks UPDATE and direct DELETE (see migration 0203).
+ */
+export const bunqPaymentProposalEvents = pgTable(
+  "bunq_payment_proposal_events",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    proposalId: text("proposal_id").notNull(),
+    /** created | approved | rejected | acknowledged | executed | failed | needs_reconciliation | expired | swept */
+    eventType: text("event_type").notNull(),
+    /** agent | owner_api_key | local_shell | system */
+    actorKind: text("actor_kind").notNull(),
+    actorUserId: text("actor_user_id"),
+    actorApiKeyId: text("actor_api_key_id"),
+    proposalHash: text("proposal_hash").notNull(),
+    amountValue: text("amount_value").notNull(),
+    amountCurrency: text("amount_currency").notNull(),
+    statusFrom: text("status_from"),
+    statusTo: text("status_to").notNull(),
+    detail: text("detail"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("bunq_payment_proposal_events_proposal_idx").on(
+      table.workspaceId,
+      table.proposalId,
+      table.createdAt,
+    ),
+  ],
+);
+
+export type DbBunqPaymentProposalEvent =
+  typeof bunqPaymentProposalEvents.$inferSelect;

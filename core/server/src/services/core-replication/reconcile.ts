@@ -8,7 +8,7 @@ import { appendOpsLog } from "../../lib/ops-log-buffer.js";
 import { getCoreReplicationConfig } from "./config.js";
 import type { ReplicatedTable } from "./constants.js";
 import { tableExists, toIso } from "./cursors.js";
-import { listActiveReplicatedTables } from "./fetch.js";
+import { listActiveReplicatedTables, sanitizeOutboundRow } from "./fetch.js";
 import { isReplicationReconcileEnabled } from "./reconcile-gate.js";
 import {
   getTableSpec,
@@ -144,9 +144,11 @@ export async function fetchLocalRowsByKeys(
      ) t`,
     keys as never[],
   )) as Array<{ row: ReplicationRow }>;
+  // Same outbound sanitising as the cursor feed (no webhook secrets, no
+  // machine-local paths, no bunq_* credentials).
   return rows.map((entry) => ({
     table: spec.name,
-    row: entry.row,
+    row: sanitizeOutboundRow(spec.name, entry.row),
   }));
 }
 
