@@ -105,6 +105,57 @@ export function buildNonCashflowCategoryIdSet(
   return ids;
 }
 
+/** Live cashflow categories with `kind === "income"`. */
+export function buildIncomeCategoryIdSet(
+  categories: ReadonlyArray<CashflowCategoryMeta>,
+): Set<string> {
+  const ids = new Set<string>();
+  for (const category of categories) {
+    if (!isCashflowCategory(category)) continue;
+    if (category.kind === "income") ids.add(category.id);
+  }
+  return ids;
+}
+
+export type KindBasedIncomeExpense = {
+  incomeCents: number;
+  expenseCents: number;
+};
+
+/**
+ * Kind-based cashflow income/expense — same definition as
+ * `getWorkspaceCashflow` / `sumIncomeExpenseInRange` on the server:
+ *
+ * - Income = net of income-kind amounts (credits − debits) + uncategorized credits
+ * - Expense = abs(debits) where category is null or kind=`expense`
+ * - Expense-kind credits (e.g. Gifts) are omitted from both
+ * - Income-kind debits reduce income, not expense (A13)
+ *
+ * Callers must already exclude transfer/excluded/void/own-account rows
+ * (see {@link isCashflowTransaction}).
+ */
+export function accumulateKindBasedIncomeExpense(
+  amountCents: number,
+  categoryId: string | null | undefined,
+  incomeCategoryIds: ReadonlySet<string>,
+  into: KindBasedIncomeExpense,
+): void {
+  if (amountCents === 0) return;
+  const isIncomeKind =
+    categoryId != null && incomeCategoryIds.has(categoryId);
+  if (isIncomeKind) {
+    into.incomeCents += amountCents;
+    return;
+  }
+  if (!categoryId) {
+    if (amountCents > 0) into.incomeCents += amountCents;
+    else into.expenseCents += -amountCents;
+    return;
+  }
+  // Expense-kind (and any other non-income cashflow kind): gross debits only.
+  if (amountCents < 0) into.expenseCents += -amountCents;
+}
+
 export function isCashflowTransaction(
   tx: {
     categoryId?: string | null;

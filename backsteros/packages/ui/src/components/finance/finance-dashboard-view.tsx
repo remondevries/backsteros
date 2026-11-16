@@ -65,7 +65,10 @@ import {
   computeNetThisMonthStats,
   formatNetThisMonthRangeLabel,
 } from "../../finance/net-this-month.js";
-import { buildNonCashflowCategoryIdSet } from "../../finance/cashflow-exclusion.js";
+import {
+  buildIncomeCategoryIdSet,
+  buildNonCashflowCategoryIdSet,
+} from "../../finance/cashflow-exclusion.js";
 import {
   categoryNetSpendAbsCents,
   categoryNetSpendDisplayCents,
@@ -321,12 +324,14 @@ function NetThisMonthPanel({
   transactions,
   priorTransactions,
   nonCashflowCategoryIds,
+  incomeCategoryIds,
   loading,
 }: {
   month: string;
   transactions: FinancialTransaction[];
   priorTransactions: FinancialTransaction[];
   nonCashflowCategoryIds: ReadonlySet<string>;
+  incomeCategoryIds: ReadonlySet<string>;
   loading: boolean;
 }) {
   const stats = useMemo(
@@ -336,8 +341,15 @@ function NetThisMonthPanel({
         transactions,
         priorTransactions,
         nonCashflowCategoryIds,
+        incomeCategoryIds,
       }),
-    [month, nonCashflowCategoryIds, priorTransactions, transactions],
+    [
+      incomeCategoryIds,
+      month,
+      nonCashflowCategoryIds,
+      priorTransactions,
+      transactions,
+    ],
   );
 
   if (loading) {
@@ -683,6 +695,10 @@ export function FinanceDashboardView({
 
   const nonCashflowCategoryIds = useMemo(
     () => buildNonCashflowCategoryIdSet(categories),
+    [categories],
+  );
+  const incomeCategoryIds = useMemo(
+    () => buildIncomeCategoryIdSet(categories),
     [categories],
   );
 
@@ -1068,6 +1084,7 @@ export function FinanceDashboardView({
                 asOf={chartAsOf}
                 transactions={filteredMonthTransactions}
                 nonCashflowCategoryIds={nonCashflowCategoryIds}
+                incomeCategoryIds={incomeCategoryIds}
                 loading={monthChartLoading}
                 className="finance-dashboard__cashflow-chart"
               />
@@ -1150,6 +1167,7 @@ export function FinanceDashboardView({
                 transactions={monthTransactions}
                 priorTransactions={priorMonthTransactions}
                 nonCashflowCategoryIds={nonCashflowCategoryIds}
+                incomeCategoryIds={incomeCategoryIds}
                 loading={monthChartLoading}
               />
             </DashboardWidget>

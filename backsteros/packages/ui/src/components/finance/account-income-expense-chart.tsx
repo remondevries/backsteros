@@ -69,6 +69,8 @@ export type AccountIncomeExpenseChartProps = {
   fullYear?: boolean;
   /** Category ids with kind transfer or listing excluded (raw tx charts only). */
   nonCashflowCategoryIds?: ReadonlySet<string>;
+  /** Category ids with kind `income` (raw tx charts only). */
+  incomeCategoryIds?: ReadonlySet<string>;
 };
 
 const INCOME_ID = "Income";
@@ -360,6 +362,7 @@ export function AccountIncomeExpenseChart({
   ariaLabel = "Income and expense chart",
   fullYear = false,
   nonCashflowCategoryIds,
+  incomeCategoryIds,
 }: AccountIncomeExpenseChartProps) {
   const idBase = useId().replace(/:/g, "");
   const incomeGradientId = `account-income-area-${idBase}`;
@@ -369,12 +372,14 @@ export function AccountIncomeExpenseChart({
     .join(" ");
   const series = useMemo(() => {
     const excludeIds = nonCashflowCategoryIds ?? new Set<string>();
+    const incomeIds = incomeCategoryIds ?? new Set<string>();
     const built =
       scope === "month"
         ? buildMonthIncomeExpenseDailyChartSeries({
             transactions,
             asOf,
             nonCashflowCategoryIds: excludeIds,
+            incomeCategoryIds: incomeIds,
           })
         : cashflowMonths && cashflowYear != null
           ? buildAccountIncomeExpenseChartSeriesFromCashflow({
@@ -387,6 +392,7 @@ export function AccountIncomeExpenseChart({
               transactions,
               asOf,
               nonCashflowCategoryIds: excludeIds,
+              incomeCategoryIds: incomeIds,
             });
     return showExpense
       ? built
@@ -396,6 +402,7 @@ export function AccountIncomeExpenseChart({
     cashflowMonths,
     cashflowYear,
     fullYear,
+    incomeCategoryIds,
     nonCashflowCategoryIds,
     scope,
     showExpense,

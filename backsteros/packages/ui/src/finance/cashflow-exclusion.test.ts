@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 
 import {
+  accumulateKindBasedIncomeExpense,
+  buildIncomeCategoryIdSet,
   isCounterpartyOwnAccount,
   isOwnAccountTransfer,
   isOwnAccountTransferPayee,
@@ -43,6 +45,42 @@ describe("isOwnAccountTransferPayee", () => {
       }),
       false,
     );
+  });
+});
+
+describe("accumulateKindBasedIncomeExpense", () => {
+  const incomeIds = new Set(["cat-salary"]);
+
+  test("omits expense-kind credits from income and expense", () => {
+    const totals = { incomeCents: 0, expenseCents: 0 };
+    accumulateKindBasedIncomeExpense(2_500_00, "cat-gifts", incomeIds, totals);
+    assert.deepEqual(totals, { incomeCents: 0, expenseCents: 0 });
+  });
+
+  test("nets income-kind debits into income", () => {
+    const totals = { incomeCents: 0, expenseCents: 0 };
+    accumulateKindBasedIncomeExpense(5_000_00, "cat-salary", incomeIds, totals);
+    accumulateKindBasedIncomeExpense(-200_00, "cat-salary", incomeIds, totals);
+    assert.deepEqual(totals, { incomeCents: 4_800_00, expenseCents: 0 });
+  });
+
+  test("routes uncategorized by sign", () => {
+    const totals = { incomeCents: 0, expenseCents: 0 };
+    accumulateKindBasedIncomeExpense(50_00, null, incomeIds, totals);
+    accumulateKindBasedIncomeExpense(-30_00, null, incomeIds, totals);
+    assert.deepEqual(totals, { incomeCents: 50_00, expenseCents: 30_00 });
+  });
+});
+
+describe("buildIncomeCategoryIdSet", () => {
+  test("keeps only cashflow income kinds", () => {
+    const ids = buildIncomeCategoryIdSet([
+      { id: "a", kind: "income", listing: "regular" },
+      { id: "b", kind: "expense", listing: "regular" },
+      { id: "c", kind: "income", listing: "excluded" },
+      { id: "d", kind: "transfer", listing: "regular" },
+    ]);
+    assert.deepEqual([...ids], ["a"]);
   });
 });
 

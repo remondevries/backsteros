@@ -225,13 +225,48 @@ export function buildCashflowSpendYearSeries(input: {
     data.push(row);
   }
 
-  // Headline must match the stacked bars (regression: sum(bars) == headline).
+  // Headline = stacked bars through asOf only (not through today). Bars may
+  // still show later months when browsing an earlier asOf so the chart stays
+  // readable; YoY compares the same asOf cutoff.
+  const asOfThroughMonth =
+    asOfParts.year === input.year
+      ? asOfParts.month
+      : asOfParts.year < input.year
+        ? 0
+        : 12;
   let reconciledYtdEuros = 0;
   for (const row of data) {
-    if (row.isFutureMonth) continue;
+    const monthIndex = Number(String(row.month).slice(5));
+    if (monthIndex < 1 || monthIndex > asOfThroughMonth) continue;
     for (const key of keys) {
       reconciledYtdEuros += Number(row[key] ?? 0);
     }
+  }
+
+  // Prefer a net-clamped prior on the same basis as the bars when prior-year
+  // category months are present; otherwise keep the API priorYtdExpenseCents
+  // (gross expense-kind YTD) — bases may differ until the API sends matching
+  // prior category months.
+  const priorYear = input.year - 1;
+  const priorAsOfMonth =
+    asOfParts.year === input.year
+      ? asOfParts.month
+      : asOfParts.year < input.year
+        ? 0
+        : 12;
+  let priorFromBarsCents: number | null = null;
+  let sawPriorYearRow = false;
+  for (const row of input.categoryMonths) {
+    if (!row.month.startsWith(`${priorYear}-`)) continue;
+    const monthIndex = Number(row.month.slice(5));
+    if (monthIndex < 1 || monthIndex > priorAsOfMonth) continue;
+    if (row.categoryId) {
+      const meta = byId.get(row.categoryId);
+      if (meta?.kind === "income") continue;
+    }
+    sawPriorYearRow = true;
+    priorFromBarsCents =
+      (priorFromBarsCents ?? 0) + Math.max(0, row.expenseCents);
   }
 
   return {
@@ -242,7 +277,10 @@ export function buildCashflowSpendYearSeries(input: {
     labels,
     colors,
     ytdExpenseCents: Math.round(reconciledYtdEuros * 100),
-    priorYtdExpenseCents: input.priorYtdExpenseCents,
+    priorYtdExpenseCents:
+      sawPriorYearRow && priorFromBarsCents != null
+        ? priorFromBarsCents
+        : input.priorYtdExpenseCents,
   };
 }
 

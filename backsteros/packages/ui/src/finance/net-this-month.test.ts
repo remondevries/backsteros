@@ -88,4 +88,56 @@ describe("computeNetThisMonthStats", () => {
     assert.equal(stats.spendCents, 80_00);
     assert.equal(stats.netCents, 120_00);
   });
+
+  it("omits expense-kind credits from income (A1 Gifts)", () => {
+    const giftsId = "cat-gifts";
+    const salaryId = "cat-salary";
+    const stats = computeNetThisMonthStats({
+      month: "2026-08",
+      now: new Date(2026, 7, 13),
+      incomeCategoryIds: new Set([salaryId]),
+      transactions: [
+        {
+          bookedOn: "2026-08-02",
+          amountCents: 3_000_00,
+          categoryId: salaryId,
+        },
+        {
+          bookedOn: "2026-08-08",
+          amountCents: 2_500_00,
+          categoryId: giftsId,
+        },
+        { bookedOn: "2026-08-10", amountCents: -40_00 },
+      ],
+      priorTransactions: [],
+    });
+    assert.ok(stats);
+    assert.equal(stats.incomeCents, 3_000_00);
+    assert.equal(stats.spendCents, 40_00);
+  });
+
+  it("nets income-kind debits against income (A13)", () => {
+    const salaryId = "cat-salary";
+    const stats = computeNetThisMonthStats({
+      month: "2026-08",
+      now: new Date(2026, 7, 13),
+      incomeCategoryIds: new Set([salaryId]),
+      transactions: [
+        {
+          bookedOn: "2026-08-01",
+          amountCents: 5_000_00,
+          categoryId: salaryId,
+        },
+        {
+          bookedOn: "2026-08-05",
+          amountCents: -250_00,
+          categoryId: salaryId,
+        },
+      ],
+      priorTransactions: [],
+    });
+    assert.ok(stats);
+    assert.equal(stats.incomeCents, 4_750_00);
+    assert.equal(stats.spendCents, 0);
+  });
 });

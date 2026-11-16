@@ -13,6 +13,34 @@ import {
   cashflowTransactionSql,
 } from "../cashflow-exclusion.js";
 import { priorYearAsOfExclusive } from "./prior-year-as-of.js";
+import { buildSpendPanelYearMetrics } from "./spend-panel-year-metrics.js";
+
+/**
+ * Kind-based cashflow income (matches UI `accumulateKindBasedIncomeExpense`
+ * and `sumKindBasedIncomeExpense`):
+ * net of income-kind amounts (credits − debits) + uncategorized credits.
+ * Expense-kind credits are omitted.
+ */
+function cashflowIncomeCentsSumSql() {
+  return sql<number>`coalesce(sum(case
+    when (${financialCategories.id} is null and ${financialTransactions.amountCents} > 0)
+      or ${financialCategories.kind} = 'income'
+    then ${financialTransactions.amountCents}
+    else 0 end), 0)::int`;
+}
+
+/**
+ * Kind-based cashflow expense: abs(debits) where uncategorized or kind=expense.
+ * Income-kind debits reduce income instead (see {@link cashflowIncomeCentsSumSql}).
+ */
+function cashflowExpenseCentsSumSql() {
+  return sql<number>`coalesce(sum(case
+    when ${financialTransactions.amountCents} < 0
+      and (${financialCategories.id} is null or ${financialCategories.kind} = 'expense')
+    then -${financialTransactions.amountCents}
+    else 0 end), 0)::int`;
+}
+
 /**
  * Running balance per account via SQL SUM — avoids bootstrapping Tier C rows.
  */
@@ -247,7 +275,8 @@ export async function getFinanceAssetsDebt(
 }
 
 /**
- * Sum of credit transactions across all accounts for a calendar month (`YYYY-MM`).
+ * Kind-based workspace income for a calendar month (`YYYY-MM`).
+ * Soft-deleted bank accounts are omitted.
  */
 export async function getBankAccountsMonthIncome(
   workspaceId: string,
@@ -272,15 +301,20 @@ export async function getBankAccountsMonthIncome(
 
   const [row] = await db
     .select({
-      incomeCents: sql<number>`coalesce(sum(case when ${financialTransactions.amountCents} > 0 then ${financialTransactions.amountCents} else 0 end), 0)::int`,
+      incomeCents: cashflowIncomeCentsSumSql(),
     })
     .from(financialTransactions)
     .leftJoin(financialCategories, cashflowCategoryLeftJoinOn())
+    .leftJoin(
+      bankAccounts,
+      eq(financialTransactions.bankAccountId, bankAccounts.id),
+    )
     .where(
       and(
         eq(financialTransactions.workspaceId, workspaceId),
         gte(financialTransactions.bookedOn, start),
         lt(financialTransactions.bookedOn, nextMonth),
+        isNull(bankAccounts.deletedAt),
         cashflowTransactionSql(),
       ),
     );
@@ -292,7 +326,8 @@ export async function getBankAccountsMonthIncome(
 }
 
 /**
- * Monthly income (credits) and expense (absolute debits) for a calendar year.
+ * Monthly kind-based income/expense for a calendar year (one account).
+ * Soft-deleted bank accounts are omitted (lookup already excludes them).
  */
 export async function getBankAccountCashflow(
   workspaceId: string,
@@ -315,17 +350,22 @@ export async function getBankAccountCashflow(
   const rows = await db
     .select({
       month: sql<string>`to_char(${financialTransactions.bookedOn}, 'YYYY-MM')`,
-      incomeCents: sql<number>`coalesce(sum(case when ${financialTransactions.amountCents} > 0 then ${financialTransactions.amountCents} else 0 end), 0)::int`,
-      expenseCents: sql<number>`coalesce(sum(case when ${financialTransactions.amountCents} < 0 then -${financialTransactions.amountCents} else 0 end), 0)::int`,
+      incomeCents: cashflowIncomeCentsSumSql(),
+      expenseCents: cashflowExpenseCentsSumSql(),
     })
     .from(financialTransactions)
     .leftJoin(financialCategories, cashflowCategoryLeftJoinOn())
+    .leftJoin(
+      bankAccounts,
+      eq(financialTransactions.bankAccountId, bankAccounts.id),
+    )
     .where(
       and(
         eq(financialTransactions.workspaceId, workspaceId),
         eq(financialTransactions.bankAccountId, bankAccountId),
         gte(financialTransactions.bookedOn, yearStart),
         lt(financialTransactions.bookedOn, yearEnd),
+        isNull(bankAccounts.deletedAt),
         cashflowTransactionSql(),
       ),
     )
@@ -379,11 +419,10 @@ function parseCalendarDate(value: string): Date | null {
 }
 
 /**
- * Income = credits in income-kind (or uncategorized) categories.
+ * Income = net of income-kind (credits − debits) + uncategorized credits.
  * Expense = gross debits in expense-kind (or uncategorized) categories.
  * Expense-kind credits (reimbursements / mis-kinded income) are omitted from
- * the income total and from this gross expense total; category bar series use
- * per-category net + clamp instead.
+ * both totals; category bar series use per-category net + clamp instead.
  */
 async function sumIncomeExpenseInRange(
   workspaceId: string,
@@ -392,14 +431,8 @@ async function sumIncomeExpenseInRange(
 ): Promise<{ incomeCents: number; expenseCents: number; netCents: number }> {
   const [row] = await db
     .select({
-      incomeCents: sql<number>`coalesce(sum(case
-        when ${financialTransactions.amountCents} > 0
-          and (${financialCategories.id} is null or ${financialCategories.kind} = 'income')
-        then ${financialTransactions.amountCents} else 0 end), 0)::int`,
-      expenseCents: sql<number>`coalesce(sum(case
-        when ${financialTransactions.amountCents} < 0
-          and (${financialCategories.id} is null or ${financialCategories.kind} = 'expense')
-        then -${financialTransactions.amountCents} else 0 end), 0)::int`,
+      incomeCents: cashflowIncomeCentsSumSql(),
+      expenseCents: cashflowExpenseCentsSumSql(),
     })
     .from(financialTransactions)
     .leftJoin(financialCategories, cashflowCategoryLeftJoinOn())
@@ -472,14 +505,8 @@ export async function getWorkspaceCashflow(
   const rows = await db
     .select({
       month: sql<string>`to_char(${financialTransactions.bookedOn}, 'YYYY-MM')`,
-      incomeCents: sql<number>`coalesce(sum(case
-        when ${financialTransactions.amountCents} > 0
-          and (${financialCategories.id} is null or ${financialCategories.kind} = 'income')
-        then ${financialTransactions.amountCents} else 0 end), 0)::int`,
-      expenseCents: sql<number>`coalesce(sum(case
-        when ${financialTransactions.amountCents} < 0
-          and (${financialCategories.id} is null or ${financialCategories.kind} = 'expense')
-        then -${financialTransactions.amountCents} else 0 end), 0)::int`,
+      incomeCents: cashflowIncomeCentsSumSql(),
+      expenseCents: cashflowExpenseCentsSumSql(),
     })
     .from(financialTransactions)
     .leftJoin(financialCategories, cashflowCategoryLeftJoinOn())
@@ -521,8 +548,13 @@ export async function getWorkspaceCashflow(
     );
   });
 
+  const priorYear = year - 1;
+  const priorStart = `${priorYear}-01-01`;
+  const priorAsOfExclusive = priorYearAsOfExclusive(asOfDate);
+
   // Per-category net spend for expense-kind (+ uncategorized) only.
-  // Income-kind categories are omitted so credits there cannot cancel spend bars.
+  // Include prior-year months through the matching asOf so the spending chart
+  // can YoY-compare on the same net-clamped bar basis (A5).
   const categoryRows = await db
     .select({
       month: sql<string>`to_char(${financialTransactions.bookedOn}, 'YYYY-MM')`,
@@ -538,7 +570,7 @@ export async function getWorkspaceCashflow(
     .where(
       and(
         eq(financialTransactions.workspaceId, workspaceId),
-        gte(financialTransactions.bookedOn, yearStart),
+        gte(financialTransactions.bookedOn, priorStart),
         lt(financialTransactions.bookedOn, yearEnd),
         ne(financialTransactions.amountCents, 0),
         isNull(bankAccounts.deletedAt),
@@ -561,9 +593,6 @@ export async function getWorkspaceCashflow(
     asOfExclusive,
   );
 
-  const priorYear = year - 1;
-  const priorStart = `${priorYear}-01-01`;
-  const priorAsOfExclusive = priorYearAsOfExclusive(asOfDate);
   const priorYtd = await sumIncomeExpenseInRange(
     workspaceId,
     priorStart,
@@ -635,8 +664,9 @@ export async function getFinanceSpendPanel(
     new Date(year, monthIndex0 + 1, 1),
   );
 
-  // Gross debits of expense-kind (+ uncategorized) for the header / history.
-  // Category list below uses per-category net clamped ≥ 0.
+  // One basis for history bars, header, and year metrics: gross expense-kind
+  // debits (+ uncategorized), matching cashflow month expense. Category list
+  // uses the same gross debit basis so slices sum to the header.
   const historyRows = await db
     .select({
       month: sql<string>`to_char(${financialTransactions.bookedOn}, 'YYYY-MM')`,
@@ -677,11 +707,15 @@ export async function getFinanceSpendPanel(
     });
   }
 
-  // Per-category net spend for expense-kind only (credits reduce that category).
+  const monthExpenseCents = byMonth.get(month) ?? 0;
+
+  // Per-category gross expense-kind debits (same basis as history / header).
   const categoryRows = await db
     .select({
       categoryId: financialTransactions.categoryId,
-      expenseCents: sql<number>`coalesce(sum(-${financialTransactions.amountCents}), 0)::int`,
+      expenseCents: sql<number>`coalesce(sum(case
+        when ${financialTransactions.amountCents} < 0 then -${financialTransactions.amountCents}
+        else 0 end), 0)::int`,
     })
     .from(financialTransactions)
     .leftJoin(financialCategories, cashflowCategoryLeftJoinOn())
@@ -705,53 +739,19 @@ export async function getFinanceSpendPanel(
     )
     .groupBy(financialTransactions.categoryId);
 
-  // Clamp credits out of the spend list; header = sum of those rows.
   const categories = categoryRows
     .map((row) => ({
       categoryId: row.categoryId ?? null,
       expenseCents: Math.max(0, Number(row.expenseCents) || 0),
     }))
     .filter((row) => row.expenseCents > 0);
-  const monthExpenseCents = categories.reduce(
-    (sum, row) => sum + row.expenseCents,
-    0,
-  );
-  // Keep history bar for the selected month aligned with the reconciled header.
-  const historyAligned = history.map((row) =>
-    row.month === month ? { ...row, expenseCents: monthExpenseCents } : row,
-  );
 
-  const yearSpend = new Map<number, number>();
-  for (const row of historyAligned) {
-    const y = Number(row.month.slice(0, 4));
-    yearSpend.set(y, (yearSpend.get(y) ?? 0) + row.expenseCents);
-  }
-
-  // Prefer selected year + prior year first; include any other years with spend.
-  const metricYears = new Set<number>([year, year - 1]);
-  for (const y of yearSpend.keys()) metricYears.add(y);
-  const yearMetrics = [...metricYears]
-    .sort((a, b) => b - a)
-    .filter((y) => (yearSpend.get(y) ?? 0) > 0 || y === year || y === year - 1)
-    .slice(0, 3)
-    .map((y) => {
-      const spendCents = yearSpend.get(y) ?? 0;
-      // Current year: completed months only (exclude in-progress month).
-      const monthsElapsed =
-        y < year
-          ? 12
-          : y > year
-            ? 0
-            : Math.max(1, monthIndex0 === 0 ? 1 : monthIndex0);
-      const avgMonthlyCents =
-        monthsElapsed > 0 ? Math.round(spendCents / monthsElapsed) : 0;
-      return { year: y, spendCents, avgMonthlyCents };
-    });
+  const yearMetrics = buildSpendPanelYearMetrics(history, month);
 
   return {
     month,
     monthExpenseCents,
-    history: historyAligned,
+    history,
     yearMetrics,
     categories,
   };

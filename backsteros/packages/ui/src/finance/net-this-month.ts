@@ -1,6 +1,9 @@
 import type { FinancialTransaction } from "@backsteros/contracts";
 
-import { isCashflowTransaction } from "./cashflow-exclusion.js";
+import {
+  accumulateKindBasedIncomeExpense,
+  isCashflowTransaction,
+} from "./cashflow-exclusion.js";
 
 export type NetThisMonthPeriod = {
   /** Inclusive start `YYYY-MM-DD`. */
@@ -97,21 +100,25 @@ function sumIncomeSpend(
   >,
   period: NetThisMonthPeriod,
   nonCashflowCategoryIds: ReadonlySet<string>,
+  incomeCategoryIds: ReadonlySet<string>,
 ): { incomeCents: number; spendCents: number; netCents: number } {
-  let incomeCents = 0;
-  let spendCents = 0;
+  const totals = { incomeCents: 0, expenseCents: 0 };
   for (const tx of transactions) {
     if (!tx.bookedOn || tx.bookedOn < period.from || tx.bookedOn > period.to) {
       continue;
     }
     if (!isCashflowTransaction(tx, nonCashflowCategoryIds)) continue;
-    if (tx.amountCents > 0) incomeCents += tx.amountCents;
-    else if (tx.amountCents < 0) spendCents += -tx.amountCents;
+    accumulateKindBasedIncomeExpense(
+      tx.amountCents,
+      tx.categoryId,
+      incomeCategoryIds,
+      totals,
+    );
   }
   return {
-    incomeCents,
-    spendCents,
-    netCents: incomeCents - spendCents,
+    incomeCents: totals.incomeCents,
+    spendCents: totals.expenseCents,
+    netCents: totals.incomeCents - totals.expenseCents,
   };
 }
 
@@ -131,21 +138,26 @@ export function computeNetThisMonthStats(input: {
   >;
   /** Category ids with kind transfer or listing excluded. */
   nonCashflowCategoryIds?: ReadonlySet<string>;
+  /** Category ids with kind `income` (cashflow-eligible). */
+  incomeCategoryIds?: ReadonlySet<string>;
   now?: Date;
 }): NetThisMonthStats | null {
   const periods = buildNetThisMonthPeriods(input.month, input.now);
   if (!periods) return null;
 
   const nonCashflowCategoryIds = input.nonCashflowCategoryIds ?? new Set();
+  const incomeCategoryIds = input.incomeCategoryIds ?? new Set();
   const current = sumIncomeSpend(
     input.transactions,
     periods.period,
     nonCashflowCategoryIds,
+    incomeCategoryIds,
   );
   const prior = sumIncomeSpend(
     input.priorTransactions,
     periods.priorPeriod,
     nonCashflowCategoryIds,
+    incomeCategoryIds,
   );
   const changePercent =
     prior.netCents === 0

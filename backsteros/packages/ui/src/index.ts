@@ -2626,6 +2626,8 @@ export {
 } from "./finance/net-this-month.js";
 
 export {
+  accumulateKindBasedIncomeExpense,
+  buildIncomeCategoryIdSet,
   buildNonCashflowCategoryIdSet,
   isCashflowCategory,
   isCashflowTransaction,
@@ -2633,6 +2635,7 @@ export {
   isOwnAccountTransfer,
   isOwnAccountTransferPayee,
   normalizeAccountRef,
+  type KindBasedIncomeExpense,
 } from "./finance/cashflow-exclusion.js";
 
 export {

@@ -3,7 +3,10 @@ import type {
   FinancialTransaction,
 } from "@backsteros/contracts";
 
-import { isCashflowTransaction } from "./cashflow-exclusion.js";
+import {
+  accumulateKindBasedIncomeExpense,
+  isCashflowTransaction,
+} from "./cashflow-exclusion.js";
 
 export type AccountChartPoint = {
   /** Period key used as the Nivo x value (`YYYY-MM` or `YYYY-MM-DD`). */
@@ -96,16 +99,19 @@ export type BuildAccountIncomeExpenseChartSeriesInput = {
   asOf?: Date;
   /** Category ids with kind transfer or listing excluded. */
   nonCashflowCategoryIds?: ReadonlySet<string>;
+  /** Category ids with kind `income` (cashflow-eligible). */
+  incomeCategoryIds?: ReadonlySet<string>;
 };
 
 /**
- * Builds monthly income (credits) and expense (debits as positive totals) for
- * the calendar year of `asOf`, from January through the current month.
+ * Builds monthly kind-based income/expense for the calendar year of `asOf`,
+ * from January through the current month (matches server cashflow).
  */
 export function buildAccountIncomeExpenseChartSeries({
   transactions,
   asOf = new Date(),
   nonCashflowCategoryIds = new Set(),
+  incomeCategoryIds = new Set(),
 }: BuildAccountIncomeExpenseChartSeriesInput): AccountChartSeries[] {
   const year = asOf.getFullYear();
   const lastMonthIndex = asOf.getMonth();
@@ -118,11 +124,18 @@ export function buildAccountIncomeExpenseChartSeries({
     if (!booked || booked.year !== year) continue;
     if (booked.monthIndex > lastMonthIndex) continue;
     if (!isCashflowTransaction(tx, nonCashflowCategoryIds)) continue;
-    if (tx.amountCents > 0) {
-      incomeByMonth[booked.monthIndex]! += tx.amountCents;
-    } else if (tx.amountCents < 0) {
-      expenseByMonth[booked.monthIndex]! += Math.abs(tx.amountCents);
-    }
+    const totals = {
+      incomeCents: incomeByMonth[booked.monthIndex]!,
+      expenseCents: expenseByMonth[booked.monthIndex]!,
+    };
+    accumulateKindBasedIncomeExpense(
+      tx.amountCents,
+      tx.categoryId,
+      incomeCategoryIds,
+      totals,
+    );
+    incomeByMonth[booked.monthIndex] = totals.incomeCents;
+    expenseByMonth[booked.monthIndex] = totals.expenseCents;
   }
 
   const income: AccountChartPoint[] = [];
@@ -218,16 +231,19 @@ export type BuildMonthIncomeExpenseDailyChartSeriesInput = {
   asOf?: Date;
   /** Category ids with kind transfer or listing excluded. */
   nonCashflowCategoryIds?: ReadonlySet<string>;
+  /** Category ids with kind `income` (cashflow-eligible). */
+  incomeCategoryIds?: ReadonlySet<string>;
 };
 
 /**
- * Builds daily income (credits) and expense (debits as positive totals) for
- * the calendar month of `asOf`, from the 1st through today.
+ * Builds daily kind-based income/expense for the calendar month of `asOf`,
+ * from the 1st through today (matches server cashflow).
  */
 export function buildMonthIncomeExpenseDailyChartSeries({
   transactions,
   asOf = new Date(),
   nonCashflowCategoryIds = new Set(),
+  incomeCategoryIds = new Set(),
 }: BuildMonthIncomeExpenseDailyChartSeriesInput): AccountChartSeries[] {
   const year = asOf.getFullYear();
   const monthIndex = asOf.getMonth();
@@ -243,11 +259,18 @@ export function buildMonthIncomeExpenseDailyChartSeries({
     if (booked.day < 1 || booked.day > lastDay) continue;
     if (!isCashflowTransaction(tx, nonCashflowCategoryIds)) continue;
     const index = booked.day - 1;
-    if (tx.amountCents > 0) {
-      incomeByDay[index]! += tx.amountCents;
-    } else if (tx.amountCents < 0) {
-      expenseByDay[index]! += Math.abs(tx.amountCents);
-    }
+    const totals = {
+      incomeCents: incomeByDay[index]!,
+      expenseCents: expenseByDay[index]!,
+    };
+    accumulateKindBasedIncomeExpense(
+      tx.amountCents,
+      tx.categoryId,
+      incomeCategoryIds,
+      totals,
+    );
+    incomeByDay[index] = totals.incomeCents;
+    expenseByDay[index] = totals.expenseCents;
   }
 
   const income: AccountChartPoint[] = [];

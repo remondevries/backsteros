@@ -96,4 +96,29 @@ describe("buildCashflowSpendYearSeries", () => {
     assert.equal(series.data[7]?.isFutureMonth, false);
     assert.equal(series.data[7]?.rent, 2000);
   });
+
+  test("headline sums bars through asOf only (not through today)", () => {
+    const series = buildCashflowSpendYearSeries({
+      year: 2026,
+      asOf: "2026-03-31",
+      now: new Date(2026, 7, 12),
+      ytdExpenseCents: 999_999,
+      priorYtdExpenseCents: 50_000,
+      categories: [category({ id: "rent", name: "Rent" })],
+      categoryMonths: [
+        { month: "2026-01", categoryId: "rent", expenseCents: 100_000 },
+        { month: "2026-03", categoryId: "rent", expenseCents: 200_000 },
+        { month: "2026-08", categoryId: "rent", expenseCents: 400_000 },
+        // Prior-year same-basis rows → prefer net-clamped prior over API.
+        { month: "2025-01", categoryId: "rent", expenseCents: 80_000 },
+        { month: "2025-03", categoryId: "rent", expenseCents: 40_000 },
+        { month: "2025-08", categoryId: "rent", expenseCents: 900_000 },
+      ],
+    });
+
+    // Jan + Mar only; Aug is visible on the chart but past asOf.
+    assert.equal(series.ytdExpenseCents, 300_000);
+    // Prior through March of prior year (not August).
+    assert.equal(series.priorYtdExpenseCents, 120_000);
+  });
 });
