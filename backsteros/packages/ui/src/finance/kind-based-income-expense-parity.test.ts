@@ -77,19 +77,18 @@ const fixtureTransactions = [
     categoryId: "cat-salary",
     payee: "Employer",
   }),
-  // Gifts credit categorized as expense-kind — A1 must NOT count as income
-  tx({
-    id: "gifts",
-    bookedOn: "2026-08-08",
-    amountCents: 2_500_00,
-    categoryId: "cat-gifts",
-    payee: "Family",
-  }),
-  // Ordinary expense
+  // Ordinary expense + refund (A4: credit reduces spend)
   tx({
     id: "food",
     bookedOn: "2026-08-10",
     amountCents: -80_00,
+    categoryId: "cat-food",
+    payee: "Grocer",
+  }),
+  tx({
+    id: "food-refund",
+    bookedOn: "2026-08-11",
+    amountCents: 20_00,
     categoryId: "cat-food",
     payee: "Grocer",
   }),
@@ -114,10 +113,9 @@ const fixtureTransactions = [
 /** Expected cashflow month totals for the fixture (matches getWorkspaceCashflow). */
 const EXPECTED = {
   // salary 5000 − clawback 200 + uncategorized credit 50 = 4850
-  // gifts 2500 omitted from income
   incomeCents: 4_850_00,
-  // food 80 + uncategorized debit 30 = 110
-  expenseCents: 110_00,
+  // food 80 − refund 20 + uncategorized debit 30 = 90
+  expenseCents: 90_00,
 };
 
 describe("kind-based income/expense parity (A1 + A13)", () => {

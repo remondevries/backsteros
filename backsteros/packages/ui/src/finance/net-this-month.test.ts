@@ -89,8 +89,8 @@ describe("computeNetThisMonthStats", () => {
     assert.equal(stats.netCents, 120_00);
   });
 
-  it("omits expense-kind credits from income (A1 Gifts)", () => {
-    const giftsId = "cat-gifts";
+  it("nets expense-kind credits against spend (A4)", () => {
+    const foodId = "cat-food";
     const salaryId = "cat-salary";
     const stats = computeNetThisMonthStats({
       month: "2026-08",
@@ -104,16 +104,20 @@ describe("computeNetThisMonthStats", () => {
         },
         {
           bookedOn: "2026-08-08",
-          amountCents: 2_500_00,
-          categoryId: giftsId,
+          amountCents: -40_00,
+          categoryId: foodId,
         },
-        { bookedOn: "2026-08-10", amountCents: -40_00 },
+        {
+          bookedOn: "2026-08-10",
+          amountCents: 15_00,
+          categoryId: foodId,
+        },
       ],
       priorTransactions: [],
     });
     assert.ok(stats);
     assert.equal(stats.incomeCents, 3_000_00);
-    assert.equal(stats.spendCents, 40_00);
+    assert.equal(stats.spendCents, 25_00);
   });
 
   it("nets income-kind debits against income (A13)", () => {

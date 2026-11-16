@@ -127,9 +127,8 @@ export type KindBasedIncomeExpense = {
  * `getWorkspaceCashflow` / `sumIncomeExpenseInRange` on the server:
  *
  * - Income = net of income-kind amounts (credits − debits) + uncategorized credits
- * - Expense = abs(debits) where category is null or kind=`expense`
- * - Expense-kind credits (e.g. Gifts) are omitted from both
- * - Income-kind debits reduce income, not expense (A13)
+ * - Expense = net of expense-kind amounts (credits/refunds reduce) +
+ *   uncategorized debits only
  *
  * Callers must already exclude transfer/excluded/void/own-account rows
  * (see {@link isCashflowTransaction}).
@@ -152,8 +151,8 @@ export function accumulateKindBasedIncomeExpense(
     else into.expenseCents += -amountCents;
     return;
   }
-  // Expense-kind (and any other non-income cashflow kind): gross debits only.
-  if (amountCents < 0) into.expenseCents += -amountCents;
+  // Expense-kind (and any other non-income cashflow kind): net, credits reduce.
+  into.expenseCents += -amountCents;
 }
 
 export function isCashflowTransaction(

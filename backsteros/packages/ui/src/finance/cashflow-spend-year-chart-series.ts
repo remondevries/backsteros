@@ -225,50 +225,10 @@ export function buildCashflowSpendYearSeries(input: {
     data.push(row);
   }
 
-  // Headline = stacked bars through asOf only (not through today). Bars may
-  // still show later months when browsing an earlier asOf so the chart stays
-  // readable; YoY compares the same asOf cutoff.
-  const asOfThroughMonth =
-    asOfParts.year === input.year
-      ? asOfParts.month
-      : asOfParts.year < input.year
-        ? 0
-        : 12;
-  let reconciledYtdEuros = 0;
-  for (const row of data) {
-    const monthIndex = Number(String(row.month).slice(5));
-    if (monthIndex < 1 || monthIndex > asOfThroughMonth) continue;
-    for (const key of keys) {
-      reconciledYtdEuros += Number(row[key] ?? 0);
-    }
-  }
-
-  // Prefer a net-clamped prior on the same basis as the bars when prior-year
-  // category months are present; otherwise keep the API priorYtdExpenseCents
-  // (gross expense-kind YTD) — bases may differ until the API sends matching
-  // prior category months.
-  const priorYear = input.year - 1;
-  const priorAsOfMonth =
-    asOfParts.year === input.year
-      ? asOfParts.month
-      : asOfParts.year < input.year
-        ? 0
-        : 12;
-  let priorFromBarsCents: number | null = null;
-  let sawPriorYearRow = false;
-  for (const row of input.categoryMonths) {
-    if (!row.month.startsWith(`${priorYear}-`)) continue;
-    const monthIndex = Number(row.month.slice(5));
-    if (monthIndex < 1 || monthIndex > priorAsOfMonth) continue;
-    if (row.categoryId) {
-      const meta = byId.get(row.categoryId);
-      if (meta?.kind === "income") continue;
-    }
-    sawPriorYearRow = true;
-    priorFromBarsCents =
-      (priorFromBarsCents ?? 0) + Math.max(0, row.expenseCents);
-  }
-
+  // Headline / YoY use the shared kind-based spending totals from the API so
+  // the Spending card matches Expense / dashboard / spend panel (A4). Bars are
+  // category composition only (clamped ≥0); prior-year rows are already cut at
+  // priorAsOfExclusive on the server (A3).
   return {
     year: input.year,
     asOf: input.asOf,
@@ -276,11 +236,8 @@ export function buildCashflowSpendYearSeries(input: {
     keys,
     labels,
     colors,
-    ytdExpenseCents: Math.round(reconciledYtdEuros * 100),
-    priorYtdExpenseCents:
-      sawPriorYearRow && priorFromBarsCents != null
-        ? priorFromBarsCents
-        : input.priorYtdExpenseCents,
+    ytdExpenseCents: input.ytdExpenseCents,
+    priorYtdExpenseCents: input.priorYtdExpenseCents,
   };
 }
 

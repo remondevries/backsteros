@@ -4,9 +4,10 @@
  * `finance/analytics.ts` and UI `accumulateKindBasedIncomeExpense`.
  *
  * Income = net of income-kind amounts + uncategorized credits.
- * Expense = abs(debits) for expense-kind or uncategorized.
- * Expense-kind credits are omitted; income-kind debits reduce income.
+ * Expense = net of expense-kind amounts (credits/refunds reduce spend) +
+ *   uncategorized debits only.
  */
+
 export function contributeKindBasedIncomeExpense(
   amountCents: number,
   categoryKind: string | null | undefined,
@@ -21,7 +22,8 @@ export function contributeKindBasedIncomeExpense(
     if (amountCents > 0) return { incomeDelta: amountCents, expenseDelta: 0 };
     return { incomeDelta: 0, expenseDelta: -amountCents };
   }
-  if (amountCents < 0 && categoryKind === "expense") {
+  if (categoryKind === "expense") {
+    // Credits/refunds reduce spending (mirrors income-kind debits).
     return { incomeDelta: 0, expenseDelta: -amountCents };
   }
   return { incomeDelta: 0, expenseDelta: 0 };

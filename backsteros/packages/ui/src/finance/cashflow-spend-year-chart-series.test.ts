@@ -66,15 +66,8 @@ describe("buildCashflowSpendYearSeries", () => {
     assert.equal(series.data[8]?.rent, 0);
     assert.equal(cashflowSpendYearChartHasData(series), true);
 
-    // Headline must equal the stacked bars (not the raw API ytdExpenseCents).
-    let barSumEuros = 0;
-    for (const row of series.data) {
-      if (row.isFutureMonth) continue;
-      for (const key of series.keys) {
-        barSumEuros += Number(row[key] ?? 0);
-      }
-    }
-    assert.equal(series.ytdExpenseCents, Math.round(barSumEuros * 100));
+    // Headline uses the shared API spending total (A4), not bar composition.
+    assert.equal(series.ytdExpenseCents, 1_000_000);
   });
 
   test("keeps later months visible when browsing an earlier asOf", () => {
@@ -97,7 +90,7 @@ describe("buildCashflowSpendYearSeries", () => {
     assert.equal(series.data[7]?.rent, 2000);
   });
 
-  test("headline sums bars through asOf only (not through today)", () => {
+  test("headline and prior YoY use the shared API spending totals (A3/A4)", () => {
     const series = buildCashflowSpendYearSeries({
       year: 2026,
       asOf: "2026-03-31",
@@ -109,16 +102,15 @@ describe("buildCashflowSpendYearSeries", () => {
         { month: "2026-01", categoryId: "rent", expenseCents: 100_000 },
         { month: "2026-03", categoryId: "rent", expenseCents: 200_000 },
         { month: "2026-08", categoryId: "rent", expenseCents: 400_000 },
-        // Prior-year same-basis rows → prefer net-clamped prior over API.
         { month: "2025-01", categoryId: "rent", expenseCents: 80_000 },
         { month: "2025-03", categoryId: "rent", expenseCents: 40_000 },
         { month: "2025-08", categoryId: "rent", expenseCents: 900_000 },
       ],
     });
 
-    // Jan + Mar only; Aug is visible on the chart but past asOf.
-    assert.equal(series.ytdExpenseCents, 300_000);
-    // Prior through March of prior year (not August).
-    assert.equal(series.priorYtdExpenseCents, 120_000);
+    assert.equal(series.ytdExpenseCents, 999_999);
+    assert.equal(series.priorYtdExpenseCents, 50_000);
+    // Aug remains visible on the chart when browsing an earlier asOf.
+    assert.equal(series.data[7]?.rent, 4000);
   });
 });

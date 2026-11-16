@@ -204,8 +204,8 @@ test("buildMonthIncomeExpenseDailyChartSeries omits transfer category payoffs", 
   assert.equal(expense.data[9]?.y, 0);
 });
 
-test("buildMonthIncomeExpenseDailyChartSeries omits expense-kind credits from income", () => {
-  const giftsId = "cat-gifts";
+test("buildMonthIncomeExpenseDailyChartSeries nets expense-kind credits into expense", () => {
+  const foodId = "cat-food";
   const salaryId = "cat-salary";
   const series = buildMonthIncomeExpenseDailyChartSeries({
     transactions: [
@@ -218,17 +218,25 @@ test("buildMonthIncomeExpenseDailyChartSeries omits expense-kind credits from in
       tx({
         id: "2",
         bookedOn: "2026-08-02",
-        amountCents: 2_500_00,
-        categoryId: giftsId,
+        amountCents: -50_00,
+        categoryId: foodId,
+      }),
+      tx({
+        id: "3",
+        bookedOn: "2026-08-02",
+        amountCents: 20_00,
+        categoryId: foodId,
       }),
     ],
     asOf: new Date(2026, 7, 12),
     incomeCategoryIds: new Set([salaryId]),
   });
   const income = series.find((line) => line.id === "income");
+  const expense = series.find((line) => line.id === "expense");
   assert.ok(income);
+  assert.ok(expense);
   assert.equal(income.data[0]?.y, 1000);
-  assert.equal(income.data[1]?.y, 0);
+  assert.equal(expense.data[1]?.y, 30);
 });
 
 test("buildAccountIncomeExpenseChartSeries nets income-kind debits (A13)", () => {

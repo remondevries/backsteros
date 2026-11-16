@@ -51,10 +51,11 @@ describe("isOwnAccountTransferPayee", () => {
 describe("accumulateKindBasedIncomeExpense", () => {
   const incomeIds = new Set(["cat-salary"]);
 
-  test("omits expense-kind credits from income and expense", () => {
+  test("nets expense-kind credits into expense (A4)", () => {
     const totals = { incomeCents: 0, expenseCents: 0 };
-    accumulateKindBasedIncomeExpense(2_500_00, "cat-gifts", incomeIds, totals);
-    assert.deepEqual(totals, { incomeCents: 0, expenseCents: 0 });
+    accumulateKindBasedIncomeExpense(-100_00, "cat-food", incomeIds, totals);
+    accumulateKindBasedIncomeExpense(40_00, "cat-food", incomeIds, totals);
+    assert.deepEqual(totals, { incomeCents: 0, expenseCents: 60_00 });
   });
 
   test("nets income-kind debits into income", () => {

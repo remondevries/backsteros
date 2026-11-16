@@ -52,22 +52,21 @@ describe("dashboard ↔ cashflow kind-based agreement (A1)", () => {
       amountCents: 8_000_00,
       categoryId: "income",
     },
-    // Inheritance credit wrongly in expense "Gifts" — must NOT count as income
-    {
-      bookedOn: "2026-10-03",
-      amountCents: 2_500_00,
-      categoryId: "gifts-expense",
-    },
-    // Same credit in income "Gifts received" — DOES count
+    // Gifts received income credit
     {
       bookedOn: "2026-10-04",
       amountCents: 100_00,
       categoryId: "gifts-received",
     },
-    // Spend
+    // Spend + refund in expense category (A4)
     {
       bookedOn: "2026-10-05",
       amountCents: -50_00,
+      categoryId: "food",
+    },
+    {
+      bookedOn: "2026-10-05",
+      amountCents: 10_00,
       categoryId: "food",
     },
     // Transfer — omitted
@@ -113,8 +112,8 @@ describe("dashboard ↔ cashflow kind-based agreement (A1)", () => {
     assert.ok(stats);
     assert.equal(stats.incomeCents, cashflow.incomeCents);
     assert.equal(stats.spendCents, cashflow.expenseCents);
-    // 8000 + 100 − 25 income; 50 spend; gifts-expense credit omitted
+    // 8000 + 100 − 25 income; food 50 − refund 10
     assert.equal(stats.incomeCents, 8_075_00);
-    assert.equal(stats.spendCents, 50_00);
+    assert.equal(stats.spendCents, 40_00);
   });
 });
