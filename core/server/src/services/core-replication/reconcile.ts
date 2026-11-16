@@ -24,6 +24,14 @@ import type {
   TableFingerprint,
 } from "./types.js";
 import { applyRemoteChanges } from "./apply.js";
+import {
+  MAX_DRIFT_REPAIR_PER_TABLE,
+  buildRowDigest,
+  digestExtraColumnsFor,
+  fingerprintLine,
+  planReconcile,
+  type RowDigestEntry,
+} from "./reconcile-digest.js";
 
 export { isReplicationReconcileEnabled } from "./reconcile-gate.js";
 
@@ -46,35 +54,61 @@ function rowKeyExpr(spec: TableSpec): string {
   return `(${spec.pk.map((col) => `coalesce("${col}"::text, '')`).join(" || '|' || ")})`;
 }
 
-export async function computeTableFingerprint(
+/**
+ * Ordered per-row digests (key, updated_at + content extras). Order is the DB
+ * `ORDER BY 1` on the key so both cores hash rows identically.
+ */
+export async function listReplicationRowDigests(
   table: KnownTable,
-): Promise<TableFingerprint | null> {
+): Promise<RowDigestEntry[] | null> {
   const spec = getTableSpec(table);
   if (!spec || !(await tableExists(spec.name))) {
     return null;
   }
   const keyExpr = rowKeyExpr(spec);
   const updatedCol = spec.updatedAtColumn;
+  const extraCols = digestExtraColumnsFor(spec.name);
+  const extraSelect = extraCols
+    .map((col, index) => `, "${col}"::text AS extra_${index}`)
+    .join("");
   const rows = (await sqlClient.unsafe(
     `
       SELECT
         ${keyExpr} AS row_key,
-        "${updatedCol}" AS updated_at
+        "${updatedCol}" AS updated_at${extraSelect}
       FROM "${spec.name}"
       ORDER BY 1
     `,
-  )) as Array<{ row_key: string; updated_at: Date | string }>;
+  )) as Array<Record<string, unknown>>;
+
+  return rows.map((row) => ({
+    key: String(row.row_key),
+    digest: buildRowDigest(
+      toIso(row.updated_at as Date | string),
+      extraCols.map((_, index) => {
+        const value = row[`extra_${index}`];
+        return value == null ? null : String(value);
+      }),
+    ),
+  }));
+}
+
+export async function computeTableFingerprint(
+  table: KnownTable,
+): Promise<TableFingerprint | null> {
+  const spec = getTableSpec(table);
+  const entries = await listReplicationRowDigests(table);
+  if (!spec || !entries) {
+    return null;
+  }
 
   const hash = createHash("sha256");
-  for (const row of rows) {
-    hash.update(row.row_key);
-    hash.update("|");
-    hash.update(toIso(row.updated_at));
-    hash.update("\n");
+  for (const entry of entries) {
+    hash.update(fingerprintLine(entry));
   }
   return {
     table: spec.name,
-    count: rows.length,
+    count: entries.length,
     fingerprint: hash.digest("hex"),
   };
 }
@@ -169,9 +203,11 @@ async function fetchPeerRowKeys(
   peerUrl: string,
   secret: string,
   table: string,
-): Promise<string[]> {
+): Promise<{ keys: string[]; digests: Record<string, string> | null }> {
   const url = new URL(`${peerUrl}/internal/core-replication/table-keys`);
   url.searchParams.set("table", table);
+  // Older peers ignore this and return keys only (drift then stays unknown).
+  url.searchParams.set("digests", "1");
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
   try {
@@ -186,8 +222,14 @@ async function fetchPeerRowKeys(
         `peer table-keys ${table} failed (${response.status}): ${body}`,
       );
     }
-    const payload = (await response.json()) as { keys: string[] };
-    return payload.keys ?? [];
+    const payload = (await response.json()) as {
+      keys: string[];
+      digests?: Record<string, string>;
+    };
+    return {
+      keys: payload.keys ?? [],
+      digests: payload.digests ?? null,
+    };
   } finally {
     clearTimeout(timeout);
   }
@@ -257,7 +299,7 @@ async function pushChangesToPeer(
   }
 }
 
-async function reconcileTable(
+export async function reconcileTable(
   table: ReplicatedTable,
   peerUrl: string,
   secret: string,
@@ -275,10 +317,20 @@ async function reconcileTable(
     return;
   }
 
-  const localKeys = new Set(await listReplicationRowKeys(table));
-  const peerKeys = new Set(await fetchPeerRowKeys(peerUrl, secret, table));
-  const missingLocally = [...peerKeys].filter((key) => !localKeys.has(key));
-  const missingOnPeer = [...localKeys].filter((key) => !peerKeys.has(key));
+  const localEntries = (await listReplicationRowDigests(table)) ?? [];
+  const localDigests = new Map(
+    localEntries.map((entry) => [entry.key, entry.digest] as const),
+  );
+  const peerRows = await fetchPeerRowKeys(peerUrl, secret, table);
+  const peerKeys = new Set(peerRows.keys);
+  const peerDigests = peerRows.digests
+    ? new Map(Object.entries(peerRows.digests))
+    : null;
+  const plan = planReconcile(localDigests, peerKeys, peerDigests);
+  const { missingLocally, missingOnPeer } = plan;
+  // Same ids, different content/updated_at: re-send both ways; apply-side LWW
+  // (and entity_counters max-merge) decides the winner.
+  const drifted = plan.drifted.slice(0, MAX_DRIFT_REPAIR_PER_TABLE);
 
   await db
     .insert(replicationReconcileMismatches)
@@ -308,20 +360,24 @@ async function reconcileTable(
   appendOpsLog(
     "warn",
     `core replication reconcile mismatch ${table}`,
-    `local=${local.count} peer=${peer.count} missingLocally=${missingLocally.length} missingOnPeer=${missingOnPeer.length}`,
+    `local=${local.count} peer=${peer.count} missingLocally=${missingLocally.length} missingOnPeer=${missingOnPeer.length} drifted=${plan.drifted.length}${
+      peerDigests ? "" : " (peer has no digests)"
+    }`,
   );
 
-  // Enqueue: pull missing local rows from peer, push missing peer rows.
+  // Enqueue: pull missing/drifted local rows from peer, push missing/drifted peer rows.
   const BATCH = 50;
-  for (let i = 0; i < missingLocally.length; i += BATCH) {
-    const batch = missingLocally.slice(i, i + BATCH);
+  const pullKeys = [...missingLocally, ...drifted];
+  const pushKeys = [...missingOnPeer, ...drifted];
+  for (let i = 0; i < pullKeys.length; i += BATCH) {
+    const batch = pullKeys.slice(i, i + BATCH);
     const changes = await fetchPeerRowsByKeys(peerUrl, secret, table, batch);
     if (changes.length > 0) {
       await applyRemoteChanges(table, changes, { direction: "pull" });
     }
   }
-  for (let i = 0; i < missingOnPeer.length; i += BATCH) {
-    const batch = missingOnPeer.slice(i, i + BATCH);
+  for (let i = 0; i < pushKeys.length; i += BATCH) {
+    const batch = pushKeys.slice(i, i + BATCH);
     const changes = await fetchLocalRowsByKeys(table, batch);
     await pushChangesToPeer(peerUrl, secret, table, changes);
   }

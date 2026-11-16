@@ -24,6 +24,7 @@ import { fetchAllLocalRows, fetchLocalTableTips } from "./fetch.js";
 import {
   computeTableFingerprint,
   fetchLocalRowsByKeys,
+  listReplicationRowDigests,
   listReplicationRowKeys,
 } from "./reconcile.js";
 import { getChangesSince } from "./sync.js";
@@ -658,8 +659,21 @@ export function registerCoreReplicationRoutes(app: Hono) {
         400,
       );
     }
+    const wantDigests = c.req.query("digests") === "1";
     if (tableState === "absent") {
-      return c.json({ table, keys: [] });
+      return c.json(
+        wantDigests ? { table, keys: [], digests: {} } : { table, keys: [] },
+      );
+    }
+    if (wantDigests) {
+      const entries = (await listReplicationRowDigests(table as KnownTable)) ?? [];
+      return c.json({
+        table,
+        keys: entries.map((entry) => entry.key),
+        digests: Object.fromEntries(
+          entries.map((entry) => [entry.key, entry.digest] as const),
+        ),
+      });
     }
     const keys = await listReplicationRowKeys(table as KnownTable);
     return c.json({ table, keys });
