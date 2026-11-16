@@ -148,7 +148,24 @@ export type OwnAccountTransferCandidate = {
   settlementState?: string | null;
 };
 
-/** Side confirms the pair via own-IBAN or card-payment payee heuristic. */
+/**
+ * True when counterparty looks like an account ref that is not one of ours.
+ * Empty/missing counterparties are fine (CSV rows often omit them).
+ */
+export function hasForeignCounterpartyIban(
+  counterparty: string | null | undefined,
+  ownAccountRefs: ReadonlySet<string>,
+): boolean {
+  const actual = normalizeAccountRef(counterparty);
+  if (!actual) return false;
+  return !isCounterpartyOwnAccount(counterparty, ownAccountRefs);
+}
+
+/**
+ * Side confirms the pair via own-IBAN or card-payment payee heuristic.
+ * When `expectedOtherAccountRef` is set, an IBAN confirm must point at that
+ * specific account (the mirror counterpart), not any linked own account.
+ */
 export function sideConfirmsOwnAccountTransfer(
   side: {
     payee?: string | null;
@@ -157,8 +174,24 @@ export function sideConfirmsOwnAccountTransfer(
   },
   ownAccountRefs: ReadonlySet<string>,
   sourceAccountRef?: string | null,
+  expectedOtherAccountRef?: string | null,
 ): boolean {
-  if (
+  const expected = normalizeAccountRef(expectedOtherAccountRef ?? null);
+  if (expected) {
+    const actual = normalizeAccountRef(side.counterparty);
+    if (actual) {
+      if (
+        actual === expected ||
+        (actual.length >= 10 && expected.length >= 10 && actual === expected) ||
+        actual.endsWith(expected) ||
+        expected.endsWith(actual)
+      ) {
+        return true;
+      }
+      // Non-empty counterparty that is not the other side — do not fall through
+      // to "any own IBAN" (A1: Prive ↔ Allison false positive).
+    }
+  } else if (
     isCounterpartyOwnAccount(side.counterparty, ownAccountRefs, {
       excludeRef: sourceAccountRef ?? null,
     })
@@ -174,9 +207,9 @@ export function sideConfirmsOwnAccountTransfer(
 /**
  * Counterpart is eligible when uncategorized, or either side confirms via
  * IBAN/payee (including when the counterpart is already transfer-kind).
- * Already-transfer counterparts without confirmation are rejected — otherwise
- * coincidental amounts (Mercedes lease ↔ internal Lemo-Design move) false-hit.
- * Void settlements never qualify.
+ * Rejects foreign (non-own) counterpart IBANs on either side. Own-IBAN
+ * confirmation must name the other side's account. Void settlements never
+ * qualify.
  */
 export function isEligibleMirrorCounterpart(
   current: {
@@ -194,6 +227,13 @@ export function isEligibleMirrorCounterpart(
   if (!isBalanceAffectingFinancialSettlement(candidate.settlementState)) {
     return false;
   }
+  if (hasForeignCounterpartyIban(current.counterparty, ownAccountRefs)) {
+    return false;
+  }
+  if (hasForeignCounterpartyIban(candidate.counterparty, ownAccountRefs)) {
+    return false;
+  }
+
   const uncategorized =
     candidate.categoryId == null ||
     candidate.categoryKind == null ||
@@ -205,6 +245,7 @@ export function isEligibleMirrorCounterpart(
       current,
       ownAccountRefs,
       options?.sourceAccountRef,
+      options?.candidateSourceAccountRef,
     )
   ) {
     return true;
@@ -217,6 +258,7 @@ export function isEligibleMirrorCounterpart(
     },
     ownAccountRefs,
     options?.candidateSourceAccountRef,
+    options?.sourceAccountRef,
   );
 }
 
@@ -270,11 +312,14 @@ export function selectMirrorCounterpart(
       continue;
     }
     if (needsConfirmation) {
+      const candidateRef =
+        options?.accountRefById?.get(candidate.bankAccountId) ?? null;
       const confirmed =
         sideConfirmsOwnAccountTransfer(
           current,
           ownAccountRefs,
           options?.sourceAccountRef,
+          candidateRef,
         ) ||
         sideConfirmsOwnAccountTransfer(
           {
@@ -283,7 +328,8 @@ export function selectMirrorCounterpart(
             amountCents: candidate.amountCents,
           },
           ownAccountRefs,
-          options?.accountRefById?.get(candidate.bankAccountId) ?? null,
+          candidateRef,
+          options?.sourceAccountRef,
         );
       if (!confirmed) continue;
     }
@@ -565,15 +611,19 @@ export function collectPendingMirrorCandidates(
 
 /**
  * Income-named categories: exact "Income" or "Income …" (space after Income).
- * Does not match "Income tax" / "Income Tax …" (tax remains an expense label).
+ * Expense-shaped names ("Income tax(es)", "Income protection", …) are excluded
+ * so they can be created as kind=expense.
  */
+const INCOME_NAME_EXPENSE_REST =
+  /^(tax(es)?|protection|insurance|premium)\b/i;
+
 export function isIncomeNamedCategory(name: string): boolean {
   const trimmed = name.trim();
   if (/^income$/i.test(trimmed)) return true;
   const match = /^income\s+(.+)$/i.exec(trimmed);
   if (!match) return false;
   const rest = match[1]!.trim();
-  if (/^tax\b/i.test(rest)) return false;
+  if (INCOME_NAME_EXPENSE_REST.test(rest)) return false;
   return true;
 }
 

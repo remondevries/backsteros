@@ -243,6 +243,88 @@ describe("tightened mirror-pair detection (A2)", () => {
     );
   });
 
+  it("rejects Allison foreign-IBAN leg and pairs Prive with the real Lemo-Design +€50 (A1)", () => {
+    const bank24Ref = "NL43INGB0663319099";
+    const allisonForeign = "NL05ADYB0123456789";
+    const accountRefById = new Map<string, string | null>([
+      ["ing-business", "NL80INGB0008304884"],
+      ["bank24", bank24Ref],
+    ]);
+    const mirror = selectMirrorCounterpart(
+      {
+        id: "prive",
+        bankAccountId: "ing-business",
+        amountCents: -5_000,
+        bookedOn: "2025-06-01",
+        payee: "Prive",
+        counterparty: bank24Ref,
+      },
+      [
+        {
+          id: "allison",
+          bankAccountId: "bank24",
+          amountCents: 5_000,
+          bookedOn: "2025-06-01",
+          payee: "Allison James Photography",
+          counterparty: allisonForeign,
+          categoryKind: "income",
+          categoryId: "cat-income",
+        },
+        {
+          id: "lemo-50",
+          bankAccountId: "bank24",
+          amountCents: 5_000,
+          bookedOn: "2025-06-01",
+          payee: "Lemo-Design",
+          counterparty: null,
+          categoryId: null,
+        },
+      ],
+      own,
+      {
+        sourceAccountRef: "NL80INGB0008304884",
+        accountRefById,
+      },
+    );
+    assert.equal(mirror?.id, "lemo-50");
+  });
+
+  it("rejects Belastingdienst −€2,276 with tax IBAN vs uncategorized savings credit (A1 worst case)", () => {
+    const taxIban = "NL86INGB0002445588";
+    assert.equal(
+      selectMirrorCounterpart(
+        {
+          id: "tax-2276",
+          bankAccountId: "bank24",
+          amountCents: -227_600,
+          bookedOn: "2025-01-15",
+          payee: "Belastingdienst",
+          counterparty: taxIban,
+        },
+        [
+          {
+            id: "lemo-savings",
+            bankAccountId: "ing-business",
+            amountCents: 227_600,
+            bookedOn: "2025-01-15",
+            payee: "Lemo-Design",
+            counterparty: null,
+            categoryId: null,
+          },
+        ],
+        own,
+        {
+          sourceAccountRef: "NL43INGB0663319099",
+          accountRefById: new Map([
+            ["bank24", "NL43INGB0663319099"],
+            ["ing-business", "NL80INGB0008304884"],
+          ]),
+        },
+      ),
+      null,
+    );
+  });
+
   it("skips voided/refused settlement counterparts", () => {
     assert.equal(
       isEligibleMirrorCounterpart(
@@ -325,7 +407,7 @@ describe("tightened mirror-pair detection (A2)", () => {
     assert.equal(second?.id, "credit-far");
   });
 
-  it("still matches Amex thank-you ↔ ING debit via payee confirmation", () => {
+  it("still matches Amex card payment via payee heuristic when counterparty IBAN is Amex (not own)", () => {
     assert.equal(
       detectOwnAccountTransfer({
         id: "ing-amex",
@@ -348,7 +430,7 @@ describe("tightened mirror-pair detection (A2)", () => {
           },
         ],
       }),
-      "mirror_pair",
+      "payee_heuristic",
     );
   });
 
@@ -446,7 +528,9 @@ describe("income category kind guard (A12)", () => {
     assert.equal(isIncomeNamedCategory("Income"), true);
     assert.equal(isIncomeNamedCategory("Income Personal"), true);
     assert.equal(isIncomeNamedCategory("Income tax"), false);
+    assert.equal(isIncomeNamedCategory("Income Taxes"), false);
     assert.equal(isIncomeNamedCategory("Income Tax Personal"), false);
+    assert.equal(isIncomeNamedCategory("Income protection"), false);
     assert.equal(isIncomeNamedCategory("Lemo-Design"), false);
   });
 
