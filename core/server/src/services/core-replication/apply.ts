@@ -195,11 +195,22 @@ async function applyGenericRow(
 
 type SqlExecutor = Pick<typeof sqlClient, "unsafe">;
 
+function isRetryableNaturalKeyApplyError(error: unknown): boolean {
+  const pg = readPgError(error);
+  if (!pg) return false;
+  // Concurrent apply pages race on the same fingerprint / natural key, or
+  // deadlock while one side deletes the twin and the other upserts.
+  return pg.code === "23505" || pg.code === "40P01";
+}
+
 /**
  * Tables whose business key is the identity (natural-key-conflicts.ts): one row
  * per key, newest updated_at wins the whole row (id included), the loser is
  * removed in the same transaction. Without this, two cores that each created
  * a row for the same key dead-letter on the secondary UNIQUE index forever.
+ *
+ * Concurrent twin pages can both see "no twin" then one INSERT hits 23505 —
+ * retry so the next pass finds the winner and heals instead of dead-lettering.
  */
 async function applyNaturalKeyRow(
   spec: TableSpec,
@@ -222,49 +233,66 @@ async function applyNaturalKeyRow(
     .map((col, index) => `"${col}" = $${index + 1}`)
     .join(" AND ");
   const idParam = `$${keyColumns.length + 1}`;
-  const twins = (await sqlClient.unsafe(
-    `SELECT id, "${spec.updatedAtColumn}" AS updated_at FROM "${spec.name}" WHERE ${keyWhere} AND id <> ${idParam}`,
-    [...keyValues, incomingId] as never[],
-  )) as { id: string; updated_at: Date | string }[];
 
-  if (twins.length === 0) {
-    return applyGenericRowById(spec, row, localRole);
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    try {
+      const twins = (await sqlClient.unsafe(
+        `SELECT id, "${spec.updatedAtColumn}" AS updated_at FROM "${spec.name}" WHERE ${keyWhere} AND id <> ${idParam}`,
+        [...keyValues, incomingId] as never[],
+      )) as { id: string; updated_at: Date | string }[];
+
+      if (twins.length === 0) {
+        return await applyGenericRowById(spec, row, localRole);
+      }
+
+      const incoming = {
+        id: incomingId,
+        updatedAt: new Date(String(row[spec.updatedAtColumn])),
+      };
+      const survivor = twins.find(
+        (twin) =>
+          naturalKeyForkWinner(incoming, {
+            id: twin.id,
+            updatedAt: new Date(twin.updated_at),
+          }) === "existing",
+      );
+      if (survivor) {
+        // Local row wins; the peer converges when it applies our row.
+        appendOpsLog(
+          "info",
+          `core replication natural-key fork kept local ${spec.name}`,
+          `${survivor.id} over ${incomingId}`,
+        );
+        return "skipped";
+      }
+
+      const result = await sqlClient.begin(async (tx) => {
+        await tx.unsafe(
+          `DELETE FROM "${spec.name}" WHERE ${keyWhere} AND id <> ${idParam}`,
+          [...keyValues, incomingId] as never[],
+        );
+        return applyGenericRowUnchecked(spec, row, { executor: tx });
+      });
+      appendOpsLog(
+        "warn",
+        `core replication natural-key fork replaced ${spec.name}`,
+        `${twins.map((twin) => twin.id).join(",")} -> ${incomingId}`,
+      );
+      return result;
+    } catch (error) {
+      if (isRetryableNaturalKeyApplyError(error) && attempt < 3) {
+        appendOpsLog(
+          "warn",
+          `core replication natural-key retry ${spec.name}`,
+          `${readPgError(error)?.code ?? "error"} attempt ${attempt + 1} id=${incomingId}`,
+        );
+        continue;
+      }
+      throw error;
+    }
   }
 
-  const incoming = {
-    id: incomingId,
-    updatedAt: new Date(String(row[spec.updatedAtColumn])),
-  };
-  const survivor = twins.find(
-    (twin) =>
-      naturalKeyForkWinner(incoming, {
-        id: twin.id,
-        updatedAt: new Date(twin.updated_at),
-      }) === "existing",
-  );
-  if (survivor) {
-    // Local row wins; the peer converges when it applies our row.
-    appendOpsLog(
-      "info",
-      `core replication natural-key fork kept local ${spec.name}`,
-      `${survivor.id} over ${incomingId}`,
-    );
-    return "skipped";
-  }
-
-  const result = await sqlClient.begin(async (tx) => {
-    await tx.unsafe(
-      `DELETE FROM "${spec.name}" WHERE ${keyWhere} AND id <> ${idParam}`,
-      [...keyValues, incomingId] as never[],
-    );
-    return applyGenericRowUnchecked(spec, row, { executor: tx });
-  });
-  appendOpsLog(
-    "warn",
-    `core replication natural-key fork replaced ${spec.name}`,
-    `${twins.map((twin) => twin.id).join(",")} -> ${incomingId}`,
-  );
-  return result;
+  return "skipped";
 }
 
 async function applyGenericRowById(
