@@ -739,6 +739,7 @@ export async function batchUpdateTransactions(
   ids: string[],
   patch: UpdateFinancialTransactionInput,
   executor: DbExecutor = db,
+  options?: { onlyUncategorized?: boolean },
 ): Promise<DbFinancialTransaction[] | "account_not_found"> {
   if (ids.length === 0) return [];
   const accountPatch = await resolveBankAccountPatch(
@@ -775,6 +776,9 @@ export async function batchUpdateTransactions(
       and(
         eq(financialTransactions.workspaceId, workspaceId),
         inArray(financialTransactions.id, ids),
+        ...(options?.onlyUncategorized
+          ? [isNull(financialTransactions.categoryId)]
+          : []),
       ),
     )
     .returning();
@@ -895,8 +899,12 @@ export async function importBankCsv(
     inserted = 0;
   }
 
-  // A3: when the new leg matches an earlier uncategorized counterpart, promote it.
-  if (transferAssign.counterpartIdsToRecategorize.length > 0) {
+  // A3/A6: promote earlier uncategorized counterparts only when inserts landed,
+  // and only while they are still uncategorized (do not clobber a manual edit).
+  if (
+    inserted > 0 &&
+    transferAssign.counterpartIdsToRecategorize.length > 0
+  ) {
     const byCategory = new Map<string, string[]>();
     for (const id of transferAssign.counterpartIdsToRecategorize) {
       const categoryId = transferAssign.transferCategoryIdByRowId.get(id);
@@ -906,7 +914,13 @@ export async function importBankCsv(
       byCategory.set(categoryId, list);
     }
     for (const [categoryId, ids] of byCategory) {
-      await batchUpdateTransactions(workspaceId, ids, { categoryId });
+      await batchUpdateTransactions(
+        workspaceId,
+        ids,
+        { categoryId },
+        db,
+        { onlyUncategorized: true },
+      );
       for (const id of ids) {
         const row = await getTransactionById(workspaceId, id);
         if (!row) continue;

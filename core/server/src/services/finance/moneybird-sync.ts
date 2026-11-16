@@ -353,8 +353,11 @@ export async function syncBankAccountFromMoneybird(
       pendingInserts,
     );
     duplicates += pendingInserts.length - inserted;
-    // A3: promote uncategorized earlier half of a newly detected mirror pair.
-    if (transferAssign.counterpartIdsToRecategorize.length > 0) {
+    // A3/A6: promote earlier half only when inserts landed + still uncategorized.
+    if (
+      inserted > 0 &&
+      transferAssign.counterpartIdsToRecategorize.length > 0
+    ) {
       const { batchUpdateTransactions, getTransactionById } = await import(
         "./finance.js"
       );
@@ -370,7 +373,13 @@ export async function syncBankAccountFromMoneybird(
         byCategory.set(categoryId, list);
       }
       for (const [categoryId, ids] of byCategory) {
-        await batchUpdateTransactions(workspaceId, ids, { categoryId });
+        await batchUpdateTransactions(
+          workspaceId,
+          ids,
+          { categoryId },
+          undefined,
+          { onlyUncategorized: true },
+        );
         for (const id of ids) {
           const row = await getTransactionById(workspaceId, id);
           if (row) {

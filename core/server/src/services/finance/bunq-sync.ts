@@ -161,7 +161,10 @@ export async function runBunqSyncLocally(
       pendingInserts,
     );
     duplicates += pendingInserts.length - inserted;
-    if (transferAssign.counterpartIdsToRecategorize.length > 0) {
+    if (
+      inserted > 0 &&
+      transferAssign.counterpartIdsToRecategorize.length > 0
+    ) {
       const { batchUpdateTransactions, getTransactionById } = await import(
         "./finance.js"
       );
@@ -177,7 +180,13 @@ export async function runBunqSyncLocally(
         byCategory.set(categoryId, list);
       }
       for (const [categoryId, ids] of byCategory) {
-        await batchUpdateTransactions(workspaceId, ids, { categoryId });
+        await batchUpdateTransactions(
+          workspaceId,
+          ids,
+          { categoryId },
+          undefined,
+          { onlyUncategorized: true },
+        );
         for (const id of ids) {
           const row = await getTransactionById(workspaceId, id);
           if (row) {
