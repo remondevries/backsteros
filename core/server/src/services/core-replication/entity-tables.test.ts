@@ -58,6 +58,14 @@ describe("replicatedTablesForEntity", () => {
     ]);
   });
 
+  it("pushes external_calendar_events ahead of meetings", () => {
+    assert.deepEqual(replicatedTablesForEntity("meeting"), [
+      "external_calendar_events",
+      "meetings",
+      "crm_activities",
+    ]);
+  });
+
   it("returns empty for unknown entities", () => {
     assert.deepEqual(replicatedTablesForEntity("not_a_thing"), []);
     assert.deepEqual(replicatedTablesForEntity(null), []);

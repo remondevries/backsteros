@@ -618,6 +618,8 @@ async function softDeleteSoftUniqueLosers(
  * Heal common FK apply failures without failing the whole twin page.
  * - documents.parent_id → null when parent missing
  * - task_activities.task_id → skip when task missing
+ * - meetings.external_calendar_event_id → null when the agenda block is missing
+ *   (the link is optional, ON DELETE SET NULL; the meeting must still land)
  */
 async function sanitizeForeignKeyRow(
   spec: TableSpec,
@@ -638,6 +640,21 @@ async function sanitizeForeignKeyRow(
     )) as { id: string }[];
     if (!parents[0]) {
       return { ...row, parent_id: null };
+    }
+  }
+
+  if (
+    spec.name === "meetings" &&
+    constraint.includes("external_calendar_event_id") &&
+    row.external_calendar_event_id
+  ) {
+    const eventId = String(row.external_calendar_event_id);
+    const found = (await sqlClient.unsafe(
+      `SELECT id FROM external_calendar_events WHERE id = $1 LIMIT 1`,
+      [eventId],
+    )) as { id: string }[];
+    if (!found[0]) {
+      return { ...row, external_calendar_event_id: null };
     }
   }
 

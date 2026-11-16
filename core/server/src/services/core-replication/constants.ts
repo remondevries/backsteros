@@ -39,6 +39,8 @@ export const REPLICATED_TABLES = [
   "task_attachments",
   /** Description/comment image metadata; bytes via R2 or peer pull (OS-90). */
   "task_images",
+  /** Read-only Google agenda blocks; FK parent of meetings.external_calendar_event_id. */
+  "external_calendar_events",
   "meetings",
   "meeting_scheduling_settings",
   "avatars",

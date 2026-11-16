@@ -62,6 +62,8 @@ const TABLE_SPECS: TableSpec[] = [
   spec("letter_attachments", ["id"], "updated_at", { optional: true }),
   spec("task_attachments", ["id"], "updated_at", { optional: true }),
   spec("task_images", ["id"], "updated_at", { optional: true }),
+  /** Before meetings (external_calendar_event_id FK). Optional for peer schema lag. */
+  spec("external_calendar_events", ["id"], "updated_at", { optional: true }),
   spec("meetings", ["id"], "updated_at", { optional: true }),
   spec("meeting_scheduling_settings", ["workspace_id"], "updated_at", {
     optional: true,

@@ -26,7 +26,8 @@ const ENTITY_REPLICATION_TABLES: Partial<
   financial_transaction: ["financial_import_batches", "financial_transactions"],
   client_estimate: ["client_estimates"],
   habit: ["habits", "tasks"],
-  meeting: ["meetings", "crm_activities"],
+  // Agenda parent first so meetings.external_calendar_event_id lands linked.
+  meeting: ["external_calendar_events", "meetings", "crm_activities"],
   task_comment: ["task_comments", "task_activities", "task_images"],
   contact_relationship: ["contact_relationships"],
   crm_relationship_label: ["crm_relationship_labels"],

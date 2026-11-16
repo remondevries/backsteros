@@ -64,6 +64,17 @@ describe("core-replication constants", () => {
       "financial_import_batches must precede financial_transactions for FK order",
     );
     assert.ok(REPLICATED_TABLES.includes("client_estimates"));
+    assert.ok(REPLICATED_TABLES.includes("external_calendar_events"));
+    assert.ok(
+      REPLICATED_TABLES.indexOf("external_calendar_events") <
+        REPLICATED_TABLES.indexOf("meetings"),
+      "external_calendar_events must precede meetings for external_calendar_event_id FK order",
+    );
+    assert.equal(
+      REPLICATED_TABLES.indexOf("external_calendar_events") + 1,
+      REPLICATED_TABLES.indexOf("meetings"),
+      "external_calendar_events sits immediately before meetings",
+    );
     assert.ok(BOOTSTRAP_TABLES.includes("workspaces"));
     assert.ok(BOOTSTRAP_TABLES.includes("users"));
     for (const table of REPLICATED_TABLES) {
