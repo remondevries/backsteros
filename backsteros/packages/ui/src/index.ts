@@ -1489,6 +1489,10 @@ export { LetterIcon } from "./components/letters/letter-icon.js";
 export { DocumentIcon } from "./components/documents/document-icon.js";
 export { ContactPersonIcon } from "./components/contacts/contact-person-icon.js";
 export { OrganizationIcon } from "./components/organizations/organization-icon.js";
+export {
+  OrganizationDropdownMark,
+  type OrganizationDropdownMarkProps,
+} from "./components/organizations/organization-dropdown-mark.js";
 export { DefaultProjectIcon } from "./components/projects/default-project-icon.js";
 export { TerminalConsoleIcon } from "./components/icons/terminal-console-icon.js";
 export { BrowserWindowIcon } from "./components/icons/browser-window-icon.js";

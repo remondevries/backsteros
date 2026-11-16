@@ -4,10 +4,11 @@ import type { ReactNode } from "react";
 
 import { filterProjectsForDefaultPicker } from "@backsteros/contracts";
 
+import { brandfetchLogoUrlFromWebsite } from "../../organizations/brandfetch-logo.js";
 import { ContactPersonIcon } from "../contacts/contact-person-icon.js";
 import { DefaultProjectIcon } from "../projects/default-project-icon.js";
 import { EntityAvatarIcon } from "../entity/entity-avatar-icon.js";
-import { OrganizationIcon } from "../organizations/organization-icon.js";
+import { OrganizationDropdownMark } from "../organizations/organization-dropdown-mark.js";
 import { ProjectStatusIcon } from "../projects/project-status-icon.js";
 import { EmailNavIcon } from "../shell/sidebar-nav-icons.js";
 import { projectTypeDropdownFilter } from "../../dropdowns/searchable-dropdown-option-filters.js";
@@ -47,6 +48,8 @@ export type OrganizationDropdownItem = {
   name: string;
   number?: number | null;
   key?: string | null;
+  website?: string | null;
+  avatarStorageKey?: string | null;
   avatarSrc?: string | null;
 };
 
@@ -65,13 +68,8 @@ function personIcon(size = 14, avatarSrc?: string | null): ReactNode {
   return <ContactPersonIcon size={size} className="text-foreground/70" />;
 }
 
-function orgIcon(size = 14, avatarSrc?: string | null): ReactNode {
-  if (avatarSrc) {
-    return (
-      <EntityAvatarIcon src={avatarSrc} size={size} kind="organization" />
-    );
-  }
-  return <OrganizationIcon size={size} className="text-foreground/70" />;
+function orgIcon(size = 18, avatarSrc?: string | null): ReactNode {
+  return <OrganizationDropdownMark src={avatarSrc} size={size} />;
 }
 
 function resolveContactAvatarSrc(
@@ -82,6 +80,31 @@ function resolveContactAvatarSrc(
   if (typeof fromMap === "string" && fromMap.trim()) return fromMap.trim();
   const fromContact = contact.avatarSrc?.trim();
   return fromContact || null;
+}
+
+/**
+ * Merchant / org menu avatar URL priority:
+ * 1. Live uploaded blob map (`avatarSrcById`) — manual overwrite + hydrated Brand API
+ * 2. Pre-baked `organization.avatarSrc` from the caller
+ * 3. Brandfetch CDN from `website` + client id
+ */
+export function resolveOrgDropdownAvatarSrc(
+  organization: OrganizationDropdownItem,
+  options?: {
+    avatarSrcById?: Readonly<Record<string, string | null | undefined>>;
+    brandfetchClientId?: string | null;
+  },
+): string | null {
+  const fromMap = options?.avatarSrcById?.[organization.id];
+  if (typeof fromMap === "string" && fromMap.trim()) return fromMap.trim();
+
+  const baked = organization.avatarSrc?.trim() || null;
+  if (baked) return baked;
+
+  return brandfetchLogoUrlFromWebsite(
+    organization.website,
+    options?.brandfetchClientId,
+  );
 }
 
 function projectStatusGlyph(size = 14, status?: string | null): ReactNode {
@@ -159,20 +182,31 @@ export function buildContactDropdownOptions(
 /**
  * Organization options — label is the org name (or “No organization”).
  * Matches Next.js `organization-dropdown-options`.
+ * Pass `avatarSrcById` (desktop blob map) and/or `brandfetchClientId` so
+ * merchant / org menus show logos the same way assignee menus show photos.
  */
 export function buildOrganizationDropdownOptions(
   organizations: OrganizationDropdownItem[],
-  options?: { iconSize?: number; includeNone?: boolean },
+  options?: {
+    iconSize?: number;
+    includeNone?: boolean;
+    avatarSrcById?: Readonly<Record<string, string | null | undefined>>;
+    brandfetchClientId?: string | null;
+  },
 ): SearchableDropdownOption<string>[] {
-  const iconSize = options?.iconSize ?? 14;
+  // Match bank-account marks / panel CSS slot (18px).
+  const iconSize = options?.iconSize ?? 18;
   const includeNone = options?.includeNone ?? true;
-  const rows = organizations.map((organization) => ({
-    value: organization.id,
-    label: organization.name,
-    searchTerms: organization.name,
-    icon: orgIcon(iconSize, organization.avatarSrc),
-    avatarSrc: organization.avatarSrc ?? null,
-  }));
+  const rows = organizations.map((organization) => {
+    const avatarSrc = resolveOrgDropdownAvatarSrc(organization, options);
+    return {
+      value: organization.id,
+      label: organization.name,
+      searchTerms: organization.name,
+      icon: orgIcon(iconSize, avatarSrc),
+      avatarSrc,
+    };
+  });
   if (!includeNone) return rows;
   return [
     {

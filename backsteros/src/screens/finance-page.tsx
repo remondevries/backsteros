@@ -36,6 +36,7 @@ import {
   withAvatarSrc,
   withOrganizationAvatarSrc,
 } from "../lib/avatar-src";
+import { getBrandfetchClientId } from "../lib/brandfetch";
 import { loadPortalInvoiceActivityEmail } from "../lib/load-portal-invoice-activity-email";
 import {
   useKeepAliveActive,
@@ -96,6 +97,7 @@ function FinancePageBody() {
     "organization",
     organizations,
   );
+  const brandfetchClientId = useMemo(() => getBrandfetchClientId(), []);
   const organizationsWithAvatars = useMemo(
     () => withOrganizationAvatarSrc(organizations, organizationAvatarSrc),
     [organizationAvatarSrc, organizations],
@@ -474,7 +476,7 @@ function FinancePageBody() {
         recurrings={recurrings}
         accounts={accounts}
         accountAvatarSrcById={accountAvatarSrcById}
-        organizations={organizations}
+        organizations={organizationsWithAvatars}
         projects={projects}
         assetsDebt={assetsDebt}
         assetsDebtLoading={assetsDebtLoading}
@@ -523,7 +525,7 @@ function FinancePageBody() {
         categories={categories}
         accounts={accounts}
         accountAvatarSrcById={accountAvatarSrcById}
-        organizations={organizations}
+        organizations={organizationsWithAvatars}
         recurrings={recurrings}
         onChromeStateChange={setGoalsChrome}
         onSelectedGoalChange={setSelectedGoalId}
@@ -588,7 +590,7 @@ function FinancePageBody() {
         revenueYear={moneybirdRevenueYear}
         revenueMonths={moneybirdRevenueMonths}
         revenueLoading={moneybirdRevenueLoading}
-        organizations={organizations}
+        organizations={organizationsWithAvatars}
         selectedInvoiceId={selectedMoneybirdInvoiceId}
         onSelectedInvoiceChange={setSelectedMoneybirdInvoiceId}
         invoiceDetail={moneybirdInvoiceDetail}
@@ -664,7 +666,7 @@ function FinancePageBody() {
         metricsLoading={recurringMetricsLoading}
         accounts={accounts}
         accountAvatarSrcById={accountAvatarSrcById}
-        organizations={organizations}
+        organizations={organizationsWithAvatars}
         goals={goals}
         onChromeStateChange={setRecurringsChrome}
         onSelectedRecurringChange={setSelectedRecurringId}
@@ -687,7 +689,7 @@ function FinancePageBody() {
         accountAvatarSrcById={accountAvatarSrcById}
         balanceCentsByAccountId={accountBalanceById}
         categories={categories}
-        organizations={organizations}
+        organizations={organizationsWithAvatars}
         goals={goals}
         recurrings={recurrings}
         accountMetrics={accountMetrics}
@@ -751,7 +753,7 @@ function FinancePageBody() {
         categoryMetricsLoading={categoryMetricsLoading}
         accounts={accounts}
         accountAvatarSrcById={accountAvatarSrcById}
-        organizations={organizations}
+        organizations={organizationsWithAvatars}
         goals={goals}
         recurrings={recurrings}
         onPatchTransaction={handleCategoryTransactionPatch}
@@ -813,7 +815,9 @@ function FinancePageBody() {
         moneybirdAccounts={moneybirdAccounts}
         moneybirdAccountsLoading={moneybirdAccountsLoading}
         transactions={transactions}
-        organizations={organizations}
+        organizations={organizationsWithAvatars}
+        organizationAvatarSrcById={organizationAvatarSrc}
+        brandfetchClientId={brandfetchClientId}
         projects={projects}
         categories={categories}
         goals={goals}

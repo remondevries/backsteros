@@ -532,6 +532,14 @@ export function FinanceTransactionsGroupedList({
                                         event.stopPropagation()
                                       }
                                     >
+                                      {selected?.icon ? (
+                                        <span
+                                          className="property-dropdown-trigger__icon"
+                                          aria-hidden="true"
+                                        >
+                                          {selected.icon}
+                                        </span>
+                                      ) : null}
                                       <span className="property-dropdown-trigger__label">
                                         {selected?.label ??
                                           orgLabel ??

@@ -32,11 +32,15 @@ export function useFinanceTransactionsOptions({
   categories,
   goals,
   recurrings,
+  organizationAvatarSrcById,
+  brandfetchClientId,
 }: {
   organizations: Array<{
     id: string;
     name: string;
     key?: string | null;
+    website?: string | null;
+    avatarStorageKey?: string | null;
     avatarSrc?: string | null;
   }>;
   projects: Array<{
@@ -49,6 +53,9 @@ export function useFinanceTransactionsOptions({
   categories: FinancialCategory[];
   goals: FinancialGoal[];
   recurrings: FinancialRecurring[];
+  /** Desktop blob map — preferred over baked `avatarSrc` while downloads land. */
+  organizationAvatarSrcById?: Readonly<Record<string, string | null | undefined>>;
+  brandfetchClientId?: string | null;
 }): {
   orgOptions: SearchableDropdownOption[];
   projectOptions: SearchableDropdownOption[];
@@ -62,8 +69,12 @@ export function useFinanceTransactionsOptions({
   filterRecurringOptions: SearchableDropdownOption[];
 } {
   const orgOptions = useMemo(
-    () => buildOrganizationDropdownOptions(organizations),
-    [organizations],
+    () =>
+      buildOrganizationDropdownOptions(organizations, {
+        avatarSrcById: organizationAvatarSrcById,
+        brandfetchClientId,
+      }),
+    [brandfetchClientId, organizationAvatarSrcById, organizations],
   );
   const projectOptions = useMemo(
     () => [

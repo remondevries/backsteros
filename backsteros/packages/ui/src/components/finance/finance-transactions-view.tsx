@@ -94,8 +94,14 @@ export type FinanceTransactionsViewProps = {
     id: string;
     name: string;
     key?: string | null;
+    website?: string | null;
+    avatarStorageKey?: string | null;
     avatarSrc?: string | null;
   }>;
+  /** Live uploaded org avatar blob URLs (desktop). */
+  organizationAvatarSrcById?: Readonly<Record<string, string | null | undefined>>;
+  /** Brandfetch Logo API client id for website fallback logos. */
+  brandfetchClientId?: string | null;
   projects: Array<{
     id: string;
     key: string;
@@ -232,6 +238,8 @@ export function FinanceTransactionsView({
   onDeleteAccount,
   transactions,
   organizations,
+  organizationAvatarSrcById,
+  brandfetchClientId = null,
   projects,
   categories,
   goals = [],
@@ -331,6 +339,8 @@ export function FinanceTransactionsView({
     filterRecurringOptions,
   } = useFinanceTransactionsOptions({
     organizations,
+    organizationAvatarSrcById,
+    brandfetchClientId,
     projects,
     categories,
     goals,

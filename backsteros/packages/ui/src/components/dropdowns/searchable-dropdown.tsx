@@ -45,8 +45,8 @@ export type SearchableDropdownOption<T extends string = string> = {
   secondaryLabel?: string;
   icon?: ReactNode;
   /**
-   * Uploaded avatar URL for list-row marks (inbox / task lists).
-   * Dropdown panels only render `icon` when a custom avatar is present.
+   * Resolved avatar URL (uploaded blob or Brandfetch CDN). List rows and
+   * merchant/org option icons use this alongside `icon`.
    */
   avatarSrc?: string | null;
   shortcut?: string;

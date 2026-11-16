@@ -35,13 +35,14 @@ describe("brandfetch-logo", () => {
       }),
       "blob:manual",
     );
-    assert.equal(
+    // Storage key without a ready blob still falls back to Brandfetch so
+    // merchant dropdowns can show a logo instead of the default glyph.
+    assert.ok(
       resolveOrganizationAvatarSrc({
         avatarStorageKey: "avatars/org/1",
         website: "https://acme.com",
         brandfetchClientId: "client_test",
-      }),
-      null,
+      })?.includes("acme.com"),
     );
     assert.ok(
       resolveOrganizationAvatarSrc({

@@ -80,10 +80,12 @@ export function EntityListAvatar({
     >
       {showImage ? (
         <img
+          key={src!}
           src={src!}
           alt=""
           width={size}
           height={size}
+          referrerPolicy="no-referrer"
           className="entity-list-avatar__img"
           onError={() => setFailed(true)}
         />

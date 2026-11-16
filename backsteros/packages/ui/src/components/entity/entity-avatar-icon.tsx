@@ -30,10 +30,12 @@ export function EntityAvatarIcon({
   if (src && !failed) {
     return (
       <img
+        key={src}
         src={src}
         alt=""
         width={size}
         height={size}
+        referrerPolicy="no-referrer"
         className={className}
         style={{
           borderRadius: "9999px",

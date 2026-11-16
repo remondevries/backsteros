@@ -83,7 +83,9 @@ export function brandfetchLogoUrlFromEmailAddress(
 /**
  * Resolve the display avatar for an organization:
  * 1. Manual / stored upload (caller passes the resolved blob URL)
- * 2. Brandfetch from website when no storage key
+ * 2. Brandfetch from website (also while an upload blob is still loading —
+ *    dropdowns otherwise stick on the default org glyph for every merchant
+ *    that has `avatarStorageKey` but no blob URL yet)
  * 3. null
  */
 export function resolveOrganizationAvatarSrc(input: {
@@ -94,9 +96,6 @@ export function resolveOrganizationAvatarSrc(input: {
 }): string | null {
   const uploaded = input.uploadedSrc?.trim() || null;
   if (uploaded) return uploaded;
-
-  // Manual avatar exists but blob URL not ready yet — don't flash Brandfetch.
-  if (input.avatarStorageKey?.trim()) return null;
 
   return brandfetchLogoUrlFromWebsite(
     input.website,

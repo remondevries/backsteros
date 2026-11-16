@@ -2,8 +2,11 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  buildOrganizationDropdownOptions,
   buildProjectDropdownOptions,
+  DROPDOWN_NONE_VALUE,
   DROPDOWN_NO_PROJECT_VALUE,
+  resolveOrgDropdownAvatarSrc,
 } from "./dropdown-options.js";
 
 test("buildProjectDropdownOptions hides completed canceled duplicated", () => {
@@ -75,4 +78,69 @@ test("buildProjectDropdownOptions tags project type filters", () => {
   assert.equal(options[1]?.filterLabel, "Codebase");
   assert.equal(options[2]?.filterValue, "domeinname");
   assert.equal(options[2]?.filterLabel, "Domains");
+});
+
+test("resolveOrgDropdownAvatarSrc prefers blob map over Brandfetch", () => {
+  const org = {
+    id: "org_1",
+    name: "Acme",
+    website: "https://acme.com",
+    avatarStorageKey: "avatars/org_1",
+  };
+  assert.equal(
+    resolveOrgDropdownAvatarSrc(org, {
+      avatarSrcById: { org_1: "blob:manual-upload" },
+      brandfetchClientId: "client_test",
+    }),
+    "blob:manual-upload",
+  );
+});
+
+test("resolveOrgDropdownAvatarSrc falls back to Brandfetch from website", () => {
+  const src = resolveOrgDropdownAvatarSrc(
+    {
+      id: "org_2",
+      name: "Nike",
+      website: "https://www.nike.com",
+    },
+    { brandfetchClientId: "client_test" },
+  );
+  assert.ok(src?.includes("nike.com"));
+  assert.ok(src?.includes("cdn.brandfetch.io"));
+});
+
+test("resolveOrgDropdownAvatarSrc uses baked avatarSrc before Brandfetch", () => {
+  assert.equal(
+    resolveOrgDropdownAvatarSrc(
+      {
+        id: "org_3",
+        name: "Baked",
+        website: "https://acme.com",
+        avatarSrc: "blob:already-resolved",
+      },
+      { brandfetchClientId: "client_test" },
+    ),
+    "blob:already-resolved",
+  );
+});
+
+test("buildOrganizationDropdownOptions sets avatarSrc on merchant rows", () => {
+  const options = buildOrganizationDropdownOptions(
+    [
+      {
+        id: "stripe",
+        name: "Stripe",
+        website: "https://stripe.com",
+        avatarStorageKey: "avatars/stripe",
+      },
+    ],
+    {
+      avatarSrcById: { stripe: "blob:stripe-logo" },
+      brandfetchClientId: "client_test",
+    },
+  );
+  const stripe = options.find((option) => option.value === "stripe");
+  assert.equal(stripe?.avatarSrc, "blob:stripe-logo");
+  assert.ok(stripe?.icon);
+  assert.equal(options[0]?.value, DROPDOWN_NONE_VALUE);
 });
