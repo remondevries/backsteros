@@ -684,6 +684,7 @@ export {
   bunqEnvironmentSchema,
   bunqSettingsSchema,
   updateBunqSettingsSchema,
+  setBunqPaymentsPausedInputSchema,
   bunqTestConnectionResultSchema,
   provisionBunqSandboxUserSchema,
   bunqSandboxFundSchema,

@@ -4,6 +4,7 @@ import test from "node:test";
 import type { AuthContext } from "../middleware/auth.js";
 import { computeBunqPaymentApproverCode } from "./bunq-payment-approver-stepup.js";
 import {
+  assertMayTogglePaymentsPause,
   assertRemonPaymentApprover,
   resolveBunqPaymentApproverApiKeyIds,
 } from "./bunq-payment-proposal-auth.js";
@@ -121,4 +122,29 @@ test("assertRemonPaymentApprover accepts local_shell with step-up", () => {
     env(),
   );
   assert.equal(userId, OWNER);
+});
+
+test("M4 pause is easy, resume needs local shell or an approver key", () => {
+  const env = { BUNQ_PAYMENT_APPROVER_API_KEY_IDS: APPROVER_KEY };
+  const other = auth({ apiKeyId: "key_other" });
+  assert.doesNotThrow(() => assertMayTogglePaymentsPause(other, OWNER, true, env));
+  assert.throws(() => assertMayTogglePaymentsPause(other, OWNER, false, env), /Resuming/);
+  assert.doesNotThrow(() =>
+    assertMayTogglePaymentsPause(auth({}), OWNER, false, env),
+  );
+  assert.doesNotThrow(() =>
+    assertMayTogglePaymentsPause(
+      auth({ kind: "local_shell", apiKeyId: null }),
+      OWNER,
+      false,
+      env,
+    ),
+  );
+  // Agents and non-owners can never toggle in either direction.
+  const agent = auth({ contactId: "contact_1" });
+  assert.throws(() => assertMayTogglePaymentsPause(agent, OWNER, true, env), /Agents/);
+  assert.throws(
+    () => assertMayTogglePaymentsPause(auth({ userId: "someone_else" }), OWNER, true, env),
+    /workspace owner/,
+  );
 });

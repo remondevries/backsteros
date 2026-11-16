@@ -51,6 +51,8 @@ const APPROVER_SECRET = "integration-approver-totp-secret";
 const OWNER_KEY_REF = "integration-owner-key-ref";
 process.env.BUNQ_PAYMENT_APPROVER_TOTP_SECRET = APPROVER_SECRET;
 process.env.BUNQ_PAYMENT_APPROVER_API_KEY_IDS = OWNER_KEY_REF;
+// M3 new-payee confirmation is covered in bunq-payment-guardrails.test.ts.
+process.env.BUNQ_PAYMENT_NEW_PAYEE_POLICY = "off";
 const approverCode = (proposalHash: string) =>
   computeBunqPaymentApproverCode(APPROVER_SECRET, proposalHash);
 

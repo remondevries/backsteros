@@ -137,3 +137,35 @@ export function assertRemonPaymentApprover(
 
   return userId;
 }
+
+/**
+ * M4 kill switch. PAUSE is deliberately easy: any authenticated non-agent
+ * workspace owner credential may stop payments. RESUME is as strict as a
+ * payment approval credential (local shell, or an allowlisted approver key) —
+ * an agent or arbitrary Access key can never re-enable payments.
+ */
+export function assertMayTogglePaymentsPause(
+  auth: AuthContext,
+  workspaceOwnerUserId: string,
+  paused: boolean,
+  env: NodeJS.ProcessEnv = process.env,
+): void {
+  if (isAgentPersonaAuth(auth)) {
+    throw forbidden("Agents cannot change the bunq payments pause switch");
+  }
+  const userId = auth.userId?.trim();
+  if (!userId || userId !== workspaceOwnerUserId) {
+    throw forbidden(
+      "Only the workspace owner may change the bunq payments pause switch",
+    );
+  }
+  if (paused) return;
+  if (auth.kind === "local_shell") return;
+  if (auth.kind === "api_key") {
+    const keyId = auth.apiKeyId?.trim() ?? "";
+    if (keyId && resolveBunqPaymentApproverApiKeyIds(env).has(keyId)) return;
+  }
+  throw forbidden(
+    "Resuming bunq payments requires the local shell or an approver Access key (BUNQ_PAYMENT_APPROVER_API_KEY_IDS)",
+  );
+}

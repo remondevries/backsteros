@@ -20,7 +20,9 @@ export function bunqUnknownOutcomeAckLabel(simulating: boolean): string {
 export function buildApprovalCard(
   proposal: BunqPaymentProposal,
   env: NodeJS.ProcessEnv = process.env,
+  options: { newPayee?: boolean } = {},
 ): CreateBunqPaymentProposalResult["approval"] {
+  const newPayee = options.newPayee === true;
   const simulating = isBunqPaymentSimulationEnabled(env);
   const needsAck = proposal.status === "needs_reconciliation";
   const acked = proposal.unknownOutcomeAcknowledgedAt != null;
@@ -55,6 +57,14 @@ export function buildApprovalCard(
       ...(simulating
         ? [{ label: "Mode", value: "SIMULATION (local fake bank)" }]
         : []),
+      ...(newPayee
+        ? [
+            {
+              label: "Payee",
+              value: "NEW — first payment to this IBAN. Verify it before approving.",
+            },
+          ]
+        : []),
       ...(needsAck
         ? [
             {
@@ -72,6 +82,7 @@ export function buildApprovalCard(
     paymentProposal: {
       proposalId: proposal.id,
       proposalHash: proposal.proposalHash,
+      ...(newPayee ? { newPayee: true } : {}),
       ...(needsAck
         ? {
             requiresUnknownOutcomeAck: true,

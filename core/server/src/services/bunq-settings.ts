@@ -19,7 +19,13 @@ import type {
 } from "@backsteros/contracts";
 
 import { db } from "../db/index.js";
-import { bankAccounts, workspaceIntegrationSecrets } from "../db/schema.js";
+import {
+  bankAccounts,
+  workspaceIntegrationSecrets,
+  workspaces,
+} from "../db/schema.js";
+import type { AuthContext } from "../middleware/auth.js";
+import { assertMayTogglePaymentsPause } from "../lib/bunq-payment-proposal-auth.js";
 import {
   assertBunqApiKey,
   assertBunqEnvironment,
@@ -211,6 +217,11 @@ export async function getBunqSettings(
   const permittedIps = row?.bunqPermittedIps ?? [];
   const environment = environmentFromRow(row);
   const bankAccount = await findBunqPersonalBankAccount(workspaceId);
+  const [pausedRow] = await db
+    .select({ paused: workspaceIntegrationSecrets.bunqPaymentsPaused })
+    .from(workspaceIntegrationSecrets)
+    .where(eq(workspaceIntegrationSecrets.workspaceId, workspaceId))
+    .limit(1);
   return {
     environment,
     apiKeyConfigured: Boolean(apiKey),
@@ -227,7 +238,42 @@ export async function getBunqSettings(
     bankAccountName: bankAccount?.name ?? null,
     paymentProposalsEnabled: isBunqPaymentProposalsEnabled(),
     paymentSimulation: isBunqPaymentSimulationEnabled(),
+    paymentsPaused: pausedRow?.paused === true,
   };
+}
+
+/** M4 kill switch. Fail-closed: any read error propagates (payment refused). */
+export async function isBunqPaymentsPaused(
+  workspaceId: string,
+): Promise<boolean> {
+  const [row] = await db
+    .select({ paused: workspaceIntegrationSecrets.bunqPaymentsPaused })
+    .from(workspaceIntegrationSecrets)
+    .where(eq(workspaceIntegrationSecrets.workspaceId, workspaceId))
+    .limit(1);
+  return row?.paused === true;
+}
+
+export async function setBunqPaymentsPaused(
+  workspaceId: string,
+  paused: boolean,
+): Promise<boolean> {
+  await upsertBunqRow(workspaceId, { bunqPaymentsPaused: paused });
+  return paused;
+}
+
+/** Owner-authorised toggle (resume is stricter than pause). */
+export async function toggleBunqPaymentsPaused(
+  auth: AuthContext,
+  paused: boolean,
+): Promise<boolean> {
+  const [ws] = await db
+    .select({ ownerUserId: workspaces.ownerUserId })
+    .from(workspaces)
+    .where(eq(workspaces.id, auth.workspaceId))
+    .limit(1);
+  assertMayTogglePaymentsPause(auth, ws?.ownerUserId?.trim() ?? "", paused);
+  return setBunqPaymentsPaused(auth.workspaceId, paused);
 }
 
 async function upsertBunqRow(
@@ -244,6 +290,7 @@ async function upsertBunqRow(
     bunqEnvironment: string | null;
     bunqPermittedIps: string[];
     bunqLastConnectedAt: Date | null;
+    bunqPaymentsPaused: boolean;
   }>,
 ): Promise<void> {
   const environment =

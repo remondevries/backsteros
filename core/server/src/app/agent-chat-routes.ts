@@ -384,6 +384,7 @@ export function registerAgentChatRoutes(app: Hono) {
             undefined,
             auth,
             parsed.data.approverCode,
+            parsed.data.confirmNewPayee,
           );
           return c.json(result, 201);
         }

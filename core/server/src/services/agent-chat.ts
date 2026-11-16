@@ -1975,6 +1975,7 @@ export async function answerChatThreadMessageApproval(
   deps: DeliverDeps = {},
   paymentApproverAuth?: import("../middleware/auth.js").AuthContext,
   approverCode?: string,
+  confirmNewPayee?: boolean,
 ): Promise<AnswerChatThreadMessageResult> {
   const [row] = await db
     .select()
@@ -2034,6 +2035,7 @@ export async function answerChatThreadMessageApproval(
       decision,
       note: trimmedNote,
       approverCode: code,
+      ...(confirmNewPayee === true ? { confirmNewPayee: true } : {}),
     });
   }
 

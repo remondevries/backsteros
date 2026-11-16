@@ -181,6 +181,11 @@ export const chatThreadMessageApprovalPaymentProposalSchema = z.object({
   requiresUnknownOutcomeAck: z.boolean().optional(),
   unknownOutcomeAcknowledged: z.boolean().optional(),
   unknownOutcomeAckLabel: z.string().trim().min(1).max(120).optional(),
+  /**
+   * M3 — first payment to this IBAN (not allowlisted, never executed). Chat
+   * Approve then needs an explicit confirmation (`confirmNewPayee` on answer).
+   */
+  newPayee: z.boolean().optional(),
 });
 
 export const chatThreadMessageApprovalSchema = z.object({
@@ -957,6 +962,8 @@ export const answerChatThreadMessageApprovalInputSchema = z.object({
    * Remon step-up code (6 digits). Ignored for non-payment cards.
    */
   approverCode: z.string().trim().regex(/^\d{6}$/).optional(),
+  /** M3 — Remon confirms a never-before-paid IBAN (payment cards only). */
+  confirmNewPayee: z.boolean().optional(),
 });
 
 /** Owner submits an assistant form card (once). */

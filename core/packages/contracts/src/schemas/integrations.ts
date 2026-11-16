@@ -144,6 +144,15 @@ export const bunqSettingsSchema = z.object({
    * bank adapter (never dials bunq). Always false in production defaults.
    */
   paymentSimulation: z.boolean(),
+  /**
+   * M4 kill switch — when true, bunq payment proposals cannot be created,
+   * approved, or executed. Cloud-authoritative (never replicated).
+   */
+  paymentsPaused: z.boolean(),
+});
+
+export const setBunqPaymentsPausedInputSchema = z.object({
+  paused: z.boolean(),
 });
 
 export const updateBunqSettingsSchema = z
@@ -371,6 +380,11 @@ export const approveBunqPaymentProposalInputSchema = z.object({
    * never enough to approve.
    */
   approverCode: z.string().trim().regex(/^\d{6}$/),
+  /**
+   * M3 — required when the IBAN has never been paid before (and is not in
+   * BUNQ_PAYMENT_ALLOWED_IBANS) under the default `confirm` new-payee policy.
+   */
+  confirmNewPayee: z.boolean().optional(),
   /**
    * Optional amount ≤ proposed. Omit to transfer the full proposed amount.
    */

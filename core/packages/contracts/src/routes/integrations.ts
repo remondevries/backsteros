@@ -162,6 +162,18 @@ export const integrationsRoutes: AppRouter = c.router({
     summary:
       "Update bunq sandbox API key, signing key, and permitted egress IPs",
   },
+  setBunqPaymentsPaused: {
+    method: "POST",
+    path: "/api/v1/settings/bunq/payments-paused",
+    body: s.setBunqPaymentsPausedInputSchema,
+    responses: {
+      200: s.bunqSettingsSchema,
+      401: errorSchema,
+      403: errorSchema,
+    },
+    summary:
+      "Pause / resume personal bunq payments (kill switch). Resume is owner-only (local shell or allowlisted approver key)",
+  },
   testBunqConnection: {
     method: "GET",
     path: "/api/v1/settings/bunq/test",

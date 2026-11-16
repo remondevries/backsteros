@@ -96,3 +96,19 @@ describe("OS-169 buildApprovalCard unknown-outcome UX", () => {
     );
   });
 });
+
+describe("M3 buildApprovalCard new payee", () => {
+  it("marks first-seen IBANs on the card and in the binding", () => {
+    const base = proposal({ status: "pending", unknownOutcomeAcknowledgedAt: null });
+    const plain = buildApprovalCard(base, {});
+    assert.equal(plain.paymentProposal.newPayee, undefined);
+    assert.equal(plain.fields?.some((f) => f.label === "Payee"), false);
+
+    const fresh = buildApprovalCard(base, {}, { newPayee: true });
+    assert.equal(fresh.paymentProposal.newPayee, true);
+    assert.match(
+      fresh.fields?.find((f) => f.label === "Payee")?.value ?? "",
+      /NEW/,
+    );
+  });
+});

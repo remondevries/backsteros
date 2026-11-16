@@ -95,6 +95,7 @@ export {
   updateBunqSettingsSchema,
   bunqSandboxFundSchema,
   provisionBunqSandboxUserSchema,
+  setBunqPaymentsPausedInputSchema,
   updateProjectSchema,
   updateProjectUpdateSchema,
   updateTaskCommentSchema,

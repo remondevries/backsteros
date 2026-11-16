@@ -36,6 +36,7 @@ import {
   bunqSandboxFundSchema,
   notFound,
   provisionBunqSandboxUserSchema,
+  setBunqPaymentsPausedInputSchema,
   publishMeetingLive,
   recordMeetingDerivedCrmActivityRestSyncEvents,
   recordMeetingRestSyncEvent,
@@ -369,6 +370,27 @@ export function registerSettingsRoutes(app: Hono) {
       return c.json({ error: message, code: "bad_request" }, 400);
     }
   });
+  app.post(
+    "/api/v1/settings/bunq/payments-paused",
+    zValidator("json", setBunqPaymentsPausedInputSchema),
+    async (c) => {
+      const auth = getAuth(c);
+      const { paused } = c.req.valid("json");
+      try {
+        await bunqSettingsService.toggleBunqPaymentsPaused(
+          auth,
+          paused,
+        );
+        return c.json(await bunqSettingsService.getBunqSettings(auth.workspaceId));
+      } catch (error) {
+        const status = (error as { status?: number }).status;
+        if (status === 403) return c.json(forbidden(), 403);
+        const message =
+          error instanceof Error ? error.message : "Could not update pause flag";
+        return c.json({ error: message, code: "bad_request" }, 400);
+      }
+    },
+  );
   app.post("/api/v1/settings/bunq/ensure-bank-account", async (c) => {
     const auth = getAuth(c);
     if (!can(auth, "settings:write") && !can(auth, "finance:write")) {

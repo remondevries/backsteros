@@ -18,6 +18,7 @@ import { startInvoiceReminderScheduler } from "./lib/moneybird-invoice-reminders
 import { startMeetingPortalReminderScheduler } from "./services/meeting-portal-emails.js";
 import { startRecurringTaskRunner } from "./services/recurring-tasks.js";
 import { startAutoReviewWebhookWorker } from "./services/auto-review-webhook.js";
+import { startBunqPaymentSweeper } from "./services/bunq-payment-proposals.js";
 import { startSyncEventsRetentionPruner } from "./services/sync/sync-events-retention.js";
 
 loadBacksterosR2Env();
@@ -92,5 +93,6 @@ serve(
     startAutoReviewWebhookWorker();
     startCoreReplicationWorker();
     startSyncEventsRetentionPruner();
+    startBunqPaymentSweeper();
   },
 );
