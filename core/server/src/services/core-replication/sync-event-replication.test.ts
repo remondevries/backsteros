@@ -99,9 +99,29 @@ const {
   resetSyncEventPullRuntimeForTests,
   setSyncEventPullRuntimeEnabled,
 } = await import("./config.js");
-const { pullPeerSyncEvents, resetPendingPullPauseLogForTests } = await import(
-  "./sync-event-replication.js"
-);
+const {
+  pullPeerSyncEvents,
+  resetPendingPullPauseLogForTests,
+  syncEventPullCursorAheadOfPeer,
+} = await import("./sync-event-replication.js");
+
+describe("syncEventPullCursorAheadOfPeer", () => {
+  it("flags a pull cursor past the peer log tip", () => {
+    assert.equal(syncEventPullCursorAheadOfPeer(500, 120), true);
+  });
+
+  it("does not flag a caught-up or behind cursor", () => {
+    assert.equal(syncEventPullCursorAheadOfPeer(120, 120), false);
+    assert.equal(syncEventPullCursorAheadOfPeer(80, 120), false);
+    assert.equal(syncEventPullCursorAheadOfPeer(0, 120), false);
+  });
+
+  it("ignores a fully pruned peer log and older peers without last_sync_id", () => {
+    assert.equal(syncEventPullCursorAheadOfPeer(500, 0), false);
+    assert.equal(syncEventPullCursorAheadOfPeer(500, undefined), false);
+    assert.equal(syncEventPullCursorAheadOfPeer(500, null), false);
+  });
+});
 
 describe("OS-82 pullPeerSyncEvents pending gate", () => {
   const previous = {

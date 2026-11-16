@@ -42,10 +42,12 @@ const DEFAULT_TIMEOUT_MS = 120_000;
 
 let loggedPendingPullPause = false;
 let loggedPendingInspectFail = false;
+let loggedNoWorkspaceIds = false;
 
 export function resetPendingPullPauseLogForTests(): void {
   loggedPendingPullPause = false;
   loggedPendingInspectFail = false;
+  loggedNoWorkspaceIds = false;
 }
 
 export type PullPeerSyncEventsHooks = {
@@ -116,6 +118,24 @@ export async function setSyncEventPullCursor(
         updatedAt: new Date(),
       },
     });
+}
+
+/**
+ * True when our pull cursor is past the peer's newest event for the workspace.
+ * The feed then returns zero events forever (cursor > every remaining row), so
+ * the replica looks "caught up" while silently missing everything the peer
+ * logs from now on — typical after a peer DB restore / log truncation. The
+ * peer only reports `last_sync_id > 0` when it still has events, so a fully
+ * pruned log (0) is not treated as a regression (serial cursors keep rising).
+ */
+export function syncEventPullCursorAheadOfPeer(
+  afterCursor: number,
+  peerLastSyncId: number | null | undefined,
+): boolean {
+  if (typeof peerLastSyncId !== "number" || !Number.isFinite(peerLastSyncId)) {
+    return false;
+  }
+  return peerLastSyncId > 0 && afterCursor > peerLastSyncId;
 }
 
 export type SyncEventsFeedResponse = {
@@ -375,7 +395,10 @@ export async function applyPeerSyncEvent(
   });
 }
 
-async function pullWorkspaceSyncEvents(workspaceId: string): Promise<{
+export async function pullWorkspaceSyncEvents(
+  workspaceId: string,
+  deps: { fetchFn?: typeof fetch } = {},
+): Promise<{
   applied: number;
   duplicate: number;
   skipped: number;
@@ -383,6 +406,7 @@ async function pullWorkspaceSyncEvents(workspaceId: string): Promise<{
   resyncNeeded?: boolean;
   stuck?: { cursor: number; entity: string; entityId: string; error: string };
 }> {
+  const fetchFn = deps.fetchFn ?? fetch;
   const config = getCoreReplicationConfig();
   if (!config) {
     return { applied: 0, duplicate: 0, skipped: 0 };
@@ -406,7 +430,7 @@ async function pullWorkspaceSyncEvents(workspaceId: string): Promise<{
 
     let payload: SyncEventsFeedResponse;
     try {
-      const response = await fetch(url, {
+      const response = await fetchFn(url, {
         method: "GET",
         headers: replicationHeaders(config.secret),
         signal: controller.signal,
@@ -431,6 +455,23 @@ async function pullWorkspaceSyncEvents(workspaceId: string): Promise<{
         "error",
         "core sync-events pull resync_needed",
         `workspace=${workspaceId} after=${after} — peer log has a gap; starting full resync`,
+      );
+      return {
+        applied,
+        duplicate,
+        skipped,
+        resyncNeeded: true,
+      };
+    }
+
+    if (syncEventPullCursorAheadOfPeer(after, payload.last_sync_id)) {
+      // Never silently look "caught up": our cursor is beyond the peer's log
+      // tip, so no future peer event would ever be returned. Full resync
+      // (cursor reset + snapshot reload) is the only safe heal.
+      appendOpsLog(
+        "error",
+        "core sync-events pull cursor ahead of peer",
+        `workspace=${workspaceId} after=${after} peer_last_sync_id=${payload.last_sync_id} — peer log regressed; starting full resync`,
       );
       return {
         applied,
@@ -487,6 +528,16 @@ async function pullWorkspaceSyncEvents(workspaceId: string): Promise<{
         publishWorkspaceUpdatedFromSyncEvent(workspaceId, event);
       } else if (result === "duplicate") duplicate += 1;
       else skipped += 1;
+      if (result === "skipped" && !parseSyncEntity(event.entity)) {
+        // Unknown entity (peer newer than this build): the cursor still moves
+        // so one new entity type cannot wedge the feed; table LWW carries the
+        // row. Make the skip visible instead of silent.
+        appendOpsLog(
+          "warn",
+          "core sync-events pull skipped unknown entity",
+          `workspace=${workspaceId} cursor=${event.cursor} ${event.entity}/${event.entityId} (table LWW will carry it)`,
+        );
+      }
       after = Math.max(after, event.cursor);
       await setSyncEventPullCursor(workspaceId, after);
     }
@@ -559,8 +610,17 @@ export async function pullPeerSyncEvents(
 
   const workspaceIds = replicationWorkspaceIds();
   if (workspaceIds.length === 0) {
+    if (!loggedNoWorkspaceIds) {
+      loggedNoWorkspaceIds = true;
+      appendOpsLog(
+        "warn",
+        "core sync-events pull skipped",
+        "CORE_REPLICATION_WORKSPACE_IDS is empty — ordered pull has no workspace to follow (table LWW continues)",
+      );
+    }
     return;
   }
+  loggedNoWorkspaceIds = false;
 
   for (const workspaceId of workspaceIds) {
     const result = await pullWorkspace(workspaceId);
