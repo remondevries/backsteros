@@ -181,11 +181,18 @@ export async function setReplicationCursor(
   `;
 }
 
-/** Set both watermarks after bootstrap so neither direction re-sends the snapshot. */
+/**
+ * Advance bootstrap watermarks. Default is both directions (one-shot
+ * bootstrap). Sync-event resync must pass `["pull"]` only — moving push would
+ * skip unpushed local rows.
+ */
 export async function setReplicationCursorsAfterBootstrap(
   table: ReplicatedTable,
   cursor: ReplicationCursor,
+  options: { directions?: Array<"pull" | "push"> } = {},
 ): Promise<void> {
-  await setReplicationCursor(table, cursor, "pull");
-  await setReplicationCursor(table, cursor, "push");
+  const directions = options.directions ?? ["pull", "push"];
+  for (const direction of directions) {
+    await setReplicationCursor(table, cursor, direction);
+  }
 }

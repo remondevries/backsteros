@@ -168,7 +168,11 @@ async function runTableBootstrap(workspaceId: string): Promise<void> {
   for (const table of ordered) {
     const changes = await fetchPeerBootstrapRows(table);
     if (changes.length === 0) continue;
-    await bootstrapTableFromPeer(table, changes);
+    // Pull-only: never advance push watermarks during a resync, or unpushed
+    // local rows would be skipped by the cursor path.
+    await bootstrapTableFromPeer(table, changes, {
+      cursorDirections: ["pull"],
+    });
     appendOpsLog(
       "info",
       "core sync-events resync bootstrap",
@@ -177,13 +181,33 @@ async function runTableBootstrap(workspaceId: string): Promise<void> {
   }
 }
 
+export type BeginSyncEventResyncOptions = {
+  /**
+   * Peer `last_sync_id` captured *before* the reload. After bootstrap the
+   * ordered pull cursor is set to this tip (not 0) so a multi-page catch-up
+   * does not re-trigger resync against a large backlog.
+   */
+  peerLastSyncId?: number | null;
+};
+
 /**
- * Mark resync needed, reset pull cursor to 0, and kick a full snapshot bootstrap.
+ * Mark resync needed, reload table snapshots (pull cursors only), then set the
+ * ordered sync-event pull cursor to the peer tip captured before reload.
  * Concurrent calls coalesce onto one in-flight run.
  */
-export function beginSyncEventResync(workspaceId: string): Promise<void> {
+export function beginSyncEventResync(
+  workspaceId: string,
+  options: BeginSyncEventResyncOptions = {},
+): Promise<void> {
   const entry = entryFor(workspaceId);
   if (entry.running) return entry.running;
+
+  const capturedTip =
+    typeof options.peerLastSyncId === "number" &&
+    Number.isFinite(options.peerLastSyncId) &&
+    options.peerLastSyncId > 0
+      ? Math.floor(options.peerLastSyncId)
+      : null;
 
   entry.status = "bootstrapping";
   entry.message = "Peer sync log has a gap — reloading snapshot from peer";
@@ -192,20 +216,22 @@ export function beginSyncEventResync(workspaceId: string): Promise<void> {
 
   const run = (async () => {
     try {
-      await forceSetSyncEventPullCursor(workspaceId, 0);
       appendOpsLog(
         "warn",
         "core sync-events resync started",
-        `workspace=${workspaceId} cursor reset to 0; bootstrapping tables`,
+        `workspace=${workspaceId} bootstrapping tables (pull cursors only); sync-event cursor will be set to ${capturedTip ?? "unchanged"}`,
       );
       await runTableBootstrap(workspaceId);
+      if (capturedTip != null) {
+        await forceSetSyncEventPullCursor(workspaceId, capturedTip);
+      }
       entry.status = "idle";
       entry.message = null;
       entry.finishedAt = new Date().toISOString();
       appendOpsLog(
         "info",
         "core sync-events resync finished",
-        `workspace=${workspaceId}`,
+        `workspace=${workspaceId} after_cursor=${capturedTip ?? "unchanged"}`,
       );
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

@@ -60,10 +60,14 @@ export type PullPeerSyncEventsHooks = {
     skipped: number;
     peerMissing?: boolean;
     resyncNeeded?: boolean;
+    peerLastSyncId?: number;
     stuck?: { cursor: number; entity: string; entityId: string; error: string };
   }>;
-  /** Override for tests — default starts snapshot bootstrap + cursor reset. */
-  beginSyncEventResync?: (workspaceId: string) => Promise<void>;
+  /** Override for tests — default starts snapshot bootstrap (pull-only cursors). */
+  beginSyncEventResync?: (
+    workspaceId: string,
+    options?: { peerLastSyncId?: number | null },
+  ) => Promise<void>;
 };
 
 type DbExecutor = Pick<typeof db, "select" | "insert" | "update" | "delete">;
@@ -139,30 +143,23 @@ export function syncEventPullCursorAheadOfPeer(
 }
 
 /**
- * A pull cursor more than this many events behind the peer tip is treated as
- * unrecoverably far behind (full resync beats replaying a huge backlog event by
- * event). Never applied at cursor 0 — a fresh/just-resynced replica replays
- * the log from the start and must not loop back into resync.
+ * Empty feeds while behind must persist this many consecutive pull ticks
+ * before we declare a stall and resync. A single empty page mid catch-up is
+ * not enough (and a large backlog that still returns events is never a stall).
  */
-export const SYNC_EVENT_PULL_FAR_BEHIND_GAP = 1000;
+export const SYNC_EVENT_STALLED_BEHIND_TICKS = 3;
 
-export type SyncEventPullLag = "none" | "stalled_behind" | "far_behind";
+export type SyncEventPullLag = "none" | "stalled_behind";
 
 /**
- * Cursor BEHIND the peer tip:
- * - `stalled_behind`: the feed returned no events although the peer's newest
- *   event is past our cursor (`last_sync_id > after`). Retention/restore left
- *   a hole the feed cannot serve; without this the replica looks caught up
- *   while silently never converging.
- * - `far_behind`: events are returned but the backlog exceeds
- *   {@link SYNC_EVENT_PULL_FAR_BEHIND_GAP}.
- * The existing ahead-of-peer path is {@link syncEventPullCursorAheadOfPeer}.
+ * Cursor BEHIND the peer tip with an empty feed (`last_sync_id > after` and
+ * zero events). A large backlog that still returns events is `none` — replay
+ * page by page. The ahead-of-peer path is {@link syncEventPullCursorAheadOfPeer}.
  */
 export function classifySyncEventPullLag(input: {
   after: number;
   peerLastSyncId: number | null | undefined;
   eventsReturned: number;
-  farBehindGap?: number;
 }): SyncEventPullLag {
   const { after, peerLastSyncId, eventsReturned } = input;
   if (typeof peerLastSyncId !== "number" || !Number.isFinite(peerLastSyncId)) {
@@ -170,9 +167,37 @@ export function classifySyncEventPullLag(input: {
   }
   if (peerLastSyncId <= after) return "none";
   if (eventsReturned === 0) return "stalled_behind";
-  const gap = input.farBehindGap ?? SYNC_EVENT_PULL_FAR_BEHIND_GAP;
-  if (after > 0 && peerLastSyncId - after > gap) return "far_behind";
   return "none";
+}
+
+/** Per-workspace consecutive empty-behind ticks (process-local). */
+const emptyBehindTicksByWorkspace = new Map<string, number>();
+
+export function resetEmptyBehindTicksForTests(): void {
+  emptyBehindTicksByWorkspace.clear();
+}
+
+/**
+ * Record one empty-behind observation for this workspace pull tick.
+ * Returns true once {@link SYNC_EVENT_STALLED_BEHIND_TICKS} consecutive ticks
+ * have seen an empty feed while the peer tip is ahead.
+ */
+export function noteEmptyBehindTick(
+  workspaceId: string,
+  options: { requiredTicks?: number } = {},
+): boolean {
+  const required = options.requiredTicks ?? SYNC_EVENT_STALLED_BEHIND_TICKS;
+  const next = (emptyBehindTicksByWorkspace.get(workspaceId) ?? 0) + 1;
+  emptyBehindTicksByWorkspace.set(workspaceId, next);
+  if (next >= required) {
+    emptyBehindTicksByWorkspace.set(workspaceId, 0);
+    return true;
+  }
+  return false;
+}
+
+export function clearEmptyBehindTicks(workspaceId: string): void {
+  emptyBehindTicksByWorkspace.delete(workspaceId);
 }
 
 export type SyncEventsFeedResponse = {
@@ -441,6 +466,8 @@ export async function pullWorkspaceSyncEvents(
   skipped: number;
   peerMissing?: boolean;
   resyncNeeded?: boolean;
+  /** Peer tip captured when resync was requested (set pull cursor after reload). */
+  peerLastSyncId?: number;
   stuck?: { cursor: number; entity: string; entityId: string; error: string };
 }> {
   const fetchFn = deps.fetchFn ?? fetch;
@@ -453,6 +480,7 @@ export async function pullWorkspaceSyncEvents(
   let applied = 0;
   let duplicate = 0;
   let skipped = 0;
+  let sawEventsThisTick = false;
 
   for (;;) {
     const url = new URL(
@@ -488,6 +516,7 @@ export async function pullWorkspaceSyncEvents(
     }
 
     if (payload.resync_needed) {
+      clearEmptyBehindTicks(workspaceId);
       appendOpsLog(
         "error",
         "core sync-events pull resync_needed",
@@ -498,13 +527,15 @@ export async function pullWorkspaceSyncEvents(
         duplicate,
         skipped,
         resyncNeeded: true,
+        peerLastSyncId: payload.last_sync_id,
       };
     }
 
     if (syncEventPullCursorAheadOfPeer(after, payload.last_sync_id)) {
       // Never silently look "caught up": our cursor is beyond the peer's log
       // tip, so no future peer event would ever be returned. Full resync
-      // (cursor reset + snapshot reload) is the only safe heal.
+      // (snapshot reload + cursor to captured tip) is the only safe heal.
+      clearEmptyBehindTicks(workspaceId);
       appendOpsLog(
         "error",
         "core sync-events pull cursor ahead of peer",
@@ -515,33 +546,51 @@ export async function pullWorkspaceSyncEvents(
         duplicate,
         skipped,
         resyncNeeded: true,
+        peerLastSyncId: payload.last_sync_id,
       };
     }
 
+    const eventsReturned = payload.events?.length ?? 0;
     const lag = classifySyncEventPullLag({
       after,
       peerLastSyncId: payload.last_sync_id,
-      eventsReturned: payload.events?.length ?? 0,
+      eventsReturned,
     });
-    if (lag !== "none") {
+    if (lag === "stalled_behind") {
+      // Count consecutive *ticks* with an empty feed while behind — not every
+      // page of a multi-page catch-up (a large backlog that returns events is fine).
+      if (noteEmptyBehindTick(workspaceId)) {
+        appendOpsLog(
+          "error",
+          "core sync-events pull cursor behind peer",
+          `workspace=${workspaceId} after=${after} peer_last_sync_id=${payload.last_sync_id} — feed empty for ${SYNC_EVENT_STALLED_BEHIND_TICKS} ticks; starting full resync`,
+        );
+        return {
+          applied,
+          duplicate,
+          skipped,
+          resyncNeeded: true,
+          peerLastSyncId: payload.last_sync_id,
+        };
+      }
       appendOpsLog(
-        "error",
-        "core sync-events pull cursor behind peer",
-        lag === "stalled_behind"
-          ? `workspace=${workspaceId} after=${after} peer_last_sync_id=${payload.last_sync_id} — feed returned no events; starting full resync`
-          : `workspace=${workspaceId} after=${after} peer_last_sync_id=${payload.last_sync_id} — more than ${SYNC_EVENT_PULL_FAR_BEHIND_GAP} events behind; starting full resync`,
+        "warn",
+        "core sync-events pull empty while behind",
+        `workspace=${workspaceId} after=${after} peer_last_sync_id=${payload.last_sync_id} — waiting for consecutive empty ticks before resync`,
       );
-      return {
-        applied,
-        duplicate,
-        skipped,
-        resyncNeeded: true,
-      };
-    }
-
-    if (!payload.events?.length) {
       break;
     }
+
+    if (!eventsReturned) {
+      if (!sawEventsThisTick) {
+        // Caught up (tip ≤ after) with an empty feed.
+        clearEmptyBehindTicks(workspaceId);
+      }
+      break;
+    }
+
+    sawEventsThisTick = true;
+    clearEmptyBehindTicks(workspaceId);
 
     for (const raw of payload.events) {
       const event: SyncEventRow = {
@@ -699,8 +748,10 @@ export async function pullPeerSyncEvents(
       continue;
     }
     if (result.resyncNeeded) {
-      // Full snapshot reload + cursor reset; do not leave the replica silently stale.
-      void startResync(workspaceId);
+      // Snapshot reload (pull cursors only) + ordered cursor to captured tip.
+      void startResync(workspaceId, {
+        peerLastSyncId: result.peerLastSyncId,
+      });
       continue;
     }
     if (result.applied + result.duplicate + result.skipped > 0) {

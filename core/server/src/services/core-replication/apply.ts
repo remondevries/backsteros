@@ -1237,6 +1237,14 @@ export async function applyRemoteChanges(
 export async function bootstrapTableFromPeer(
   table: KnownTable,
   changes: ReplicationChange[],
+  options: {
+    /**
+     * Which watermarks to advance after the snapshot. One-shot bootstrap
+     * advances both. Sync-event resync must only advance pull so unpushed
+     * local rows are still pushed afterwards.
+     */
+    cursorDirections?: Array<"pull" | "push">;
+  } = {},
 ): Promise<ReplicationApplyResponse> {
   const spec = getTableSpec(table);
   const result = await applyRemoteChanges(table, changes);
@@ -1246,10 +1254,14 @@ export async function bootstrapTableFromPeer(
     (REPLICATED_TABLES as readonly string[]).includes(spec.name)
   ) {
     const last = changes[changes.length - 1]!;
-    await setReplicationCursorsAfterBootstrap(spec.name as ReplicatedTable, {
-      updatedAt: toIso(last.row[spec.updatedAtColumn] as string | Date),
-      rowId: rowIdFromPk(last.row, spec.pk),
-    });
+    await setReplicationCursorsAfterBootstrap(
+      spec.name as ReplicatedTable,
+      {
+        updatedAt: toIso(last.row[spec.updatedAtColumn] as string | Date),
+        rowId: rowIdFromPk(last.row, spec.pk),
+      },
+      { directions: options.cursorDirections },
+    );
   }
   return result;
 }

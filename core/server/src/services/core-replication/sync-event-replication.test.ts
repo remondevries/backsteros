@@ -100,9 +100,12 @@ const {
   setSyncEventPullRuntimeEnabled,
 } = await import("./config.js");
 const {
-  SYNC_EVENT_PULL_FAR_BEHIND_GAP,
+  SYNC_EVENT_STALLED_BEHIND_TICKS,
   classifySyncEventPullLag,
+  clearEmptyBehindTicks,
+  noteEmptyBehindTick,
   pullPeerSyncEvents,
+  resetEmptyBehindTicksForTests,
   resetPendingPullPauseLogForTests,
   syncEventPullCursorAheadOfPeer,
 } = await import("./sync-event-replication.js");
@@ -154,27 +157,30 @@ describe("classifySyncEventPullLag (cursor behind peer)", () => {
     }
   });
 
-  it("is none for a normal in-progress catch-up that returns events", () => {
+  it("is none for a normal in-progress catch-up that returns events (even a large backlog)", () => {
     assert.equal(
       classifySyncEventPullLag({ after: 80, peerLastSyncId: 120, eventsReturned: 40 }),
       "none",
     );
+    assert.equal(
+      classifySyncEventPullLag({
+        after: 26_412,
+        peerLastSyncId: 42_655,
+        eventsReturned: 100,
+      }),
+      "none",
+    );
   });
 
-  it("flags a huge backlog as far_behind, but never from cursor 0", () => {
-    assert.equal(SYNC_EVENT_PULL_FAR_BEHIND_GAP, 1000);
-    assert.equal(
-      classifySyncEventPullLag({ after: 10, peerLastSyncId: 1011, eventsReturned: 100 }),
-      "far_behind",
-    );
-    assert.equal(
-      classifySyncEventPullLag({ after: 10, peerLastSyncId: 1010, eventsReturned: 100 }),
-      "none",
-    );
-    assert.equal(
-      classifySyncEventPullLag({ after: 0, peerLastSyncId: 50_000, eventsReturned: 100 }),
-      "none",
-    );
+  it("requires consecutive empty-behind ticks before resync", () => {
+    assert.equal(SYNC_EVENT_STALLED_BEHIND_TICKS, 3);
+    resetEmptyBehindTicksForTests();
+    assert.equal(noteEmptyBehindTick("ws-a"), false);
+    assert.equal(noteEmptyBehindTick("ws-a"), false);
+    assert.equal(noteEmptyBehindTick("ws-a"), true);
+    // Counter resets after firing.
+    assert.equal(noteEmptyBehindTick("ws-a"), false);
+    clearEmptyBehindTicks("ws-a");
   });
 });
 
@@ -257,11 +263,12 @@ describe("OS-82 pullPeerSyncEvents pending gate", () => {
         duplicate: 0,
         skipped: 0,
         resyncNeeded: true,
+        peerLastSyncId: 42_655,
       }),
-      beginSyncEventResync: async (workspaceId) => {
-        resynced.push(workspaceId);
+      beginSyncEventResync: async (workspaceId, options) => {
+        resynced.push(`${workspaceId}:${options?.peerLastSyncId ?? ""}`);
       },
     });
-    assert.deepEqual(resynced, ["ws-behind"]);
+    assert.deepEqual(resynced, ["ws-behind:42655"]);
   });
 });
