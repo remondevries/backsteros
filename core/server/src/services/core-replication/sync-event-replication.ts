@@ -138,6 +138,43 @@ export function syncEventPullCursorAheadOfPeer(
   return peerLastSyncId > 0 && afterCursor > peerLastSyncId;
 }
 
+/**
+ * A pull cursor more than this many events behind the peer tip is treated as
+ * unrecoverably far behind (full resync beats replaying a huge backlog event by
+ * event). Never applied at cursor 0 — a fresh/just-resynced replica replays
+ * the log from the start and must not loop back into resync.
+ */
+export const SYNC_EVENT_PULL_FAR_BEHIND_GAP = 1000;
+
+export type SyncEventPullLag = "none" | "stalled_behind" | "far_behind";
+
+/**
+ * Cursor BEHIND the peer tip:
+ * - `stalled_behind`: the feed returned no events although the peer's newest
+ *   event is past our cursor (`last_sync_id > after`). Retention/restore left
+ *   a hole the feed cannot serve; without this the replica looks caught up
+ *   while silently never converging.
+ * - `far_behind`: events are returned but the backlog exceeds
+ *   {@link SYNC_EVENT_PULL_FAR_BEHIND_GAP}.
+ * The existing ahead-of-peer path is {@link syncEventPullCursorAheadOfPeer}.
+ */
+export function classifySyncEventPullLag(input: {
+  after: number;
+  peerLastSyncId: number | null | undefined;
+  eventsReturned: number;
+  farBehindGap?: number;
+}): SyncEventPullLag {
+  const { after, peerLastSyncId, eventsReturned } = input;
+  if (typeof peerLastSyncId !== "number" || !Number.isFinite(peerLastSyncId)) {
+    return "none";
+  }
+  if (peerLastSyncId <= after) return "none";
+  if (eventsReturned === 0) return "stalled_behind";
+  const gap = input.farBehindGap ?? SYNC_EVENT_PULL_FAR_BEHIND_GAP;
+  if (after > 0 && peerLastSyncId - after > gap) return "far_behind";
+  return "none";
+}
+
 export type SyncEventsFeedResponse = {
   workspace_id: string;
   after: number;
@@ -472,6 +509,27 @@ export async function pullWorkspaceSyncEvents(
         "error",
         "core sync-events pull cursor ahead of peer",
         `workspace=${workspaceId} after=${after} peer_last_sync_id=${payload.last_sync_id} — peer log regressed; starting full resync`,
+      );
+      return {
+        applied,
+        duplicate,
+        skipped,
+        resyncNeeded: true,
+      };
+    }
+
+    const lag = classifySyncEventPullLag({
+      after,
+      peerLastSyncId: payload.last_sync_id,
+      eventsReturned: payload.events?.length ?? 0,
+    });
+    if (lag !== "none") {
+      appendOpsLog(
+        "error",
+        "core sync-events pull cursor behind peer",
+        lag === "stalled_behind"
+          ? `workspace=${workspaceId} after=${after} peer_last_sync_id=${payload.last_sync_id} — feed returned no events; starting full resync`
+          : `workspace=${workspaceId} after=${after} peer_last_sync_id=${payload.last_sync_id} — more than ${SYNC_EVENT_PULL_FAR_BEHIND_GAP} events behind; starting full resync`,
       );
       return {
         applied,

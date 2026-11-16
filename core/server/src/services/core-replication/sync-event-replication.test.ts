@@ -100,6 +100,8 @@ const {
   setSyncEventPullRuntimeEnabled,
 } = await import("./config.js");
 const {
+  SYNC_EVENT_PULL_FAR_BEHIND_GAP,
+  classifySyncEventPullLag,
   pullPeerSyncEvents,
   resetPendingPullPauseLogForTests,
   syncEventPullCursorAheadOfPeer,
@@ -120,6 +122,59 @@ describe("syncEventPullCursorAheadOfPeer", () => {
     assert.equal(syncEventPullCursorAheadOfPeer(500, 0), false);
     assert.equal(syncEventPullCursorAheadOfPeer(500, undefined), false);
     assert.equal(syncEventPullCursorAheadOfPeer(500, null), false);
+  });
+});
+
+describe("classifySyncEventPullLag (cursor behind peer)", () => {
+  it("empty feed while the peer tip is past our cursor is stalled_behind", () => {
+    assert.equal(
+      classifySyncEventPullLag({ after: 80, peerLastSyncId: 120, eventsReturned: 0 }),
+      "stalled_behind",
+    );
+    // Also at cursor 0: a peer with events must return some.
+    assert.equal(
+      classifySyncEventPullLag({ after: 0, peerLastSyncId: 5, eventsReturned: 0 }),
+      "stalled_behind",
+    );
+  });
+
+  it("is none when caught up, ahead, or the peer log is empty / old", () => {
+    for (const [after, peer] of [
+      [120, 120],
+      [500, 120],
+      [500, 0],
+      [5, undefined],
+      [5, null],
+    ] as const) {
+      assert.equal(
+        classifySyncEventPullLag({ after, peerLastSyncId: peer, eventsReturned: 0 }),
+        "none",
+        `${after}/${peer}`,
+      );
+    }
+  });
+
+  it("is none for a normal in-progress catch-up that returns events", () => {
+    assert.equal(
+      classifySyncEventPullLag({ after: 80, peerLastSyncId: 120, eventsReturned: 40 }),
+      "none",
+    );
+  });
+
+  it("flags a huge backlog as far_behind, but never from cursor 0", () => {
+    assert.equal(SYNC_EVENT_PULL_FAR_BEHIND_GAP, 1000);
+    assert.equal(
+      classifySyncEventPullLag({ after: 10, peerLastSyncId: 1011, eventsReturned: 100 }),
+      "far_behind",
+    );
+    assert.equal(
+      classifySyncEventPullLag({ after: 10, peerLastSyncId: 1010, eventsReturned: 100 }),
+      "none",
+    );
+    assert.equal(
+      classifySyncEventPullLag({ after: 0, peerLastSyncId: 50_000, eventsReturned: 100 }),
+      "none",
+    );
   });
 });
 
@@ -180,5 +235,33 @@ describe("OS-82 pullPeerSyncEvents pending gate", () => {
       },
     });
     assert.equal(pulled, 1, "ack of shown snapshot allows pull to proceed");
+  });
+
+  it("starts a full resync when the pull reports the cursor behind the peer", async () => {
+    process.env.CORE_REPLICATION_PEER_URL = "http://127.0.0.1:8799";
+    process.env.CORE_REPLICATION_SECRET = "os-82-behind-secret";
+    process.env.CORE_REPLICATION_ROLE = "local";
+    process.env.CORE_REPLICATION_WORKSPACE_IDS = "ws-behind";
+    setSyncEventPullRuntimeEnabled(true);
+
+    const resynced: string[] = [];
+    await pullPeerSyncEvents({
+      getPendingUnpushedState: async () => ({
+        unpushedRowCount: 0,
+        openDeadLetterCount: 0,
+        localOnlyRowCount: 0,
+        unpushedTables: [],
+      }),
+      pullWorkspaceSyncEvents: async () => ({
+        applied: 0,
+        duplicate: 0,
+        skipped: 0,
+        resyncNeeded: true,
+      }),
+      beginSyncEventResync: async (workspaceId) => {
+        resynced.push(workspaceId);
+      },
+    });
+    assert.deepEqual(resynced, ["ws-behind"]);
   });
 });
