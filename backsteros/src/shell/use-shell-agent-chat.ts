@@ -100,6 +100,7 @@ export type ShellAgentChatApi = {
     decision: "approved" | "rejected",
     note?: string,
     approverCode?: string,
+    confirmNewPayee?: boolean,
   ) => Promise<AnswerChatThreadMessageResult>;
   /** OS-169 — Remon explicit unknown-outcome ack before Retry payment. */
   acknowledgeBunqPaymentUnknownOutcome: (
@@ -330,6 +331,7 @@ export function useShellAgentChat(): ShellAgentChatApi {
       decision: "approved" | "rejected",
       note?: string,
       approverCode?: string,
+      confirmNewPayee?: boolean,
     ) => {
       return shellChatRequestJson<AnswerChatThreadMessageResult>(
         apiUrl,
@@ -341,6 +343,7 @@ export function useShellAgentChat(): ShellAgentChatApi {
             decision,
             ...(note?.trim() ? { note: note.trim() } : {}),
             ...(approverCode?.trim() ? { approverCode: approverCode.trim() } : {}),
+            ...(confirmNewPayee === true ? { confirmNewPayee: true } : {}),
           }),
         },
       );

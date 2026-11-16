@@ -479,6 +479,7 @@ export const chatUiApprovalCardDataSchema = z.object({
       requiresUnknownOutcomeAck: z.boolean().optional(),
       unknownOutcomeAcknowledged: z.boolean().optional(),
       unknownOutcomeAckLabel: z.string().min(1).max(120).optional(),
+      newPayee: z.boolean().optional(),
     })
     .optional(),
 });

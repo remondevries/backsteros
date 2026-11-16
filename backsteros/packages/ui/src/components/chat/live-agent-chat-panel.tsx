@@ -128,6 +128,7 @@ export type LiveAgentChatHandlers = {
     decision: "approved" | "rejected",
     note?: string,
     approverCode?: string,
+    confirmNewPayee?: boolean,
   ) => Promise<AnswerChatThreadMessageChoicesResult>;
   /** OS-169 — dedicated Remon reconciliation ack before Retry payment. */
   acknowledgeBunqPaymentUnknownOutcome?: (
@@ -1097,6 +1098,7 @@ export function LiveAgentChatPanel({
       decision: "approved" | "rejected",
       note?: string,
       approverCode?: string,
+      confirmNewPayee?: boolean,
     ) => {
       if (!liveAgentId || !liveAgentChat?.answerApproval || !liveThreadId) {
         return;
@@ -1137,6 +1139,7 @@ export function LiveAgentChatPanel({
           decision,
           note,
           approverCode,
+          confirmNewPayee,
         );
         dispatchLive({
           type: "pushMessage",

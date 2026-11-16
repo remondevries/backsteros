@@ -28,6 +28,8 @@ export type ChatApprovalAnswerFn = (
   note?: string,
   /** Hash-bound 6-digit Remon step-up code — required for payment cards. */
   approverCode?: string,
+  /** First-seen payee explicitly confirmed by Remon (payment cards only). */
+  confirmNewPayee?: boolean,
 ) => void | Promise<void>;
 
 /** OS-169 — dedicated Remon reconciliation ack (never inferred from Approve). */
@@ -170,6 +172,7 @@ export function ChatApprovalCard({ part }: { part: ChatUiCardPart }) {
   const [note, setNote] = useState("");
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [approverCode, setApproverCode] = useState("");
+  const [newPayeeConfirmed, setNewPayeeConfirmed] = useState(false);
 
   const locked = Boolean(data?.answer) || data?.dismissed === true;
   const paymentProposal = data?.paymentProposal;
@@ -181,6 +184,7 @@ export function ChatApprovalCard({ part }: { part: ChatUiCardPart }) {
   const isPaymentCard = Boolean(paymentProposal);
   const approverCodeValid = /^\d{6}$/.test(approverCode.trim());
   const blockedByApproverCode = isPaymentCard && !approverCodeValid;
+  const requiresNewPayeeConfirm = paymentProposal?.newPayee === true;
 
   const submit = useCallback(
     async (decision: "approved" | "rejected", withNote?: string) => {
@@ -189,6 +193,13 @@ export function ChatApprovalCard({ part }: { part: ChatUiCardPart }) {
         return;
       }
       if (isPaymentCard && !approverCodeValid) return;
+      if (
+        decision === "approved" &&
+        requiresNewPayeeConfirm &&
+        !newPayeeConfirmed
+      ) {
+        return;
+      }
       setSubmitting(true);
       try {
         const trimmed = withNote?.trim();
@@ -197,6 +208,9 @@ export function ChatApprovalCard({ part }: { part: ChatUiCardPart }) {
           decision,
           trimmed && trimmed.length > 0 ? trimmed : undefined,
           isPaymentCard ? approverCode.trim() : undefined,
+          decision === "approved" && requiresNewPayeeConfirm
+            ? newPayeeConfirmed
+            : undefined,
         );
       } finally {
         setSubmitting(false);
@@ -207,7 +221,9 @@ export function ChatApprovalCard({ part }: { part: ChatUiCardPart }) {
       approverCodeValid,
       data,
       isPaymentCard,
+      newPayeeConfirmed,
       onAnswer,
+      requiresNewPayeeConfirm,
       requiresUnknownAck,
       submitting,
       unknownAcked,
@@ -253,7 +269,11 @@ export function ChatApprovalCard({ part }: { part: ChatUiCardPart }) {
         data.destructive ? "is-danger" : "is-primary",
       ].join(" ")}
       disabled={
-        submitting || !onAnswer || approveBlockedByAck || blockedByApproverCode
+        submitting ||
+        !onAnswer ||
+        approveBlockedByAck ||
+        blockedByApproverCode ||
+        (requiresNewPayeeConfirm && !newPayeeConfirmed)
       }
       onClick={() => void submit("approved")}
     >
@@ -362,6 +382,19 @@ export function ChatApprovalCard({ part }: { part: ChatUiCardPart }) {
                 }}
               />
               <span>{ackLabel}</span>
+            </label>
+          ) : null}
+          {requiresNewPayeeConfirm ? (
+            <label className="chat-ui-approval-card__unknown-ack">
+              <input
+                type="checkbox"
+                checked={newPayeeConfirmed}
+                disabled={submitting}
+                onChange={(event) => setNewPayeeConfirmed(event.target.checked)}
+              />
+              <span>
+                I verified this is a new payee and the IBAN is correct
+              </span>
             </label>
           ) : null}
           {isPaymentCard ? (
