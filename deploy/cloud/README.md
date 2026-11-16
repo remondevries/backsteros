@@ -121,8 +121,9 @@ docker compose -f deploy/cloud/docker-compose.yml exec backsteros sh
 | `BUNQ_PAYMENT_DAILY_CAP_EUR`, `BUNQ_PAYMENT_MAX_OPEN_PROPOSALS`, `BUNQ_PAYMENT_NEW_PAYEE_POLICY`, `BUNQ_PAYMENT_ALLOWED_IBANS` | Guardrails; empty falls back to the code defaults. |
 
 - **Encrypt:** bunq secrets are sealed with `BACKSTEROS_BUNQ_SECRET_ENCRYPTION_KEY` when set, else `BACKSTEROS_SECRET_ENCRYPTION_KEY`, else `CORE_REPLICATION_SECRET`.
-- **Decrypt fallback:** bunq key → `BACKSTEROS_SECRET_ENCRYPTION_KEY` → `CORE_REPLICATION_SECRET`, so values written under the old key stay readable. The next write re-encrypts them with the dedicated key. Auto-review webhook secrets keep using `BACKSTEROS_SECRET_ENCRYPTION_KEY` (then `CORE_REPLICATION_SECRET`) and do not need the bunq key.
-- **Rollback:** `src/scripts/decrypt-bunq-secrets-for-rollback.ts` (dry-run by default, `--apply` to write, cloud only) turns `v1:` bunq columns back into plaintext for older builds. Keep the old keys set while running it.
+- **Decrypt fallback:** bunq key → `BACKSTEROS_SECRET_ENCRYPTION_KEY` → `CORE_REPLICATION_SECRET`, so values written under the old key stay readable. Auto-review webhook secrets keep using `BACKSTEROS_SECRET_ENCRYPTION_KEY` (then `CORE_REPLICATION_SECRET`) and do not need the bunq key.
+- **Re-encrypt pass (after setting the dedicated key):** `src/scripts/reencrypt-bunq-secrets-to-dedicated-key.ts` (dry-run by default, `--apply` to write, `CORE_REPLICATION_ROLE=cloud` required). Idempotent; prints counts only; no-ops when the dedicated key is unset; never calls bunq. Run once on cloud after deploy so API key / PEM sealed under `CORE_REPLICATION_SECRET` move to the dedicated key without a Connect.
+- **Rollback:** `src/scripts/decrypt-bunq-secrets-for-rollback.ts` (dry-run by default, `--apply` to write, cloud only) turns `v1:` bunq columns back into plaintext for older builds (c0475b9). Keep the dedicated key **and** the old shared keys set while running it — decrypt-back still works after the re-encrypt pass.
 - Payment flags (`BUNQ_PAYMENT_PROPOSALS_ENABLED`, `BUNQ_ALLOW_LIVE_PAYMENT_WRITES`) still default to `false`; this section changes none of them.
 
 ## PowerSync (product clients)
