@@ -1,4 +1,5 @@
 import { sqlClient } from "../../db/index.js";
+import type { CoreReplicationRole } from "./config.js";
 import type { BootstrapTable, ReplicatedTable } from "./constants.js";
 import {
   compareCursor,
@@ -6,6 +7,10 @@ import {
   toIso,
 } from "./cursors.js";
 import { sanitizeAgentsRowForReplication } from "./agent-replication.js";
+import {
+  resolveReplicationRoleFromEnv,
+  sanitizeApiKeysRowForOutbound,
+} from "./direction-policy.js";
 import { sanitizeWorkspaceIntegrationSecretsRowForReplication } from "./integration-secrets-replication.js";
 import { sanitizeWorkspaceSettingsRowForReplication } from "./machine-local-settings.js";
 import {
@@ -23,6 +28,7 @@ const PAGE_SIZE = 100;
 export function sanitizeOutboundRow(
   table: string,
   row: Record<string, unknown>,
+  role: CoreReplicationRole = resolveReplicationRoleFromEnv(),
 ): Record<string, unknown> {
   if (table === "workspace_settings") {
     return sanitizeWorkspaceSettingsRowForReplication(row);
@@ -32,6 +38,10 @@ export function sanitizeOutboundRow(
   }
   if (table === "workspace_integration_secrets") {
     return sanitizeWorkspaceIntegrationSecretsRowForReplication(row);
+  }
+  if (table === "api_keys") {
+    // Local never sends key_hash / secret_ciphertext upstream.
+    return sanitizeApiKeysRowForOutbound(row, role);
   }
   return row;
 }

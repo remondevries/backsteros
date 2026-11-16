@@ -24,7 +24,6 @@ import type {
   TableFingerprint,
 } from "./types.js";
 import { applyRemoteChanges } from "./apply.js";
-import { shouldSkipLocalToCloudPush } from "./direction-policy.js";
 import {
   MAX_DRIFT_REPAIR_PER_TABLE,
   buildRowDigest,
@@ -371,13 +370,7 @@ export async function reconcileTable(
   // Enqueue: pull missing/drifted local rows from peer, push missing/drifted peer rows.
   const BATCH = 50;
   const pullKeys = [...missingLocally, ...drifted];
-  // Cloud-authoritative tables are never repaired local → cloud.
-  const pushKeys = shouldSkipLocalToCloudPush(
-    table,
-    getCoreReplicationConfig()?.role ?? "local",
-  )
-    ? []
-    : [...missingOnPeer, ...drifted];
+  const pushKeys = [...missingOnPeer, ...drifted];
   for (let i = 0; i < pullKeys.length; i += BATCH) {
     const batch = pullKeys.slice(i, i + BATCH);
     const changes = await fetchPeerRowsByKeys(peerUrl, secret, table, batch);

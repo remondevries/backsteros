@@ -45,4 +45,29 @@ describe("workspace_integration_secrets outbound replication", () => {
     const other = sanitizeOutboundRow("tasks", { id: "t", bunq_note: "x" });
     assert.equal(other.bunq_note, "x");
   });
+
+  it("keeps non-bunq desktop settings on the wire both ways (twin)", () => {
+    const out = sanitizeOutboundRow("workspace_integration_secrets", row, "local");
+    assert.equal(out.cursor_api_key, "cursor-key");
+    assert.equal(out.workspace_id, "w1");
+  });
+
+  it("apply-side sanitising drops inbound bunq_* so peer values are preserved", () => {
+    // Same function guards inbound rows in applyReplicationRow: omitted
+    // columns are absent from INSERT .. ON CONFLICT SET, so the stored bunq
+    // credentials survive an apply carrying (or forging) bunq_* values.
+    const inbound = {
+      workspace_id: "w1",
+      cursor_api_key: "from-peer",
+      bunq_api_key: "forged",
+      bunq_payments_paused: false,
+      updated_at: "2026-11-16T10:00:00Z",
+    };
+    const out = sanitizeWorkspaceIntegrationSecretsRowForReplication(inbound);
+    assert.deepEqual(Object.keys(out).sort(), [
+      "cursor_api_key",
+      "updated_at",
+      "workspace_id",
+    ]);
+  });
 });

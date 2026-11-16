@@ -14,7 +14,12 @@ export function isBunqSecretColumn(column: string): boolean {
   return column.toLowerCase().startsWith(BUNQ_COLUMN_PREFIX);
 }
 
-/** Strip every bunq_* column so apply omits them (preserves the peer's values). */
+/**
+ * Strip every bunq_* column. Used on BOTH sides of the wire: outbound so the
+ * peer never receives them, and on apply so a stray inbound value can never
+ * overwrite this core's own bunq credentials (omitted columns keep their
+ * existing values on conflict).
+ */
 export function sanitizeWorkspaceIntegrationSecretsRowForReplication(
   row: Record<string, unknown>,
 ): Record<string, unknown> {

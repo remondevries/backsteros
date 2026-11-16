@@ -15,10 +15,9 @@ import type { CoreReplicationRole } from "./config.js";
 import { getCoreReplicationConfig } from "./config.js";
 import type { ReplicatedTable } from "./constants.js";
 import { REPLICATED_TABLES } from "./constants.js";
-import {
-  resolveReplicationRoleFromEnv,
-  shouldRefusePeerApplyOnCloud,
-} from "./direction-policy.js";
+import { preserveApiKeySecret } from "./direction-policy.js";
+import { sanitizeAgentsRowForReplication } from "./agent-replication.js";
+import { sanitizeWorkspaceIntegrationSecretsRowForReplication } from "./integration-secrets-replication.js";
 import {
   buildBindPlaceholder,
   serializeBindValue,
@@ -950,6 +949,7 @@ async function applyApiKeyRow(
   const [existing] = await db
     .select({
       updatedAt: apiKeys.updatedAt,
+      keyHash: apiKeys.keyHash,
       secretCiphertext: apiKeys.secretCiphertext,
     })
     .from(apiKeys)
@@ -970,17 +970,24 @@ async function applyApiKeyRow(
     ? new Date(String(sanitized.expires_at))
     : null;
 
-  // Peer rows may omit ciphertext (legacy cloud / older schema). Keep any
-  // locally stored recoverable secret instead of wiping it on every apply.
-  const incomingCipher =
-    typeof sanitized.secret_ciphertext === "string" &&
-    sanitized.secret_ciphertext.trim()
-      ? sanitized.secret_ciphertext
-      : null;
-  const existingCipher = existing?.secretCiphertext?.trim()
-    ? existing.secretCiphertext
-    : null;
-  const secretCiphertext = incomingCipher ?? existingCipher;
+  // Never overwrite stored secret material with empty / stripped / null
+  // inbound values: a local peer strips key_hash + secret_ciphertext
+  // upstream, and legacy peers may omit ciphertext. Keep what we already hold.
+  const secretCiphertext = preserveApiKeySecret(
+    sanitized.secret_ciphertext,
+    existing?.secretCiphertext,
+  );
+  const keyHash = preserveApiKeySecret(sanitized.key_hash, existing?.keyHash);
+  if (!keyHash) {
+    // No hash inbound and none stored: this core cannot mint a usable key from
+    // a stripped row (e.g. a key created on local). Not an apply failure.
+    appendOpsLog(
+      "warn",
+      "core replication api_keys skipped (no key_hash)",
+      String(sanitized.id),
+    );
+    return "skipped";
+  }
 
   await db
     .insert(apiKeys)
@@ -990,7 +997,7 @@ async function applyApiKeyRow(
       userId: sanitized.user_id ? String(sanitized.user_id) : null,
       name: String(sanitized.name),
       prefix: String(sanitized.prefix),
-      keyHash: String(sanitized.key_hash),
+      keyHash,
       secretCiphertext,
       scopes: sanitized.scopes as string[],
       contactId: sanitized.contact_id ? String(sanitized.contact_id) : null,
@@ -1007,7 +1014,7 @@ async function applyApiKeyRow(
         userId: sanitized.user_id ? String(sanitized.user_id) : null,
         name: String(sanitized.name),
         prefix: String(sanitized.prefix),
-        keyHash: String(sanitized.key_hash),
+        keyHash,
         secretCiphertext,
         scopes: sanitized.scopes as string[],
         contactId: sanitized.contact_id ? String(sanitized.contact_id) : null,
@@ -1101,17 +1108,31 @@ async function applyWorkspaceSettingsRow(
   return "applied";
 }
 
-export async function applyReplicationRow(
+/**
+ * Column-level inbound guards. Whole tables twin both ways, but secrets that
+ * must stay on the owning core are dropped from inbound rows so a stray value
+ * can never overwrite this core's own (omitted columns keep existing values).
+ */
+function sanitizeInboundRow(
   table: KnownTable,
   row: ReplicationRow,
+): ReplicationRow {
+  if (table === "workspace_integration_secrets") {
+    return sanitizeWorkspaceIntegrationSecretsRowForReplication(row);
+  }
+  if (table === "agents") {
+    return sanitizeAgentsRowForReplication(row);
+  }
+  return row;
+}
+
+export async function applyReplicationRow(
+  table: KnownTable,
+  inboundRow: ReplicationRow,
 ): Promise<"applied" | "skipped"> {
   const config = getCoreReplicationConfig();
   const localRole = config?.role ?? "local";
-  // Cloud is authoritative for api_keys / workspaces / agents /
-  // workspace_integration_secrets: never take them from the local peer.
-  if (shouldRefusePeerApplyOnCloud(table, resolveReplicationRoleFromEnv())) {
-    return "skipped";
-  }
+  const row = sanitizeInboundRow(table, inboundRow);
   const spec = getTableSpec(table);
   if (!spec) {
     return "skipped";
@@ -1186,7 +1207,7 @@ export async function applyRemoteChanges(
       const entry = toApplyFailed(table, change.row, error);
       failed.push(entry);
       try {
-        await recordReplicationDeadLetter({
+        const recorded = await recordReplicationDeadLetter({
           table,
           rowId: entry.id,
           direction,
@@ -1194,6 +1215,7 @@ export async function applyRemoteChanges(
           errorMessage: entry.message,
           row: change.row,
         });
+        entry.attempts = recorded.attempts;
       } catch (recordError) {
         console.error(
           `core replication dead letter record failed ${table}`,

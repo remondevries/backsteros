@@ -1,47 +1,38 @@
 import assert from "node:assert/strict";
 import { afterEach, beforeEach, describe, it } from "node:test";
 
+import * as constants from "./constants.js";
+import { REPLICATED_TABLES } from "./constants.js";
+import * as directionPolicy from "./direction-policy.js";
 import {
-  CLOUD_TO_LOCAL_ONLY_TABLES,
-  REPLICATED_TABLES,
-  isCloudToLocalOnlyTable,
-} from "./constants.js";
-import {
+  API_KEY_SECRET_COLUMNS,
+  preserveApiKeySecret,
   resolveReplicationRoleFromEnv,
-  shouldRefusePeerApplyOnCloud,
-  shouldSkipLocalToCloudPush,
+  sanitizeApiKeysRowForOutbound,
 } from "./direction-policy.js";
-import { applyRemoteChanges } from "./apply.js";
+import { sanitizeOutboundRow } from "./fetch.js";
 import { pushTable } from "./worker.js";
 
-describe("CLOUD_TO_LOCAL_ONLY_TABLES policy", () => {
-  it("lists exactly the cloud-authoritative tables, all replicated", () => {
-    assert.deepEqual([...CLOUD_TO_LOCAL_ONLY_TABLES].sort(), [
-      "agents",
-      "api_keys",
-      "workspace_integration_secrets",
-      "workspaces",
-    ]);
-    for (const table of CLOUD_TO_LOCAL_ONLY_TABLES) {
-      assert.ok((REPLICATED_TABLES as readonly string[]).includes(table));
-    }
-    assert.equal(isCloudToLocalOnlyTable("tasks"), false);
+/** Tables that were briefly one-way (C2) and must twin both ways again. */
+const BOTH_WAYS_TABLES = [
+  "api_keys",
+  "workspaces",
+  "agents",
+  "workspace_integration_secrets",
+] as const;
+
+describe("whole-table one-way policy is gone", () => {
+  it("no longer exports the cloud→local-only table list or skip/refuse helpers", () => {
+    assert.equal("CLOUD_TO_LOCAL_ONLY_TABLES" in constants, false);
+    assert.equal("isCloudToLocalOnlyTable" in constants, false);
+    assert.equal("shouldSkipLocalToCloudPush" in directionPolicy, false);
+    assert.equal("shouldRefusePeerApplyOnCloud" in directionPolicy, false);
   });
 
-  it("skips local→cloud push only on the local role", () => {
-    for (const table of CLOUD_TO_LOCAL_ONLY_TABLES) {
-      assert.equal(shouldSkipLocalToCloudPush(table, "local"), true);
-      assert.equal(shouldSkipLocalToCloudPush(table, "cloud"), false);
+  it("keeps the formerly one-way tables replicated", () => {
+    for (const table of BOTH_WAYS_TABLES) {
+      assert.ok((REPLICATED_TABLES as readonly string[]).includes(table), table);
     }
-    assert.equal(shouldSkipLocalToCloudPush("tasks", "local"), false);
-  });
-
-  it("refuses peer apply only on the cloud role", () => {
-    for (const table of CLOUD_TO_LOCAL_ONLY_TABLES) {
-      assert.equal(shouldRefusePeerApplyOnCloud(table, "cloud"), true);
-      assert.equal(shouldRefusePeerApplyOnCloud(table, "local"), false);
-    }
-    assert.equal(shouldRefusePeerApplyOnCloud("tasks", "cloud"), false);
   });
 
   it("resolves the role from CORE_REPLICATION_ROLE", () => {
@@ -53,7 +44,66 @@ describe("CLOUD_TO_LOCAL_ONLY_TABLES policy", () => {
   });
 });
 
-describe("worker + apply honour the direction policy", () => {
+describe("api_keys column-level guards", () => {
+  const row = {
+    id: "k1",
+    name: "Desktop",
+    prefix: "sk_live_ab",
+    key_hash: "hash",
+    secret_ciphertext: "cipher",
+    revoked_at: null,
+    updated_at: "2026-11-16T10:00:00Z",
+  };
+
+  it("lists the raw secret columns", () => {
+    assert.deepEqual([...API_KEY_SECRET_COLUMNS].sort(), [
+      "key_hash",
+      "secret_ciphertext",
+    ]);
+  });
+
+  it("local strips key_hash + secret_ciphertext outbound, keeps metadata", () => {
+    const out = sanitizeApiKeysRowForOutbound(row, "local");
+    assert.equal("key_hash" in out, false);
+    assert.equal("secret_ciphertext" in out, false);
+    assert.equal(out.name, "Desktop");
+    assert.equal(out.updated_at, row.updated_at);
+    // Input untouched.
+    assert.equal(row.key_hash, "hash");
+  });
+
+  it("cloud keeps sending the hash + ciphertext (local needs them to auth)", () => {
+    const out = sanitizeApiKeysRowForOutbound(row, "cloud");
+    assert.equal(out.key_hash, "hash");
+    assert.equal(out.secret_ciphertext, "cipher");
+  });
+
+  it("sanitizeOutboundRow applies it to api_keys only, per role", () => {
+    const local = sanitizeOutboundRow("api_keys", row, "local");
+    assert.equal("key_hash" in local, false);
+    assert.equal("secret_ciphertext" in local, false);
+    const cloud = sanitizeOutboundRow("api_keys", row, "cloud");
+    assert.equal(cloud.key_hash, "hash");
+    const other = sanitizeOutboundRow("tasks", { id: "t", key_hash: "x" }, "local");
+    assert.equal(other.key_hash, "x");
+  });
+
+  it("apply keeps existing secrets when inbound is omitted / null / empty", () => {
+    assert.equal(preserveApiKeySecret(undefined, "existing"), "existing");
+    assert.equal(preserveApiKeySecret(null, "existing"), "existing");
+    assert.equal(preserveApiKeySecret("", "existing"), "existing");
+    assert.equal(preserveApiKeySecret("   ", "existing"), "existing");
+    assert.equal(preserveApiKeySecret(undefined, null), null);
+    assert.equal(preserveApiKeySecret(undefined, undefined), null);
+  });
+
+  it("apply takes a non-empty inbound secret over the existing one", () => {
+    assert.equal(preserveApiKeySecret("new", "existing"), "new");
+    assert.equal(preserveApiKeySecret("new", null), "new");
+  });
+});
+
+describe("pushTable no longer skips formerly one-way tables", () => {
   const previous = {
     peerUrl: process.env.CORE_REPLICATION_PEER_URL,
     secret: process.env.CORE_REPLICATION_SECRET,
@@ -62,6 +112,7 @@ describe("worker + apply honour the direction policy", () => {
   beforeEach(() => {
     process.env.CORE_REPLICATION_PEER_URL = "http://peer.test:8788";
     process.env.CORE_REPLICATION_SECRET = "test-replication-secret";
+    process.env.CORE_REPLICATION_ROLE = "local";
   });
   afterEach(() => {
     for (const [key, value] of [
@@ -74,9 +125,8 @@ describe("worker + apply honour the direction policy", () => {
     }
   });
 
-  it("local pushTable never fetches or sends cloud-authoritative tables", async () => {
-    process.env.CORE_REPLICATION_ROLE = "local";
-    for (const table of CLOUD_TO_LOCAL_ONLY_TABLES) {
+  it("local pushTable fetches and sends every formerly one-way table", async () => {
+    for (const table of BOTH_WAYS_TABLES) {
       let fetched = 0;
       let sent = 0;
       await pushTable(table, {
@@ -91,46 +141,14 @@ describe("worker + apply honour the direction policy", () => {
         },
         fetchFn: async () => {
           sent += 1;
-          return new Response("{}", { status: 200 });
+          return new Response(
+            JSON.stringify({ applied: 1, skipped: 0, failed: [] }),
+            { status: 200 },
+          );
         },
       });
-      assert.equal(fetched, 0, `${table} fetched`);
-      assert.equal(sent, 0, `${table} sent`);
-    }
-  });
-
-  it("local pushTable still pushes normal tables", async () => {
-    process.env.CORE_REPLICATION_ROLE = "local";
-    let sent = 0;
-    await pushTable("tasks", {
-      getCursor: async () => ({ updatedAt: "1970-01-01T00:00:00Z", rowId: "" }),
-      setCursor: async () => {},
-      fetchLocal: async (_t, cursor) => ({
-        changes: [{ table: "tasks", row: { id: "x" } }],
-        cursor,
-      }),
-      fetchFn: async () => {
-        sent += 1;
-        return new Response(JSON.stringify({ applied: 1, skipped: 0, failed: [] }), {
-          status: 200,
-        });
-      },
-    });
-    assert.equal(sent, 1);
-  });
-
-  it("cloud refuses peer apply of cloud-authoritative tables (skipped, no failures)", async () => {
-    process.env.CORE_REPLICATION_ROLE = "cloud";
-    for (const table of CLOUD_TO_LOCAL_ONLY_TABLES) {
-      const result = await applyRemoteChanges(
-        table as never,
-        [
-          { table, row: { id: "evil", workspace_id: "w" } },
-          { table, row: { id: "evil2", workspace_id: "w" } },
-        ] as never,
-        { direction: "push" },
-      );
-      assert.deepEqual(result, { applied: 0, skipped: 2, failed: [] }, table);
+      assert.equal(fetched, 1, `${table} fetched`);
+      assert.equal(sent, 1, `${table} sent`);
     }
   });
 });
