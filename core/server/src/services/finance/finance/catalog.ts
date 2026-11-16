@@ -19,6 +19,7 @@ import {
 } from "../../../db/schema.js";
 import { newId } from "../../../lib/crypto.js";
 import { balanceAffectingTransactionSql } from "../cashflow-exclusion.js";
+import { assertIncomeCategoryKind } from "../own-account-transfer.js";
 import { advanceMonthlyNextDate } from "../recurring-next-date.js";
 export type DbExecutor = Pick<typeof db, "select" | "insert" | "update" | "delete">;
 
@@ -221,6 +222,7 @@ export async function createFinancialCategory(
   );
   const parentId = parent?.id ?? null;
   const kind = input.kind ?? parent?.kind ?? "expense";
+  assertIncomeCategoryKind(input.name, kind);
   const listing =
     input.listing ??
     (parent?.listing === "excluded" ? "excluded" : "regular");
@@ -270,6 +272,15 @@ export async function updateFinancialCategory(
         throw new Error("CATEGORY_HAS_CHILDREN");
       }
     }
+  }
+
+  if (input.name !== undefined || input.kind !== undefined) {
+    const existing = await getFinancialCategoryById(workspaceId, id, executor);
+    if (!existing) return null;
+    assertIncomeCategoryKind(
+      input.name ?? existing.name,
+      input.kind ?? existing.kind,
+    );
   }
 
   const budgetCents = normalizeBudgetCents(input.budgetCents);

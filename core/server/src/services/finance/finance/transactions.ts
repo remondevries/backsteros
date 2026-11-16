@@ -25,6 +25,7 @@ import {
   financialImportBatches,
   financialTransactions,
 } from "../../../db/schema.js";
+import { assignTransferCategoriesOnImport } from "../assign-transfer-category.js";
 import { parseBankCsv } from "../detect-dialect.js";
 import { newId } from "../../../lib/crypto.js";
 import { buildPrivateStorageKey, putObject } from "../../../lib/storage.js";
@@ -291,6 +292,7 @@ export type FinancialTransactionSyncCreateInput = {
   sourceType?: string | null;
   settlementState?: string | null;
   raw?: unknown;
+  categoryId?: string | null;
   /** Always ignored on sync create — import batches are local-only. */
   importBatchId?: string | null;
 };
@@ -342,6 +344,7 @@ export async function insertTransactionFromSync(
   const sourceCode = asSyncNullableString(payload.sourceCode) ?? null;
   const sourceType = asSyncNullableString(payload.sourceType) ?? null;
   const settlementState = asSyncNullableString(payload.settlementState) ?? null;
+  const categoryId = asSyncNullableString(payload.categoryId) ?? null;
   const raw =
     payload.raw && typeof payload.raw === "object" && !Array.isArray(payload.raw)
       ? payload.raw
@@ -367,6 +370,7 @@ export async function insertTransactionFromSync(
         sourceCode,
         sourceType,
         settlementState,
+        categoryId,
         raw,
       })
       .onConflictDoNothing({
@@ -417,6 +421,7 @@ export function financialTransactionCreateSyncPayload(
     source_code: input.sourceCode ?? null,
     source_type: input.sourceType ?? null,
     settlement_state: input.settlementState ?? null,
+    category_id: input.categoryId ?? null,
     raw: input.raw ?? {},
     import_batch_id: null,
   };
@@ -483,6 +488,7 @@ export async function commitFinancialTransactionCreates(
         sourceCode: row.sourceCode,
         sourceType: row.sourceType,
         settlementState: row.settlementState,
+        categoryId: row.categoryId,
         raw: row.raw,
       },
     );
@@ -876,9 +882,10 @@ export async function importBankCsv(
     }
   }
 
+  await assignTransferCategoriesOnImport(workspaceId, pending);
+
   try {
-    inserted = await commitFinancialTransactionCreates(workspaceId, pending);
-    duplicates += Math.max(0, pending.length - inserted);
+    inserted = await commitFinancialTransactionCreates(workspaceId, pending);    duplicates += Math.max(0, pending.length - inserted);
   } catch {
     errors += pending.length;
     inserted = 0;

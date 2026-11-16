@@ -12,6 +12,7 @@ import {
 } from "../../lib/moneybird-client.js";
 import { newId } from "../../lib/crypto.js";
 import { getMoneybirdCredentials } from "../moneybird-settings.js";
+import { assignTransferCategoriesOnImport } from "./assign-transfer-category.js";
 import {
   getBankAccountById,
   commitFinancialTransactionCreates,
@@ -343,6 +344,7 @@ export async function syncBankAccountFromMoneybird(
   }
 
   if (pendingInserts.length > 0) {
+    await assignTransferCategoriesOnImport(workspaceId, pendingInserts);
     inserted = await commitFinancialTransactionCreates(
       workspaceId,
       pendingInserts,

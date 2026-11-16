@@ -2625,6 +2625,10 @@ export {
   buildNonCashflowCategoryIdSet,
   isCashflowCategory,
   isCashflowTransaction,
+  isCounterpartyOwnAccount,
+  isOwnAccountTransfer,
+  isOwnAccountTransferPayee,
+  normalizeAccountRef,
 } from "./finance/cashflow-exclusion.js";
 
 export {

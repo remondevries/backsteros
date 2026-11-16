@@ -914,33 +914,54 @@ export function registerFinanceRoutes(app: Hono) {
       const auth = getAuth(c);
       if (!can(auth, "finance:write")) return c.json(forbidden(), 403);
       const body = c.req.valid("json");
-      if (isRestLeaderFirstWrite()) {
-        const categoryId = newId();
-        await commitRestEntityWrite({
-          workspaceId: auth.workspaceId,
-          entity: "financial_category",
-          entityId: categoryId,
-          operation: "upsert",
-          payload: buildFinancialCategoryRestPayload(categoryId, body),
-        });
-        const row = await financeService.getFinancialCategoryById(
+      try {
+        if (isRestLeaderFirstWrite()) {
+          // Validate Income-named ↔ kind locally before forwarding.
+          const { assertIncomeCategoryKind } = await import(
+            "../services/finance/own-account-transfer.js"
+          );
+          assertIncomeCategoryKind(body.name, body.kind ?? "expense");
+          const categoryId = newId();
+          await commitRestEntityWrite({
+            workspaceId: auth.workspaceId,
+            entity: "financial_category",
+            entityId: categoryId,
+            operation: "upsert",
+            payload: buildFinancialCategoryRestPayload(categoryId, body),
+          });
+          const row = await financeService.getFinancialCategoryById(
+            auth.workspaceId,
+            categoryId,
+          );
+          if (!row) {
+            return c.json(
+              { error: "Financial category create failed", code: "internal" },
+              500,
+            );
+          }
+          return c.json(toFinancialCategory(row), 201);
+        }
+        const row = await financeService.createFinancialCategory(
           auth.workspaceId,
-          categoryId,
+          body,
         );
-        if (!row) {
+        await recordFinancialCategoryRestSyncEvent(auth.workspaceId, row, "upsert");
+        return c.json(toFinancialCategory(row), 201);
+      } catch (error) {
+        if (
+          error instanceof Error &&
+          error.message === "CATEGORY_INCOME_KIND_MISMATCH"
+        ) {
           return c.json(
-            { error: "Financial category create failed", code: "internal" },
-            500,
+            {
+              error: "Income-named categories cannot use kind=expense",
+              code: "category_income_kind_mismatch",
+            },
+            400,
           );
         }
-        return c.json(toFinancialCategory(row), 201);
+        throw error;
       }
-      const row = await financeService.createFinancialCategory(
-        auth.workspaceId,
-        body,
-      );
-      await recordFinancialCategoryRestSyncEvent(auth.workspaceId, row, "upsert");
-      return c.json(toFinancialCategory(row), 201);
     },
   );
   app.patch(
@@ -951,34 +972,59 @@ export function registerFinanceRoutes(app: Hono) {
       if (!can(auth, "finance:write")) return c.json(forbidden(), 403);
       const categoryId = c.req.param("id");
       const patch = c.req.valid("json");
-      if (isRestLeaderFirstWrite()) {
-        const existing = await financeService.getFinancialCategoryById(
+      try {
+        if (isRestLeaderFirstWrite()) {
+          const existing = await financeService.getFinancialCategoryById(
+            auth.workspaceId,
+            categoryId,
+          );
+          if (!existing) return c.json(notFound("Financial category"), 404);
+          if (patch.name !== undefined || patch.kind !== undefined) {
+            const { assertIncomeCategoryKind } = await import(
+              "../services/finance/own-account-transfer.js"
+            );
+            assertIncomeCategoryKind(
+              patch.name ?? existing.name,
+              patch.kind ?? existing.kind,
+            );
+          }
+          await commitRestEntityWrite({
+            workspaceId: auth.workspaceId,
+            entity: "financial_category",
+            entityId: categoryId,
+            operation: "upsert",
+            payload: buildFinancialCategoryRestPayload(categoryId, patch),
+          });
+          const row = await financeService.getFinancialCategoryById(
+            auth.workspaceId,
+            categoryId,
+          );
+          if (!row) return c.json(notFound("Financial category"), 404);
+          return c.json(toFinancialCategory(row));
+        }
+        const row = await financeService.updateFinancialCategory(
           auth.workspaceId,
           categoryId,
-        );
-        if (!existing) return c.json(notFound("Financial category"), 404);
-        await commitRestEntityWrite({
-          workspaceId: auth.workspaceId,
-          entity: "financial_category",
-          entityId: categoryId,
-          operation: "upsert",
-          payload: buildFinancialCategoryRestPayload(categoryId, patch),
-        });
-        const row = await financeService.getFinancialCategoryById(
-          auth.workspaceId,
-          categoryId,
+          patch,
         );
         if (!row) return c.json(notFound("Financial category"), 404);
+        await recordFinancialCategoryRestSyncEvent(auth.workspaceId, row, "upsert");
         return c.json(toFinancialCategory(row));
+      } catch (error) {
+        if (
+          error instanceof Error &&
+          error.message === "CATEGORY_INCOME_KIND_MISMATCH"
+        ) {
+          return c.json(
+            {
+              error: "Income-named categories cannot use kind=expense",
+              code: "category_income_kind_mismatch",
+            },
+            400,
+          );
+        }
+        throw error;
       }
-      const row = await financeService.updateFinancialCategory(
-        auth.workspaceId,
-        categoryId,
-        patch,
-      );
-      if (!row) return c.json(notFound("Financial category"), 404);
-      await recordFinancialCategoryRestSyncEvent(auth.workspaceId, row, "upsert");
-      return c.json(toFinancialCategory(row));
     },
   );
   app.delete("/api/v1/financial-categories/:id", async (c) => {

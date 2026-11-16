@@ -1,85 +1,78 @@
 import assert from "node:assert/strict";
-import { describe, it } from "node:test";
+import { describe, test } from "node:test";
 
 import {
-  buildNonCashflowCategoryIdSet,
-  isCashflowCategory,
-  isCashflowTransaction,
+  isCounterpartyOwnAccount,
+  isOwnAccountTransfer,
+  isOwnAccountTransferPayee,
 } from "./cashflow-exclusion.js";
 
-describe("isCashflowCategory", () => {
-  it("counts uncategorized and regular categories", () => {
-    assert.equal(isCashflowCategory(null), true);
+describe("isOwnAccountTransferPayee", () => {
+  test("detects Amex thank-you credits", () => {
     assert.equal(
-      isCashflowCategory({
-        id: "1",
-        kind: "expense",
-        listing: "regular",
+      isOwnAccountTransferPayee({
+        payee: "HARTELIJK BEDANKT VOOR UW BETALING",
+        amountCents: 645_53,
+      }),
+      true,
+    );
+    assert.equal(
+      isOwnAccountTransferPayee({
+        payee: "CREDIT SALDO OVERGEBOEKT",
+        amountCents: 663_00,
       }),
       true,
     );
   });
 
-  it("omits transfer and excluded", () => {
+  test("detects American Express payment debits from checking", () => {
     assert.equal(
-      isCashflowCategory({
-        id: "t",
-        kind: "transfer",
-        listing: "regular",
+      isOwnAccountTransferPayee({
+        payee: "American Express",
+        amountCents: -645_53,
       }),
-      false,
+      true,
     );
+  });
+
+  test("leaves ordinary merchants alone", () => {
     assert.equal(
-      isCashflowCategory({
-        id: "e",
-        kind: "expense",
-        listing: "excluded",
+      isOwnAccountTransferPayee({
+        payee: "LINEAR.APP COVINA",
+        amountCents: -2859,
       }),
       false,
     );
   });
 });
 
-describe("buildNonCashflowCategoryIdSet", () => {
-  it("collects transfer and excluded ids", () => {
-    const ids = buildNonCashflowCategoryIdSet([
-      { id: "a", kind: "expense", listing: "regular" },
-      { id: "b", kind: "transfer", listing: "excluded" },
-      { id: "c", kind: "expense", listing: "excluded" },
-    ]);
-    assert.deepEqual([...ids].sort(), ["b", "c"]);
-  });
-});
+describe("isOwnAccountTransfer", () => {
+  const own = new Set(["NL80INGB0008304884", "NL43INGB0663319099"]);
 
-describe("isCashflowTransaction", () => {
-  it("keeps uncategorized and drops listed ids", () => {
-    const excluded = new Set(["b"]);
-    assert.equal(isCashflowTransaction({ categoryId: null }, excluded), true);
-    assert.equal(isCashflowTransaction({ categoryId: "a" }, excluded), true);
-    assert.equal(isCashflowTransaction({ categoryId: "b" }, excluded), false);
-  });
-
-  it("drops refused / cancelled settlements even when categorized", () => {
-    const excluded = new Set<string>();
+  test("prefers own-account IBAN over payee", () => {
     assert.equal(
-      isCashflowTransaction(
-        { categoryId: "a", settlementState: "refused" },
-        excluded,
-      ),
-      false,
+      isCounterpartyOwnAccount("NL43 INGB 0663 3190 99", own),
+      true,
     );
     assert.equal(
-      isCashflowTransaction(
-        { categoryId: null, settlementState: "cancelled" },
-        excluded,
-      ),
-      false,
+      isOwnAccountTransfer({
+        counterparty: "NL43INGB0663319099",
+        payee: "LINEAR.APP",
+        amountCents: -50_00,
+        ownAccountRefs: own,
+      }),
+      true,
     );
+  });
+
+  test("falls back to payee heuristic when IBAN unknown", () => {
     assert.equal(
-      isCashflowTransaction(
-        { categoryId: "a", settlementState: "settled" },
-        excluded,
-      ),
+      isOwnAccountTransfer({
+        counterparty: "NL63DEUT0265188040",
+        payee: "American Express Europe SA",
+        amountCents: -64_553,
+        ownAccountRefs: own,
+      }),
       true,
     );
   });

@@ -28,6 +28,7 @@ import {
   ensureBunqPersonalBankAccount,
 } from "../bunq-personal-bank-account.js";
 import { getConnectedBunqClient } from "../bunq-settings.js";
+import { assignTransferCategoriesOnImport } from "./assign-transfer-category.js";
 import {
   commitFinancialTransactionCreates,
   getBankAccountById,
@@ -151,6 +152,7 @@ export async function runBunqSyncLocally(
   let inserted = 0;
   let duplicates = fetched - pendingInserts.length;
   if (pendingInserts.length > 0) {
+    await assignTransferCategoriesOnImport(workspaceId, pendingInserts);
     inserted = await commitFinancialTransactionCreates(
       workspaceId,
       pendingInserts,
