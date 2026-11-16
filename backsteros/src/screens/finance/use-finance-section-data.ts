@@ -348,9 +348,9 @@ export function useFinanceSectionData({
           return { year, spentCents: cents, avgMonthlyCents };
         });
 
-      const endMonth =
-        monthKeys.sort().at(-1) ??
-        `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+      // End at the current calendar month so the trailing window does not
+      // stretch to a stale last-data month when the category went quiet.
+      const endMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
       const months = zeroFillMonthSpend(endMonth, monthTotals, 12);
 
       return { categoryId, months, years, transactions: allTransactions };

@@ -41,12 +41,24 @@ describe("metrics-month-window", () => {
     assert.equal(filled.at(-1)?.spentCents, 50);
   });
 
-  test("average denominator uses first→last activity span (Turfmarkt-style)", () => {
-    // Five payments Jun–Oct 2018 → 5 months, not 12.
+  test("sparse category months divide by full year when coverage is omitted (Shopping)", () => {
+    // Shopping only Aug–Oct 2021 → still ÷12 (account assumed to cover the year).
+    assert.equal(
+      averageMonthlyDenominator({
+        year: 2021,
+        monthKeysWithData: ["2021-08", "2021-09", "2021-10"],
+        now: new Date(2026, 10, 16),
+      }),
+      12,
+    );
+  });
+
+  test("uses account coverage span when provided", () => {
     assert.equal(
       averageMonthlyDenominator({
         year: 2018,
-        monthKeysWithData: [
+        monthKeysWithData: ["2018-06", "2018-10"],
+        coverageMonthKeys: [
           "2018-06",
           "2018-07",
           "2018-08",
@@ -66,7 +78,7 @@ describe("metrics-month-window", () => {
         monthKeysWithData: ["2026-01", "2026-02", "2026-03", "2026-11"],
         now: new Date(2026, 10, 16), // November
       }),
-      // first Jan → last completed Oct = 10
+      // Jan → last completed Oct = 10 (not category first→last)
       10,
     );
   });
