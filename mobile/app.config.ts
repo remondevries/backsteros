@@ -35,8 +35,9 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     ...(typeof config.extra === "object" && config.extra ? config.extra : {}),
     EXPO_PUBLIC_API_URL: process.env.EXPO_PUBLIC_API_URL ?? "",
     EXPO_PUBLIC_CLOUD_API_URL: process.env.EXPO_PUBLIC_CLOUD_API_URL ?? "",
-    EXPO_PUBLIC_LOCAL_SHELL_TOKEN:
-      process.env.EXPO_PUBLIC_LOCAL_SHELL_TOKEN ?? "local",
+    // No "local" default: empty means unset (no Bearer is sent).
+    EXPO_PUBLIC_LOCAL_SHELL_TOKEN: process.env.EXPO_PUBLIC_LOCAL_SHELL_TOKEN ?? "",
+    EXPO_PUBLIC_OWNER_API_KEY: process.env.EXPO_PUBLIC_OWNER_API_KEY ?? "",
     EXPO_PUBLIC_SENTRY_DSN: process.env.EXPO_PUBLIC_SENTRY_DSN ?? "",
   },
 });

@@ -1,5 +1,7 @@
 import Constants from "expo-constants";
 
+import { resolveLocalShellBearerToken } from "./local-shell-token";
+
 function readPublicEnv(key: string): string | undefined {
   const fromProcess = (
     globalThis as { process?: { env?: Record<string, string> } }
@@ -27,8 +29,12 @@ export function getMobileEnvironment() {
   const cloudApiUrl = normalizeApiUrl(
     readPublicEnv("EXPO_PUBLIC_CLOUD_API_URL"),
   );
-  const localShellToken =
-    readPublicEnv("EXPO_PUBLIC_LOCAL_SHELL_TOKEN") ?? "local";
+  // No "local" default (mirrors desktop): configured token, else owner Access
+  // key, else null → no Authorization header is sent.
+  const localShellToken = resolveLocalShellBearerToken({
+    configured: readPublicEnv("EXPO_PUBLIC_LOCAL_SHELL_TOKEN"),
+    ownerApiKey: readPublicEnv("EXPO_PUBLIC_OWNER_API_KEY"),
+  });
 
   return {
     /** Preferred local-core URL (Tailscale / loopback). */
@@ -37,7 +43,7 @@ export function getMobileEnvironment() {
     cloudApiUrl,
     /** @deprecated Use `localApiUrl` or `useMobileCoreApiUrl().activeApiUrl`. */
     apiUrl: localApiUrl,
-    /** Must match core `LOCAL_SHELL_TOKEN` when set (default `local`). */
+    /** Must match core `LOCAL_SHELL_TOKEN`; `null` when unconfigured (no default). */
     localShellToken,
   };
 }

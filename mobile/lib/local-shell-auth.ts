@@ -1,25 +1,22 @@
 import type { TokenProvider } from "@backsteros/api-client";
 
-/** Default matches core `LOCAL_SHELL_TOKEN` / `DEFAULT_LOCAL_SHELL_TOKEN`. */
-export const DEFAULT_LOCAL_SHELL_TOKEN = "local";
+import { getMobileEnvironment } from "./env";
+import {
+  LOCAL_SHELL_USER_ID,
+  createTokenProvider,
+} from "./local-shell-token";
 
-/** Stable PowerSync DB key (matches core + desktop). */
-export const LOCAL_SHELL_USER_ID = "local_shell";
+export { LOCAL_SHELL_USER_ID, resolveLocalShellBearerToken } from "./local-shell-token";
 
-export function getLocalShellToken(): string {
-  try {
-    const fromProcess = (
-      globalThis as { process?: { env?: Record<string, string> } }
-    ).process?.env?.EXPO_PUBLIC_LOCAL_SHELL_TOKEN?.trim();
-    if (fromProcess) return fromProcess;
-  } catch {
-    /* ignore */
-  }
-  return DEFAULT_LOCAL_SHELL_TOKEN;
+/**
+ * Configured local-shell bearer (`EXPO_PUBLIC_LOCAL_SHELL_TOKEN`, else owner
+ * Access key). `null` when neither is set — no default `"local"`.
+ */
+export function getLocalShellToken(): string | null {
+  return getMobileEnvironment().localShellToken;
 }
 
-/** Always returns the local-shell bearer. */
+/** Bearer provider; resolves `null` (no Authorization header) when unconfigured. */
 export function createMobileTokenProvider(): TokenProvider {
-  const token = getLocalShellToken();
-  return () => token;
+  return createTokenProvider(getLocalShellToken);
 }
