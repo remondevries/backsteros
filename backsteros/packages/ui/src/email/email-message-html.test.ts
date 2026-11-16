@@ -7,6 +7,7 @@ import {
   extractEmailHtmlBody,
   isSubstantiveEmailHtml,
   neutralizeEmailHtmlDarkMode,
+  neutralizeEmailHtmlViewportEscape,
   parseEmailHtmlContentIds,
   plainTextEmailToHtml,
   prepareEmailHtmlForDisplay,
@@ -53,11 +54,28 @@ test("sanitizeEmailHtml strips scripts and inline handlers", () => {
   );
 });
 
+test("neutralizeEmailHtmlViewportEscape demotes fixed/sticky positions", () => {
+  assert.equal(
+    neutralizeEmailHtmlViewportEscape(
+      '<img style="position:fixed;bottom:0" src="x.png"><style>.s{position:sticky;top:0}</style>',
+    ),
+    '<img style="position: relative;bottom:0" src="x.png"><style>.s{position: relative;top:0}</style>',
+  );
+});
+
 test("prepareEmailHtmlForDisplay sanitizes extracted body", () => {
   assert.equal(
     prepareEmailHtmlForDisplay("<p onclick='x'>Hi</p>"),
     "<p>Hi</p>",
   );
+});
+
+test("prepareEmailHtmlForDisplay demotes fixed signature positioning", () => {
+  const prepared = prepareEmailHtmlForDisplay(
+    '<div style="position: fixed; right: 12px"><img src="logo.png"></div>',
+  );
+  assert.match(prepared, /position:\s*relative/i);
+  assert.doesNotMatch(prepared, /position:\s*fixed/i);
 });
 
 test("stripPrefersColorSchemeDarkMedia removes nested dark media blocks", () => {

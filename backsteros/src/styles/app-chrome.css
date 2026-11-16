@@ -214,14 +214,25 @@
   min-height: 0;
   flex-direction: column;
   overflow: hidden;
+  /*
+   * Contain `position: fixed` email signature art inside this pane so it cannot
+   * paint over Contacts / other sections (WKWebView treats fixed as viewport
+   * unless an ancestor establishes a containing block).
+   */
+  transform: translateZ(0);
+  isolation: isolate;
 }
 
-/* Prefer visibility over content-visibility — WebKit can fail to restore
-   layout/paint after content-visibility:hidden (empty Inbox list column,
-   collapsed calendar timeline). */
+/*
+ * Prefer display:none over visibility/opacity for hidden panes.
+ * Email footers often use `visibility: visible` + `position: fixed` (and
+ * WKWebView can leave composited <img> layers painted when only visibility /
+ * opacity hide the ancestor). display:none removes them from paint entirely.
+ * Avoid content-visibility:hidden — WebKit can fail to restore list/calendar
+ * layout after that.
+ */
 .keep-alive-pane[data-keep-alive-hidden] {
-  visibility: hidden;
-  pointer-events: none;
+  display: none;
 }
 
 /*

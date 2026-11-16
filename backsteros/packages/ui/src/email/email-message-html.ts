@@ -34,6 +34,17 @@ export function sanitizeEmailHtml(html: string): string {
     .replace(/\son\w+\s*=\s*[^\s>]+/gi, "");
 }
 
+/**
+ * Email signatures often use `position: fixed` (and sticky) so a logo stays
+ * pinned in the mail client. In our thread that escapes the message card /
+ * keep-alive pane and can remain on screen after navigating away.
+ */
+export function neutralizeEmailHtmlViewportEscape(html: string): string {
+  return html
+    .replace(/position\s*:\s*fixed\b/gi, "position: relative")
+    .replace(/position\s*:\s*sticky\b/gi, "position: relative");
+}
+
 export function isFullEmailHtmlDocument(html: string): boolean {
   const trimmed = html.trim();
   return (
@@ -290,6 +301,11 @@ export function buildEmailShadowStyles(
     img { max-width: 100%; height: auto; }
     img[src^="cid:"] { visibility: hidden; }
     img[data-inline-cid] { visibility: visible; }
+    /*
+     * Author CSS can still declare position:fixed after our string rewrite
+     * (e.g. via @import). Keep signature art inside the host box.
+     */
+    :host { transform: translateZ(0); }
     a { color: ${isLight ? "#0563c1" : "#6eb6ff"}; }
     table { max-width: 100%; }
     blockquote {
@@ -307,7 +323,8 @@ export function buildEmailShadowStyles(
 export function prepareEmailHtmlForDisplay(html: string): string {
   const extracted = extractEmailHtmlBody(html);
   const neutralized = neutralizeEmailHtmlDarkMode(extracted);
-  return sanitizeEmailHtml(neutralized).trim();
+  const contained = neutralizeEmailHtmlViewportEscape(neutralized);
+  return sanitizeEmailHtml(contained).trim();
 }
 
 export function normalizeEmailContentId(
