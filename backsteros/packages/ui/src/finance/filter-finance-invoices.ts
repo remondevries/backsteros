@@ -2,6 +2,33 @@ import type { MoneybirdSalesInvoiceSummary } from "@backsteros/contracts";
 
 import { DROPDOWN_NONE_VALUE } from "../components/dropdowns/dropdown-options.js";
 
+/** Billed sales-invoice states (matches Moneybird revenue series). */
+export const BILLED_INVOICE_STATES = new Set([
+  "open",
+  "scheduled",
+  "pending_payment",
+  "reminded",
+  "late",
+  "paid",
+]);
+
+export function isBilledInvoiceState(state: string | null | undefined): boolean {
+  if (!state) return false;
+  return BILLED_INVOICE_STATES.has(state);
+}
+
+/**
+ * Prefer excl. VAT when available so list/summary match the revenue chart.
+ */
+export function invoiceAmountExclVat(
+  invoice: Pick<
+    MoneybirdSalesInvoiceSummary,
+    "totalPriceExclTax" | "totalPriceInclTax"
+  >,
+): string | null {
+  return invoice.totalPriceExclTax ?? invoice.totalPriceInclTax ?? null;
+}
+
 export type FinanceInvoiceListFilters = {
   search: string;
   /**

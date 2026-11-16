@@ -119,6 +119,8 @@ export type FinanceDocumentSummaryWidgetsProps = {
   customerYear?: number | null;
   /** Title for the customer share widget. */
   customersTitle?: string;
+  /** Optional basis note appended to month-total subtitles (e.g. "excl. VAT"). */
+  amountBasisLabel?: string | null;
   loading?: boolean;
   className?: string;
 };
@@ -128,6 +130,7 @@ export function FinanceDocumentSummaryWidgets({
   seriesMonths = null,
   customerYear = null,
   customersTitle = "Best paying customers",
+  amountBasisLabel = null,
   loading = false,
   className,
 }: FinanceDocumentSummaryWidgetsProps) {
@@ -171,13 +174,17 @@ export function FinanceDocumentSummaryWidgets({
       <SummaryMetricCard
         title="Total this month"
         amountCents={thisMonthCents}
-        subtitle={formatMonthTitle(thisMonthKey)}
+        subtitle={[formatMonthTitle(thisMonthKey), amountBasisLabel]
+          .filter(Boolean)
+          .join(" · ")}
         loading={loading}
       />
       <SummaryMetricCard
         title="Total last month"
         amountCents={lastMonthCents}
-        subtitle={formatMonthTitle(lastMonthKey)}
+        subtitle={[formatMonthTitle(lastMonthKey), amountBasisLabel]
+          .filter(Boolean)
+          .join(" · ")}
         loading={loading}
       />
       <section className="finance-doc-summary__customers">

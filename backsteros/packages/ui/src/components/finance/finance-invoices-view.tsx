@@ -18,6 +18,8 @@ import {
 import type { OrganizationListItem } from "../../navigation/entity-routes.js";
 import {
   filterFinanceInvoices,
+  invoiceAmountExclVat,
+  isBilledInvoiceState,
   type FinanceInvoiceFilterRow,
 } from "../../finance/filter-finance-invoices.js";
 import {
@@ -80,7 +82,7 @@ const INVOICE_COLUMN_HEADERS = [
   { id: "reference", label: "Reference" },
   { id: "date", label: "Invoice Date" },
   { id: "organization", label: "Organization" },
-  { id: "amount", label: "Amount", align: "end" as const },
+  { id: "amount", label: "Amount excl. VAT", align: "end" as const },
   { id: "status", label: "Status", align: "end" as const, showGap: false },
 ] as const;
 
@@ -478,22 +480,25 @@ export function FinanceInvoicesView({
   );
 
   const summaryLines = useMemo((): DocumentSummaryLine[] => {
-    return invoiceRows.map((invoice) => {
-      const linkedName = invoice.linkedOrganizationName?.trim() || null;
-      const contactName = invoice.contactName?.trim() || null;
-      const label = linkedName || contactName || "Unknown";
-      const key =
-        invoice.linkedOrganizationId?.trim() ||
-        invoice.contactId?.trim() ||
-        label.toLowerCase();
-      return {
-        id: invoice.id,
-        date: invoice.invoiceDate,
-        amountCents: parseMoneyAmountToCents(invoice.totalPriceInclTax),
-        customerKey: key,
-        customerLabel: label,
-      };
-    });
+    // Match Moneybird revenue series: billed states only, excl. VAT.
+    return invoiceRows
+      .filter((invoice) => isBilledInvoiceState(invoice.state))
+      .map((invoice) => {
+        const linkedName = invoice.linkedOrganizationName?.trim() || null;
+        const contactName = invoice.contactName?.trim() || null;
+        const label = linkedName || contactName || "Unknown";
+        const key =
+          invoice.linkedOrganizationId?.trim() ||
+          invoice.contactId?.trim() ||
+          label.toLowerCase();
+        return {
+          id: invoice.id,
+          date: invoice.invoiceDate,
+          amountCents: parseMoneyAmountToCents(invoiceAmountExclVat(invoice)),
+          customerKey: key,
+          customerLabel: label,
+        };
+      });
   }, [invoiceRows]);
 
   const listRef = useRef<HTMLUListElement>(null);
@@ -582,6 +587,7 @@ export function FinanceInvoicesView({
                     lines={summaryLines}
                     seriesMonths={revenueMonths}
                     customerYear={year}
+                    amountBasisLabel="excl. VAT"
                     loading={loading || revenueLoading}
                   />
                 }
@@ -827,7 +833,7 @@ export function FinanceInvoicesView({
                             <div className="finance-invoices-row__cell finance-invoices-row__cell--amount">
                               <span className="finance-tx-row__amount is-credit">
                                 {formatInvoiceAmount(
-                                  invoice.totalPriceInclTax,
+                                  invoiceAmountExclVat(invoice),
                                   invoice.currency,
                                 )}
                               </span>

@@ -7,6 +7,8 @@ import { DROPDOWN_NONE_VALUE } from "../components/dropdowns/dropdown-options.js
 import {
   buildMoneybirdInvoicesFilter,
   filterFinanceInvoices,
+  invoiceAmountExclVat,
+  isBilledInvoiceState,
 } from "./filter-finance-invoices.js";
 
 function invoice(
@@ -87,5 +89,26 @@ describe("buildMoneybirdInvoicesFilter", () => {
       buildMoneybirdInvoicesFilter(2026, [], { contactId: "99" }),
       "period:20260101..20261231,contact_id:99",
     );
+  });
+});
+
+describe("invoice excl. VAT helpers", () => {
+  it("prefers excl. VAT and recognizes billed states", () => {
+    assert.equal(
+      invoiceAmountExclVat(
+        invoice({ id: "1", totalPriceExclTax: "82.64", totalPriceInclTax: "100.00" }),
+      ),
+      "82.64",
+    );
+    assert.equal(
+      invoiceAmountExclVat(
+        invoice({ id: "2", totalPriceExclTax: null, totalPriceInclTax: "100.00" }),
+      ),
+      "100.00",
+    );
+    assert.equal(isBilledInvoiceState("open"), true);
+    assert.equal(isBilledInvoiceState("paid"), true);
+    assert.equal(isBilledInvoiceState("draft"), false);
+    assert.equal(isBilledInvoiceState("uncollectible"), false);
   });
 });
