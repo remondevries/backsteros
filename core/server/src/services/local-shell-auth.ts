@@ -12,6 +12,8 @@ export {
   getLocalShellToken,
   isLocalShellAuthEnabled,
   isLocalShellBearerToken,
+  isLocalShellTestEnvironment,
+  describeLocalShellTokenStatus,
 } from "./local-shell-auth-config.js";
 
 /**

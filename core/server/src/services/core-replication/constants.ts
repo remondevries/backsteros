@@ -77,6 +77,25 @@ export const REPLICATED_TABLES = [
 export type ReplicatedTable = (typeof REPLICATED_TABLES)[number];
 
 /**
+ * Cloud is the only writer of record for these tables; they flow cloud → local
+ * and never local → cloud. A compromised or mis-set local core must not be able
+ * to mint API keys, rewrite workspaces / agents, or inject integration secrets
+ * (incl. bunq credentials) into the cloud authority.
+ */
+export const CLOUD_TO_LOCAL_ONLY_TABLES = [
+  "api_keys",
+  "workspaces",
+  "agents",
+  "workspace_integration_secrets",
+] as const satisfies readonly ReplicatedTable[];
+
+export type CloudToLocalOnlyTable = (typeof CLOUD_TO_LOCAL_ONLY_TABLES)[number];
+
+export function isCloudToLocalOnlyTable(table: string): boolean {
+  return (CLOUD_TO_LOCAL_ONLY_TABLES as readonly string[]).includes(table);
+}
+
+/**
  * One-shot bootstrap copy (`replication:bootstrap`). Same ordered set as live
  * sync so foreign-key parents land before children.
  */

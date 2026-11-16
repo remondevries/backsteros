@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 
 import {
   DEFAULT_LOCAL_SHELL_TOKEN,
+  describeLocalShellTokenStatus,
   getLocalShellToken,
   isLocalShellAuthEnabled,
   isLocalShellBearerToken,
@@ -28,10 +29,26 @@ describe("local-shell-auth", () => {
     assert.equal(isLocalShellAuthEnabled({ LOCAL_SHELL_AUTH: "0" }), false);
   });
 
-  it("matches the default bearer token", () => {
-    assert.equal(getLocalShellToken({}), DEFAULT_LOCAL_SHELL_TOKEN);
-    assert.equal(isLocalShellBearerToken("local", {}), true);
-    assert.equal(isLocalShellBearerToken("nope", {}), false);
+  it("keeps a test-only default bearer token under test runners", () => {
+    const testEnv = { NODE_ENV: "test" };
+    assert.equal(getLocalShellToken(testEnv), DEFAULT_LOCAL_SHELL_TOKEN);
+    assert.equal(isLocalShellBearerToken("local", testEnv), true);
+    assert.equal(isLocalShellBearerToken("nope", testEnv), false);
+    assert.equal(
+      getLocalShellToken({ BACKSTEROS_INTEGRATION_TEST: "1" }),
+      DEFAULT_LOCAL_SHELL_TOKEN,
+    );
+  });
+
+  it("has NO default token outside tests: unset LOCAL_SHELL_TOKEN rejects 'local'", () => {
+    assert.equal(getLocalShellToken({}), null);
+    assert.equal(getLocalShellToken({ LOCAL_SHELL_TOKEN: "   " }), null);
+    assert.equal(isLocalShellBearerToken("local", {}), false);
+    assert.equal(isLocalShellBearerToken("", {}), false);
+    assert.match(describeLocalShellTokenStatus({}) ?? "", /LOCAL_SHELL_TOKEN is not set/);
+    assert.equal(describeLocalShellTokenStatus({ LOCAL_SHELL_TOKEN: "x" }), null);
+    assert.equal(describeLocalShellTokenStatus({ NODE_ENV: "test" }), null);
+    assert.equal(describeLocalShellTokenStatus({ LOCAL_SHELL_AUTH: "0" }), null);
   });
 
   it("respects LOCAL_SHELL_TOKEN", () => {

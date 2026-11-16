@@ -16,6 +16,10 @@ import { getCoreReplicationConfig } from "./config.js";
 import type { ReplicatedTable } from "./constants.js";
 import { REPLICATED_TABLES } from "./constants.js";
 import {
+  resolveReplicationRoleFromEnv,
+  shouldRefusePeerApplyOnCloud,
+} from "./direction-policy.js";
+import {
   buildBindPlaceholder,
   serializeBindValue,
 } from "./bind-values.js";
@@ -1103,6 +1107,11 @@ export async function applyReplicationRow(
 ): Promise<"applied" | "skipped"> {
   const config = getCoreReplicationConfig();
   const localRole = config?.role ?? "local";
+  // Cloud is authoritative for api_keys / workspaces / agents /
+  // workspace_integration_secrets: never take them from the local peer.
+  if (shouldRefusePeerApplyOnCloud(table, resolveReplicationRoleFromEnv())) {
+    return "skipped";
+  }
   const spec = getTableSpec(table);
   if (!spec) {
     return "skipped";

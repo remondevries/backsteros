@@ -5,6 +5,10 @@ import {
 } from "./config.js";
 import { applyRemoteChanges, applyReplicationRow } from "./apply.js";
 import {
+  shouldRefusePeerApplyOnCloud,
+  shouldSkipLocalToCloudPush,
+} from "./direction-policy.js";
+import {
   retryReplicationDeadLetters,
 } from "./dead-letters.js";
 import {
@@ -100,6 +104,8 @@ export async function pullTable(
 ) {
   const config = getCoreReplicationConfig();
   if (!config) return;
+  // Cloud never takes cloud-authoritative tables from the local peer.
+  if (shouldRefusePeerApplyOnCloud(table, config.role)) return;
 
   const getCursor = options?.getCursor ?? getReplicationCursor;
   const setCursor = options?.setCursor ?? setReplicationCursor;
@@ -204,6 +210,8 @@ export async function pushTable(
 ) {
   const config = getCoreReplicationConfig();
   if (!config) return;
+  // Cloud-authoritative tables never travel local → cloud.
+  if (shouldSkipLocalToCloudPush(table, config.role)) return;
 
   const getCursor = options?.getCursor ?? getReplicationCursor;
   const setCursor = options?.setCursor ?? setReplicationCursor;

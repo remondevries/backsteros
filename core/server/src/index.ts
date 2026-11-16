@@ -3,6 +3,7 @@ import { serve } from "@hono/node-server";
 import { createApp } from "./app.js";
 import { loadBacksterosR2Env } from "./lib/load-backsteros-r2-env.js";
 import { assertPowerSyncSecrets } from "./lib/secrets.js";
+import { describeLocalShellTokenStatus } from "./services/local-shell-auth-config.js";
 import {
   ensureVaultStructure,
   setVaultPathCache,
@@ -21,6 +22,11 @@ import { startSyncEventsRetentionPruner } from "./services/sync/sync-events-rete
 
 loadBacksterosR2Env();
 assertPowerSyncSecrets();
+
+const localShellTokenWarning = describeLocalShellTokenStatus();
+if (localShellTokenWarning) {
+  console.warn(`[auth] ${localShellTokenWarning}`);
+}
 
 const envVault = process.env.BACKSTEROS_VAULT_PATH?.trim();
 if (envVault) {

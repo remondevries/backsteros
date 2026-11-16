@@ -47,7 +47,7 @@ curl -X POST http://localhost:8788/api/v1/tasks \
 | Caller | Header |
 | --- | --- |
 | Agents / automation | `Authorization: Bearer sk_live_...` |
-| Desktop / mobile (local-core) | `Authorization: Bearer local` (or `LOCAL_SHELL_TOKEN`) |
+| Desktop / mobile (local-core) | `Authorization: Bearer <LOCAL_SHELL_TOKEN>` — required; there is no default token outside tests |
 
 ## Cursor spellcheck
 

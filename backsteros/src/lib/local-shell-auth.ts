@@ -7,8 +7,28 @@ import {
 } from "./env";
 import { isTauriRuntime } from "./tauri-runtime";
 
-/** Default matches core `LOCAL_SHELL_TOKEN` / `DEFAULT_LOCAL_SHELL_TOKEN`. */
+/**
+ * Test-only default (matches core's test default). Production desktop never
+ * falls back to this: set `VITE_LOCAL_SHELL_TOKEN` to the core's
+ * `LOCAL_SHELL_TOKEN`, or use an owner Access key.
+ */
 export const DEFAULT_LOCAL_SHELL_TOKEN = "local";
+
+function isTestRuntime(): boolean {
+  try {
+    if (import.meta.env?.MODE === "test") return true;
+  } catch {
+    // import.meta.env is absent in some test runners
+  }
+  const env =
+    typeof process !== "undefined" && process.env ? process.env : undefined;
+  return Boolean(
+    env &&
+      (env.NODE_TEST_CONTEXT !== undefined ||
+        env.VITEST !== undefined ||
+        env.NODE_ENV === "test"),
+  );
+}
 
 /**
  * SQLite filename key for the cloud PowerSync client.
@@ -42,14 +62,32 @@ function preferAccessOwnerKey(
   return primary ?? fallbackAccess;
 }
 
-function localShellBearerToken(): string {
+/** Pure resolution: configured token wins; the literal default is test-only. */
+export function resolveLocalShellBearerToken(input: {
+  configured?: string | null;
+  testRuntime: boolean;
+}): string | null {
+  const configured = input.configured?.trim();
+  if (configured) return configured;
+  return input.testRuntime ? DEFAULT_LOCAL_SHELL_TOKEN : null;
+}
+
+/** Configured local-shell bearer; no production default (test runners only). */
+export function localShellBearerToken(): string | null {
   try {
     const fromEnv = import.meta.env?.VITE_LOCAL_SHELL_TOKEN?.trim();
     if (fromEnv) return fromEnv;
   } catch {
     // import.meta.env is absent in some test runners
   }
-  return DEFAULT_LOCAL_SHELL_TOKEN;
+  const fromProcess =
+    typeof process !== "undefined"
+      ? process.env?.VITE_LOCAL_SHELL_TOKEN?.trim()
+      : undefined;
+  return resolveLocalShellBearerToken({
+    configured: fromProcess,
+    testRuntime: isTestRuntime(),
+  });
 }
 
 /**
@@ -78,8 +116,9 @@ export async function loadDesktopOwnerToken(): Promise<string | null> {
 /**
  * Bearer for the product `apiUrl`.
  *
- * Local-core (`:8788`) uses the shared local-shell token — loopback is the ACL,
- * and Infisical owner keys may be cloud-only or revoked on the replica.
+ * Local-core (`:8788`) uses the configured local-shell token
+ * (`VITE_LOCAL_SHELL_TOKEN`) — loopback is the ACL, and Infisical owner keys
+ * may be cloud-only or revoked on the replica.
  * Cloud / gateway URLs still require an owner Access key.
  */
 export async function loadDesktopProductToken(
@@ -89,7 +128,9 @@ export async function loadDesktopProductToken(
     apiUrl ?? getDesktopPublicEnvironment().apiUrl
   ).replace(/\/$/, "");
   if (isLocalDevApiUrl(url)) {
-    return localShellBearerToken();
+    // No VITE_LOCAL_SHELL_TOKEN → fall back to the owner Access key rather
+    // than guessing "local".
+    return localShellBearerToken() ?? loadDesktopOwnerToken();
   }
   return loadDesktopOwnerToken();
 }

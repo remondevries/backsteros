@@ -7,9 +7,40 @@ import {
   LOCAL_SHELL_USER_ID,
   createDesktopTokenProvider,
   loadDesktopProductToken,
+  resolveLocalShellBearerToken,
 } from "./local-shell-auth.ts";
 
 describe("desktop product auth", () => {
+  it("never invents 'local' outside test runners", async () => {
+    assert.equal(
+      resolveLocalShellBearerToken({ configured: undefined, testRuntime: false }),
+      null,
+    );
+    assert.equal(
+      resolveLocalShellBearerToken({ configured: "  ", testRuntime: false }),
+      null,
+    );
+    assert.equal(
+      resolveLocalShellBearerToken({ configured: "tok", testRuntime: false }),
+      "tok",
+    );
+    assert.equal(
+      resolveLocalShellBearerToken({ configured: undefined, testRuntime: true }),
+      DEFAULT_LOCAL_SHELL_TOKEN,
+    );
+    const saved = process.env.VITE_LOCAL_SHELL_TOKEN;
+    process.env.VITE_LOCAL_SHELL_TOKEN = "configured-token";
+    try {
+      assert.equal(
+        await loadDesktopProductToken("http://127.0.0.1:8788"),
+        "configured-token",
+      );
+    } finally {
+      if (saved === undefined) delete process.env.VITE_LOCAL_SHELL_TOKEN;
+      else process.env.VITE_LOCAL_SHELL_TOKEN = saved;
+    }
+  });
+
   it("uses local-shell bearer against local-core", async () => {
     const token = await loadDesktopProductToken("http://127.0.0.1:8788");
     assert.equal(token, DEFAULT_LOCAL_SHELL_TOKEN);
