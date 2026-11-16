@@ -20,6 +20,7 @@ import { getReplicationCursor, setReplicationCursor } from "./cursors.js";
 import {
   decidePullForPeerTip,
   peerTipHasChanges,
+  shouldAdvanceReplicationCursor,
 } from "./cursor-order.js";
 import { runReplicationReconcile } from "./reconcile.js";
 import { getChangesSince } from "./sync.js";
@@ -91,6 +92,8 @@ export async function pullTable(
     peerTip?: ReplicationCursor | null;
     /** Test hooks — production callers omit these. */
     getCursor?: typeof getReplicationCursor;
+    setCursor?: typeof setReplicationCursor;
+    applyFn?: typeof applyRemoteChanges;
     fetchFn?: typeof fetch;
     nowMs?: number;
   },
@@ -99,6 +102,8 @@ export async function pullTable(
   if (!config) return;
 
   const getCursor = options?.getCursor ?? getReplicationCursor;
+  const setCursor = options?.setCursor ?? setReplicationCursor;
+  const applyChanges = options?.applyFn ?? applyRemoteChanges;
   const fetchFn = options?.fetchFn ?? fetch;
 
   // Pull watermark is independent of push — advancing peer tip must not
@@ -150,15 +155,21 @@ export async function pullTable(
       }
       hadChanges = true;
 
-      const result = await applyRemoteChanges(table, payload.changes, {
+      const result = await applyChanges(table, payload.changes, {
         direction: "pull",
       });
-      // Always advance past the page — failed rows are dead-lettered for retry.
-      await setReplicationCursor(table, payload.cursor, "pull");
-      cursor = payload.cursor;
       appliedTotal += result.applied;
       skippedTotal += result.skipped;
       failedTotal += result.failed.length;
+      if (!shouldAdvanceReplicationCursor(result)) {
+        // Hold the cursor: failed rows are dead-lettered, but advancing past
+        // them would let a later page's cursor skip them for good if the
+        // dead-letter row is lost or never healed. The next tick re-fetches
+        // this page (applies are idempotent LWW upserts).
+        break;
+      }
+      await setCursor(table, payload.cursor, "pull");
+      cursor = payload.cursor;
 
       if (payload.changes.length < PAGE_SIZE) {
         break;
@@ -172,23 +183,39 @@ export async function pullTable(
 
   if (appliedTotal > 0 || skippedTotal > 0 || failedTotal > 0) {
     appendOpsLog(
-      "info",
+      failedTotal > 0 ? "warn" : "info",
       `core replication pull ${table}`,
-      `${appliedTotal} applied, ${skippedTotal} skipped, ${failedTotal} failed (${config.role})`,
+      `${appliedTotal} applied, ${skippedTotal} skipped, ${failedTotal} failed${
+        failedTotal > 0 ? " (cursor held)" : ""
+      } (${config.role})`,
     );
   }
 }
 
-export async function pushTable(table: ReplicatedTable) {
+export async function pushTable(
+  table: ReplicatedTable,
+  options?: {
+    /** Test hooks — production callers omit these. */
+    getCursor?: typeof getReplicationCursor;
+    setCursor?: typeof setReplicationCursor;
+    fetchLocal?: typeof fetchLocalChanges;
+    fetchFn?: typeof fetch;
+  },
+) {
   const config = getCoreReplicationConfig();
   if (!config) return;
 
-  let cursor = await getReplicationCursor(table, "push");
+  const getCursor = options?.getCursor ?? getReplicationCursor;
+  const setCursor = options?.setCursor ?? setReplicationCursor;
+  const fetchLocal = options?.fetchLocal ?? fetchLocalChanges;
+  const fetchFn = options?.fetchFn ?? fetch;
+
+  let cursor = await getCursor(table, "push");
   let pushed = 0;
   let failedTotal = 0;
 
   for (;;) {
-    const { changes, cursor: nextCursor } = await fetchLocalChanges(table, cursor);
+    const { changes, cursor: nextCursor } = await fetchLocal(table, cursor);
     if (changes.length === 0) {
       break;
     }
@@ -198,7 +225,7 @@ export async function pushTable(table: ReplicatedTable) {
     const timeout = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
 
     try {
-      const response = await fetch(
+      const response = await fetchFn(
         `${config.peerUrl}/internal/core-replication/apply`,
         {
           method: "POST",
@@ -214,12 +241,17 @@ export async function pushTable(table: ReplicatedTable) {
       }
 
       const result = (await response.json()) as ReplicationApplyResponse;
-      // Peer records dead letters for failed applies; we still advance so one
-      // bad row cannot block the rest of the page forever.
+      const peerFailed = Array.isArray(result.failed) ? result.failed.length : 0;
       pushed += changes.length;
-      failedTotal += Array.isArray(result.failed) ? result.failed.length : 0;
+      failedTotal += peerFailed;
+      if (peerFailed > 0) {
+        // Hold the push cursor when the peer failed rows: the peer dead-letters
+        // them, but we re-send this page next tick (idempotent) instead of
+        // skipping past rows that never landed.
+        break;
+      }
       cursor = nextCursor;
-      await setReplicationCursor(table, cursor, "push");
+      await setCursor(table, cursor, "push");
 
       if (changes.length < PAGE_SIZE) {
         break;
@@ -231,9 +263,11 @@ export async function pushTable(table: ReplicatedTable) {
 
   if (pushed > 0 || failedTotal > 0) {
     appendOpsLog(
-      "info",
+      failedTotal > 0 ? "warn" : "info",
       `core replication push ${table}`,
-      `${pushed} rows, ${failedTotal} peer-failed (${config.role})`,
+      `${pushed} rows, ${failedTotal} peer-failed${
+        failedTotal > 0 ? " (cursor held)" : ""
+      } (${config.role})`,
     );
   }
 }

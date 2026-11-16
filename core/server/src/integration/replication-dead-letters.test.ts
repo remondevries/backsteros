@@ -151,7 +151,9 @@ test("failed unique apply becomes a dead letter; cursor can still advance; retry
   assert.equal(letter.direction, "pull");
   assert.equal(letter.attempts, 1);
 
-  // Cursor still advances past the failed page tip (worker does this after apply).
+  // Round 4: the worker HOLDS the cursor while a page has failed rows (see
+  // worker-cursor-hold.test.ts). This test only checks that the cursor store
+  // round-trips once a later clean pass moves the watermark past the page tip.
   const advanced = {
     updatedAt: now,
     rowId: incomingProjectId,

@@ -169,3 +169,15 @@ export function decidePullForPeerTip(input: {
   if (input.deferEmptyPull) return "defer_backoff";
   return "poll";
 }
+
+/**
+ * Pull/push may only move the watermark past a page when every row in it
+ * applied (or was intentionally skipped). Any failed row holds the cursor so
+ * the next tick re-sends the page; dead letters record the failure but are not
+ * the only safety net.
+ */
+export function shouldAdvanceReplicationCursor(result: {
+  failed: readonly unknown[];
+}): boolean {
+  return result.failed.length === 0;
+}
