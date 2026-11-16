@@ -19,6 +19,10 @@ import { preserveApiKeySecret } from "./direction-policy.js";
 import { sanitizeAgentsRowForReplication } from "./agent-replication.js";
 import { sanitizeWorkspaceIntegrationSecretsRowForReplication } from "./integration-secrets-replication.js";
 import {
+  guardCloudApiKeyApplyFromLocal,
+  resolveCloudWorkspaceOwnerUserId,
+} from "./cloud-key-apply-guard.js";
+import {
   buildBindPlaceholder,
   serializeBindValue,
 } from "./bind-values.js";
@@ -951,6 +955,12 @@ async function applyApiKeyRow(
       updatedAt: apiKeys.updatedAt,
       keyHash: apiKeys.keyHash,
       secretCiphertext: apiKeys.secretCiphertext,
+      name: apiKeys.name,
+      scopes: apiKeys.scopes,
+      expiresAt: apiKeys.expiresAt,
+      revokedAt: apiKeys.revokedAt,
+      userId: apiKeys.userId,
+      contactId: apiKeys.contactId,
     })
     .from(apiKeys)
     .where(eq(apiKeys.id, String(sanitized.id)))
@@ -966,9 +976,53 @@ async function applyApiKeyRow(
     return "skipped";
   }
 
-  const expiresAt = sanitized.expires_at
+  const inboundExpiresAt = sanitized.expires_at
     ? new Date(String(sanitized.expires_at))
     : null;
+  const inboundRevokedAt = sanitized.revoked_at
+    ? new Date(String(sanitized.revoked_at))
+    : null;
+
+  // Cloud: existing keys from the Mac may only rename or newly revoke.
+  let nextName = String(sanitized.name);
+  let nextScopes = sanitized.scopes as string[];
+  let nextExpiresAt = inboundExpiresAt;
+  let nextRevokedAt = inboundRevokedAt;
+  let nextUserId = sanitized.user_id ? String(sanitized.user_id) : null;
+  let nextContactId = sanitized.contact_id ? String(sanitized.contact_id) : null;
+  if (localRole === "cloud" && existing) {
+    const guarded = guardCloudApiKeyApplyFromLocal(
+      {
+        name: existing.name,
+        scopes: existing.scopes,
+        expiresAt: existing.expiresAt,
+        revokedAt: existing.revokedAt,
+        userId: existing.userId,
+        contactId: existing.contactId,
+      },
+      {
+        name: nextName,
+        scopes: nextScopes,
+        expiresAt: inboundExpiresAt,
+        revokedAt: inboundRevokedAt,
+        userId: nextUserId,
+        contactId: nextContactId,
+      },
+    );
+    if (guarded.ignoredFields.length > 0) {
+      appendOpsLog(
+        "warn",
+        "core replication api_keys ignored local fields on cloud",
+        `${String(sanitized.id)}: ${guarded.ignoredFields.join(", ")}`,
+      );
+    }
+    nextName = guarded.name;
+    nextScopes = guarded.scopes as string[];
+    nextExpiresAt = guarded.expiresAt;
+    nextRevokedAt = guarded.revokedAt;
+    nextUserId = guarded.userId;
+    nextContactId = guarded.contactId;
+  }
 
   // Never overwrite stored secret material with empty / stripped / null
   // inbound values: a local peer strips key_hash + secret_ciphertext
@@ -994,32 +1048,32 @@ async function applyApiKeyRow(
     .values({
       id: String(sanitized.id),
       workspaceId: String(sanitized.workspace_id),
-      userId: sanitized.user_id ? String(sanitized.user_id) : null,
-      name: String(sanitized.name),
+      userId: nextUserId,
+      name: nextName,
       prefix: String(sanitized.prefix),
       keyHash,
       secretCiphertext,
-      scopes: sanitized.scopes as string[],
-      contactId: sanitized.contact_id ? String(sanitized.contact_id) : null,
-      expiresAt,
+      scopes: nextScopes,
+      contactId: nextContactId,
+      expiresAt: nextExpiresAt,
       // last_used_* stay core-local — do not twin usage from the peer.
       createdAt: new Date(String(sanitized.created_at)),
-      revokedAt: sanitized.revoked_at ? new Date(String(sanitized.revoked_at)) : null,
+      revokedAt: nextRevokedAt,
       updatedAt: remoteUpdatedAt,
     })
     .onConflictDoUpdate({
       target: apiKeys.id,
       set: {
         workspaceId: String(sanitized.workspace_id),
-        userId: sanitized.user_id ? String(sanitized.user_id) : null,
-        name: String(sanitized.name),
+        userId: nextUserId,
+        name: nextName,
         prefix: String(sanitized.prefix),
         keyHash,
         secretCiphertext,
-        scopes: sanitized.scopes as string[],
-        contactId: sanitized.contact_id ? String(sanitized.contact_id) : null,
-        expiresAt,
-        revokedAt: sanitized.revoked_at ? new Date(String(sanitized.revoked_at)) : null,
+        scopes: nextScopes,
+        contactId: nextContactId,
+        expiresAt: nextExpiresAt,
+        revokedAt: nextRevokedAt,
         updatedAt: remoteUpdatedAt,
       },
     });
@@ -1027,16 +1081,38 @@ async function applyApiKeyRow(
   return "applied";
 }
 
-async function applyWorkspaceRow(row: ReplicationRow): Promise<"applied" | "skipped"> {
+async function applyWorkspaceRow(
+  row: ReplicationRow,
+  localRole: CoreReplicationRole,
+): Promise<"applied" | "skipped"> {
   const remoteUpdatedAt = new Date(String(row.updated_at));
   const id = String(row.id);
   const [existing] = await db
-    .select({ updatedAt: workspaces.updatedAt })
+    .select({
+      updatedAt: workspaces.updatedAt,
+      ownerUserId: workspaces.ownerUserId,
+    })
     .from(workspaces)
     .where(eq(workspaces.id, id))
     .limit(1);
   if (existing && existing.updatedAt >= remoteUpdatedAt) {
     return "skipped";
+  }
+  const inboundOwner = row.owner_user_id ? String(row.owner_user_id) : null;
+  let ownerUserId = inboundOwner;
+  if (localRole === "cloud" && existing) {
+    const resolved = resolveCloudWorkspaceOwnerUserId(
+      existing.ownerUserId,
+      inboundOwner,
+    );
+    if (resolved.ignored) {
+      appendOpsLog(
+        "warn",
+        "core replication workspaces ignored local owner_user_id on cloud",
+        id,
+      );
+    }
+    ownerUserId = resolved.ownerUserId;
   }
   await db
     .insert(workspaces)
@@ -1044,7 +1120,7 @@ async function applyWorkspaceRow(row: ReplicationRow): Promise<"applied" | "skip
       id,
       name: String(row.name),
       slug: String(row.slug),
-      ownerUserId: row.owner_user_id ? String(row.owner_user_id) : null,
+      ownerUserId,
       createdAt: new Date(String(row.created_at)),
       updatedAt: remoteUpdatedAt,
     })
@@ -1053,7 +1129,7 @@ async function applyWorkspaceRow(row: ReplicationRow): Promise<"applied" | "skip
       set: {
         name: String(row.name),
         slug: String(row.slug),
-        ownerUserId: row.owner_user_id ? String(row.owner_user_id) : null,
+        ownerUserId,
         updatedAt: remoteUpdatedAt,
       },
     });
@@ -1140,7 +1216,7 @@ export async function applyReplicationRow(
 
   switch (table) {
     case "workspaces":
-      return applyWorkspaceRow(row);
+      return applyWorkspaceRow(row, localRole);
     case "workspace_settings":
       return applyWorkspaceSettingsRow(row, localRole);
     case "entity_counters":
