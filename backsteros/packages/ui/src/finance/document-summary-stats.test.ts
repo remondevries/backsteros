@@ -95,6 +95,11 @@ describe("document-summary-stats", () => {
     assert.equal(shares[1]?.label, "Beta");
     assert.equal(shares[2]?.label, "Cedar");
     assert.ok(shares.every((row) => row.key !== "__other__"));
-    assert.ok(Math.abs(shares.reduce((sum, row) => sum + row.share, 0) - 1) < 1e-9);
+    // Shares are of all customers (950), not of the top-3 slice (900).
+    assert.ok(Math.abs((shares[0]?.share ?? 0) - 500 / 950) < 1e-9);
+    assert.ok(
+      Math.abs(shares.reduce((sum, row) => sum + row.share, 0) - 900 / 950) <
+        1e-9,
+    );
   });
 });

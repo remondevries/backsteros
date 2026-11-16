@@ -65,6 +65,16 @@ describe("buildCashflowSpendYearSeries", () => {
     assert.equal(series.data[0]?.food, 4000);
     assert.equal(series.data[8]?.rent, 0);
     assert.equal(cashflowSpendYearChartHasData(series), true);
+
+    // Headline must equal the stacked bars (not the raw API ytdExpenseCents).
+    let barSumEuros = 0;
+    for (const row of series.data) {
+      if (row.isFutureMonth) continue;
+      for (const key of series.keys) {
+        barSumEuros += Number(row[key] ?? 0);
+      }
+    }
+    assert.equal(series.ytdExpenseCents, Math.round(barSumEuros * 100));
   });
 
   test("keeps later months visible when browsing an earlier asOf", () => {

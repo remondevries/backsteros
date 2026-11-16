@@ -1,13 +1,18 @@
-import { and, eq, gte, lt, ne, sql } from "drizzle-orm";
+import { and, eq, gte, isNull, lt, ne, or, sql } from "drizzle-orm";
 
 import { getBankAccountById, listBankAccounts } from "./catalog.js";
 import { db } from "../../../db/index.js";
-import { financialCategories, financialTransactions } from "../../../db/schema.js";
+import {
+  bankAccounts,
+  financialCategories,
+  financialTransactions,
+} from "../../../db/schema.js";
 import {
   balanceAffectingTransactionSql,
   cashflowCategoryLeftJoinOn,
   cashflowTransactionSql,
 } from "../cashflow-exclusion.js";
+import { priorYearAsOfExclusive } from "./prior-year-as-of.js";
 /**
  * Running balance per account via SQL SUM — avoids bootstrapping Tier C rows.
  */
@@ -373,6 +378,13 @@ function parseCalendarDate(value: string): Date | null {
   return date;
 }
 
+/**
+ * Income = credits in income-kind (or uncategorized) categories.
+ * Expense = gross debits in expense-kind (or uncategorized) categories.
+ * Expense-kind credits (reimbursements / mis-kinded income) are omitted from
+ * the income total and from this gross expense total; category bar series use
+ * per-category net + clamp instead.
+ */
 async function sumIncomeExpenseInRange(
   workspaceId: string,
   fromInclusive: string,
@@ -380,16 +392,27 @@ async function sumIncomeExpenseInRange(
 ): Promise<{ incomeCents: number; expenseCents: number; netCents: number }> {
   const [row] = await db
     .select({
-      incomeCents: sql<number>`coalesce(sum(case when ${financialTransactions.amountCents} > 0 then ${financialTransactions.amountCents} else 0 end), 0)::int`,
-      expenseCents: sql<number>`coalesce(sum(case when ${financialTransactions.amountCents} < 0 then -${financialTransactions.amountCents} else 0 end), 0)::int`,
+      incomeCents: sql<number>`coalesce(sum(case
+        when ${financialTransactions.amountCents} > 0
+          and (${financialCategories.id} is null or ${financialCategories.kind} = 'income')
+        then ${financialTransactions.amountCents} else 0 end), 0)::int`,
+      expenseCents: sql<number>`coalesce(sum(case
+        when ${financialTransactions.amountCents} < 0
+          and (${financialCategories.id} is null or ${financialCategories.kind} = 'expense')
+        then -${financialTransactions.amountCents} else 0 end), 0)::int`,
     })
     .from(financialTransactions)
     .leftJoin(financialCategories, cashflowCategoryLeftJoinOn())
+    .leftJoin(
+      bankAccounts,
+      eq(financialTransactions.bankAccountId, bankAccounts.id),
+    )
     .where(
       and(
         eq(financialTransactions.workspaceId, workspaceId),
         gte(financialTransactions.bookedOn, fromInclusive),
         lt(financialTransactions.bookedOn, toExclusive),
+        isNull(bankAccounts.deletedAt),
         cashflowTransactionSql(),
       ),
     );
@@ -449,16 +472,27 @@ export async function getWorkspaceCashflow(
   const rows = await db
     .select({
       month: sql<string>`to_char(${financialTransactions.bookedOn}, 'YYYY-MM')`,
-      incomeCents: sql<number>`coalesce(sum(case when ${financialTransactions.amountCents} > 0 then ${financialTransactions.amountCents} else 0 end), 0)::int`,
-      expenseCents: sql<number>`coalesce(sum(case when ${financialTransactions.amountCents} < 0 then -${financialTransactions.amountCents} else 0 end), 0)::int`,
+      incomeCents: sql<number>`coalesce(sum(case
+        when ${financialTransactions.amountCents} > 0
+          and (${financialCategories.id} is null or ${financialCategories.kind} = 'income')
+        then ${financialTransactions.amountCents} else 0 end), 0)::int`,
+      expenseCents: sql<number>`coalesce(sum(case
+        when ${financialTransactions.amountCents} < 0
+          and (${financialCategories.id} is null or ${financialCategories.kind} = 'expense')
+        then -${financialTransactions.amountCents} else 0 end), 0)::int`,
     })
     .from(financialTransactions)
     .leftJoin(financialCategories, cashflowCategoryLeftJoinOn())
+    .leftJoin(
+      bankAccounts,
+      eq(financialTransactions.bankAccountId, bankAccounts.id),
+    )
     .where(
       and(
         eq(financialTransactions.workspaceId, workspaceId),
         gte(financialTransactions.bookedOn, yearStart),
         lt(financialTransactions.bookedOn, yearEnd),
+        isNull(bankAccounts.deletedAt),
         cashflowTransactionSql(),
       ),
     )
@@ -487,7 +521,8 @@ export async function getWorkspaceCashflow(
     );
   });
 
-  // Per-category net spend (credits reduce): dinner + reimbursement → lower total.
+  // Per-category net spend for expense-kind (+ uncategorized) only.
+  // Income-kind categories are omitted so credits there cannot cancel spend bars.
   const categoryRows = await db
     .select({
       month: sql<string>`to_char(${financialTransactions.bookedOn}, 'YYYY-MM')`,
@@ -496,12 +531,21 @@ export async function getWorkspaceCashflow(
     })
     .from(financialTransactions)
     .leftJoin(financialCategories, cashflowCategoryLeftJoinOn())
+    .leftJoin(
+      bankAccounts,
+      eq(financialTransactions.bankAccountId, bankAccounts.id),
+    )
     .where(
       and(
         eq(financialTransactions.workspaceId, workspaceId),
         gte(financialTransactions.bookedOn, yearStart),
         lt(financialTransactions.bookedOn, yearEnd),
         ne(financialTransactions.amountCents, 0),
+        isNull(bankAccounts.deletedAt),
+        or(
+          isNull(financialCategories.id),
+          eq(financialCategories.kind, "expense"),
+        ),
         cashflowTransactionSql(),
       ),
     )
@@ -519,9 +563,7 @@ export async function getWorkspaceCashflow(
 
   const priorYear = year - 1;
   const priorStart = `${priorYear}-01-01`;
-  const priorAsOfExclusive = formatCalendarDate(
-    new Date(priorYear, asOfDate.getMonth(), asOfDate.getDate() + 1),
-  );
+  const priorAsOfExclusive = priorYearAsOfExclusive(asOfDate);
   const priorYtd = await sumIncomeExpenseInRange(
     workspaceId,
     priorStart,
@@ -593,19 +635,28 @@ export async function getFinanceSpendPanel(
     new Date(year, monthIndex0 + 1, 1),
   );
 
+  // Gross debits of expense-kind (+ uncategorized) for the header / history.
+  // Category list below uses per-category net clamped ≥ 0.
   const historyRows = await db
     .select({
       month: sql<string>`to_char(${financialTransactions.bookedOn}, 'YYYY-MM')`,
-      expenseCents: sql<number>`coalesce(sum(-${financialTransactions.amountCents}), 0)::int`,
+      expenseCents: sql<number>`coalesce(sum(case
+        when ${financialTransactions.amountCents} < 0
+          and (${financialCategories.id} is null or ${financialCategories.kind} = 'expense')
+        then -${financialTransactions.amountCents} else 0 end), 0)::int`,
     })
     .from(financialTransactions)
     .leftJoin(financialCategories, cashflowCategoryLeftJoinOn())
+    .leftJoin(
+      bankAccounts,
+      eq(financialTransactions.bankAccountId, bankAccounts.id),
+    )
     .where(
       and(
         eq(financialTransactions.workspaceId, workspaceId),
         gte(financialTransactions.bookedOn, `${historyStartKey}-01`),
         lt(financialTransactions.bookedOn, monthEndExclusive),
-        lt(financialTransactions.amountCents, 0),
+        isNull(bankAccounts.deletedAt),
         cashflowTransactionSql(),
       ),
     )
@@ -626,9 +677,7 @@ export async function getFinanceSpendPanel(
     });
   }
 
-  const monthExpenseCents = byMonth.get(month) ?? 0;
-
-  // Per-category net spend (credits reduce the category total).
+  // Per-category net spend for expense-kind only (credits reduce that category).
   const categoryRows = await db
     .select({
       categoryId: financialTransactions.categoryId,
@@ -636,19 +685,44 @@ export async function getFinanceSpendPanel(
     })
     .from(financialTransactions)
     .leftJoin(financialCategories, cashflowCategoryLeftJoinOn())
+    .leftJoin(
+      bankAccounts,
+      eq(financialTransactions.bankAccountId, bankAccounts.id),
+    )
     .where(
       and(
         eq(financialTransactions.workspaceId, workspaceId),
         gte(financialTransactions.bookedOn, `${month}-01`),
         lt(financialTransactions.bookedOn, monthEndExclusive),
         ne(financialTransactions.amountCents, 0),
+        isNull(bankAccounts.deletedAt),
+        or(
+          isNull(financialCategories.id),
+          eq(financialCategories.kind, "expense"),
+        ),
         cashflowTransactionSql(),
       ),
     )
     .groupBy(financialTransactions.categoryId);
 
+  // Clamp credits out of the spend list; header = sum of those rows.
+  const categories = categoryRows
+    .map((row) => ({
+      categoryId: row.categoryId ?? null,
+      expenseCents: Math.max(0, Number(row.expenseCents) || 0),
+    }))
+    .filter((row) => row.expenseCents > 0);
+  const monthExpenseCents = categories.reduce(
+    (sum, row) => sum + row.expenseCents,
+    0,
+  );
+  // Keep history bar for the selected month aligned with the reconciled header.
+  const historyAligned = history.map((row) =>
+    row.month === month ? { ...row, expenseCents: monthExpenseCents } : row,
+  );
+
   const yearSpend = new Map<number, number>();
-  for (const row of history) {
+  for (const row of historyAligned) {
     const y = Number(row.month.slice(0, 4));
     yearSpend.set(y, (yearSpend.get(y) ?? 0) + row.expenseCents);
   }
@@ -662,8 +736,13 @@ export async function getFinanceSpendPanel(
     .slice(0, 3)
     .map((y) => {
       const spendCents = yearSpend.get(y) ?? 0;
+      // Current year: completed months only (exclude in-progress month).
       const monthsElapsed =
-        y < year ? 12 : y > year ? 0 : Math.max(1, monthIndex0 + 1);
+        y < year
+          ? 12
+          : y > year
+            ? 0
+            : Math.max(1, monthIndex0 === 0 ? 1 : monthIndex0);
       const avgMonthlyCents =
         monthsElapsed > 0 ? Math.round(spendCents / monthsElapsed) : 0;
       return { year: y, spendCents, avgMonthlyCents };
@@ -672,11 +751,8 @@ export async function getFinanceSpendPanel(
   return {
     month,
     monthExpenseCents,
-    history,
+    history: historyAligned,
     yearMetrics,
-    categories: categoryRows.map((row) => ({
-      categoryId: row.categoryId ?? null,
-      expenseCents: Number(row.expenseCents) || 0,
-    })),
+    categories,
   };
 }

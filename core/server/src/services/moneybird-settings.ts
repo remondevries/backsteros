@@ -422,7 +422,10 @@ export async function getMoneybirdInvoiceRevenue(
       if (!BILLED_INVOICE_STATES.has(invoice.state)) continue;
       const month = monthKeyFromInvoiceDate(invoice.invoiceDate);
       if (!month || !month.startsWith(`${year}-`)) continue;
-      const cents = eurosToCents(invoice.totalPriceInclTax);
+      // Excl. VAT so the invoices chart compares to bank spend on a closer basis.
+      const cents = eurosToCents(
+        invoice.totalPriceExclTax ?? invoice.totalPriceInclTax,
+      );
       incomeByMonth.set(month, (incomeByMonth.get(month) ?? 0) + cents);
     }
     if (batch.length < perPage) break;

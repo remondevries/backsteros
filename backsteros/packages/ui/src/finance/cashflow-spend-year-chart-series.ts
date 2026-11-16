@@ -129,6 +129,13 @@ export function buildCashflowSpendYearSeries(input: {
     const isFuture = monthIndex + 1 > visibleThroughMonth;
     if (isFuture) continue;
 
+    // Income-kind categories never enter the spend stack (even if the API
+    // still returns them). Mis-kinded credit nets clamp to 0 below.
+    if (row.categoryId) {
+      const meta = byId.get(row.categoryId);
+      if (meta?.kind === "income") continue;
+    }
+
     const rootKey = resolveRootCategoryId(row.categoryId, byId);
     // Net-spend polarity from the API: only stack positive outflow.
     const euros = Math.max(0, row.expenseCents) / 100;
@@ -218,6 +225,15 @@ export function buildCashflowSpendYearSeries(input: {
     data.push(row);
   }
 
+  // Headline must match the stacked bars (regression: sum(bars) == headline).
+  let reconciledYtdEuros = 0;
+  for (const row of data) {
+    if (row.isFutureMonth) continue;
+    for (const key of keys) {
+      reconciledYtdEuros += Number(row[key] ?? 0);
+    }
+  }
+
   return {
     year: input.year,
     asOf: input.asOf,
@@ -225,7 +241,7 @@ export function buildCashflowSpendYearSeries(input: {
     keys,
     labels,
     colors,
-    ytdExpenseCents: input.ytdExpenseCents,
+    ytdExpenseCents: Math.round(reconciledYtdEuros * 100),
     priorYtdExpenseCents: input.priorYtdExpenseCents,
   };
 }

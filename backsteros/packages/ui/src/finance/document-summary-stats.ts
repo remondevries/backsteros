@@ -102,24 +102,24 @@ export function buildTopCustomerShares(
     }
   }
 
-  const top = [...totals.entries()]
+  const ranked = [...totals.entries()]
     .map(([key, value]) => ({ key, ...value }))
     .sort(
       (a, b) =>
         b.amountCents - a.amountCents || a.label.localeCompare(b.label),
-    )
-    .slice(0, limit);
+    );
 
-  if (top.length === 0) return [];
+  if (ranked.length === 0) return [];
 
-  const total = top.reduce((sum, row) => sum + row.amountCents, 0);
-  if (total <= 0) return [];
+  // Share of all customers in scope (not of the top-N slice alone).
+  const totalAll = ranked.reduce((sum, row) => sum + row.amountCents, 0);
+  if (totalAll <= 0) return [];
 
-  return top.map((row, index) => ({
+  return ranked.slice(0, limit).map((row, index) => ({
     key: row.key,
     label: row.label,
     amountCents: row.amountCents,
-    share: row.amountCents / total,
+    share: row.amountCents / totalAll,
     color: CUSTOMER_SHARE_COLORS[index % CUSTOMER_SHARE_COLORS.length]!,
   }));
 }

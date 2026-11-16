@@ -28,7 +28,11 @@ function financeLocalMonthKey(date = new Date()): string {
   return `${year}-${month}`;
 }
 
-/** Moneybird billed income + combined bank-account expenses for the invoices chart. */
+/**
+ * Moneybird billed income (excl. VAT when available) + workspace bank-account
+ * expenses for the invoices chart. Expenses currently include all live accounts
+ * (personal + business + cards); narrowing needs an explicit Remon decision.
+ */
 export function mergeInvoiceRevenueWithAccountExpenses(
   revenueMonths: BankAccountCashflowMonth[],
   accountMonths: BankAccountCashflowMonth[] | undefined,

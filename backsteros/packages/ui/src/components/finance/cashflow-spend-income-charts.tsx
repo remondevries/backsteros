@@ -206,7 +206,7 @@ export function CashflowSpendYearChart({
       <CashflowChartSummary
         year={year}
         asOf={asOf}
-        ytdCents={ytdExpenseCents}
+        ytdCents={series.ytdExpenseCents}
         priorYtdCents={priorYtdExpenseCents}
         loading={loading}
         sense="spend"

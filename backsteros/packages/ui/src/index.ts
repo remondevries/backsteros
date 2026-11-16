@@ -2636,6 +2636,18 @@ export {
 } from "./finance/category-net-spend.js";
 
 export {
+  buildTopCategoriesSpend,
+  topCategoriesSpendTotalCents,
+  type TopCategorySpendRow,
+} from "./finance/top-categories-spend.js";
+
+export {
+  averageMonthlyDenominator,
+  continuousMonthWindow,
+  zeroFillMonthSpend,
+} from "./finance/metrics-month-window.js";
+
+export {
   applyShiftRangeSelection,
   useKeyHeld,
 } from "./list-nav/shift-range-selection.js";

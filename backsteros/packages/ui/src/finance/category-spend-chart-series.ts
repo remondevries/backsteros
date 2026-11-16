@@ -5,6 +5,7 @@ import type {
 import { isBalanceAffectingFinancialSettlement } from "@backsteros/contracts";
 
 import { ENTITY_ICON_COLOR_PRESETS } from "../entity/entity-icon.js";
+import { continuousMonthWindow } from "./metrics-month-window.js";
 
 /** Stable key for spend booked directly on the parent (not a subcategory). */
 export const CATEGORY_SPEND_DIRECT_KEY = "__direct__";
@@ -186,7 +187,12 @@ export function buildCategorySpendBarSeries(input: {
               fromTx.add(tx.bookedOn.slice(0, 7));
             }
           }
-          return [...fromTx].sort().slice(-12);
+          const sorted = [...fromTx].sort();
+          const end =
+            sorted.at(-1) ??
+            `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, "0")}`;
+          // Continuous calendar window (zero-filled later via empty buckets).
+          return continuousMonthWindow(end, 12);
         })();
 
   const totals = new Map<string, Map<string, number>>();

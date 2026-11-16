@@ -71,6 +71,10 @@ import {
   categoryNetSpendDisplayCents,
   categoryNetSpendSign,
 } from "../../finance/category-net-spend.js";
+import {
+  buildTopCategoriesSpend,
+  topCategoriesSpendTotalCents,
+} from "../../finance/top-categories-spend.js";
 import { upcomingMonthlyPaymentDate } from "../../finance/recurring-next-date.js";
 
 const REVIEW_TRANSACTIONS_LIMIT = 10;
@@ -441,84 +445,6 @@ function NetThisMonthPanel({
   );
 }
 
-function sortCategories(rows: FinancialCategory[]): FinancialCategory[] {
-  return [...rows].sort(
-    (a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name),
-  );
-}
-
-/**
- * Builds the categories list in the same main → subcategory layout order
- * as Finance → Categories (Regular group), not ranked by spend.
- * Parent amounts roll up child net spend; empty branches are omitted.
- * `spentCents` is net-spend polarity (positive = outflow, negative = inflow).
- */
-function buildTopCategories(
-  categories: FinancialCategory[],
-  spentCentsByCategoryId: Record<string, number>,
-): FinanceDashboardTopCategory[] {
-  const byId = new Map(categories.map((category) => [category.id, category]));
-  const childrenByParent = new Map<string, FinancialCategory[]>();
-  const roots: FinancialCategory[] = [];
-
-  for (const category of categories) {
-    if (category.listing === "excluded" || category.kind === "transfer") continue;
-    if (category.parentId && byId.has(category.parentId)) {
-      const parent = byId.get(category.parentId);
-      if (
-        !parent ||
-        parent.listing === "excluded" ||
-        parent.kind === "transfer"
-      ) {
-        continue;
-      }
-      const list = childrenByParent.get(category.parentId) ?? [];
-      list.push(category);
-      childrenByParent.set(category.parentId, list);
-    } else if (!category.parentId) {
-      roots.push(category);
-    }
-  }
-
-  const rows: FinanceDashboardTopCategory[] = [];
-
-  for (const root of sortCategories(roots)) {
-    const children = sortCategories(childrenByParent.get(root.id) ?? []);
-    const childSpend = children.map((child) => ({
-      child,
-      spentCents: spentCentsByCategoryId[child.id] ?? 0,
-    }));
-    const childrenWithSpend = childSpend.filter(
-      (row) => row.spentCents !== 0,
-    );
-    const ownSpend = spentCentsByCategoryId[root.id] ?? 0;
-    const rolledSpend =
-      ownSpend +
-      childrenWithSpend.reduce((sum, row) => sum + row.spentCents, 0);
-
-    if (rolledSpend === 0) continue;
-
-    rows.push({
-      id: root.id,
-      name: root.name,
-      icon: root.icon,
-      spentCents: rolledSpend,
-      depth: 0,
-    });
-    for (const { child, spentCents } of childrenWithSpend) {
-      rows.push({
-        id: child.id,
-        name: child.name,
-        icon: child.icon,
-        spentCents,
-        depth: 1,
-      });
-    }
-  }
-
-  return rows;
-}
-
 type TopCategoryGroup = {
   parent: FinanceDashboardTopCategory;
   children: FinanceDashboardTopCategory[];
@@ -783,7 +709,7 @@ export function FinanceDashboardView({
   };
 
   const topCategories = useMemo(
-    () => buildTopCategories(categories, spentCentsByCategoryId),
+    () => buildTopCategoriesSpend(categories, spentCentsByCategoryId),
     [categories, spentCentsByCategoryId],
   );
   const topCategoryGroups = useMemo(
@@ -800,10 +726,7 @@ export function FinanceDashboardView({
     [resolvedChartMonth],
   );
   const topCategoriesTotal = useMemo(
-    () =>
-      topCategories
-        .filter((row) => row.depth === 0)
-        .reduce((sum, row) => sum + categoryNetSpendAbsCents(row.spentCents), 0),
+    () => topCategoriesSpendTotalCents(topCategories),
     [topCategories],
   );
   const activeGoals = useMemo(

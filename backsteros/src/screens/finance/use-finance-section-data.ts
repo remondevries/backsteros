@@ -7,7 +7,9 @@ import type {
 } from "@backsteros/contracts";
 import { isBalanceAffectingFinancialSettlement } from "@backsteros/contracts";
 import {
+  averageMonthlyDenominator,
   previousMonthKey,
+  zeroFillMonthSpend,
   type FinanceAccountMetrics,
   type FinanceAccountsChromeState,
   type FinanceCategoriesChromeState,
@@ -148,6 +150,9 @@ export function useFinanceSectionData({
         }>(`/api/v1/transactions?${params}`);
         for (const tx of body.transactions) {
           if (!tx.categoryId || tx.amountCents === 0) continue;
+          if (!isBalanceAffectingFinancialSettlement(tx.settlementState)) {
+            continue;
+          }
           spent[tx.categoryId] =
             (spent[tx.categoryId] ?? 0) + -tx.amountCents;
         }
@@ -308,6 +313,9 @@ export function useFinanceSectionData({
         }>(`/api/v1/transactions?${params}`);
         for (const tx of body.transactions) {
           allTransactions.push(tx);
+          if (!isBalanceAffectingFinancialSettlement(tx.settlementState)) {
+            continue;
+          }
           const bookedOn = tx.bookedOn;
           if (!bookedOn || !/^\d{4}-\d{2}/.test(bookedOn)) continue;
           const key = bookedOn.slice(0, 7);
@@ -321,28 +329,29 @@ export function useFinanceSectionData({
       );
 
       const now = new Date();
-      const currentYear = now.getFullYear();
-      const currentMonth = now.getMonth() + 1;
-
       const yearTotals = new Map<number, number>();
       for (const [key, cents] of monthTotals) {
         const year = Number(key.slice(0, 4));
         yearTotals.set(year, (yearTotals.get(year) ?? 0) + cents);
       }
+      const monthKeys = [...monthTotals.keys()];
       const years = [...yearTotals.entries()]
         .sort((a, b) => b[0] - a[0])
         .map(([year, cents]) => {
-          const elapsedMonths =
-            year < currentYear ? 12 : year === currentYear ? currentMonth : 12;
+          const elapsedMonths = averageMonthlyDenominator({
+            year,
+            monthKeysWithData: monthKeys,
+            now,
+          });
           const avgMonthlyCents =
             elapsedMonths > 0 ? Math.round(cents / elapsedMonths) : 0;
           return { year, spentCents: cents, avgMonthlyCents };
         });
 
-      const months = [...monthTotals.entries()]
-        .sort((a, b) => (a[0] < b[0] ? -1 : 1))
-        .slice(-12)
-        .map(([month, cents]) => ({ month, spentCents: cents }));
+      const endMonth =
+        monthKeys.sort().at(-1) ??
+        `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+      const months = zeroFillMonthSpend(endMonth, monthTotals, 12);
 
       return { categoryId, months, years, transactions: allTransactions };
     },
@@ -591,15 +600,23 @@ export function useFinanceSectionData({
     setGoalTransactionsLoading(true);
     void (async () => {
       try {
-        const params = new URLSearchParams({
-          goalId: selectedGoalId,
-          limit: "500",
-        });
-        const body = await client.requestJson<{
-          transactions: FinancialTransaction[];
-        }>(`/api/v1/transactions?${params}`);
+        const all: FinancialTransaction[] = [];
+        let cursor: string | null = null;
+        do {
+          const params = new URLSearchParams({
+            goalId: selectedGoalId,
+            limit: "500",
+          });
+          if (cursor) params.set("cursor", cursor);
+          const body = await client.requestJson<{
+            transactions: FinancialTransaction[];
+            nextCursor: string | null;
+          }>(`/api/v1/transactions?${params}`);
+          all.push(...body.transactions);
+          cursor = body.nextCursor;
+        } while (cursor);
         if (!cancelled) {
-          setGoalTransactions(body.transactions);
+          setGoalTransactions(all);
         }
       } catch {
         if (!cancelled) setGoalTransactions([]);
@@ -629,6 +646,9 @@ export function useFinanceSectionData({
         }>(`/api/v1/transactions?${params}`);
         for (const tx of body.transactions) {
           allTransactions.push(tx);
+          if (!isBalanceAffectingFinancialSettlement(tx.settlementState)) {
+            continue;
+          }
           const bookedOn = tx.bookedOn;
           if (!bookedOn || !/^\d{4}-\d{2}/.test(bookedOn)) continue;
           const key = bookedOn.slice(0, 7);
@@ -642,18 +662,20 @@ export function useFinanceSectionData({
       );
 
       const now = new Date();
-      const currentYear = now.getFullYear();
-      const currentMonth = now.getMonth() + 1;
       const yearTotals = new Map<number, number>();
       for (const [key, cents] of monthTotals) {
         const year = Number(key.slice(0, 4));
         yearTotals.set(year, (yearTotals.get(year) ?? 0) + cents);
       }
+      const monthKeys = [...monthTotals.keys()];
       const years = [...yearTotals.entries()]
         .sort((a, b) => b[0] - a[0])
         .map(([year, cents]) => {
-          const elapsedMonths =
-            year < currentYear ? 12 : year === currentYear ? currentMonth : 12;
+          const elapsedMonths = averageMonthlyDenominator({
+            year,
+            monthKeysWithData: monthKeys,
+            now,
+          });
           const avgMonthlyCents =
             elapsedMonths > 0 ? Math.round(cents / elapsedMonths) : 0;
           return { year, spentCents: cents, avgMonthlyCents };
