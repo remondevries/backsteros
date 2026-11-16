@@ -21,5 +21,6 @@ test("brandfetchApiKeyFromEnv is null when unset", () => {
 
 test("previewBrandfetchApiKey masks like other integration secrets", () => {
   const preview = previewBrandfetchApiKey("abcdefghijklmnopqrstuvwxyz");
-  assert.equal(preview, "abcdefghijklmnopqrs•••••••");
+  assert.equal(preview, "••••…wxyz");
+  assert.equal(preview.includes("abcdefghijklmnopqrs"), false);
 });
