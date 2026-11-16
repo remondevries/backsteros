@@ -441,7 +441,8 @@ const OUTSTANDING_MAX_PAGES = 50;
 
 /**
  * Outstanding receivables (unpaid sales invoices) and payables (unpaid
- * purchase invoices) in EUR, summed from Moneybird `total_unpaid_base`.
+ * purchase invoices) in EUR. Sales use `total_unpaid_base`; purchase invoices
+ * have no unpaid fields, so outstanding = incl-VAT base total − payments.
  * All periods are included. Payables degrade to `null` + error text when the
  * purchase-invoice endpoint is unavailable; they are never estimated from
  * bank spend.

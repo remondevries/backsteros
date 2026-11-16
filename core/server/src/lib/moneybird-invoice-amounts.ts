@@ -26,10 +26,19 @@ export const RECEIVABLE_INVOICE_STATES = new Set([
 ]);
 
 /**
- * Purchase invoice states that still owe money to a supplier. Kept to the
- * documented `open|late` pair so the Moneybird filter cannot be rejected.
+ * Purchase invoice states that still owe money to a supplier. `new` (booked,
+ * not yet paid) and `pending_payment` (payment initiated, not yet matched) are
+ * included alongside `open|late`.
  */
-export const PAYABLE_INVOICE_STATES = new Set(["open", "late"]);
+export const PAYABLE_INVOICE_STATES = new Set([
+  "new",
+  "open",
+  "pending_payment",
+  "late",
+]);
+
+/** States whose outstanding amount counts as overdue. */
+export const OVERDUE_INVOICE_STATES = new Set(["late", "reminded"]);
 
 /** Moneybird `filter` values (all periods) for the outstanding queries. */
 export const RECEIVABLES_FILTER = `state:${[...RECEIVABLE_INVOICE_STATES].join("|")}`;
@@ -60,6 +69,10 @@ type InvoiceAmounts = {
   totalPriceInclTaxBase?: string | null;
   totalUnpaid?: string | null;
   totalUnpaidBase?: string | null;
+  payments?: ReadonlyArray<{
+    price: string | null;
+    priceBase: string | null;
+  }> | null;
 };
 
 /**
@@ -102,8 +115,48 @@ export function invoiceUnpaidBaseCents(invoice: InvoiceAmounts): number | null {
 }
 
 /**
- * Sum unpaid EUR amounts for documents in `states`. Documents with no
- * determinable EUR unpaid figure are skipped (never face-as-EUR).
+ * Sum of payments in EUR cents: `price_base`, or the face `price` only when
+ * the document is in EUR. `null` when any payment has no trustworthy EUR
+ * figure (never face-as-EUR).
+ */
+export function invoicePaymentsBaseCents(invoice: InvoiceAmounts): number | null {
+  const euro = isEuroOrUnspecifiedCurrency(invoice.currency);
+  let total = 0;
+  for (const payment of invoice.payments ?? []) {
+    const cents =
+      amountToCents(payment.priceBase) ??
+      (euro ? amountToCents(payment.price) : null);
+    if (cents == null) return null;
+    total += cents;
+  }
+  return total;
+}
+
+/**
+ * Outstanding EUR cents for one document. Uses `total_unpaid_base` when
+ * Moneybird provides it (sales invoices). Purchase invoices carry no unpaid
+ * fields, so it is derived: incl-VAT base total (excl as a last resort) minus
+ * the sum of `payments[].price_base`. `null` when no EUR figure can be
+ * determined.
+ */
+export function invoiceOutstandingBaseCents(
+  invoice: InvoiceAmounts,
+): number | null {
+  const unpaid = invoiceUnpaidBaseCents(invoice);
+  if (unpaid != null) return unpaid;
+  const total =
+    invoiceBaseTotalCents(invoice, "incl") ??
+    invoiceBaseTotalCents(invoice, "excl");
+  if (total == null) return null;
+  const paid = invoicePaymentsBaseCents(invoice);
+  if (paid == null) return null;
+  return total - paid;
+}
+
+/**
+ * Sum outstanding EUR amounts for documents in `states` (see
+ * invoiceOutstandingBaseCents). Documents with no determinable EUR figure are
+ * skipped (never face-as-EUR). `late` and `reminded` count as overdue.
  */
 export function sumOutstandingBase(
   invoices: ReadonlyArray<
@@ -117,11 +170,11 @@ export function sumOutstandingBase(
   let count = 0;
   for (const invoice of invoices) {
     if (!states.has(invoice.state)) continue;
-    const cents = invoiceUnpaidBaseCents(invoice);
+    const cents = invoiceOutstandingBaseCents(invoice);
     if (cents == null || cents <= 0) continue;
     totalCents += cents;
     count += 1;
-    if (invoice.state === "late") overdueCents += cents;
+    if (OVERDUE_INVOICE_STATES.has(invoice.state)) overdueCents += cents;
   }
   return { totalCents, overdueCents, count };
 }

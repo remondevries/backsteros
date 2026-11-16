@@ -111,8 +111,12 @@ describe("moneybird-client mappers", () => {
       total_price_excl_tax_base: "90.5",
       total_unpaid: 110,
       total_unpaid_base: 99.25,
+      payments: [{ id: 5, payment_date: "2026-04-10", price: 10, price_base: 9.5 }],
       contact: { id: "3", company_name: "Hosting Inc" },
     });
+    assert.deepEqual(mapped.payments, [
+      { id: "5", paymentDate: "2026-04-10", price: "10", priceBase: "9.5" },
+    ]);
     assert.equal(mapped.id, "77");
     assert.equal(mapped.contactName, "Hosting Inc");
     assert.equal(mapped.contactId, "3");

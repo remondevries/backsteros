@@ -59,8 +59,11 @@ export type MoneybirdPurchaseInvoice = {
   totalPriceExclTax: string | null;
   totalPriceInclTaxBase: string | null;
   totalPriceExclTaxBase: string | null;
+  /** Moneybird omits unpaid fields on purchase invoices — usually null. */
   totalUnpaid: string | null;
   totalUnpaidBase: string | null;
+  /** Used to derive outstanding = total − payments when unpaid is absent. */
+  payments: MoneybirdInvoicePayment[];
   contactId: string | null;
   contactName: string | null;
 };
@@ -300,6 +303,7 @@ export function mapMoneybirdPurchaseInvoice(
     totalPriceExclTaxBase: asMoneyAmount(raw.total_price_excl_tax_base),
     totalUnpaid: asMoneyAmount(raw.total_unpaid),
     totalUnpaidBase: asMoneyAmount(raw.total_unpaid_base),
+    payments: mapMoneybirdInvoicePayments(raw.payments),
     contactId: asStringId(raw.contact_id) ?? asStringId(contact?.id),
     contactName,
   };
@@ -692,7 +696,8 @@ export class MoneybirdClient {
 
   /**
    * Purchase invoices (payables) from `documents/purchase_invoices`.
-   * Use `filter: "state:open|late"` to list unpaid ones across all periods.
+   * Use `filter: PAYABLES_FILTER` (new|open|pending_payment|late) to list
+   * unpaid ones across all periods.
    */
   async listPurchaseInvoices(options?: {
     page?: number;
