@@ -3,16 +3,15 @@
  * rows from before bunq_* stopped replicating; this clears them.
  *
  * Callable (and invoked by scripts/clear-local-bunq-secrets.ts, dry-run by
- * default). Refuses on a cloud core. Never run against the live local DB
- * implicitly — Remon invokes the script deliberately.
+ * default). Refuses unless POSITIVELY local: CORE_REPLICATION_ROLE=local set
+ * explicitly and DATABASE_URL on a loopback host. Never run against the live
+ * local DB implicitly — Remon invokes the script deliberately.
  */
 
 import { eq, sql } from "drizzle-orm";
 
 import { db } from "../db/index.js";
 import { workspaceIntegrationSecrets } from "../db/schema.js";
-import { resolveReplicationRoleFromEnv } from "./core-replication/direction-policy.js";
-
 /** Every bunq credential / session column nulled by the clear. */
 export const LOCAL_BUNQ_CLEAR_PATCH = {
   bunqApiKey: null,
@@ -28,12 +27,50 @@ export const LOCAL_BUNQ_CLEAR_PATCH = {
 } as const;
 
 export class LocalBunqSecretsRefusedError extends Error {
-  constructor() {
-    super(
-      "clearLocalBunqSecrets refused: CORE_REPLICATION_ROLE=cloud (cloud-core holds the bunq credentials)",
-    );
+  constructor(
+    reason: string = "CORE_REPLICATION_ROLE=cloud (cloud-core holds the bunq credentials)",
+  ) {
+    super(`clearLocalBunqSecrets refused: ${reason}`);
     this.name = "LocalBunqSecretsRefusedError";
   }
+}
+
+const LOOPBACK_DB_HOSTS = new Set(["127.0.0.1", "localhost", "::1", "[::1]"]);
+
+/** Host of DATABASE_URL, or null when absent / unparseable. */
+export function databaseHostFromEnv(env: NodeJS.ProcessEnv): string | null {
+  const raw = env.DATABASE_URL?.trim();
+  if (!raw) return null;
+  try {
+    const host = new URL(raw).hostname.trim().toLowerCase();
+    return host || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Positive local verification. Returns a refusal reason, or null when the
+ * environment is provably a local core: `CORE_REPLICATION_ROLE=local` set
+ * explicitly (unset is NOT enough) AND `DATABASE_URL` on a loopback host.
+ */
+export function localBunqClearRefusalReason(
+  env: NodeJS.ProcessEnv,
+): string | null {
+  const role = env.CORE_REPLICATION_ROLE?.trim().toLowerCase();
+  if (role !== "local") {
+    return role === "cloud"
+      ? "CORE_REPLICATION_ROLE=cloud (cloud-core holds the bunq credentials)"
+      : "CORE_REPLICATION_ROLE must be explicitly 'local' (unset is not enough)";
+  }
+  const host = databaseHostFromEnv(env);
+  if (!host) {
+    return "DATABASE_URL is missing or unparseable; cannot verify a loopback database";
+  }
+  if (!LOOPBACK_DB_HOSTS.has(host)) {
+    return `DATABASE_URL host '${host}' is not loopback (127.0.0.1/localhost)`;
+  }
+  return null;
 }
 
 export type ClearLocalBunqSecretsDeps = {
@@ -83,15 +120,17 @@ async function defaultClearRows(workspaceId: string | null): Promise<number> {
 
 /**
  * Null bunq_* secrets on a LOCAL core. `dryRun: true` only counts.
- * Throws LocalBunqSecretsRefusedError on a cloud core.
+ * Throws LocalBunqSecretsRefusedError unless the env is positively local
+ * (applies to dry-run too).
  */
 export async function clearLocalBunqSecrets(
   options: { workspaceId?: string | null; dryRun?: boolean } = {},
   deps: ClearLocalBunqSecretsDeps = {},
 ): Promise<{ dryRun: boolean; affectedRows: number }> {
   const env = deps.env ?? process.env;
-  if (resolveReplicationRoleFromEnv(env) === "cloud") {
-    throw new LocalBunqSecretsRefusedError();
+  const refusal = localBunqClearRefusalReason(env);
+  if (refusal) {
+    throw new LocalBunqSecretsRefusedError(refusal);
   }
   const workspaceId = options.workspaceId ?? null;
   const dryRun = options.dryRun ?? true;

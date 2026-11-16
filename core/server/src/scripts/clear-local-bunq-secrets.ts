@@ -4,7 +4,8 @@
  *   pnpm exec tsx --env-file=<local env> src/scripts/clear-local-bunq-secrets.ts
  *     → dry-run: prints how many rows still hold bunq credentials.
  *   ... --apply
- *     → nulls them. Refused when CORE_REPLICATION_ROLE=cloud.
+ *     → nulls them. Refused unless CORE_REPLICATION_ROLE=local is set
+ *       explicitly AND DATABASE_URL points at a loopback host.
  *
  * Destructive: only run against the local DB you intend to scrub.
  */

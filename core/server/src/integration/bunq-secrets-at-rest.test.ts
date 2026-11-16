@@ -104,9 +104,18 @@ test("H2: bunq secrets are encrypted at rest, stripped from replication, and cle
   );
 
   // clearLocalBunqSecrets: dry-run counts, apply nulls.
-  const dry = await clearLocalBunqSecrets({ workspaceId });
+  // The guard needs a positively-local env (role=local + loopback DB); the
+  // test DB is Docker Postgres on loopback, so assert that explicitly.
+  const localEnv = {
+    CORE_REPLICATION_ROLE: "local",
+    DATABASE_URL: "postgresql://backsteros@127.0.0.1:5433/backsteros_test",
+  } as NodeJS.ProcessEnv;
+  const dry = await clearLocalBunqSecrets({ workspaceId }, { env: localEnv });
   assert.deepEqual(dry, { dryRun: true, affectedRows: 1 });
-  const applied = await clearLocalBunqSecrets({ workspaceId, dryRun: false });
+  const applied = await clearLocalBunqSecrets(
+    { workspaceId, dryRun: false },
+    { env: localEnv },
+  );
   assert.deepEqual(applied, { dryRun: false, affectedRows: 1 });
   const [cleared] = await db
     .select()
