@@ -874,7 +874,11 @@ test("C1: agent card is rebuilt from DB; answer needs approverCode and the linke
     },
   );
   const message = posted.message;
-  assert.equal(message.approval?.summary, "Pay 9.99 EUR to Ada Lovelace");
+  // Summary is rebuilt from the DB row (sim banner may prefix when simulation is on).
+  assert.match(
+    message.approval?.summary ?? "",
+    /Pay 9\.99 EUR to Ada Lovelace$/,
+  );
   assert.equal(
     message.approval?.fields?.find((f) => f.label === "IBAN")?.value,
     "NL91ABNA0417164300",
