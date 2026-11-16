@@ -2,7 +2,11 @@ import assert from "node:assert/strict";
 import { afterEach, beforeEach, describe, it } from "node:test";
 
 import type { ReplicatedTable } from "./constants.js";
-import { shouldAdvanceReplicationCursor } from "./cursor-order.js";
+import {
+  CURSOR_HOLD_MAX_ATTEMPTS,
+  evaluateCursorHold,
+  shouldAdvanceReplicationCursor,
+} from "./cursor-order.js";
 import type {
   ReplicationApplyResponse,
   ReplicationChange,
@@ -41,10 +45,59 @@ function jsonResponse(body: unknown): Response {
 }
 
 describe("shouldAdvanceReplicationCursor", () => {
-  it("advances only when no row failed", () => {
+  it("holds on the first failure and advances when nothing failed", () => {
     assert.equal(shouldAdvanceReplicationCursor({ failed: [] }), true);
     assert.equal(
       shouldAdvanceReplicationCursor({ failed: [{ id: "x" }] }),
+      false,
+    );
+    assert.equal(
+      shouldAdvanceReplicationCursor({ failed: [{ id: "x", attempts: 1 }] }),
+      false,
+    );
+  });
+
+  it("advances once every failed row is at/above the hold max", () => {
+    assert.equal(CURSOR_HOLD_MAX_ATTEMPTS, 3);
+    assert.equal(
+      shouldAdvanceReplicationCursor({
+        failed: [{ id: "x", attempts: CURSOR_HOLD_MAX_ATTEMPTS - 1 }],
+      }),
+      false,
+    );
+    assert.equal(
+      shouldAdvanceReplicationCursor({
+        failed: [{ id: "x", attempts: CURSOR_HOLD_MAX_ATTEMPTS }],
+      }),
+      true,
+    );
+    // One row still within its budget keeps the whole page held.
+    const mixed = evaluateCursorHold({
+      failed: [
+        { id: "old", attempts: 9 },
+        { id: "fresh", attempts: 1 },
+      ],
+    });
+    assert.equal(mixed.advance, false);
+    assert.deepEqual(mixed.holding.map((row) => row.id), ["fresh"]);
+    assert.deepEqual(mixed.exhausted.map((row) => row.id), ["old"]);
+  });
+
+  it("accepts an injected attempt lookup", () => {
+    const lookup = (failed: { id?: string }) =>
+      failed.id === "x" ? 5 : undefined;
+    assert.equal(
+      shouldAdvanceReplicationCursor(
+        { failed: [{ id: "x" }] },
+        { attemptsFor: lookup },
+      ),
+      true,
+    );
+    assert.equal(
+      shouldAdvanceReplicationCursor(
+        { failed: [{ id: "y" }] },
+        { attemptsFor: lookup },
+      ),
       false,
     );
   });
@@ -111,6 +164,36 @@ describe("replication worker holds cursors on failed rows", () => {
     assert.equal(fetches, 1, "must not loop on the same held page");
   });
 
+  it("pull advances past a permanent failure after N hold attempts so newer rows proceed", async () => {
+    // Each tick the apply layer re-sights the open dead letter and bumps attempts.
+    for (let attempts = 1; attempts < CURSOR_HOLD_MAX_ATTEMPTS; attempts += 1) {
+      const held = await runPull([
+        { id: "b", code: "23505", message: "duplicate key", attempts },
+      ]);
+      assert.deepEqual(held.setCalls, [], `attempt ${attempts} still holds`);
+    }
+    const advanced = await runPull([
+      {
+        id: "b",
+        code: "23505",
+        message: "duplicate key",
+        attempts: CURSOR_HOLD_MAX_ATTEMPTS,
+      },
+    ]);
+    assert.deepEqual(advanced.setCalls, [PAGE_TIP]);
+  });
+
+  it("pull falls back to an in-process hold counter when attempts are not reported", async () => {
+    const outcomes: number[] = [];
+    for (let tick = 1; tick <= CURSOR_HOLD_MAX_ATTEMPTS; tick += 1) {
+      const { setCalls } = await runPull([
+        { id: "b", code: "23505", message: "duplicate key" },
+      ]);
+      outcomes.push(setCalls.length);
+    }
+    assert.deepEqual(outcomes, [0, 0, 1]);
+  });
+
   async function runPush(result: ReplicationApplyResponse) {
     const setCalls: ReplicationCursor[] = [];
     let fetches = 0;
@@ -144,5 +227,29 @@ describe("replication worker holds cursors on failed rows", () => {
     });
     assert.deepEqual(setCalls, []);
     assert.equal(fetches, 1, "must not loop on the same held page");
+  });
+
+  it("push advances past a permanent peer failure after N hold attempts", async () => {
+    for (let attempts = 1; attempts < CURSOR_HOLD_MAX_ATTEMPTS; attempts += 1) {
+      const held = await runPush({
+        applied: 1,
+        skipped: 0,
+        failed: [{ id: "b", code: "23503", message: "fk", attempts }],
+      });
+      assert.deepEqual(held.setCalls, [], `attempt ${attempts} still holds`);
+    }
+    const advanced = await runPush({
+      applied: 1,
+      skipped: 0,
+      failed: [
+        {
+          id: "b",
+          code: "23503",
+          message: "fk",
+          attempts: CURSOR_HOLD_MAX_ATTEMPTS,
+        },
+      ],
+    });
+    assert.deepEqual(advanced.setCalls, [PAGE_TIP]);
   });
 });

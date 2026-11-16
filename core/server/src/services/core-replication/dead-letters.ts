@@ -28,8 +28,9 @@ export {
 
 /**
  * Insert or refresh an open dead letter for a failed apply row.
- * Re-sighting the same open letter updates last_seen / payload / error but
- * does not bump attempts (attempts advance only on retryDeadLetters).
+ * Re-sighting the same open letter updates last_seen / payload / error and
+ * bumps `attempts`, so bounded cursor holds progress across ticks
+ * (CURSOR_HOLD_MAX_ATTEMPTS). Returns the letter's attempts after the write.
  */
 export async function recordReplicationDeadLetter(input: {
   table: string;
@@ -38,7 +39,7 @@ export async function recordReplicationDeadLetter(input: {
   errorCode: string;
   errorMessage: string;
   row: ReplicationRow;
-}): Promise<void> {
+}): Promise<{ attempts: number }> {
   const now = new Date();
   const [existing] = await db
     .select()
@@ -54,16 +55,18 @@ export async function recordReplicationDeadLetter(input: {
     .limit(1);
 
   if (existing) {
+    const attempts = existing.attempts + 1;
     await db
       .update(replicationDeadLetters)
       .set({
         errorCode: input.errorCode,
         errorMessage: input.errorMessage,
         rowPayload: input.row,
+        attempts,
         lastSeenAt: now,
       })
       .where(eq(replicationDeadLetters.id, existing.id));
-    return;
+    return { attempts };
   }
 
   await db.insert(replicationDeadLetters).values({
@@ -80,6 +83,7 @@ export async function recordReplicationDeadLetter(input: {
     nextRetryAt: new Date(now.getTime() + deadLetterBackoffMs(1)),
     resolvedAt: null,
   });
+  return { attempts: 1 };
 }
 
 export async function countOpenReplicationDeadLetters(): Promise<number> {

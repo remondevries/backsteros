@@ -5,10 +5,6 @@ import {
 } from "./config.js";
 import { applyRemoteChanges, applyReplicationRow } from "./apply.js";
 import {
-  shouldRefusePeerApplyOnCloud,
-  shouldSkipLocalToCloudPush,
-} from "./direction-policy.js";
-import {
   retryReplicationDeadLetters,
 } from "./dead-letters.js";
 import {
@@ -22,9 +18,11 @@ import {
 } from "./fetch.js";
 import { getReplicationCursor, setReplicationCursor } from "./cursors.js";
 import {
+  CURSOR_HOLD_MAX_ATTEMPTS,
   decidePullForPeerTip,
+  evaluateCursorHold,
   peerTipHasChanges,
-  shouldAdvanceReplicationCursor,
+  type CursorHoldDecision,
 } from "./cursor-order.js";
 import { runReplicationReconcile } from "./reconcile.js";
 import { getChangesSince } from "./sync.js";
@@ -43,8 +41,69 @@ import { checkPeerBuildVersion } from "./peer-version.js";
 const DEFAULT_TIMEOUT_MS = 120_000;
 const PAGE_SIZE = 100;
 
+/**
+ * In-process fallback for hold attempts when the apply result does not carry
+ * dead-letter attempts (older peer on push, or dead-letter write failed).
+ * Counts consecutive ticks a row kept failing on a held page.
+ */
+const holdCounts = new Map<string, number>();
+
+function holdKey(table: string, direction: "pull" | "push", id: string): string {
+  return `${table}:${direction}:${id}`;
+}
+
+function clearHoldCounts(table: string, direction: "pull" | "push"): void {
+  const prefix = `${table}:${direction}:`;
+  for (const key of holdCounts.keys()) {
+    if (key.startsWith(prefix)) holdCounts.delete(key);
+  }
+}
+
+/**
+ * Decide whether a page with failures may advance the cursor, and ops-log the
+ * outcome: warn while holding, warn (with row ids) when advancing past rows
+ * whose bounded hold is exhausted. Returns the decision; callers advance iff
+ * `advance`.
+ */
+function decideCursorHold(
+  table: string,
+  direction: "pull" | "push",
+  result: { failed: readonly { id: string; attempts?: number }[] },
+): CursorHoldDecision {
+  if (result.failed.length === 0) {
+    clearHoldCounts(table, direction);
+    return { advance: true, holding: [], exhausted: [] };
+  }
+  for (const failed of result.failed) {
+    const key = holdKey(table, direction, failed.id);
+    holdCounts.set(key, (holdCounts.get(key) ?? 0) + 1);
+  }
+  const decision = evaluateCursorHold(result, {
+    attemptsFor: (failed) =>
+      holdCounts.get(holdKey(table, direction, String(failed.id ?? "?"))),
+  });
+  const fmt = (rows: { id: string; attempts?: number }[]) =>
+    rows.map((row) => `${row.id}(${row.attempts ?? 0})`).join(", ");
+  if (!decision.advance) {
+    appendOpsLog(
+      "warn",
+      `core replication ${direction} ${table} holding cursor`,
+      `${decision.holding.length} failed row(s) within hold budget (max ${CURSOR_HOLD_MAX_ATTEMPTS} attempts): ${fmt(decision.holding)}`,
+    );
+  } else {
+    appendOpsLog(
+      "warn",
+      `core replication ${direction} ${table} advancing past exhausted hold`,
+      `${decision.exhausted.length} row(s) stay dead-lettered after ${CURSOR_HOLD_MAX_ATTEMPTS} attempts: ${fmt(decision.exhausted)}`,
+    );
+    clearHoldCounts(table, direction);
+  }
+  return decision;
+}
+
 export function resetReplicationWorkerStateForTests(): void {
   resetEmptyPullStateForTests();
+  holdCounts.clear();
 }
 
 export { decidePullForPeerTip, peerTipHasChanges };
@@ -104,8 +163,6 @@ export async function pullTable(
 ) {
   const config = getCoreReplicationConfig();
   if (!config) return;
-  // Cloud never takes cloud-authoritative tables from the local peer.
-  if (shouldRefusePeerApplyOnCloud(table, config.role)) return;
 
   const getCursor = options?.getCursor ?? getReplicationCursor;
   const setCursor = options?.setCursor ?? setReplicationCursor;
@@ -132,6 +189,7 @@ export async function pullTable(
   let appliedTotal = 0;
   let skippedTotal = 0;
   let failedTotal = 0;
+  let held = false;
   let hadChanges = false;
 
   for (;;) {
@@ -167,11 +225,12 @@ export async function pullTable(
       appliedTotal += result.applied;
       skippedTotal += result.skipped;
       failedTotal += result.failed.length;
-      if (!shouldAdvanceReplicationCursor(result)) {
-        // Hold the cursor: failed rows are dead-lettered, but advancing past
-        // them would let a later page's cursor skip them for good if the
-        // dead-letter row is lost or never healed. The next tick re-fetches
-        // this page (applies are idempotent LWW upserts).
+      if (!decideCursorHold(table, "pull", result).advance) {
+        held = true;
+        // Bounded hold: failed rows are dead-lettered, and we re-fetch this
+        // page next tick (idempotent LWW upserts) for up to
+        // CURSOR_HOLD_MAX_ATTEMPTS attempts per row. After that the cursor
+        // advances past the permanent failure (dead letter stays open).
         break;
       }
       await setCursor(table, payload.cursor, "pull");
@@ -192,7 +251,7 @@ export async function pullTable(
       failedTotal > 0 ? "warn" : "info",
       `core replication pull ${table}`,
       `${appliedTotal} applied, ${skippedTotal} skipped, ${failedTotal} failed${
-        failedTotal > 0 ? " (cursor held)" : ""
+        held ? " (cursor held)" : ""
       } (${config.role})`,
     );
   }
@@ -210,8 +269,6 @@ export async function pushTable(
 ) {
   const config = getCoreReplicationConfig();
   if (!config) return;
-  // Cloud-authoritative tables never travel local → cloud.
-  if (shouldSkipLocalToCloudPush(table, config.role)) return;
 
   const getCursor = options?.getCursor ?? getReplicationCursor;
   const setCursor = options?.setCursor ?? setReplicationCursor;
@@ -221,6 +278,7 @@ export async function pushTable(
   let cursor = await getCursor(table, "push");
   let pushed = 0;
   let failedTotal = 0;
+  let held = false;
 
   for (;;) {
     const { changes, cursor: nextCursor } = await fetchLocal(table, cursor);
@@ -252,10 +310,15 @@ export async function pushTable(
       const peerFailed = Array.isArray(result.failed) ? result.failed.length : 0;
       pushed += changes.length;
       failedTotal += peerFailed;
-      if (peerFailed > 0) {
-        // Hold the push cursor when the peer failed rows: the peer dead-letters
-        // them, but we re-send this page next tick (idempotent) instead of
-        // skipping past rows that never landed.
+      if (
+        !decideCursorHold(table, "push", {
+          failed: Array.isArray(result.failed) ? result.failed : [],
+        }).advance
+      ) {
+        held = true;
+        // Bounded hold: the peer dead-letters failed rows and we re-send this
+        // page next tick (idempotent) for up to CURSOR_HOLD_MAX_ATTEMPTS
+        // attempts per row, then advance past the permanent failure.
         break;
       }
       cursor = nextCursor;
@@ -274,7 +337,7 @@ export async function pushTable(
       failedTotal > 0 ? "warn" : "info",
       `core replication push ${table}`,
       `${pushed} rows, ${failedTotal} peer-failed${
-        failedTotal > 0 ? " (cursor held)" : ""
+        held ? " (cursor held)" : ""
       } (${config.role})`,
     );
   }

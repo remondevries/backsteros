@@ -37,6 +37,12 @@ export type ReplicationApplyFailed = {
   id: string;
   code: string;
   message: string;
+  /**
+   * Open dead-letter attempts for this row on the core that applied it
+   * (re-sights bump it). Lets the sender bound its cursor hold. Optional:
+   * older peers omit it.
+   */
+  attempts?: number;
 };
 
 export type ReplicationApplyResponse = {

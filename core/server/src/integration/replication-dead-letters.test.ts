@@ -234,7 +234,11 @@ test("failed unique apply becomes a dead letter; cursor can still advance; retry
       ),
     );
   assert.equal(dupOpen.length, 1);
-  assert.equal(dupOpen[0]?.attempts, 1, "re-sight must not bump attempts");
+  assert.equal(
+    dupOpen[0]?.attempts,
+    2,
+    "re-sight bumps attempts so bounded cursor holds progress",
+  );
   assert.match(dupOpen[0]?.errorMessage ?? "", /again/);
 });
 

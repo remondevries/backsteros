@@ -171,13 +171,62 @@ export function decidePullForPeerTip(input: {
 }
 
 /**
- * Pull/push may only move the watermark past a page when every row in it
- * applied (or was intentionally skipped). Any failed row holds the cursor so
+ * A failed row holds the pull/push cursor for at most this many apply
+ * attempts (dead-letter `attempts`; the first failure counts as 1). After that
+ * the cursor advances past it and the dead letter stays open for retry /
+ * operator inspection — a permanently failing row must never freeze a table.
+ */
+export const CURSOR_HOLD_MAX_ATTEMPTS = 3;
+
+export type FailedRowAttempt = {
+  id: string;
+  /** Dead-letter attempts for this row; missing/unknown counts as 0 (hold). */
+  attempts?: number;
+};
+
+export type CursorHoldDecision = {
+  advance: boolean;
+  /** Failed rows still within their hold budget (cursor stays put for these). */
+  holding: FailedRowAttempt[];
+  /** Failed rows at/above the hold max (advanced past; dead letter remains). */
+  exhausted: FailedRowAttempt[];
+};
+
+/**
+ * Pull/push may move the watermark past a page when every row in it applied
+ * (or was intentionally skipped), OR when every failed row has used up its
+ * bounded hold (`CURSOR_HOLD_MAX_ATTEMPTS`). Otherwise the cursor is held so
  * the next tick re-sends the page; dead letters record the failure but are not
  * the only safety net.
+ *
+ * `attemptsFor` lets callers supply attempts from elsewhere (e.g. a DB lookup
+ * or a local hold counter) when the failed entry does not carry them.
  */
-export function shouldAdvanceReplicationCursor(result: {
-  failed: readonly unknown[];
-}): boolean {
-  return result.failed.length === 0;
+export function evaluateCursorHold(
+  result: { failed: readonly { id?: string; attempts?: number }[] },
+  options?: {
+    maxAttempts?: number;
+    attemptsFor?: (failed: { id?: string; attempts?: number }) => number | undefined;
+  },
+): CursorHoldDecision {
+  const max = options?.maxAttempts ?? CURSOR_HOLD_MAX_ATTEMPTS;
+  const holding: FailedRowAttempt[] = [];
+  const exhausted: FailedRowAttempt[] = [];
+  for (const failed of result.failed) {
+    const attempts = Math.max(
+      failed.attempts ?? 0,
+      options?.attemptsFor?.(failed) ?? 0,
+    );
+    const entry = { id: String(failed.id ?? "?"), attempts };
+    if (attempts >= max) exhausted.push(entry);
+    else holding.push(entry);
+  }
+  return { advance: holding.length === 0, holding, exhausted };
+}
+
+export function shouldAdvanceReplicationCursor(
+  result: { failed: readonly { id?: string; attempts?: number }[] },
+  options?: Parameters<typeof evaluateCursorHold>[1],
+): boolean {
+  return evaluateCursorHold(result, options).advance;
 }
