@@ -7,6 +7,7 @@ import {
   entityCounters,
   users,
   contacts,
+  workspaceMembers,
   workspaceSettings,
   workspaces,
 } from "../../db/schema.js";
@@ -24,6 +25,11 @@ import {
   resolveCloudWorkspaceOwnerUserId,
   shouldSkipUnknownCloudApiKeyFromLocal,
 } from "./cloud-key-apply-guard.js";
+import {
+  SAFE_USER_ROLE_FROM_LOCAL,
+  SAFE_WORKSPACE_MEMBER_ROLE_FROM_LOCAL,
+  resolveCloudRoleFromLocal,
+} from "./cloud-role-apply-guard.js";
 import {
   buildBindPlaceholder,
   serializeBindValue,
@@ -176,6 +182,66 @@ async function applyDocumentsRow(
   return applyGenericRowUnchecked(spec, row, { enforceUpdatedAtGate: false });
 }
 
+/**
+ * On cloud, keep existing users/workspace_members roles and demote elevated
+ * roles on brand-new rows from local. Returns the (possibly rewritten) row.
+ */
+async function guardCloudRoleRowFromLocal(
+  table: "users" | "workspace_members",
+  row: ReplicationRow,
+): Promise<ReplicationRow> {
+  let existingRole: string | null = null;
+  if (table === "users") {
+    const id = typeof row.id === "string" ? row.id : null;
+    if (id) {
+      const [existing] = await db
+        .select({ role: users.role })
+        .from(users)
+        .where(eq(users.id, id))
+        .limit(1);
+      existingRole = existing?.role ?? null;
+    }
+  } else {
+    const workspaceId =
+      typeof row.workspace_id === "string" ? row.workspace_id : null;
+    const userId = typeof row.user_id === "string" ? row.user_id : null;
+    if (workspaceId && userId) {
+      const [existing] = await db
+        .select({ role: workspaceMembers.role })
+        .from(workspaceMembers)
+        .where(
+          and(
+            eq(workspaceMembers.workspaceId, workspaceId),
+            eq(workspaceMembers.userId, userId),
+          ),
+        )
+        .limit(1);
+      existingRole = existing?.role ?? null;
+    }
+  }
+
+  const safeDefault =
+    table === "users"
+      ? SAFE_USER_ROLE_FROM_LOCAL
+      : SAFE_WORKSPACE_MEMBER_ROLE_FROM_LOCAL;
+  const inbound =
+    typeof row.role === "string" ? row.role : row.role != null ? String(row.role) : null;
+  const resolved = resolveCloudRoleFromLocal(existingRole, inbound, safeDefault);
+  if (resolved.ignored || resolved.demoted) {
+    appendOpsLog(
+      "warn",
+      resolved.ignored
+        ? `core replication ${table} ignored local role on cloud`
+        : `core replication ${table} demoted elevated role from local on cloud`,
+      table === "users"
+        ? `${String(row.id)}: ${inbound ?? "(empty)"} → ${resolved.role}`
+        : `${String(row.workspace_id)}/${String(row.user_id)}: ${inbound ?? "(empty)"} → ${resolved.role}`,
+    );
+  }
+  if (inbound === resolved.role) return row;
+  return { ...row, role: resolved.role };
+}
+
 async function applyGenericRow(
   spec: TableSpec,
   row: ReplicationRow,
@@ -185,17 +251,25 @@ async function applyGenericRow(
     return "skipped";
   }
 
+  let gatedRow = row;
+  if (
+    localRole === "cloud" &&
+    (spec.name === "users" || spec.name === "workspace_members")
+  ) {
+    gatedRow = await guardCloudRoleRowFromLocal(spec.name, row);
+  }
+
   if (spec.name === "documents") {
-    return applyDocumentsRow(row, localRole);
+    return applyDocumentsRow(gatedRow, localRole);
   }
 
   const naturalKey = naturalKeyColumnsFor(spec.name);
   if (naturalKey) {
-    return applyNaturalKeyRow(spec, naturalKey, row, localRole);
+    return applyNaturalKeyRow(spec, naturalKey, gatedRow, localRole);
   }
 
-  const remoteUpdatedAt = new Date(String(row[spec.updatedAtColumn]));
-  const localUpdatedAt = await readLocalUpdatedAt(spec, row);
+  const remoteUpdatedAt = new Date(String(gatedRow[spec.updatedAtColumn]));
+  const localUpdatedAt = await readLocalUpdatedAt(spec, gatedRow);
   const decision = shouldApplyByUpdatedAt(
     spec.name as ReplicatedTable,
     localRole,
@@ -206,7 +280,7 @@ async function applyGenericRow(
     return "skipped";
   }
 
-  return applyGenericRowUnchecked(spec, row);
+  return applyGenericRowUnchecked(spec, gatedRow);
 }
 
 type SqlExecutor = Pick<typeof sqlClient, "unsafe">;
