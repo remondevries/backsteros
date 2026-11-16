@@ -5,6 +5,7 @@ import type {
   MoneybirdInvoiceActivityItem,
   MoneybirdInvoiceRevenue,
   MoneybirdInvoiceSendReminderResult,
+  MoneybirdOutstanding,
   MoneybirdSalesInvoiceDetail,
   MoneybirdSalesInvoiceSummary,
   MoneybirdSettings,
@@ -60,6 +61,12 @@ export function useFinanceMoneybirdInvoices({
     BankAccountCashflowMonth[] | null
   >(null);
   const [moneybirdRevenueLoading, setMoneybirdRevenueLoading] = useState(false);
+  const [moneybirdOutstanding, setMoneybirdOutstanding] =
+    useState<MoneybirdOutstanding | null>(null);
+  const [moneybirdOutstandingLoading, setMoneybirdOutstandingLoading] =
+    useState(false);
+  /** Outstanding totals are not year-scoped; fetch once per mount/sync. */
+  const outstandingLoadedRef = useRef(false);
   /** Last successfully fetched list key — reused when switching back to invoices. */
   const invoicesListCacheKeyRef = useRef<string | null>(null);
   /** Last successfully fetched revenue year — same cache behavior for widgets/chart. */
@@ -348,10 +355,34 @@ export function useFinanceMoneybirdInvoices({
     };
   }, [client, moneybirdInvoicesYear, navId]);
 
+  const fetchMoneybirdOutstanding = useCallback(async () => {
+    setMoneybirdOutstandingLoading(true);
+    try {
+      const body = await client.requestJson<MoneybirdOutstanding>(
+        "/api/v1/finance/moneybird/outstanding",
+      );
+      setMoneybirdOutstanding(body);
+      outstandingLoadedRef.current = true;
+    } catch {
+      setMoneybirdOutstanding(null);
+      outstandingLoadedRef.current = false;
+    } finally {
+      setMoneybirdOutstandingLoading(false);
+    }
+  }, [client]);
+
+  useEffect(() => {
+    if (navId !== "invoices" || !moneybirdConnected) return;
+    if (outstandingLoadedRef.current) return;
+    void fetchMoneybirdOutstanding();
+  }, [fetchMoneybirdOutstanding, moneybirdConnected, navId]);
+
   const loadMoneybirdInvoicesPage = useCallback(async () => {
     // Manual sync: bypass tab-switch cache.
     invoicesListCacheKeyRef.current = null;
     invoicesRevenueCacheYearRef.current = null;
+    outstandingLoadedRef.current = false;
+    void fetchMoneybirdOutstanding();
     setMoneybirdInvoicesLoading(true);
     setMoneybirdInvoicesError(null);
     setMoneybirdRevenueLoading(true);
@@ -434,6 +465,7 @@ export function useFinanceMoneybirdInvoices({
     }
   }, [
     client,
+    fetchMoneybirdOutstanding,
     moneybirdInvoiceStatusIds,
     moneybirdInvoicesPage,
     moneybirdInvoicesYear,
@@ -455,6 +487,8 @@ export function useFinanceMoneybirdInvoices({
     moneybirdRevenueYear,
     moneybirdRevenueMonths,
     moneybirdRevenueLoading,
+    moneybirdOutstanding,
+    moneybirdOutstandingLoading,
     selectedMoneybirdInvoiceId,
     setSelectedMoneybirdInvoiceId,
     moneybirdInvoiceDetail,

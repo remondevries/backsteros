@@ -421,6 +421,21 @@ export function registerFinanceRoutes(app: Hono) {
       }
     },
   );
+  app.get("/api/v1/finance/moneybird/outstanding", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "finance:read")) return c.json(forbidden(), 403);
+    try {
+      return c.json(
+        await moneybirdSettingsService.getMoneybirdOutstanding(auth.workspaceId),
+      );
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Could not load Moneybird outstanding totals";
+      return c.json({ error: message, code: "bad_request" }, 400);
+    }
+  });
   app.get("/api/v1/finance/moneybird/financial-accounts", async (c) => {
     const auth = getAuth(c);
     if (!can(auth, "finance:read")) return c.json(forbidden(), 403);

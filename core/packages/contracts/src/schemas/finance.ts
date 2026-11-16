@@ -534,6 +534,27 @@ export const listFinancialTransactionsResponseSchema = z.object({
   total: z.number().int().nonnegative().optional(),
 });
 
+/** Payment on a Moneybird sales invoice (`priceBase` = EUR administration currency). */
+export const moneybirdInvoicePaymentSchema = z.object({
+  id: z.string(),
+  paymentDate: z.string().nullable(),
+  price: z.string().nullable(),
+  priceBase: z.string().nullable(),
+});
+
+/**
+ * Administration-currency (EUR) amounts. Optional so older cached payloads
+ * still parse; aggregates must prefer these over the face totals, which are
+ * in the invoice `currency` (e.g. USD).
+ */
+const moneybirdInvoiceBaseAmountsShape = {
+  totalPriceInclTaxBase: z.string().nullable().optional(),
+  totalPriceExclTaxBase: z.string().nullable().optional(),
+  totalUnpaid: z.string().nullable().optional(),
+  totalUnpaidBase: z.string().nullable().optional(),
+  payments: z.array(moneybirdInvoicePaymentSchema).optional(),
+};
+
 export const moneybirdSalesInvoiceSchema = z.object({
   id: z.string(),
   invoiceId: z.string().nullable(),
@@ -544,6 +565,7 @@ export const moneybirdSalesInvoiceSchema = z.object({
   currency: z.string().nullable(),
   totalPriceInclTax: z.string().nullable(),
   totalPriceExclTax: z.string().nullable(),
+  ...moneybirdInvoiceBaseAmountsShape,
   contactId: z.string().nullable(),
   contactName: z.string().nullable(),
 });
@@ -617,6 +639,7 @@ export const moneybirdSalesInvoiceDetailSchema = z.object({
   pricesAreInclTax: z.boolean(),
   totalPriceInclTax: z.string().nullable(),
   totalPriceExclTax: z.string().nullable(),
+  ...moneybirdInvoiceBaseAmountsShape,
   contactId: z.string().nullable(),
   recipient: moneybirdInvoicePartySchema,
   sender: moneybirdInvoicePartySchema.nullable(),
@@ -694,6 +717,29 @@ export const moneybirdInvoiceRevenueQuerySchema = z.object({
 export const moneybirdInvoiceRevenueResponseSchema = z.object({
   year: z.number().int(),
   months: z.array(bankAccountCashflowMonthSchema),
+});
+
+/** One side (receivables or payables) of the Moneybird outstanding summary. */
+export const moneybirdOutstandingSideSchema = z.object({
+  /** Sum of Moneybird `total_unpaid_base` (EUR) for unpaid documents. */
+  totalCents: z.number().int(),
+  /** Portion of `totalCents` in the `late` state. */
+  overdueCents: z.number().int(),
+  /** Number of unpaid documents counted. */
+  count: z.number().int().nonnegative(),
+});
+
+/**
+ * Outstanding receivables (unpaid sales invoices) and payables (unpaid
+ * purchase invoices) from Moneybird, in EUR cents.
+ */
+export const moneybirdOutstandingResponseSchema = z.object({
+  currency: z.literal("EUR"),
+  receivables: moneybirdOutstandingSideSchema,
+  /** Null when Moneybird purchase invoices could not be read. */
+  payables: moneybirdOutstandingSideSchema.nullable(),
+  /** Why `payables` is null (e.g. missing token scope). */
+  payablesError: z.string().nullable(),
 });
 
 /** Active Moneybird financial accounts (bank / card / payment rails). */
@@ -827,6 +873,18 @@ export type BatchDeleteFinancialTransactionsResponse = z.infer<
 
 export type MoneybirdSalesInvoiceSummary = z.infer<
   typeof moneybirdSalesInvoiceSchema
+>;
+
+export type MoneybirdInvoicePayment = z.infer<
+  typeof moneybirdInvoicePaymentSchema
+>;
+
+export type MoneybirdOutstandingSide = z.infer<
+  typeof moneybirdOutstandingSideSchema
+>;
+
+export type MoneybirdOutstanding = z.infer<
+  typeof moneybirdOutstandingResponseSchema
 >;
 
 export type MoneybirdInvoiceParty = z.infer<typeof moneybirdInvoicePartySchema>;

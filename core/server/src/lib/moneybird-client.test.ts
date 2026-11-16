@@ -8,6 +8,7 @@ import {
   mapMoneybirdFinancialAccount,
   mapMoneybirdFinancialMutation,
   mapMoneybirdIdentity,
+  mapMoneybirdPurchaseInvoice,
   mapMoneybirdSalesInvoice,
   mapMoneybirdSalesInvoiceDetail,
   MoneybirdClient,
@@ -52,6 +53,72 @@ describe("moneybird-client mappers", () => {
     assert.equal(mapped.invoiceId, "2026-001");
     assert.equal(mapped.contactName, "Acme BV");
     assert.equal(mapped.totalPriceInclTax, "121.0");
+  });
+
+  it("maps EUR base totals, unpaid amounts, and payments on USD invoices", () => {
+    const raw = {
+      id: "11",
+      state: "late",
+      currency: "USD",
+      total_price_incl_tax: "1210.00",
+      total_price_excl_tax: "1000.00",
+      total_price_incl_tax_base: "1089.00",
+      total_price_excl_tax_base: "900.00",
+      total_unpaid: "600.00",
+      total_unpaid_base: "540.00",
+      payments: [
+        {
+          id: 5,
+          payment_date: "2026-05-02",
+          price: "610.00",
+          price_base: "549.00",
+        },
+        { price: "1.00" },
+      ],
+    };
+    const list = mapMoneybirdSalesInvoice(raw);
+    assert.equal(list.totalPriceExclTax, "1000.00");
+    assert.equal(list.totalPriceExclTaxBase, "900.00");
+    assert.equal(list.totalPriceInclTaxBase, "1089.00");
+    assert.equal(list.totalUnpaid, "600.00");
+    assert.equal(list.totalUnpaidBase, "540.00");
+    assert.deepEqual(list.payments, [
+      { id: "5", paymentDate: "2026-05-02", price: "610.00", priceBase: "549.00" },
+    ]);
+
+    const detail = mapMoneybirdSalesInvoiceDetail(raw);
+    assert.equal(detail.totalPriceExclTaxBase, "900.00");
+    assert.equal(detail.totalPriceInclTaxBase, "1089.00");
+    assert.equal(detail.totalUnpaidBase, "540.00");
+    assert.equal(detail.payments.length, 1);
+  });
+
+  it("leaves base fields null when Moneybird omits them", () => {
+    const mapped = mapMoneybirdSalesInvoice({ id: "12", state: "open" });
+    assert.equal(mapped.totalPriceExclTaxBase, null);
+    assert.equal(mapped.totalUnpaidBase, null);
+    assert.deepEqual(mapped.payments, []);
+  });
+
+  it("maps purchase invoices with unpaid base amounts", () => {
+    const mapped = mapMoneybirdPurchaseInvoice({
+      id: 77,
+      state: "open",
+      reference: "INV-9",
+      date: "2026-04-01",
+      due_date: "2026-04-30",
+      currency: "USD",
+      total_price_excl_tax_base: "90.5",
+      total_unpaid: 110,
+      total_unpaid_base: 99.25,
+      contact: { id: "3", company_name: "Hosting Inc" },
+    });
+    assert.equal(mapped.id, "77");
+    assert.equal(mapped.contactName, "Hosting Inc");
+    assert.equal(mapped.contactId, "3");
+    assert.equal(mapped.totalUnpaid, "110");
+    assert.equal(mapped.totalUnpaidBase, "99.25");
+    assert.equal(mapped.totalPriceExclTaxBase, "90.5");
   });
 
   it("maps sales invoice detail with contact, lines, and tax totals", () => {
@@ -177,6 +244,31 @@ describe("MoneybirdClient", () => {
     const rows = await client.listSalesInvoices({ page: 1, perPage: 10 });
     assert.equal(rows[0]?.invoiceId, "2026-002");
     assert.equal(rows[0]?.contactName, "Beta");
+  });
+
+  it("lists purchase invoices from documents/purchase_invoices", async () => {
+    const client = new MoneybirdClient({
+      apiToken: "test-token",
+      administrationId: "42",
+      fetchImpl: async (input) => {
+        assert.equal(
+          String(input),
+          "https://moneybird.com/api/v2/42/documents/purchase_invoices.json?page=2&per_page=100&filter=state%3Aopen%7Clate",
+        );
+        return new Response(
+          JSON.stringify([
+            { id: "1", state: "late", total_unpaid_base: "12.00" },
+          ]),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      },
+    });
+    const rows = await client.listPurchaseInvoices({
+      page: 2,
+      perPage: 100,
+      filter: "state:open|late",
+    });
+    assert.equal(rows[0]?.totalUnpaidBase, "12.00");
   });
 
   it("fetches a sales invoice and identity", async () => {

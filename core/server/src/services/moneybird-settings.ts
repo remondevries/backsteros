@@ -5,6 +5,7 @@ import {
   type MoneybirdAdministrationSummary,
   type MoneybirdInvoiceActivity,
   type MoneybirdInvoiceRevenue,
+  type MoneybirdOutstanding,
   type MoneybirdSalesInvoiceDetail,
   type MoneybirdSalesInvoiceSummary,
   type MoneybirdSettings,
@@ -22,6 +23,15 @@ import {
   MoneybirdClient,
   type MoneybirdSalesInvoice,
 } from "../lib/moneybird-client.js";
+import {
+  PAYABLE_INVOICE_STATES,
+  PAYABLES_FILTER,
+  RECEIVABLE_INVOICE_STATES,
+  RECEIVABLES_FILTER,
+  sumBilledRevenueByMonth,
+  sumOutstandingBase,
+  type MoneybirdOutstandingTotals,
+} from "../lib/moneybird-invoice-amounts.js";
 import { previewCursorApiKey } from "./cursor-settings.js";
 
 export function previewMoneybirdToken(token: string): string {
@@ -368,20 +378,10 @@ const BILLED_INVOICE_STATES = new Set([
   "paid",
 ]);
 
-function eurosToCents(amount: string | null): number {
-  if (!amount) return 0;
-  const numeric = Number(amount);
-  if (!Number.isFinite(numeric)) return 0;
-  return Math.round(numeric * 100);
-}
-
-function monthKeyFromInvoiceDate(invoiceDate: string | null): string | null {
-  if (!invoiceDate || !/^\d{4}-\d{2}-\d{2}$/.test(invoiceDate)) return null;
-  return invoiceDate.slice(0, 7);
-}
-
 /**
  * Sum billed Moneybird sales invoices by calendar month for `year`.
+ * Amounts are EUR (administration currency) excl. VAT, taken from the
+ * `*_base` fields so foreign-currency invoices are not counted at face value.
  * Draft / uncollectible invoices are excluded. Expense is always 0 (purchase
  * invoices / outflows not wired yet).
  */
@@ -418,16 +418,8 @@ export async function getMoneybirdInvoiceRevenue(
       perPage,
       filter,
     });
-    for (const invoice of batch) {
-      if (!BILLED_INVOICE_STATES.has(invoice.state)) continue;
-      const month = monthKeyFromInvoiceDate(invoice.invoiceDate);
-      if (!month || !month.startsWith(`${year}-`)) continue;
-      // Excl. VAT so the invoices chart compares to bank spend on a closer basis.
-      const cents = eurosToCents(
-        invoice.totalPriceExclTax ?? invoice.totalPriceInclTax,
-      );
-      incomeByMonth.set(month, (incomeByMonth.get(month) ?? 0) + cents);
-    }
+    // Excl. VAT, EUR base, so the chart compares to bank spend on one basis.
+    sumBilledRevenueByMonth(batch, year, BILLED_INVOICE_STATES, incomeByMonth);
     if (batch.length < perPage) break;
   }
 
@@ -442,6 +434,65 @@ export async function getMoneybirdInvoiceRevenue(
   }
 
   return { year, months };
+}
+
+const OUTSTANDING_PER_PAGE = 100;
+const OUTSTANDING_MAX_PAGES = 50;
+
+/**
+ * Outstanding receivables (unpaid sales invoices) and payables (unpaid
+ * purchase invoices) in EUR, summed from Moneybird `total_unpaid_base`.
+ * All periods are included. Payables degrade to `null` + error text when the
+ * purchase-invoice endpoint is unavailable; they are never estimated from
+ * bank spend.
+ */
+export async function getMoneybirdOutstanding(
+  workspaceId: string,
+): Promise<MoneybirdOutstanding> {
+  const { client } = await requireMoneybirdClient(workspaceId);
+
+  const sales: MoneybirdSalesInvoice[] = [];
+  for (let page = 1; page <= OUTSTANDING_MAX_PAGES; page++) {
+    const batch = await client.listSalesInvoices({
+      page,
+      perPage: OUTSTANDING_PER_PAGE,
+      filter: RECEIVABLES_FILTER,
+    });
+    sales.push(...batch);
+    if (batch.length < OUTSTANDING_PER_PAGE) break;
+  }
+  const receivables = sumOutstandingBase(sales, RECEIVABLE_INVOICE_STATES);
+
+  let payables: MoneybirdOutstandingTotals | null = null;
+  let payablesError: string | null = null;
+  try {
+    const purchases: Awaited<ReturnType<MoneybirdClient["listPurchaseInvoices"]>> =
+      [];
+    for (let page = 1; page <= OUTSTANDING_MAX_PAGES; page++) {
+      const batch = await client.listPurchaseInvoices({
+        page,
+        perPage: OUTSTANDING_PER_PAGE,
+        filter: PAYABLES_FILTER,
+      });
+      purchases.push(...batch);
+      if (batch.length < OUTSTANDING_PER_PAGE) break;
+    }
+    payables = sumOutstandingBase(purchases, PAYABLE_INVOICE_STATES);
+  } catch (error) {
+    payablesError =
+      error instanceof MoneybirdApiError && error.status === 401
+        ? "Moneybird rejected the API token for purchase invoices."
+        : error instanceof Error
+          ? error.message
+          : "Could not load Moneybird purchase invoices.";
+  }
+
+  return {
+    currency: "EUR",
+    receivables,
+    payables,
+    payablesError,
+  };
 }
 
 function requireMoneybirdClient(workspaceId: string): Promise<{
@@ -561,6 +612,11 @@ export async function getMoneybirdSalesInvoiceDetail(
     pricesAreInclTax: withTax.pricesAreInclTax,
     totalPriceInclTax: withTax.totalPriceInclTax,
     totalPriceExclTax: withTax.totalPriceExclTax,
+    totalPriceInclTaxBase: withTax.totalPriceInclTaxBase,
+    totalPriceExclTaxBase: withTax.totalPriceExclTaxBase,
+    totalUnpaid: withTax.totalUnpaid,
+    totalUnpaidBase: withTax.totalUnpaidBase,
+    payments: withTax.payments,
     contactId: withTax.contactId,
     recipient: withTax.recipient,
     sender,

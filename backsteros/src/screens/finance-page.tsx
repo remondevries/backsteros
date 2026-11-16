@@ -243,6 +243,8 @@ function FinancePageBody() {
     moneybirdRevenueYear,
     moneybirdRevenueMonths,
     moneybirdRevenueLoading,
+    moneybirdOutstanding,
+    moneybirdOutstandingLoading,
     selectedMoneybirdInvoiceId,
     setSelectedMoneybirdInvoiceId,
     moneybirdInvoiceDetail,
@@ -590,6 +592,8 @@ function FinancePageBody() {
         revenueYear={moneybirdRevenueYear}
         revenueMonths={moneybirdRevenueMonths}
         revenueLoading={moneybirdRevenueLoading}
+        outstanding={moneybirdOutstanding}
+        outstandingLoading={moneybirdOutstandingLoading}
         organizations={organizationsWithAvatars}
         selectedInvoiceId={selectedMoneybirdInvoiceId}
         onSelectedInvoiceChange={setSelectedMoneybirdInvoiceId}

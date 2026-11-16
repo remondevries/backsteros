@@ -15,6 +15,17 @@ export type MoneybirdAdministration = {
   currency: string | null;
 };
 
+/**
+ * Payment row on a Moneybird sales invoice. `price` is in the invoice
+ * currency, `priceBase` in the administration (EUR) currency.
+ */
+export type MoneybirdInvoicePayment = {
+  id: string;
+  paymentDate: string | null;
+  price: string | null;
+  priceBase: string | null;
+};
+
 export type MoneybirdSalesInvoice = {
   id: string;
   invoiceId: string | null;
@@ -25,6 +36,31 @@ export type MoneybirdSalesInvoice = {
   currency: string | null;
   totalPriceInclTax: string | null;
   totalPriceExclTax: string | null;
+  /** Administration-currency (EUR) totals; equal to the face totals for EUR. */
+  totalPriceInclTaxBase: string | null;
+  totalPriceExclTaxBase: string | null;
+  /** Unpaid amount in invoice currency / administration (EUR) currency. */
+  totalUnpaid: string | null;
+  totalUnpaidBase: string | null;
+  payments: MoneybirdInvoicePayment[];
+  contactId: string | null;
+  contactName: string | null;
+};
+
+/** Purchase invoice (`documents/purchase_invoices`) — payables outstanding. */
+export type MoneybirdPurchaseInvoice = {
+  id: string;
+  state: string;
+  reference: string | null;
+  date: string | null;
+  dueDate: string | null;
+  currency: string | null;
+  totalPriceInclTax: string | null;
+  totalPriceExclTax: string | null;
+  totalPriceInclTaxBase: string | null;
+  totalPriceExclTaxBase: string | null;
+  totalUnpaid: string | null;
+  totalUnpaidBase: string | null;
   contactId: string | null;
   contactName: string | null;
 };
@@ -76,6 +112,11 @@ export type MoneybirdSalesInvoiceDetail = {
   pricesAreInclTax: boolean;
   totalPriceInclTax: string | null;
   totalPriceExclTax: string | null;
+  totalPriceInclTaxBase: string | null;
+  totalPriceExclTaxBase: string | null;
+  totalUnpaid: string | null;
+  totalUnpaidBase: string | null;
+  payments: MoneybirdInvoicePayment[];
   contactId: string | null;
   recipient: MoneybirdInvoiceParty;
   lines: MoneybirdInvoiceLine[];
@@ -175,6 +216,24 @@ export function mapMoneybirdAdministration(
   };
 }
 
+function mapMoneybirdInvoicePayments(raw: unknown): MoneybirdInvoicePayment[] {
+  if (!Array.isArray(raw)) return [];
+  const out: MoneybirdInvoicePayment[] = [];
+  for (const row of raw) {
+    if (!row || typeof row !== "object" || Array.isArray(row)) continue;
+    const record = row as Record<string, unknown>;
+    const id = asStringId(record.id);
+    if (!id) continue;
+    out.push({
+      id,
+      paymentDate: asOptionalString(record.payment_date),
+      price: asMoneyAmount(record.price),
+      priceBase: asMoneyAmount(record.price_base),
+    });
+  }
+  return out;
+}
+
 export function mapMoneybirdSalesInvoice(
   raw: Record<string, unknown>,
 ): MoneybirdSalesInvoice {
@@ -202,7 +261,46 @@ export function mapMoneybirdSalesInvoice(
     currency: asOptionalString(raw.currency),
     totalPriceInclTax: asOptionalString(raw.total_price_incl_tax),
     totalPriceExclTax: asOptionalString(raw.total_price_excl_tax),
+    totalPriceInclTaxBase: asMoneyAmount(raw.total_price_incl_tax_base),
+    totalPriceExclTaxBase: asMoneyAmount(raw.total_price_excl_tax_base),
+    totalUnpaid: asMoneyAmount(raw.total_unpaid),
+    totalUnpaidBase: asMoneyAmount(raw.total_unpaid_base),
+    payments: mapMoneybirdInvoicePayments(raw.payments),
     contactId: asStringId(raw.contact_id),
+    contactName,
+  };
+}
+
+export function mapMoneybirdPurchaseInvoice(
+  raw: Record<string, unknown>,
+): MoneybirdPurchaseInvoice {
+  const id = asStringId(raw.id);
+  if (!id) {
+    throw new Error("Moneybird purchase invoice missing id");
+  }
+  const contact =
+    raw.contact && typeof raw.contact === "object" && !Array.isArray(raw.contact)
+      ? (raw.contact as Record<string, unknown>)
+      : null;
+  const contactName =
+    asOptionalString(contact?.company_name) ??
+    asOptionalString(contact?.firstname) ??
+    asOptionalString(contact?.lastname) ??
+    null;
+  return {
+    id,
+    state: asOptionalString(raw.state) ?? "unknown",
+    reference: asOptionalString(raw.reference),
+    date: asOptionalString(raw.date),
+    dueDate: asOptionalString(raw.due_date),
+    currency: asOptionalString(raw.currency),
+    totalPriceInclTax: asMoneyAmount(raw.total_price_incl_tax),
+    totalPriceExclTax: asMoneyAmount(raw.total_price_excl_tax),
+    totalPriceInclTaxBase: asMoneyAmount(raw.total_price_incl_tax_base),
+    totalPriceExclTaxBase: asMoneyAmount(raw.total_price_excl_tax_base),
+    totalUnpaid: asMoneyAmount(raw.total_unpaid),
+    totalUnpaidBase: asMoneyAmount(raw.total_unpaid_base),
+    contactId: asStringId(raw.contact_id) ?? asStringId(contact?.id),
     contactName,
   };
 }
@@ -433,6 +531,11 @@ export function mapMoneybirdSalesInvoiceDetail(
     pricesAreInclTax: Boolean(raw.prices_are_incl_tax),
     totalPriceInclTax: asMoneyAmount(raw.total_price_incl_tax),
     totalPriceExclTax: asMoneyAmount(raw.total_price_excl_tax),
+    totalPriceInclTaxBase: asMoneyAmount(raw.total_price_incl_tax_base),
+    totalPriceExclTaxBase: asMoneyAmount(raw.total_price_excl_tax_base),
+    totalUnpaid: asMoneyAmount(raw.total_unpaid),
+    totalUnpaidBase: asMoneyAmount(raw.total_unpaid_base),
+    payments: mapMoneybirdInvoicePayments(raw.payments),
     contactId: asStringId(raw.contact_id) ?? asStringId(contact?.id),
     recipient: mapMoneybirdInvoiceParty(contact),
     lines: details
@@ -585,6 +688,34 @@ export class MoneybirdClient {
           Boolean(row) && typeof row === "object" && !Array.isArray(row),
       )
       .map(mapMoneybirdSalesInvoice);
+  }
+
+  /**
+   * Purchase invoices (payables) from `documents/purchase_invoices`.
+   * Use `filter: "state:open|late"` to list unpaid ones across all periods.
+   */
+  async listPurchaseInvoices(options?: {
+    page?: number;
+    perPage?: number;
+    filter?: string;
+  }): Promise<MoneybirdPurchaseInvoice[]> {
+    const administrationId = this.requireAdministrationId();
+    const params = new URLSearchParams();
+    if (options?.page) params.set("page", String(options.page));
+    if (options?.perPage) params.set("per_page", String(options.perPage));
+    if (options?.filter) params.set("filter", options.filter);
+    const query = params.toString();
+    const path = `/${encodeURIComponent(administrationId)}/documents/purchase_invoices.json${
+      query ? `?${query}` : ""
+    }`;
+    const raw = await this.requestJson<unknown[]>(path);
+    if (!Array.isArray(raw)) return [];
+    return raw
+      .filter(
+        (row): row is Record<string, unknown> =>
+          Boolean(row) && typeof row === "object" && !Array.isArray(row),
+      )
+      .map(mapMoneybirdPurchaseInvoice);
   }
 
   async getContact(contactId: string): Promise<{

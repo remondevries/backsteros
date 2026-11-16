@@ -1,6 +1,10 @@
 import type { MoneybirdSalesInvoiceSummary } from "@backsteros/contracts";
 
 import { DROPDOWN_NONE_VALUE } from "../components/dropdowns/dropdown-options.js";
+import {
+  parseMoneyAmountToCents,
+  type DocumentSummaryLine,
+} from "./document-summary-stats.js";
 
 /** Billed sales-invoice states (matches Moneybird revenue series). */
 export const BILLED_INVOICE_STATES = new Set([
@@ -18,7 +22,8 @@ export function isBilledInvoiceState(state: string | null | undefined): boolean 
 }
 
 /**
- * Prefer excl. VAT when available so list/summary match the revenue chart.
+ * Row display: excl. VAT in the invoice's own `currency` (may be USD etc.).
+ * Do not use for aggregates — use {@link invoiceAmountExclVatBase}.
  */
 export function invoiceAmountExclVat(
   invoice: Pick<
@@ -27,6 +32,64 @@ export function invoiceAmountExclVat(
   >,
 ): string | null {
   return invoice.totalPriceExclTax ?? invoice.totalPriceInclTax ?? null;
+}
+
+type InvoiceBaseAmountFields = Pick<
+  MoneybirdSalesInvoiceSummary,
+  "totalPriceExclTax" | "totalPriceInclTax" | "currency"
+> &
+  Partial<
+    Pick<
+      MoneybirdSalesInvoiceSummary,
+      "totalPriceExclTaxBase" | "totalPriceInclTaxBase"
+    >
+  >;
+
+function isEuroOrUnspecified(currency: string | null | undefined): boolean {
+  const code = currency?.trim().toUpperCase();
+  return !code || code === "EUR";
+}
+
+/**
+ * Aggregate amount in EUR (administration currency), excl. VAT preferred.
+ * Prefers Moneybird `*_base` totals; face totals are only used when the
+ * invoice itself is in EUR so a USD amount is never summed as EUR.
+ */
+export function invoiceAmountExclVatBase(
+  invoice: InvoiceBaseAmountFields,
+): string | null {
+  const euro = isEuroOrUnspecified(invoice.currency);
+  return (
+    invoice.totalPriceExclTaxBase ??
+    (euro ? invoice.totalPriceExclTax : null) ??
+    invoice.totalPriceInclTaxBase ??
+    (euro ? invoice.totalPriceInclTax : null) ??
+    null
+  );
+}
+
+/** Customer-share / month-total lines: billed states only, EUR excl. VAT. */
+export function buildInvoiceSummaryLines(
+  rows: ReadonlyArray<FinanceInvoiceFilterRow>,
+): DocumentSummaryLine[] {
+  return rows
+    .filter((invoice) => isBilledInvoiceState(invoice.state))
+    .map((invoice) => {
+      const linkedName = invoice.linkedOrganizationName?.trim() || null;
+      const contactName = invoice.contactName?.trim() || null;
+      const label = linkedName || contactName || "Unknown";
+      const key =
+        invoice.linkedOrganizationId?.trim() ||
+        invoice.contactId?.trim() ||
+        label.toLowerCase();
+      return {
+        id: invoice.id,
+        date: invoice.invoiceDate,
+        amountCents: parseMoneyAmountToCents(invoiceAmountExclVatBase(invoice)),
+        customerKey: key,
+        customerLabel: label,
+      };
+    });
 }
 
 export type FinanceInvoiceListFilters = {

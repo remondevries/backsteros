@@ -3,6 +3,7 @@
 import type {
   BankAccountCashflowMonth,
   MoneybirdInvoiceActivityItem,
+  MoneybirdOutstanding,
   MoneybirdSalesInvoiceDetail,
   MoneybirdSalesInvoiceSummary,
 } from "@backsteros/contracts";
@@ -17,9 +18,9 @@ import {
 
 import type { OrganizationListItem } from "../../navigation/entity-routes.js";
 import {
+  buildInvoiceSummaryLines,
   filterFinanceInvoices,
   invoiceAmountExclVat,
-  isBilledInvoiceState,
   type FinanceInvoiceFilterRow,
 } from "../../finance/filter-finance-invoices.js";
 import {
@@ -34,10 +35,6 @@ import {
 } from "../../shortcuts/shortcut-guards.js";
 import { getTaskStatusHeaderGradientStyle } from "../../tasks/task-status-header-gradient.js";
 import { useFinancePanelResize } from "../../finance/use-finance-panel-resize.js";
-import {
-  parseMoneyAmountToCents,
-  type DocumentSummaryLine,
-} from "../../finance/document-summary-stats.js";
 import { AccountIncomeExpenseChart } from "./account-income-expense-chart.js";
 import { ProjectsSidePanelIcon } from "../codebase/projects-side-panel-icon.js";
 import {
@@ -115,6 +112,9 @@ export type FinanceInvoicesViewProps = {
    */
   revenueMonths?: BankAccountCashflowMonth[] | null;
   revenueLoading?: boolean;
+  /** Moneybird outstanding receivables / payables (EUR). */
+  outstanding?: MoneybirdOutstanding | null;
+  outstandingLoading?: boolean;
   organizations?: OrganizationListItem[];
   /** Moneybird invoice `state` multi-filter (empty = all). */
   filterStatusIds?: string[];
@@ -252,6 +252,8 @@ export function FinanceInvoicesView({
   revenueYear = null,
   revenueMonths = null,
   revenueLoading = false,
+  outstanding = null,
+  outstandingLoading = false,
   organizations = [],
   filterStatusIds: filterStatusIdsProp,
   onFilterStatusIdsChange,
@@ -479,27 +481,11 @@ export function FinanceInvoicesView({
     [filterOrganizationId, filterSearch, invoiceRows],
   );
 
-  const summaryLines = useMemo((): DocumentSummaryLine[] => {
-    // Match Moneybird revenue series: billed states only, excl. VAT.
-    return invoiceRows
-      .filter((invoice) => isBilledInvoiceState(invoice.state))
-      .map((invoice) => {
-        const linkedName = invoice.linkedOrganizationName?.trim() || null;
-        const contactName = invoice.contactName?.trim() || null;
-        const label = linkedName || contactName || "Unknown";
-        const key =
-          invoice.linkedOrganizationId?.trim() ||
-          invoice.contactId?.trim() ||
-          label.toLowerCase();
-        return {
-          id: invoice.id,
-          date: invoice.invoiceDate,
-          amountCents: parseMoneyAmountToCents(invoiceAmountExclVat(invoice)),
-          customerKey: key,
-          customerLabel: label,
-        };
-      });
-  }, [invoiceRows]);
+  // Aggregates use EUR base amounts; rows keep the document currency.
+  const summaryLines = useMemo(
+    () => buildInvoiceSummaryLines(invoiceRows),
+    [invoiceRows],
+  );
 
   const listRef = useRef<HTMLUListElement>(null);
   const listContainerProps = useListKeyboardNavigationContainerProps(
@@ -588,6 +574,8 @@ export function FinanceInvoicesView({
                     seriesMonths={revenueMonths}
                     customerYear={year}
                     amountBasisLabel="excl. VAT"
+                    outstanding={outstanding}
+                    outstandingLoading={outstandingLoading}
                     loading={loading || revenueLoading}
                   />
                 }

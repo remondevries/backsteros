@@ -92,6 +92,18 @@ export const financeRoutes: AppRouter = c.router({
     summary:
       "Monthly billed Moneybird sales-invoice totals for a calendar year",
   },
+  getMoneybirdOutstanding: {
+    method: "GET",
+    path: "/api/v1/finance/moneybird/outstanding",
+    responses: {
+      200: s.moneybirdOutstandingResponseSchema,
+      400: badRequestSchema,
+      401: errorSchema,
+      403: errorSchema,
+    },
+    summary:
+      "Outstanding receivables and payables (EUR) from Moneybird unpaid invoices",
+  },
   listMoneybirdFinancialAccounts: {
     method: "GET",
     path: "/api/v1/finance/moneybird/financial-accounts",

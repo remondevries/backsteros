@@ -47,16 +47,38 @@ function formatSharePercent(share: number): string {
   return `${pct.toFixed(1)}%`;
 }
 
+/** Outstanding receivables / payables in EUR cents (Moneybird unpaid). */
+export type DocumentOutstandingSummary = {
+  receivables: { totalCents: number; overdueCents: number; count: number };
+  /** Null when payables are unavailable (never estimated). */
+  payables: { totalCents: number; overdueCents: number; count: number } | null;
+  payablesError?: string | null;
+};
+
+function formatOutstandingSubtitle(
+  side: { overdueCents: number; count: number },
+  noun: string,
+): string {
+  const parts = [`${side.count} open ${noun}${side.count === 1 ? "" : "s"}`];
+  if (side.overdueCents > 0) {
+    parts.push(`${formatEuroCents(side.overdueCents)} overdue`);
+  }
+  return parts.join(" · ");
+}
+
 function SummaryMetricCard({
   title,
   amountCents,
   subtitle,
   loading = false,
+  unavailable = false,
 }: {
   title: string;
   amountCents: number;
   subtitle?: string;
   loading?: boolean;
+  /** Show an em dash instead of a (fake) zero amount. */
+  unavailable?: boolean;
 }) {
   return (
     <section className="finance-doc-summary__metric">
@@ -70,7 +92,7 @@ function SummaryMetricCard({
         />
       ) : (
         <p className="finance-doc-summary__metric-value">
-          {formatEuroCents(amountCents)}
+          {unavailable ? "—" : formatEuroCents(amountCents)}
         </p>
       )}
       {subtitle ? (
@@ -119,6 +141,9 @@ export type FinanceDocumentSummaryWidgetsProps = {
   customerYear?: number | null;
   /** Title for the customer share widget. */
   customersTitle?: string;
+  /** When set, show receivables / payables outstanding cards. */
+  outstanding?: DocumentOutstandingSummary | null;
+  outstandingLoading?: boolean;
   /** Optional basis note appended to month-total subtitles (e.g. "excl. VAT"). */
   amountBasisLabel?: string | null;
   loading?: boolean;
@@ -130,6 +155,8 @@ export function FinanceDocumentSummaryWidgets({
   seriesMonths = null,
   customerYear = null,
   customersTitle = "Best paying customers",
+  outstanding = null,
+  outstandingLoading = false,
   amountBasisLabel = null,
   loading = false,
   className,
@@ -187,6 +214,34 @@ export function FinanceDocumentSummaryWidgets({
           .join(" · ")}
         loading={loading}
       />
+      {outstanding || outstandingLoading ? (
+        <>
+          <SummaryMetricCard
+            title="Receivables outstanding"
+            amountCents={outstanding?.receivables.totalCents ?? 0}
+            subtitle={
+              outstanding
+                ? formatOutstandingSubtitle(outstanding.receivables, "invoice")
+                : undefined
+            }
+            loading={outstandingLoading && !outstanding}
+          />
+          <SummaryMetricCard
+            title="Payables outstanding"
+            amountCents={outstanding?.payables?.totalCents ?? 0}
+            subtitle={
+              outstanding
+                ? outstanding.payables
+                  ? formatOutstandingSubtitle(outstanding.payables, "bill")
+                  : (outstanding.payablesError ??
+                    "Purchase invoices unavailable")
+                : undefined
+            }
+            loading={outstandingLoading && !outstanding}
+            unavailable={Boolean(outstanding && !outstanding.payables)}
+          />
+        </>
+      ) : null}
       <section className="finance-doc-summary__customers">
         <header className="finance-doc-summary__metric-header">
           <h3 className="finance-doc-summary__metric-title">
