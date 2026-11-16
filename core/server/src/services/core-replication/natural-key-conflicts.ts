@@ -239,8 +239,9 @@ export const REPLICATED_UNIQUE_FORKS: readonly {
     table: "email_threads",
     constraint: "email_threads_workspace_number_idx",
     columns: ["workspace_id", "number"],
-    policy: "dead_letter",
-    reason: "Thread numbers identify distinct threads; ids are referenced.",
+    policy: "renumber",
+    reason:
+      "Round 4: keep both threads; earlier-created keeps the number, the other moves to max+1 (like tasks).",
   },
   {
     table: "documents",

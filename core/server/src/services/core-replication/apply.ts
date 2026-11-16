@@ -46,6 +46,12 @@ import {
   taskNumberKeeper,
   taskNumberScopeId,
 } from "./task-number-conflicts.js";
+import {
+  EMAIL_THREAD_COUNTER_ENTITY,
+  EMAIL_THREAD_COUNTER_SCOPE,
+  emailThreadNumberKeeper,
+  isEmailThreadNumberUniqueViolation,
+} from "./email-thread-number-conflicts.js";
 import { mergeEntityCounter } from "./entity-counter-merge.js";
 import { getTableSpec, rowIdFromPk, type KnownTable, type TableSpec } from "./tables.js";
 import {
@@ -391,6 +397,18 @@ async function applyGenericRowUnchecked(
           continue;
         }
       }
+      if (isEmailThreadNumberUniqueViolation(error) && spec.name === "email_threads") {
+        const renumbered = await renumberEmailThreadNumberCollision(attemptRow);
+        if (renumbered) {
+          appendOpsLog(
+            "warn",
+            "core replication email-thread-number renumber",
+            `${renumbered.fromId} ${renumbered.fromNumber} -> ${renumbered.toNumber}`,
+          );
+          attemptRow = renumbered.row;
+          continue;
+        }
+      }
       if (isHealableSoftUnique(error)) {
         const healed = await softDeleteSoftUniqueLosers(spec, attemptRow, error);
         if (healed) {
@@ -508,6 +526,123 @@ async function renumberTaskNumberCollision(
     await sqlClient.unsafe(
       `
         UPDATE tasks
+        SET number = $1, updated_at = $2::timestamptz
+        WHERE id = $3
+      `,
+      [nextNumber, nowIso, twin.id] as never[],
+    );
+    return {
+      row,
+      fromId: twin.id,
+      fromNumber: Number(twin.number),
+      toNumber: nextNumber,
+    };
+  }
+
+  // Local twin keeps the number — renumber the incoming payload and retry.
+  return {
+    row: {
+      ...row,
+      number: nextNumber,
+      updated_at: nowIso,
+    },
+    fromId: incomingId,
+    fromNumber: incomingNumber,
+    toNumber: nextNumber,
+  };
+}
+
+/**
+ * On email_threads_workspace_number_idx: keep the earlier-created thread's
+ * number and move the other to max(workspace)+1. Never deletes (thread ids are
+ * referenced by comments). Returns the row to retry with, or null when the
+ * collision is not a plain number clash (e.g. same thread_key fork) so the
+ * caller dead-letters it.
+ */
+async function renumberEmailThreadNumberCollision(
+  row: ReplicationRow,
+): Promise<{
+  row: ReplicationRow;
+  fromId: string;
+  fromNumber: number;
+  toNumber: number;
+} | null> {
+  const workspaceId = typeof row.workspace_id === "string" ? row.workspace_id : null;
+  const incomingId = typeof row.id === "string" ? row.id : null;
+  const incomingNumber = row.number == null ? null : Number(row.number);
+  if (!workspaceId || !incomingId || incomingNumber == null || !Number.isFinite(incomingNumber)) {
+    return null;
+  }
+
+  const twins = (await sqlClient.unsafe(
+    `
+      SELECT id, number, created_at
+      FROM email_threads
+      WHERE workspace_id = $1
+        AND number = $2
+        AND id <> $3
+      LIMIT 1
+    `,
+    [workspaceId, incomingNumber, incomingId] as never[],
+  )) as { id: string; number: number; created_at: Date | string }[];
+
+  const twin = twins[0];
+  if (!twin) return null;
+
+  // Same mail thread forked into two ids: renumbering would not help and would
+  // needlessly touch the local row — let the thread_key conflict dead-letter.
+  if (typeof row.inbox_id === "string" && typeof row.thread_key === "string") {
+    const sameThread = (await sqlClient.unsafe(
+      `
+        SELECT id FROM email_threads
+        WHERE workspace_id = $1 AND inbox_id = $2 AND thread_key = $3 AND id <> $4
+        LIMIT 1
+      `,
+      [workspaceId, row.inbox_id, row.thread_key, incomingId] as never[],
+    )) as { id: string }[];
+    if (sameThread[0]) return null;
+  }
+
+  const incomingCreatedAt = new Date(String(row.created_at ?? row.updated_at));
+  const keeper = emailThreadNumberKeeper(
+    { id: incomingId, createdAt: incomingCreatedAt },
+    { id: twin.id, createdAt: new Date(twin.created_at) },
+  );
+
+  const maxRows = (await sqlClient.unsafe(
+    `
+      SELECT coalesce(max(number), 0)::int AS max_number
+      FROM email_threads
+      WHERE workspace_id = $1
+    `,
+    [workspaceId] as never[],
+  )) as { max_number: number }[];
+  const nextNumber = Number(maxRows[0]?.max_number ?? 0) + 1;
+  const nowIso = new Date().toISOString();
+
+  await sqlClient.unsafe(
+    `
+      INSERT INTO entity_counters (workspace_id, entity, scope_id, next_value, updated_at)
+      VALUES ($1, $2, $3, $4, $5::timestamptz)
+      ON CONFLICT (workspace_id, entity, scope_id)
+      DO UPDATE SET
+        next_value = greatest(entity_counters.next_value, EXCLUDED.next_value),
+        updated_at = EXCLUDED.updated_at
+    `,
+    [
+      workspaceId,
+      EMAIL_THREAD_COUNTER_ENTITY,
+      EMAIL_THREAD_COUNTER_SCOPE,
+      nextNumber + 1,
+      nowIso,
+    ] as never[],
+  );
+
+  if (keeper.id === incomingId) {
+    // Incoming keeps the number — move the local twin out of the way.
+    await sqlClient.unsafe(
+      `
+        UPDATE email_threads
         SET number = $1, updated_at = $2::timestamptz
         WHERE id = $3
       `,

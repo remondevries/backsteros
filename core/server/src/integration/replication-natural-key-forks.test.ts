@@ -17,6 +17,7 @@ import {
   documentPropertyTypes,
   documents,
   emailThreads,
+  entityCounters,
   financialTransactions,
   organizations,
   projects,
@@ -706,6 +707,8 @@ test("OS-89 dead-letter: email_threads inbox+thread_key", async (context) => {
     threadKey,
     number: 1,
   });
+  // thread_key fork = same mail thread under two ids: stays a dead letter
+  // (only the display-number clash renumbers).
   await expectUniqueDeadLetter({
     table: "email_threads",
     incomingId,
@@ -723,15 +726,17 @@ test("OS-89 dead-letter: email_threads inbox+thread_key", async (context) => {
   });
 });
 
-test("OS-89 dead-letter: email_threads workspace number", async (context) => {
+test("Round 4: email_threads workspace number fork renumbers the later-created incoming thread", async (context) => {
   const { userId, workspaceId } = await seedWorkspace();
   const localId = id("em");
   const incomingId = id("em");
-  const now = new Date().toISOString();
+  const earlier = "2026-01-01T00:00:00.000Z";
+  const later = "2026-02-01T00:00:00.000Z";
 
   context.after(async () => {
     await dropLetters([localId, incomingId]);
     await db.delete(emailThreads).where(eq(emailThreads.workspaceId, workspaceId));
+    await db.delete(entityCounters).where(eq(entityCounters.workspaceId, workspaceId));
     await db.delete(workspaces).where(eq(workspaces.id, workspaceId));
     await db.delete(users).where(eq(users.id, userId));
   });
@@ -742,22 +747,98 @@ test("OS-89 dead-letter: email_threads workspace number", async (context) => {
     inboxId: "inbox-a",
     threadKey: `th-a-${randomUUID()}`,
     number: 41,
+    createdAt: new Date(earlier),
+    updatedAt: new Date(earlier),
   });
-  await expectUniqueDeadLetter({
-    table: "email_threads",
-    incomingId,
-    incoming: {
-      id: incomingId,
-      workspace_id: workspaceId,
-      inbox_id: "inbox-b",
-      thread_key: `th-b-${randomUUID()}`,
-      number: 41,
-      status: "backlog",
-      priority: 0,
-      created_at: now,
-      updated_at: now,
+  const result = await applyRemoteChanges("email_threads", [
+    {
+      table: "email_threads",
+      row: {
+        id: incomingId,
+        workspace_id: workspaceId,
+        inbox_id: "inbox-b",
+        thread_key: `th-b-${randomUUID()}`,
+        number: 41,
+        status: "backlog",
+        priority: 0,
+        created_at: later,
+        updated_at: later,
+      },
     },
+  ]);
+  assert.equal(result.failed.length, 0, "number fork must not dead-letter");
+  assert.equal(result.applied, 1);
+
+  const rows = await db
+    .select()
+    .from(emailThreads)
+    .where(eq(emailThreads.workspaceId, workspaceId));
+  assert.equal(rows.length, 2, "both threads survive");
+  assert.equal(rows.find((row) => row.id === localId)?.number, 41);
+  assert.equal(rows.find((row) => row.id === incomingId)?.number, 42);
+
+  const [counter] = await db
+    .select()
+    .from(entityCounters)
+    .where(eq(entityCounters.workspaceId, workspaceId));
+  assert.ok((counter?.nextValue ?? 0) >= 43, "email counter moves past max+1");
+});
+
+test("Round 4: email_threads workspace number fork renumbers the later-created local thread when incoming is earlier", async (context) => {
+  const { userId, workspaceId } = await seedWorkspace();
+  const localId = id("em");
+  const incomingId = id("em");
+  const earlier = "2026-01-01T00:00:00.000Z";
+  const later = "2026-02-01T00:00:00.000Z";
+
+  context.after(async () => {
+    await dropLetters([localId, incomingId]);
+    await db.delete(emailThreads).where(eq(emailThreads.workspaceId, workspaceId));
+    await db.delete(entityCounters).where(eq(entityCounters.workspaceId, workspaceId));
+    await db.delete(workspaces).where(eq(workspaces.id, workspaceId));
+    await db.delete(users).where(eq(users.id, userId));
   });
+
+  await db.insert(emailThreads).values({
+    id: localId,
+    workspaceId,
+    inboxId: "inbox-a",
+    threadKey: `th-a-${randomUUID()}`,
+    number: 7,
+    createdAt: new Date(later),
+    updatedAt: new Date(later),
+  });
+  const result = await applyRemoteChanges("email_threads", [
+    {
+      table: "email_threads",
+      row: {
+        id: incomingId,
+        workspace_id: workspaceId,
+        inbox_id: "inbox-b",
+        thread_key: `th-b-${randomUUID()}`,
+        number: 7,
+        status: "backlog",
+        priority: 0,
+        created_at: earlier,
+        updated_at: earlier,
+      },
+    },
+  ]);
+  assert.equal(result.failed.length, 0);
+  assert.equal(result.applied, 1);
+
+  const rows = await db
+    .select()
+    .from(emailThreads)
+    .where(eq(emailThreads.workspaceId, workspaceId));
+  assert.equal(rows.length, 2);
+  assert.equal(rows.find((row) => row.id === incomingId)?.number, 7);
+  assert.equal(rows.find((row) => row.id === localId)?.number, 8);
+  assert.ok(
+    (rows.find((row) => row.id === localId)?.updatedAt.getTime() ?? 0) >
+      new Date(later).getTime(),
+    "renumbered local row bumps updated_at so the new number replicates",
+  );
 });
 
 test("OS-89 dead-letter: documents workspace doc_key", async (context) => {
