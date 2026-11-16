@@ -18,6 +18,7 @@ import {
   type CSSProperties,
 } from "react";
 
+import { buildAccountBalancePie } from "../../finance/account-balance-pie.js";
 import {
   bankAccountTypeForFinanceAccountGroupId,
   groupBankAccountsForFinanceNav,
@@ -66,7 +67,10 @@ import { useEntityHeaderActionsContext } from "../entity-actions/entity-header-a
 import { EntityDetailLayout } from "../entity/entity-detail-layout.js";
 import { FinanceAccountAvatarMark } from "./finance-account-avatar-mark.js";
 import { AccountIncomeExpenseChart } from "./account-income-expense-chart.js";
-import { buildNonCashflowCategoryIdSet } from "../../finance/cashflow-exclusion.js";
+import {
+  buildIncomeCategoryIdSet,
+  buildNonCashflowCategoryIdSet,
+} from "../../finance/cashflow-exclusion.js";
 import {
   FinanceYearNavigator,
   localCalendarYear,
@@ -492,27 +496,20 @@ export function FinanceAccountsView({
   }, [onChromeStateChange]);
 
   const overview = useMemo(() => {
-    const slices: FinanceOverviewPieSlice[] = localAccounts
-      .map((account, index) => {
-        const balanceCents = balanceCentsByAccountId[account.id] ?? 0;
-        return {
-          id: account.id,
-          label: account.name,
-          value: Math.abs(balanceCents),
-          color: resolveAccountPieColor(account, index),
-        };
-      })
-      .filter((slice) => slice.value > 0);
-    const totalCents = localAccounts.reduce(
-      (sum, account) => sum + (balanceCentsByAccountId[account.id] ?? 0),
-      0,
-    );
+    const { slices, totalCents } = buildAccountBalancePie({
+      accounts: localAccounts.map((account, index) => ({
+        id: account.id,
+        label: account.name,
+        balanceCents: balanceCentsByAccountId[account.id] ?? 0,
+        color: resolveAccountPieColor(account, index),
+      })),
+    });
     const currency = localAccounts[0]?.currency ?? "EUR";
     return {
       totalCents,
       accountCount: localAccounts.length,
       currency,
-      slices,
+      slices: slices as FinanceOverviewPieSlice[],
       colorKey: slices.map((slice) => `${slice.id}:${slice.color}`).join("|"),
     };
   }, [localAccounts, balanceCentsByAccountId]);
@@ -881,6 +878,10 @@ function AccountDetailPanel({
     () => buildNonCashflowCategoryIdSet(categories),
     [categories],
   );
+  const incomeCategoryIds = useMemo(
+    () => buildIncomeCategoryIdSet(categories),
+    [categories],
+  );
 
   const yearTransactions = useMemo(() => {
     const year = cashflowYear ?? localCalendarYear();
@@ -1138,6 +1139,7 @@ function AccountDetailPanel({
         cashflowMonths={cashflowMonths}
         transactions={cashflowMonths ? [] : transactions}
         nonCashflowCategoryIds={nonCashflowCategoryIds}
+        incomeCategoryIds={incomeCategoryIds}
         loading={cashflowLoading}
         fullYear
       />
