@@ -1,15 +1,19 @@
 /**
- * Re-seal bunq secret columns still encrypted under the old shared key
- * (BACKSTEROS_SECRET_ENCRYPTION_KEY / CORE_REPLICATION_SECRET) onto
- * BACKSTEROS_BUNQ_SECRET_ENCRYPTION_KEY.
+ * Re-seal bunq secret columns onto BACKSTEROS_BUNQ_SECRET_ENCRYPTION_KEY.
+ *
+ * Covers:
+ *  - ciphertext still under CORE_REPLICATION_SECRET / BACKSTEROS_SECRET_ENCRYPTION_KEY
+ *  - plaintext values left on cloud (API key / PEM never Connect'd)
  *
  * Cloud-only. Dry-run by default. Never prints secret values. No bunq HTTP.
- * No-ops when the dedicated key is unset.
+ * No-ops when the dedicated key is unset. --apply refuses while the cloud
+ * core is responding on its health endpoint, and each column write is a
+ * compare-and-set against the value that was planned.
  */
 
 import { eq, sql } from "drizzle-orm";
 
-import { db } from "../db/index.js";
+import { db, sqlClient } from "../db/index.js";
 import { workspaceIntegrationSecrets } from "../db/schema.js";
 import {
   BUNQ_ENCRYPTED_SECRET_FIELDS,
@@ -44,9 +48,46 @@ export function bunqReencryptRefusalReason(
   return null;
 }
 
+/** Health URL used to detect a running cloud core before --apply. */
+export function cloudCoreHealthUrl(env: NodeJS.ProcessEnv = process.env): string {
+  const port = env.PORT?.trim() || "8788";
+  const host = env.CORE_HEALTH_HOST?.trim() || "127.0.0.1";
+  return `http://${host}:${port}/health`;
+}
+
+/**
+ * True when GET /health returns `{ ok: true }` — the cloud core process is up.
+ * Connection errors / non-ok responses mean it is safe to --apply.
+ */
+export async function probeCloudCoreRunning(deps: {
+  env?: NodeJS.ProcessEnv;
+  fetchFn?: typeof fetch;
+  timeoutMs?: number;
+} = {}): Promise<boolean> {
+  const env = deps.env ?? process.env;
+  const url = cloudCoreHealthUrl(env);
+  const fetchFn = deps.fetchFn ?? fetch;
+  const timeoutMs = deps.timeoutMs ?? 1500;
+  try {
+    const response = await fetchFn(url, {
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    if (!response.ok) return false;
+    const body = (await response.json()) as { ok?: unknown };
+    return body?.ok === true;
+  } catch {
+    return false;
+  }
+}
+
 export type BunqReencryptRow = {
   workspaceId: string;
 } & Partial<Record<BunqEncryptedSecretField, string | null>>;
+
+export type BunqReencryptApplyResult = {
+  written: number;
+  casSkipped: number;
+};
 
 export type BunqReencryptDeps = {
   env?: NodeJS.ProcessEnv;
@@ -54,19 +95,25 @@ export type BunqReencryptDeps = {
   applyPatch?: (
     workspaceId: string,
     patch: Partial<Record<BunqEncryptedSecretField, string>>,
-  ) => Promise<void>;
+    expected: Partial<Record<BunqEncryptedSecretField, string | null>>,
+  ) => Promise<BunqReencryptApplyResult>;
+  probeCoreRunning?: () => Promise<boolean>;
 };
 
 export type BunqReencryptResult = {
   dryRun: boolean;
   /** Dedicated key was missing — nothing to do. */
   skippedNoKey: boolean;
-  /** Workspace rows inspected that had at least one v1: column. */
+  /** Workspace rows inspected that had at least one bunq secret column. */
   rows: number;
-  /** Columns that would be / were re-sealed under the dedicated key. */
+  /** Columns that would be / were written under the dedicated key. */
   columns: number;
+  /** Subset of `columns` that were plaintext (not `v1:`) before the pass. */
+  plaintextColumns: number;
   /** Already under the dedicated key (left alone). */
   alreadyDedicated: number;
+  /** Compare-and-set skipped because the stored value changed under us. */
+  casSkipped: number;
   /** Ciphertext that could not be decrypted with any key. */
   failedColumns: Array<{
     workspaceId: string;
@@ -74,47 +121,70 @@ export type BunqReencryptResult = {
   }>;
 };
 
+const FIELD_TO_DB_COLUMN: Record<BunqEncryptedSecretField, string> = {
+  bunqApiKey: "bunq_api_key",
+  bunqSigningPrivateKeyPem: "bunq_signing_private_key_pem",
+  bunqInstallationToken: "bunq_installation_token",
+  bunqSessionToken: "bunq_session_token",
+};
+
 /**
- * Pure: decide which encrypted fields need re-sealing under the dedicated key.
+ * Pure: decide which fields need sealing under the dedicated key.
+ * Encrypts plaintext and re-seals ciphertext still under the old shared key.
  */
 export function planBunqReencryptForRow(
   row: Partial<Record<BunqEncryptedSecretField, string | null | undefined>>,
   env: NodeJS.ProcessEnv,
 ): {
   patch: Partial<Record<BunqEncryptedSecretField, string>>;
+  /** Old values for compare-and-set writes. */
+  expected: Partial<Record<BunqEncryptedSecretField, string | null>>;
   alreadyDedicated: BunqEncryptedSecretField[];
   failed: BunqEncryptedSecretField[];
+  plaintextFields: BunqEncryptedSecretField[];
 } {
   const dedicated = bunqSecretEncryptionKeyMaterial(env);
   const patch: Partial<Record<BunqEncryptedSecretField, string>> = {};
+  const expected: Partial<Record<BunqEncryptedSecretField, string | null>> = {};
   const alreadyDedicated: BunqEncryptedSecretField[] = [];
   const failed: BunqEncryptedSecretField[] = [];
+  const plaintextFields: BunqEncryptedSecretField[] = [];
   if (!dedicated) {
-    return { patch, alreadyDedicated, failed };
+    return { patch, expected, alreadyDedicated, failed, plaintextFields };
   }
   for (const field of BUNQ_ENCRYPTED_SECRET_FIELDS) {
     const value = row[field];
-    if (typeof value !== "string" || !isEncryptedBunqSecret(value)) continue;
+    if (typeof value !== "string" || !value.trim()) continue;
     const stored = value.trim();
-    if (decryptSecretWithKeyMaterials(stored, [dedicated]) !== null) {
-      alreadyDedicated.push(field);
+
+    if (isEncryptedBunqSecret(stored)) {
+      if (decryptSecretWithKeyMaterials(stored, [dedicated]) !== null) {
+        alreadyDedicated.push(field);
+        continue;
+      }
+      const plaintext = decryptBunqSecret(stored, env);
+      if (plaintext === null) {
+        failed.push(field);
+        continue;
+      }
+      patch[field] = encryptBunqSecret(plaintext, env);
+      expected[field] = stored;
       continue;
     }
-    const plaintext = decryptBunqSecret(stored, env);
-    if (plaintext === null) {
-      failed.push(field);
-      continue;
-    }
-    patch[field] = encryptBunqSecret(plaintext, env);
+
+    // Plaintext (legacy / never Connect'd).
+    plaintextFields.push(field);
+    patch[field] = encryptBunqSecret(stored, env);
+    expected[field] = stored;
   }
-  return { patch, alreadyDedicated, failed };
+  return { patch, expected, alreadyDedicated, failed, plaintextFields };
 }
 
-const HAS_ENCRYPTED_BUNQ_SECRET = sql`(
-  ${workspaceIntegrationSecrets.bunqApiKey} like 'v1:%'
-  or ${workspaceIntegrationSecrets.bunqSigningPrivateKeyPem} like 'v1:%'
-  or ${workspaceIntegrationSecrets.bunqInstallationToken} like 'v1:%'
-  or ${workspaceIntegrationSecrets.bunqSessionToken} like 'v1:%'
+const HAS_BUNQ_SECRET_VALUE = sql`(
+  (nullif(btrim(${workspaceIntegrationSecrets.bunqApiKey}), '') is not null)
+  or (nullif(btrim(${workspaceIntegrationSecrets.bunqSigningPrivateKeyPem}), '') is not null)
+  or (nullif(btrim(${workspaceIntegrationSecrets.bunqInstallationToken}), '') is not null)
+  or (nullif(btrim(${workspaceIntegrationSecrets.bunqSessionToken}), '') is not null)
 )`;
 
 async function defaultLoadRows(
@@ -132,24 +202,53 @@ async function defaultLoadRows(
     .from(workspaceIntegrationSecrets)
     .where(
       workspaceId
-        ? sql`${eq(workspaceIntegrationSecrets.workspaceId, workspaceId)} and ${HAS_ENCRYPTED_BUNQ_SECRET}`
-        : HAS_ENCRYPTED_BUNQ_SECRET,
+        ? sql`${eq(workspaceIntegrationSecrets.workspaceId, workspaceId)} and ${HAS_BUNQ_SECRET_VALUE}`
+        : HAS_BUNQ_SECRET_VALUE,
     );
   return rows;
 }
 
-async function defaultApplyPatch(
+/**
+ * Per-column compare-and-set so a concurrent session refresh is never
+ * overwritten with a stale re-sealed value.
+ */
+export async function defaultApplyPatchWithCas(
   workspaceId: string,
   patch: Partial<Record<BunqEncryptedSecretField, string>>,
-): Promise<void> {
-  await db
-    .update(workspaceIntegrationSecrets)
-    .set({ ...patch, updatedAt: new Date() })
-    .where(eq(workspaceIntegrationSecrets.workspaceId, workspaceId));
+  expected: Partial<Record<BunqEncryptedSecretField, string | null>>,
+): Promise<BunqReencryptApplyResult> {
+  let written = 0;
+  let casSkipped = 0;
+  for (const field of BUNQ_ENCRYPTED_SECRET_FIELDS) {
+    const next = patch[field];
+    if (typeof next !== "string") continue;
+    const col = FIELD_TO_DB_COLUMN[field];
+    const oldValue = expected[field] ?? null;
+    const result = await sqlClient.unsafe(
+      `UPDATE workspace_integration_secrets
+       SET ${col} = $1, updated_at = now()
+       WHERE workspace_id = $2
+         AND ${col} IS NOT DISTINCT FROM $3`,
+      [next, workspaceId, oldValue] as never[],
+    );
+    const count =
+      typeof result === "object" &&
+      result !== null &&
+      "count" in result &&
+      typeof (result as { count?: unknown }).count === "number"
+        ? (result as { count: number }).count
+        : Array.isArray(result)
+          ? result.length
+          : 0;
+    if (count > 0) written += 1;
+    else casSkipped += 1;
+  }
+  return { written, casSkipped };
 }
 
 /**
- * Dry-run by default. When `--apply` / dryRun:false, writes re-sealed columns.
+ * Dry-run by default. When `--apply` / dryRun:false, writes sealed columns
+ * only if the cloud core is not responding and each CAS matches.
  * Never returns secret values.
  */
 export async function reencryptBunqSecretsToDedicatedKey(
@@ -170,15 +269,30 @@ export async function reencryptBunqSecretsToDedicatedKey(
       skippedNoKey: true,
       rows: 0,
       columns: 0,
+      plaintextColumns: 0,
       alreadyDedicated: 0,
+      casSkipped: 0,
       failedColumns: [],
     };
   }
 
+  if (!dryRun) {
+    const running = await (deps.probeCoreRunning ??
+      (() => probeCloudCoreRunning({ env })))();
+    if (running) {
+      throw new BunqReencryptRefusedError(
+        `cloud core is responding at ${cloudCoreHealthUrl(env)}; stop it before --apply (e.g. docker compose -f deploy/cloud/docker-compose.yml stop backsteros)`,
+      );
+    }
+  }
+
   const workspaceId = options.workspaceId ?? null;
   const rows = await (deps.loadRows ?? defaultLoadRows)(workspaceId);
-  let columns = 0;
+  let plannedColumns = 0;
+  let writtenColumns = 0;
+  let plaintextColumns = 0;
   let alreadyDedicated = 0;
+  let casSkipped = 0;
   const failedColumns: BunqReencryptResult["failedColumns"] = [];
 
   for (const row of rows) {
@@ -189,9 +303,16 @@ export async function reencryptBunqSecretsToDedicatedKey(
     }
     const changed = Object.keys(plan.patch).length;
     if (changed === 0) continue;
-    columns += changed;
+    plannedColumns += changed;
+    plaintextColumns += plan.plaintextFields.length;
     if (!dryRun) {
-      await (deps.applyPatch ?? defaultApplyPatch)(row.workspaceId, plan.patch);
+      const applyResult = await (deps.applyPatch ?? defaultApplyPatchWithCas)(
+        row.workspaceId,
+        plan.patch,
+        plan.expected,
+      );
+      writtenColumns += applyResult.written;
+      casSkipped += applyResult.casSkipped;
     }
   }
 
@@ -199,8 +320,10 @@ export async function reencryptBunqSecretsToDedicatedKey(
     dryRun,
     skippedNoKey: false,
     rows: rows.length,
-    columns,
+    columns: dryRun ? plannedColumns : writtenColumns,
+    plaintextColumns,
     alreadyDedicated,
+    casSkipped,
     failedColumns,
   };
 }
