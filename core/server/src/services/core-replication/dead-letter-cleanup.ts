@@ -2,9 +2,11 @@
  * Round 4 one-off dead-letter cleanup plan (see
  * scripts/retry-meeting-dead-letters-and-ack-rest.ts).
  *
- * Retry only the named meeting rows (apply the stored payload); acknowledge
- * every other open dead letter without applying it. Pure planning + an
- * executor with injected side effects so it is testable without a database.
+ * Retry only the named meeting rows (apply the stored payload); leave live
+ * email-thread forks and all `projects` / `email_threads` letters open for
+ * inspection; acknowledge every other open dead letter without applying it.
+ * Pure planning + an executor with injected side effects so it is testable
+ * without a database.
  */
 
 /** The only row ids that are retried; everything else open is acknowledged. */
@@ -16,6 +18,27 @@ export const RETRY_MEETING_ROW_IDS: readonly string[] = [
   "lFgsQ_VnWiew-g1r3RIMp",
 ];
 
+/**
+ * Live email-thread forks that must NOT be acknowledged — left open for
+ * inspection (they exist on both sides).
+ */
+export const LEAVE_OPEN_ROW_IDS: readonly string[] = [
+  "BsR2kHKjsBP58I-1STQpG",
+  "0PlfetrIlS001_i6BzmR8",
+  "A72IVUc_45SY1cKNWHvWi",
+  "zR3IWXfsnw75EwYmziGtA",
+  "dmmI3XDtrT11emjyeigWG",
+  "lGhszMgjPlLDuo3e9HyiW",
+  "i4Gx1P7VkQCNIq0tIufAA",
+];
+
+/**
+ * Conservative: never auto-acknowledge any letter on these tables. One live
+ * project exists on both sides among the dead letters and needs inspection,
+ * and email threads can be live forks — so the whole tables stay open.
+ */
+export const LEAVE_OPEN_TABLES: readonly string[] = ["email_threads", "projects"];
+
 export type OpenDeadLetterRef = {
   id: string;
   tableName: string;
@@ -26,9 +49,22 @@ export type OpenDeadLetterRef = {
 export type DeadLetterCleanupPlan = {
   retry: OpenDeadLetterRef[];
   acknowledge: OpenDeadLetterRef[];
+  /** Left open for manual inspection — never acknowledged by this run. */
+  leaveOpen: OpenDeadLetterRef[];
   /** Requested meeting row ids that have no open dead letter right now. */
   retryRowIdsWithoutOpenLetter: string[];
 };
+
+export function isLeaveOpenLetter(
+  letter: Pick<OpenDeadLetterRef, "tableName" | "rowId">,
+  leaveOpenRowIds: readonly string[] = LEAVE_OPEN_ROW_IDS,
+  leaveOpenTables: readonly string[] = LEAVE_OPEN_TABLES,
+): boolean {
+  return (
+    leaveOpenTables.includes(letter.tableName) ||
+    leaveOpenRowIds.includes(letter.rowId)
+  );
+}
 
 export function planDeadLetterCleanup(
   open: readonly OpenDeadLetterRef[],
@@ -37,9 +73,12 @@ export function planDeadLetterCleanup(
   const retrySet = new Set(retryRowIds);
   const retry: OpenDeadLetterRef[] = [];
   const acknowledge: OpenDeadLetterRef[] = [];
+  const leaveOpen: OpenDeadLetterRef[] = [];
   for (const letter of open) {
     if (letter.tableName === "meetings" && retrySet.has(letter.rowId)) {
       retry.push(letter);
+    } else if (isLeaveOpenLetter(letter)) {
+      leaveOpen.push(letter);
     } else {
       acknowledge.push(letter);
     }
@@ -48,6 +87,7 @@ export function planDeadLetterCleanup(
   return {
     retry,
     acknowledge,
+    leaveOpen,
     retryRowIdsWithoutOpenLetter: retryRowIds.filter((id) => !seen.has(id)),
   };
 }

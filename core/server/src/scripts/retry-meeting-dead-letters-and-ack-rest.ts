@@ -1,6 +1,7 @@
 /**
  * Round 4 one-off: retry ONLY five meeting dead letters and acknowledge every
- * other open replication dead letter.
+ * other open replication dead letter except `email_threads` / `projects`
+ * letters (and 7 named live email-thread forks), which stay open for inspection.
  *
  *   pnpm exec tsx --env-file=.env src/scripts/retry-meeting-dead-letters-and-ack-rest.ts
  *     → dry-run: prints the plan, writes nothing.
@@ -63,6 +64,12 @@ async function main() {
     console.log(
       `no open letter for: ${plan.retryRowIdsWithoutOpenLetter.join(", ")}`,
     );
+  }
+  console.log(
+    `leave open for inspection (${plan.leaveOpen.length}) — email_threads / projects / live forks:`,
+  );
+  for (const letter of plan.leaveOpen) {
+    console.log(`  keep    ${formatLetter(letter)}`);
   }
   console.log(`acknowledge (${plan.acknowledge.length}):`);
   for (const letter of plan.acknowledge) {
