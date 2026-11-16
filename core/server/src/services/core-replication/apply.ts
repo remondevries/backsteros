@@ -20,7 +20,9 @@ import { sanitizeAgentsRowForReplication } from "./agent-replication.js";
 import { sanitizeWorkspaceIntegrationSecretsRowForReplication } from "./integration-secrets-replication.js";
 import {
   guardCloudApiKeyApplyFromLocal,
+  resolveCloudApiKeyMaterialFromLocal,
   resolveCloudWorkspaceOwnerUserId,
+  shouldSkipUnknownCloudApiKeyFromLocal,
 } from "./cloud-key-apply-guard.js";
 import {
   buildBindPlaceholder,
@@ -953,6 +955,7 @@ async function applyApiKeyRow(
   const [existing] = await db
     .select({
       updatedAt: apiKeys.updatedAt,
+      prefix: apiKeys.prefix,
       keyHash: apiKeys.keyHash,
       secretCiphertext: apiKeys.secretCiphertext,
       name: apiKeys.name,
@@ -965,6 +968,19 @@ async function applyApiKeyRow(
     .from(apiKeys)
     .where(eq(apiKeys.id, String(sanitized.id)))
     .limit(1);
+
+  // Cloud: never mint a new usable key from the Mac, and never take its hash.
+  if (
+    localRole === "cloud" &&
+    shouldSkipUnknownCloudApiKeyFromLocal(existing)
+  ) {
+    appendOpsLog(
+      "warn",
+      "core replication api_keys skipped unknown id from local",
+      String(sanitized.id),
+    );
+    return "skipped";
+  }
 
   const decision = shouldApplyByUpdatedAt(
     "api_keys",
@@ -990,6 +1006,10 @@ async function applyApiKeyRow(
   let nextRevokedAt = inboundRevokedAt;
   let nextUserId = sanitized.user_id ? String(sanitized.user_id) : null;
   let nextContactId = sanitized.contact_id ? String(sanitized.contact_id) : null;
+  let nextPrefix = String(sanitized.prefix);
+  let secretCiphertext: string | null;
+  let keyHash: string | null;
+
   if (localRole === "cloud" && existing) {
     const guarded = guardCloudApiKeyApplyFromLocal(
       {
@@ -1022,16 +1042,39 @@ async function applyApiKeyRow(
     nextRevokedAt = guarded.revokedAt;
     nextUserId = guarded.userId;
     nextContactId = guarded.contactId;
+
+    const material = resolveCloudApiKeyMaterialFromLocal(
+      {
+        prefix: existing.prefix,
+        keyHash: existing.keyHash,
+        secretCiphertext: existing.secretCiphertext,
+      },
+      {
+        prefix: sanitized.prefix,
+        keyHash: sanitized.key_hash,
+        secretCiphertext: sanitized.secret_ciphertext,
+      },
+    );
+    if (material.ignoredFields.length > 0) {
+      appendOpsLog(
+        "warn",
+        "core replication api_keys ignored local key material on cloud",
+        `${String(sanitized.id)}: ${material.ignoredFields.join(", ")}`,
+      );
+    }
+    nextPrefix = material.prefix;
+    keyHash = material.keyHash;
+    secretCiphertext = material.secretCiphertext;
+  } else {
+    // Local core (or cloud insert path unreachable above): keep prior preserve
+    // behaviour so stripped inbound never blanks stored secrets.
+    secretCiphertext = preserveApiKeySecret(
+      sanitized.secret_ciphertext,
+      existing?.secretCiphertext,
+    );
+    keyHash = preserveApiKeySecret(sanitized.key_hash, existing?.keyHash);
   }
 
-  // Never overwrite stored secret material with empty / stripped / null
-  // inbound values: a local peer strips key_hash + secret_ciphertext
-  // upstream, and legacy peers may omit ciphertext. Keep what we already hold.
-  const secretCiphertext = preserveApiKeySecret(
-    sanitized.secret_ciphertext,
-    existing?.secretCiphertext,
-  );
-  const keyHash = preserveApiKeySecret(sanitized.key_hash, existing?.keyHash);
   if (!keyHash) {
     // No hash inbound and none stored: this core cannot mint a usable key from
     // a stripped row (e.g. a key created on local). Not an apply failure.
@@ -1050,7 +1093,7 @@ async function applyApiKeyRow(
       workspaceId: String(sanitized.workspace_id),
       userId: nextUserId,
       name: nextName,
-      prefix: String(sanitized.prefix),
+      prefix: nextPrefix,
       keyHash,
       secretCiphertext,
       scopes: nextScopes,
@@ -1067,7 +1110,7 @@ async function applyApiKeyRow(
         workspaceId: String(sanitized.workspace_id),
         userId: nextUserId,
         name: nextName,
-        prefix: String(sanitized.prefix),
+        prefix: nextPrefix,
         keyHash,
         secretCiphertext,
         scopes: nextScopes,

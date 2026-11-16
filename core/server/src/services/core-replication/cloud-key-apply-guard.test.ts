@@ -3,7 +3,9 @@ import { describe, it } from "node:test";
 
 import {
   guardCloudApiKeyApplyFromLocal,
+  resolveCloudApiKeyMaterialFromLocal,
   resolveCloudWorkspaceOwnerUserId,
+  shouldSkipUnknownCloudApiKeyFromLocal,
 } from "./cloud-key-apply-guard.js";
 
 const EXISTING = {
@@ -92,5 +94,62 @@ describe("resolveCloudWorkspaceOwnerUserId", () => {
   it("is a no-op when owners match", () => {
     const result = resolveCloudWorkspaceOwnerUserId("owner-1", "owner-1");
     assert.deepEqual(result, { ownerUserId: "owner-1", ignored: false });
+  });
+});
+
+describe("shouldSkipUnknownCloudApiKeyFromLocal", () => {
+  it("skips when cloud has no row for the id", () => {
+    assert.equal(shouldSkipUnknownCloudApiKeyFromLocal(undefined), true);
+    assert.equal(shouldSkipUnknownCloudApiKeyFromLocal(null), true);
+  });
+
+  it("does not skip existing cloud keys", () => {
+    assert.equal(shouldSkipUnknownCloudApiKeyFromLocal({ id: "k1" }), false);
+  });
+});
+
+describe("resolveCloudApiKeyMaterialFromLocal", () => {
+  const existing = {
+    prefix: "sk_live_abcd",
+    keyHash: "hash-cloud",
+    secretCiphertext: "cipher-cloud",
+  };
+
+  it("keeps cloud material when local swaps hash/secret/prefix", () => {
+    const result = resolveCloudApiKeyMaterialFromLocal(existing, {
+      prefix: "sk_live_evil",
+      keyHash: "hash-attacker",
+      secretCiphertext: "cipher-attacker",
+    });
+    assert.equal(result.prefix, "sk_live_abcd");
+    assert.equal(result.keyHash, "hash-cloud");
+    assert.equal(result.secretCiphertext, "cipher-cloud");
+    assert.deepEqual(result.ignoredFields.sort(), [
+      "key_hash",
+      "prefix",
+      "secret_ciphertext",
+    ]);
+  });
+
+  it("does not flag stripped empty inbound as ignored", () => {
+    const result = resolveCloudApiKeyMaterialFromLocal(existing, {
+      prefix: "sk_live_abcd",
+      keyHash: "",
+      secretCiphertext: null,
+    });
+    assert.deepEqual(result.ignoredFields, []);
+    assert.equal(result.keyHash, "hash-cloud");
+  });
+
+  it("still allows metadata guard to rename / revoke independently", () => {
+    // Material helper is orthogonal: name/revoke covered by guardCloudApiKeyApplyFromLocal.
+    const meta = guardCloudApiKeyApplyFromLocal(EXISTING, {
+      ...EXISTING,
+      name: "Renamed",
+      revokedAt: new Date("2026-11-16T12:00:00.000Z"),
+    });
+    assert.equal(meta.name, "Renamed");
+    assert.ok(meta.revokedAt);
+    assert.deepEqual(meta.ignoredFields, []);
   });
 });
