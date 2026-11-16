@@ -5,11 +5,14 @@ import {
   emptyPendingUnpushedState,
   formatPendingUnpushedSummary,
   hasPendingUnpushedState,
+  isExcludedFromPendingUnpushed,
   isPendingCoveredByAck,
   nextPendingAckSnapshot,
   parseAcknowledgePendingBody,
   resolveAcknowledgePendingSnapshot,
   shouldPauseSyncEventPull,
+  summarizeUnpushedTables,
+  sumLocalOnlyRows,
   toPendingAckSnapshot,
   type PendingUnpushedState,
 } from "./pending-unpushed-policy.js";
@@ -110,6 +113,47 @@ describe("pending unpushed state (OS-82)", () => {
         }),
       ),
       "unpushed=4 deadLetters=1 localOnly=2 tables=tasks,contacts",
+    );
+  });
+
+  it("excludes tables not pushed by design from the unpushed count", () => {
+    assert.equal(isExcludedFromPendingUnpushed("api_keys"), true);
+    assert.equal(isExcludedFromPendingUnpushed("tasks"), false);
+
+    const summary = summarizeUnpushedTables([
+      { table: "tasks", count: 2 },
+      { table: "api_keys", count: 7 },
+      { table: "contacts", count: 0 },
+    ]);
+    assert.deepEqual(summary, {
+      unpushedRowCount: 2,
+      unpushedTables: ["tasks"],
+    });
+
+    const onlyExcluded = summarizeUnpushedTables([
+      { table: "api_keys", count: 3 },
+    ]);
+    assert.equal(onlyExcluded.unpushedRowCount, 0);
+    assert.equal(
+      hasPendingUnpushedState(
+        state({
+          unpushedRowCount: onlyExcluded.unpushedRowCount,
+          unpushedTables: onlyExcluded.unpushedTables,
+        }),
+      ),
+      false,
+      "excluded tables never pause ordered sync-event pull",
+    );
+  });
+
+  it("excluded tables do not inflate reconcile local-only rows either", () => {
+    assert.equal(
+      sumLocalOnlyRows([
+        { tableName: "api_keys", missingOnPeer: 4 },
+        { tableName: "tasks", missingOnPeer: 1 },
+        { tableName: "contacts", missingOnPeer: null },
+      ]),
+      1,
     );
   });
 });

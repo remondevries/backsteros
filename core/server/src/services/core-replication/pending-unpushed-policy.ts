@@ -12,6 +12,52 @@ export type PendingAckSnapshot = {
   localOnlyRowCount: number;
 };
 
+/**
+ * Tables that are NOT pushed (or only partially pushed) by design, so
+ * their tip-vs-push-cursor gap / reconcile "local only" rows must never pause
+ * ordered sync-event pull. Whole-table one-way rules are gone (every
+ * replicated table twins both ways); only column-level special cases remain:
+ *
+ * - `api_keys`: a local core strips `key_hash` / `secret_ciphertext` upstream,
+ *   so keys minted on local are never created on cloud and stay "local only"
+ *   forever — metadata updates (revoke, rename) still replicate.
+ */
+export const EXCLUDED_FROM_PENDING_UNPUSHED: readonly string[] = ["api_keys"];
+
+export function isExcludedFromPendingUnpushed(table: string): boolean {
+  return EXCLUDED_FROM_PENDING_UNPUSHED.includes(table);
+}
+
+/**
+ * Sum per-table unpushed counts, ignoring tables excluded by design.
+ * Pure — the DB probe lives in pending-unpushed-state.ts.
+ */
+export function summarizeUnpushedTables(
+  entries: ReadonlyArray<{ table: string; count: number }>,
+): { unpushedRowCount: number; unpushedTables: string[] } {
+  let unpushedRowCount = 0;
+  const unpushedTables: string[] = [];
+  for (const { table, count } of entries) {
+    if (count <= 0 || isExcludedFromPendingUnpushed(table)) continue;
+    unpushedRowCount += count;
+    unpushedTables.push(table);
+  }
+  return { unpushedRowCount, unpushedTables };
+}
+
+/** Reconcile "missing on peer" rows, ignoring tables excluded by design. */
+export function sumLocalOnlyRows(
+  mismatches: ReadonlyArray<{ tableName: string; missingOnPeer?: number | null }>,
+): number {
+  return mismatches.reduce(
+    (sum, row) =>
+      isExcludedFromPendingUnpushed(row.tableName)
+        ? sum
+        : sum + (row.missingOnPeer ?? 0),
+    0,
+  );
+}
+
 export function emptyPendingUnpushedState(): PendingUnpushedState {
   return {
     unpushedRowCount: 0,

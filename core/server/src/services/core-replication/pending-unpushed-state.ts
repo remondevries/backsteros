@@ -10,11 +10,14 @@ import {
   emptyPendingUnpushedState,
   formatPendingUnpushedSummary,
   hasPendingUnpushedState,
+  isExcludedFromPendingUnpushed,
   isPendingCoveredByAck,
   nextPendingAckSnapshot,
   parseAcknowledgePendingBody,
   resolveAcknowledgePendingSnapshot,
   shouldPauseSyncEventPull,
+  summarizeUnpushedTables,
+  sumLocalOnlyRows,
   toPendingAckSnapshot,
   type PendingAckSnapshot,
   type PendingUnpushedState,
@@ -25,11 +28,14 @@ export {
   emptyPendingUnpushedState,
   formatPendingUnpushedSummary,
   hasPendingUnpushedState,
+  isExcludedFromPendingUnpushed,
   isPendingCoveredByAck,
   nextPendingAckSnapshot,
   parseAcknowledgePendingBody,
   resolveAcknowledgePendingSnapshot,
   shouldPauseSyncEventPull,
+  summarizeUnpushedTables,
+  sumLocalOnlyRows,
   toPendingAckSnapshot,
   type PendingAckSnapshot,
   type PendingUnpushedState,
@@ -47,9 +53,10 @@ export async function getPendingUnpushedState(): Promise<PendingUnpushedState> {
     listReplicationReconcileMismatches(),
   ]);
 
-  const unpushedTables: string[] = [];
-  let unpushedRowCount = 0;
+  const entries: { table: string; count: number }[] = [];
   for (const table of tables) {
+    // Tables not pushed by design never gate ordered sync-event pull.
+    if (isExcludedFromPendingUnpushed(table)) continue;
     const [tip, pushCursor] = await Promise.all([
       fetchLocalTableTip(table),
       getReplicationCursor(table, "push"),
@@ -59,17 +66,14 @@ export async function getPendingUnpushedState(): Promise<PendingUnpushedState> {
     if (!tip || cursorCoversLocalTip(pushCursor, tip)) {
       continue;
     }
-    const count = await countLocalChangesSince(table, pushCursor);
-    if (count > 0) {
-      unpushedRowCount += count;
-      unpushedTables.push(table);
-    }
+    entries.push({
+      table,
+      count: await countLocalChangesSince(table, pushCursor),
+    });
   }
 
-  const localOnlyRowCount = mismatches.reduce(
-    (sum, row) => sum + (row.missingOnPeer ?? 0),
-    0,
-  );
+  const { unpushedRowCount, unpushedTables } = summarizeUnpushedTables(entries);
+  const localOnlyRowCount = sumLocalOnlyRows(mismatches);
 
   return {
     unpushedRowCount,
