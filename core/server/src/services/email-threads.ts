@@ -22,6 +22,7 @@ import {
 import { newId } from "../lib/crypto.js";
 import {
   canPromoteEmailThreadWorkflowStatus,
+  shouldRetriageEmailThreadOnInbound,
   type EmailWorkflowPromoteStatus,
 } from "../lib/email-status-labels.js";
 import {
@@ -912,6 +913,48 @@ export async function promoteEmailThreadWorkflowStatus(
       inboxId,
       threadKey,
       next,
+      error instanceof Error ? error.message : error,
+    );
+    return null;
+  }
+}
+
+/**
+ * Best-effort: when a new inbound message lands on an existing thread that is
+ * not Triage, move it back to Triage (and clear Updated) so the reply is
+ * obvious. Does not invent thread rows — list/open paths create those.
+ */
+export async function retriageEmailThreadOnInbound(
+  workspaceId: string,
+  inboxId: string,
+  input: { threadId?: string | null; messageId?: string | null },
+): Promise<EmailThreadMetadata | null> {
+  const messageId = input.messageId?.trim() || "";
+  const threadId = input.threadId?.trim() || "";
+  if (!threadId && !messageId) return null;
+  const threadKey = resolveEmailThreadKey({
+    threadId: threadId || null,
+    messageId,
+  });
+  if (!threadKey) return null;
+  try {
+    const existing = await getEmailThreadRow(workspaceId, inboxId, threadKey);
+    if (!existing) return null;
+    if (!shouldRetriageEmailThreadOnInbound(existing.status)) {
+      return toEmailThreadMetadata(workspaceId, existing);
+    }
+    return await patchEmailThreadMetadataLeaderAware(
+      workspaceId,
+      inboxId,
+      threadKey,
+      // Clear Updated so the thread lands cleanly in Triage, not the Updated group.
+      { status: "triage", inboxUpdatedAt: null },
+    );
+  } catch (error) {
+    console.warn(
+      "[email] inbound retriage failed",
+      inboxId,
+      threadKey,
       error instanceof Error ? error.message : error,
     );
     return null;

@@ -100,3 +100,15 @@ export function canPromoteEmailThreadWorkflowStatus(
     status === "in_progress"
   );
 }
+
+/**
+ * New inbound mail on a non-Triage thread should return it to Triage so the
+ * fresh reply is obvious in the inbox.
+ */
+export function shouldRetriageEmailThreadOnInbound(
+  current: string | null | undefined,
+): boolean {
+  const normalized = (current ?? "").trim();
+  if (!normalized) return false;
+  return migrateLegacyEmailStatus(normalized) !== "triage";
+}

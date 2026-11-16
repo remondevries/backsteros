@@ -88,6 +88,21 @@ describe("hybrid write bar", () => {
     assert.ok(email.includes("deleteEmailThreadLeaderAware"));
     assert.ok(email.includes("preferredNumber"));
     assert.ok(email.includes("patchEmailThreadMetadataLeaderAware"));
+    assert.ok(
+      email.includes("retriageEmailThreadOnInbound"),
+      "inbound retriage must live on email-threads",
+    );
+    assert.ok(
+      email.includes('status: "triage"') &&
+        email.includes("patchEmailThreadMetadataLeaderAware"),
+      "inbound retriage must patch leader-first",
+    );
+
+    const emailRoutes = readSrc("../app/email-routes.ts");
+    assert.ok(
+      emailRoutes.includes("retriageEmailThreadOnInbound"),
+      "AgentMail message.received must retriage non-Triage threads",
+    );
 
     const agentmail = readSrc("agentmail-settings.ts");
     assert.ok(agentmail.includes("deleteEmailThreadLeaderAware"));

@@ -27,6 +27,7 @@ describe("agentmail-webhook", () => {
       message: {
         inbox_id: "inbox_1",
         message_id: "msg_1",
+        thread_id: "thread_1",
       },
     });
     assert.deepEqual(parsed, {
@@ -34,6 +35,7 @@ describe("agentmail-webhook", () => {
       eventId: "evt_1",
       inboxId: "inbox_1",
       messageId: "msg_1",
+      threadId: "thread_1",
     });
   });
 

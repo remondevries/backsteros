@@ -19,6 +19,7 @@ export type AgentMailWebhookPayload = {
   eventId: string | null;
   inboxId: string | null;
   messageId: string | null;
+  threadId: string | null;
 };
 
 export function pruneWebhookDedupe(now = Date.now()): void {
@@ -73,8 +74,12 @@ export function parseAgentMailWebhookPayload(
     (message && typeof message.message_id === "string" && message.message_id.trim()) ||
     (message && typeof message.messageId === "string" && message.messageId.trim()) ||
     null;
+  const threadId =
+    (message && typeof message.thread_id === "string" && message.thread_id.trim()) ||
+    (message && typeof message.threadId === "string" && message.threadId.trim()) ||
+    null;
   if (!eventType) return null;
-  return { eventType, eventId, inboxId, messageId };
+  return { eventType, eventId, inboxId, messageId, threadId };
 }
 
 export function verifyAgentMailWebhook(
@@ -89,15 +94,32 @@ export function verifyAgentMailWebhook(
  * Verify against stored secrets, dedupe, and publish when a selected inbox
  * receives `message.received`. Returns whether the signature verified.
  */
+export type AgentMailWebhookDeliveryResult = {
+  ok: boolean;
+  published: boolean;
+  workspaceId: string | null;
+  inboxId: string | null;
+  messageId: string | null;
+  threadId: string | null;
+};
+
 export function handleAgentMailWebhookDelivery(input: {
   rawBody: string;
   headers: Record<string, string>;
   secrets: AgentMailWebhookSecretRow[];
   deliveryId?: string | null;
-}): { ok: boolean; published: boolean; workspaceId: string | null } {
+}): AgentMailWebhookDeliveryResult {
+  const empty = {
+    ok: false,
+    published: false,
+    workspaceId: null,
+    inboxId: null,
+    messageId: null,
+    threadId: null,
+  } satisfies AgentMailWebhookDeliveryResult;
   const { rawBody, headers, secrets } = input;
   if (secrets.length === 0) {
-    return { ok: false, published: false, workspaceId: null };
+    return empty;
   }
 
   let matched: AgentMailWebhookSecretRow | null = null;
@@ -112,7 +134,7 @@ export function handleAgentMailWebhookDelivery(input: {
     }
   }
   if (!matched) {
-    return { ok: false, published: false, workspaceId: null };
+    return empty;
   }
 
   const deliveryKey =
@@ -121,15 +143,36 @@ export function handleAgentMailWebhookDelivery(input: {
     parseAgentMailWebhookPayload(payload)?.eventId ||
     null;
   if (deliveryKey && rememberWebhookDelivery(deliveryIdOrFallback(deliveryKey))) {
-    return { ok: true, published: false, workspaceId: matched.workspaceId };
+    return {
+      ok: true,
+      published: false,
+      workspaceId: matched.workspaceId,
+      inboxId: null,
+      messageId: null,
+      threadId: null,
+    };
   }
 
   const parsed = parseAgentMailWebhookPayload(payload);
   if (!parsed || parsed.eventType !== "message.received") {
-    return { ok: true, published: false, workspaceId: matched.workspaceId };
+    return {
+      ok: true,
+      published: false,
+      workspaceId: matched.workspaceId,
+      inboxId: null,
+      messageId: null,
+      threadId: null,
+    };
   }
   if (!parsed.inboxId) {
-    return { ok: true, published: false, workspaceId: matched.workspaceId };
+    return {
+      ok: true,
+      published: false,
+      workspaceId: matched.workspaceId,
+      inboxId: null,
+      messageId: null,
+      threadId: null,
+    };
   }
 
   invalidateAgentMailMessageDetailCache(
@@ -144,21 +187,33 @@ export function handleAgentMailWebhookDelivery(input: {
   });
   // OS-146: agent outbound webhooks for inbound AgentMail messages.
   if (parsed.messageId) {
-    void import("../services/agent-message-webhooks.js").then(
-      ({ notifyAgentMessageWebhooks }) => {
+    void import("../services/agent-message-webhooks.js")
+      .then(({ notifyAgentMessageWebhooks }) =>
         notifyAgentMessageWebhooks({
           event: "email.message",
           direction: "inbound",
           workspaceId: matched.workspaceId,
           inboxId: parsed.inboxId!,
           messageId: parsed.messageId!,
-          threadId: null,
+          threadId: parsed.threadId,
           timestamp: new Date().toISOString(),
-        });
-      },
-    );
+        }),
+      )
+      .catch((error) => {
+        console.warn(
+          "[agentmail] inbound message webhook notify failed",
+          error instanceof Error ? error.message : error,
+        );
+      });
   }
-  return { ok: true, published: true, workspaceId: matched.workspaceId };
+  return {
+    ok: true,
+    published: true,
+    workspaceId: matched.workspaceId,
+    inboxId: parsed.inboxId,
+    messageId: parsed.messageId,
+    threadId: parsed.threadId,
+  };
 }
 
 function deliveryIdOrFallback(id: string): string {

@@ -335,6 +335,22 @@ export function registerEmailRoutes(app: Hono) {
     if (!result.ok) {
       return c.body(null, 400);
     }
+    // New inbound mail → move non-Triage threads back to Triage.
+    if (
+      result.published &&
+      result.workspaceId &&
+      result.inboxId &&
+      (result.threadId || result.messageId)
+    ) {
+      void emailThreadsService
+        .retriageEmailThreadOnInbound(result.workspaceId, result.inboxId, {
+          threadId: result.threadId,
+          messageId: result.messageId,
+        })
+        .catch(() => {
+          // Best-effort; retriageEmailThreadOnInbound already logs.
+        });
+    }
     return c.body(null, 204);
   });
 

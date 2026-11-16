@@ -7,6 +7,7 @@ import {
   emailStatusLabelName,
   emailStatusLabelPatch,
   migrateLegacyEmailStatus,
+  shouldRetriageEmailThreadOnInbound,
 } from "./email-status-labels.js";
 
 describe("emailStatusLabelName", () => {
@@ -79,5 +80,23 @@ describe("canPromoteEmailThreadWorkflowStatus", () => {
     assert.equal(canPromoteEmailThreadWorkflowStatus("triage", "in_review"), true);
     assert.equal(canPromoteEmailThreadWorkflowStatus("completed", "in_review"), false);
     assert.equal(canPromoteEmailThreadWorkflowStatus("in_review", "in_review"), false);
+  });
+});
+
+describe("shouldRetriageEmailThreadOnInbound", () => {
+  it("skips empty and Triage", () => {
+    assert.equal(shouldRetriageEmailThreadOnInbound(null), false);
+    assert.equal(shouldRetriageEmailThreadOnInbound(""), false);
+    assert.equal(shouldRetriageEmailThreadOnInbound("triage"), false);
+  });
+
+  it("returns true for any non-Triage status including terminal ones", () => {
+    assert.equal(shouldRetriageEmailThreadOnInbound("waiting"), true);
+    assert.equal(shouldRetriageEmailThreadOnInbound("in_progress"), true);
+    assert.equal(shouldRetriageEmailThreadOnInbound("in_review"), true);
+    assert.equal(shouldRetriageEmailThreadOnInbound("completed"), true);
+    assert.equal(shouldRetriageEmailThreadOnInbound("canceled"), true);
+    assert.equal(shouldRetriageEmailThreadOnInbound("concept"), true);
+    assert.equal(shouldRetriageEmailThreadOnInbound("todo"), true);
   });
 });
