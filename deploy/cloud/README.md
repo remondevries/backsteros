@@ -248,5 +248,6 @@ full Tier A/B tables — see docs):
 
 - workspace Tier A/B rows (projects, tasks, documents metadata, api_keys, …)
 - meetings + scheduling settings
+- **Rebuilding an empty cloud from the Mac:** the cloud role guard turns owner/admin rows from local into `member`, so the owner arrives demoted. Re-promote the owner on the cloud (`users.role` and `workspace_members.role`) right after the restore.
 
 See [docs/13-hybrid-cloud-local-core.md](../../docs/13-hybrid-cloud-local-core.md).
