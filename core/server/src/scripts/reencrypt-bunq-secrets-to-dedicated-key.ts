@@ -25,7 +25,11 @@ import {
   reencryptBunqSecretsToDedicatedKey,
 } from "../services/bunq-secrets-reencrypt.js";
 
-function parseArgs(argv: readonly string[]): {
+/** Printed when --apply --i-confirmed-core-stopped skips the health probe (OS-180). */
+export const CONFIRMED_CORE_STOPPED_PROBE_SKIP_LINE =
+  "probe skipped by --i-confirmed-core-stopped";
+
+export function parseArgs(argv: readonly string[]): {
   apply: boolean;
   confirmedCoreStopped: boolean;
 } {
@@ -51,8 +55,23 @@ export function exitCodeForReencryptResult(
   return bunqReencryptScriptExitCode(result);
 }
 
+/** Line to print (or null) when the operator skipped the probe. */
+export function confirmedCoreStoppedNotice(
+  apply: boolean,
+  confirmedCoreStopped: boolean,
+): string | null {
+  if (apply && confirmedCoreStopped) {
+    return CONFIRMED_CORE_STOPPED_PROBE_SKIP_LINE;
+  }
+  return null;
+}
+
 async function main() {
   const { apply, confirmedCoreStopped } = parseArgs(process.argv.slice(2));
+  const skipNotice = confirmedCoreStoppedNotice(apply, confirmedCoreStopped);
+  if (skipNotice) {
+    console.log(skipNotice);
+  }
   const result = await reencryptBunqSecretsToDedicatedKey({
     dryRun: !apply,
     confirmedCoreStopped: apply ? confirmedCoreStopped : false,
@@ -93,11 +112,18 @@ async function main() {
   }
 }
 
-main()
-  .catch((error) => {
-    console.error(error);
-    process.exitCode = 1;
-  })
-  .finally(async () => {
-    await sqlClient.end({ timeout: 2 });
-  });
+const isDirectRun =
+  process.argv[1] != null &&
+  (process.argv[1].endsWith("reencrypt-bunq-secrets-to-dedicated-key.ts") ||
+    process.argv[1].endsWith("reencrypt-bunq-secrets-to-dedicated-key.js"));
+
+if (isDirectRun) {
+  main()
+    .catch((error) => {
+      console.error(error);
+      process.exitCode = 1;
+    })
+    .finally(async () => {
+      await sqlClient.end({ timeout: 2 });
+    });
+}
