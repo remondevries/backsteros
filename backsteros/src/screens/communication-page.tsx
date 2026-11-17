@@ -40,6 +40,7 @@ import {
   resolveCommunicationEmailParty,
   resolveOrganizationAvatarSrc,
   resolveSupportParties,
+  chatListStatusToChatwootStatus,
   taskStatusToChatStatus,
   withCommunicationMailFolder,
   type CommunicationCreateKind,
@@ -657,11 +658,11 @@ function CommunicationPageBody() {
             patch.status !== undefined
               ? taskStatusToChatStatus(patch.status)
               : null;
-          // Chatwoot has no In Review — fold it into Waiting.
+          // Chatwoot has no Backlog / Ready to Start / In Review — fold those.
           const chatStatus =
-            chatListStatus === "in_review"
-              ? "pending"
-              : chatListStatus;
+            chatListStatus != null
+              ? chatListStatusToChatwootStatus(chatListStatus)
+              : null;
           await chatInbox.patchConversation(
             {
               ...(chatStatus != null ? { status: chatStatus } : {}),

@@ -4,6 +4,7 @@ import type { ChatConversation } from "@backsteros/contracts";
 
 import {
   chatConversationToTaskItemRowTask,
+  chatListStatusToChatwootStatus,
   chatStatusToTaskStatus,
   groupChatConversationsByStatus,
   taskStatusToChatStatus,
@@ -48,6 +49,8 @@ describe("chatConversationToTaskItemRowTask", () => {
 
   it("maps chat statuses to task statuses both ways", () => {
     assert.equal(chatStatusToTaskStatus("open"), "triage");
+    assert.equal(chatStatusToTaskStatus("backlog"), "backlog");
+    assert.equal(chatStatusToTaskStatus("ready_to_start"), "ready_to_start");
     assert.equal(chatStatusToTaskStatus("pending"), "waiting");
     assert.equal(chatStatusToTaskStatus("snoozed"), "on_hold");
     assert.equal(chatStatusToTaskStatus("resolved"), "completed");
@@ -55,8 +58,17 @@ describe("chatConversationToTaskItemRowTask", () => {
     assert.equal(taskStatusToChatStatus("waiting"), "pending");
     assert.equal(taskStatusToChatStatus("in_review"), "in_review");
     assert.equal(taskStatusToChatStatus("on_hold"), "snoozed");
-    assert.equal(taskStatusToChatStatus("backlog"), "snoozed");
+    assert.equal(taskStatusToChatStatus("backlog"), "backlog");
+    assert.equal(taskStatusToChatStatus("ready_to_start"), "ready_to_start");
     assert.equal(taskStatusToChatStatus("triage"), "open");
+    assert.equal(taskStatusToChatStatus("in_progress"), "open");
+    assert.equal(chatListStatusToChatwootStatus("open"), "open");
+    assert.equal(chatListStatusToChatwootStatus("ready_to_start"), "open");
+    assert.equal(chatListStatusToChatwootStatus("backlog"), "snoozed");
+    assert.equal(chatListStatusToChatwootStatus("in_review"), "pending");
+    assert.equal(chatListStatusToChatwootStatus("pending"), "pending");
+    assert.equal(chatListStatusToChatwootStatus("snoozed"), "snoozed");
+    assert.equal(chatListStatusToChatwootStatus("resolved"), "resolved");
   });
 
   it("groups conversations by chat status", () => {

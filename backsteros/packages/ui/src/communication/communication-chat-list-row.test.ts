@@ -69,13 +69,14 @@ function email(
 }
 
 describe("emailStatusToChatListStatus", () => {
-  it("maps task statuses into Triage/Waiting/In Review/On Hold/Completed buckets", () => {
+  it("maps task statuses into Triage/Backlog/Ready to Start/Waiting/In Review/On Hold/Completed buckets", () => {
     assert.equal(emailStatusToChatListStatus("triage"), "open");
     assert.equal(emailStatusToChatListStatus("in_progress"), "open");
+    assert.equal(emailStatusToChatListStatus("backlog"), "backlog");
+    assert.equal(emailStatusToChatListStatus("ready_to_start"), "ready_to_start");
     assert.equal(emailStatusToChatListStatus("waiting"), "pending");
     assert.equal(emailStatusToChatListStatus("in_review"), "in_review");
     assert.equal(emailStatusToChatListStatus("on_hold"), "snoozed");
-    assert.equal(emailStatusToChatListStatus("backlog"), "snoozed");
     assert.equal(emailStatusToChatListStatus("completed"), "resolved");
     assert.equal(emailStatusToChatListStatus("concept"), "open");
   });
@@ -242,6 +243,35 @@ describe("groupCommunicationChatListRows", () => {
         ["open", ["s1", "e1", "c1"]],
         ["pending", ["e2"]],
         ["resolved", ["c2"]],
+      ],
+    );
+  });
+
+  it("splits backlog and ready_to_start out of Triage / On Hold", () => {
+    const groups = groupCommunicationChatListRows(
+      [chat({ id: "c-open", status: "open" })],
+      [
+        email({ id: "e-triage", status: "triage" }),
+        email({ id: "e-backlog", status: "backlog" }),
+        email({ id: "e-ready", status: "ready_to_start" }),
+        email({ id: "e-hold", status: "on_hold" }),
+      ],
+      [support({ id: "s-ready", status: "ready_to_start" })],
+    );
+
+    assert.deepEqual(
+      groups.map((group) => [
+        group.status,
+        group.label,
+        group.rows.map((row) =>
+          row.kind === "chat" ? row.conversation.id : row.item.id,
+        ),
+      ]),
+      [
+        ["open", "Triage", ["e-triage", "c-open"]],
+        ["backlog", "Backlog", ["e-backlog"]],
+        ["ready_to_start", "Ready to Start", ["s-ready", "e-ready"]],
+        ["snoozed", "On Hold", ["e-hold"]],
       ],
     );
   });

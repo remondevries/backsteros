@@ -104,8 +104,8 @@ export type CommunicationMessagesListProps = {
 
 /**
  * Unified Messages list — chats, emails, and support tickets grouped by
- * Triage / Waiting / In Review / On Hold / Completed. Shared by
- * Communication and Inbox → Messages.
+ * Triage / Backlog / Ready to Start / Waiting / In Review / On Hold /
+ * Completed. Shared by Communication and Inbox → Messages.
  */
 export function CommunicationMessagesList({
   conversations,

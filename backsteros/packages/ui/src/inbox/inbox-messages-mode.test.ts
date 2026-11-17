@@ -79,6 +79,39 @@ test("buildInboxMessagesModeItems hides Completed and keeps list order", () => {
   assert.equal(chatRow?.kind === "task" && chatRow.chat, true);
 });
 
+test("buildInboxMessagesModeItems keeps backlog and ready_to_start as their own sections", () => {
+  const backlogEmail = buildInboxEmailListItem({
+    inboxId: "box",
+    messageId: "msg-backlog",
+    title: "Later",
+    status: "backlog",
+    updatedAt: Date.parse("2026-10-18T10:00:00Z"),
+  });
+  const readySupport = buildInboxTaskListItem({
+    id: "support-ready",
+    title: "Kickoff",
+    number: 3,
+    status: "ready_to_start",
+    support: true,
+    updatedAt: Date.parse("2026-10-17T10:00:00Z"),
+  });
+  const items = buildInboxMessagesModeItems({
+    conversations: [openChat],
+    emails: [triageEmail, backlogEmail],
+    supportTasks: [readySupport, waitingSupport],
+  });
+  assert.deepEqual(
+    items.map((item) => item.id),
+    [
+      "chat-open",
+      triageEmail.id,
+      backlogEmail.id,
+      "support-ready",
+      "support-waiting",
+    ],
+  );
+});
+
 test("chat rows open inside Inbox, not Communication", () => {
   const [chatRow] = buildInboxMessagesModeItems({
     conversations: [openChat],

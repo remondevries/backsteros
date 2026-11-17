@@ -4442,6 +4442,7 @@ export {
   CHAT_LIST_STATUS_ORDER,
   chatConversationToInboxListItem,
   chatConversationToTaskItemRowTask,
+  chatListStatusToChatwootStatus,
   chatStatusToTaskStatus,
   getChatListStatusLabel,
   groupChatConversationsByStatus,
