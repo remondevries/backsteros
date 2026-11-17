@@ -33,8 +33,8 @@ function rowToInboxListItem(row: CommunicationChatListRow): InboxListItem {
 }
 
 /**
- * Inbox → Messages rows in on-screen order (drafts, then Triage / Backlog /
- * Ready to Start / Waiting / In Review / On Hold) — the same order
+ * Inbox → Messages rows in on-screen order (drafts, then Triage / In Progress /
+ * Ready to Start / Backlog / Waiting / In Review / On Hold) — the same order
  * `CommunicationMessagesList` paints, so "next row after removing" and
  * first-row landing agree with the list.
  */

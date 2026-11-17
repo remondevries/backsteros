@@ -658,7 +658,7 @@ function CommunicationPageBody() {
             patch.status !== undefined
               ? taskStatusToChatStatus(patch.status)
               : null;
-          // Chatwoot has no Backlog / Ready to Start / In Review — fold those.
+          // Chatwoot has no In Progress / Ready to Start / Backlog / In Review.
           const chatStatus =
             chatListStatus != null
               ? chatListStatusToChatwootStatus(chatListStatus)

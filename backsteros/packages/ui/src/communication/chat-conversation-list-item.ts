@@ -17,16 +17,17 @@ const CHATWOOT_STATUS_ORDER = [
 
 /**
  * Mixed chat+email list groups. Chatwoot still uses open / pending / snoozed /
- * resolved; email/support rows also get Backlog, Ready to Start, and In Review
- * (chats never land in those buckets).
+ * resolved; email/support rows also get In Progress / Ready to Start / Backlog /
+ * In Review (chats never land in those buckets).
  *
- * Early pipeline order matches task statuses: Triage → Backlog → Ready to Start,
- * then Waiting / In Review / On Hold / Completed.
+ * Early pipeline: Triage → In Progress → Ready to Start → Backlog, then
+ * Waiting / In Review / On Hold / Completed.
  */
 export const CHAT_LIST_STATUS_ORDER = [
   "open",
-  "backlog",
+  "in_progress",
   "ready_to_start",
+  "backlog",
   "pending",
   "in_review",
   "snoozed",
@@ -38,16 +39,18 @@ export type ChatListStatus = (typeof CHAT_LIST_STATUS_ORDER)[number];
 /**
  * BacksterOS labels for the mixed chat+email list. Chatwoot still stores
  * open / pending / snoozed / resolved; we relabel those groups and add
- * Backlog / Ready to Start / In Review for email/support task statuses.
+ * In Progress / Ready to Start / Backlog / In Review for email/support.
  */
 export function getChatListStatusLabel(status: ChatListStatus): string {
   switch (status) {
     case "open":
       return "Triage";
-    case "backlog":
-      return "Backlog";
+    case "in_progress":
+      return "In Progress";
     case "ready_to_start":
       return "Ready to Start";
+    case "backlog":
+      return "Backlog";
     case "pending":
       return "Waiting";
     case "in_review":
@@ -79,6 +82,8 @@ export function chatStatusToTaskStatus(status: ChatListStatus): TaskStatus {
       return "backlog";
     case "ready_to_start":
       return "ready_to_start";
+    case "in_progress":
+      return "in_progress";
     case "open":
     default:
       return "triage";
@@ -87,9 +92,9 @@ export function chatStatusToTaskStatus(status: ChatListStatus): TaskStatus {
 
 /**
  * Map a BacksterOS task status onto mixed-list groups.
- * Shared with email rows so triage / backlog / ready to start / waiting /
- * in review / on hold / completed land in distinct sections (chats still use
- * open / pending / snoozed / resolved).
+ * Shared with email rows so triage / in progress / ready to start / backlog /
+ * waiting / in review / on hold / completed land in distinct sections (chats
+ * still use open / pending / snoozed / resolved).
  */
 export function taskStatusToChatStatus(status: TaskStatus): ChatListStatus {
   switch (status) {
@@ -107,16 +112,18 @@ export function taskStatusToChatStatus(status: TaskStatus): ChatListStatus {
       return "backlog";
     case "ready_to_start":
       return "ready_to_start";
+    case "in_progress":
+      return "in_progress";
     default:
-      // triage + in_progress → Triage group (Chatwoot `open`)
+      // triage → Triage group (Chatwoot `open`)
       return "open";
   }
 }
 
 /**
  * Fold mixed-list statuses into Chatwoot conversation statuses for API writes.
- * Email-only buckets (Backlog / Ready to Start / In Review) map onto the
- * nearest Chatwoot status so chats never receive an invalid value.
+ * Email-only buckets (In Progress / Ready to Start / Backlog / In Review) map
+ * onto the nearest Chatwoot status so chats never receive an invalid value.
  */
 export function chatListStatusToChatwootStatus(
   status: ChatListStatus,
@@ -131,6 +138,7 @@ export function chatListStatusToChatwootStatus(
     case "resolved":
       return "resolved";
     case "open":
+    case "in_progress":
     case "ready_to_start":
     default:
       return "open";

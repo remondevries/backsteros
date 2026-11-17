@@ -26,7 +26,8 @@ export type CommunicationChatListStatusGroup = {
 
 /**
  * Map an email task-status into the shared chat list buckets
- * (Triage / Backlog / Ready to Start / Waiting / On Hold / Completed).
+ * (Triage / In Progress / Ready to Start / Backlog / Waiting / On Hold /
+ * Completed).
  */
 export function emailStatusToChatListStatus(
   status: string | null | undefined,
@@ -175,9 +176,9 @@ function sortRowsByRecency(rows: CommunicationChatListRow[]): CommunicationChatL
 }
 
 /**
- * Build a Triage / Backlog / Ready to Start / Waiting / In Review / On Hold /
- * Completed list with chats, emails, and support tickets interleaved by last
- * activity within each group.
+ * Build a Triage / In Progress / Ready to Start / Backlog / Waiting /
+ * In Review / On Hold / Completed list with chats, emails, and support tickets
+ * interleaved by last activity within each group.
  */
 export function groupCommunicationChatListRows(
   conversations: readonly ChatConversation[],
