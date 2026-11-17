@@ -1,10 +1,11 @@
-import { API_KEY_SCOPES } from "@backsteros/contracts";
+import { AGENT_API_KEY_SCOPES } from "@backsteros/contracts";
 
 import { createBootstrapApiKey } from "../services/api-keys.js";
 
 async function main() {
+  // Access bootstrap key: non-door scopes only (OS-182 / OS-183).
   const { row, secret } = await createBootstrapApiKey("bootstrap", [
-    ...API_KEY_SCOPES,
+    ...AGENT_API_KEY_SCOPES,
   ]);
 
   console.log("Bootstrap API key created.");
