@@ -2,9 +2,13 @@ import assert from "node:assert/strict";
 import { afterEach, describe, it } from "node:test";
 
 import {
+  KEY_ADMIN_BEARER_MARKER,
   keyAdminAuthHeaderRecord,
 } from "../lib/api-key-admin-forward-auth.js";
 import { authenticateKeyAdminForward } from "./api-key-admin-cloud.js";
+
+const ADMIN = "admin-secret-at-least-32-bytes!!";
+const REPL = "repl-secret-different-from-admin!!";
 
 const PREV = {
   role: process.env.CORE_REPLICATION_ROLE,
@@ -28,15 +32,15 @@ function restoreEnv() {
 afterEach(restoreEnv);
 
 describe("authenticateKeyAdminForward (OS-181)", () => {
-  it("accepts CORE_KEY_ADMIN_SECRET + HMAC and rejects replication secret", () => {
+  it("accepts key-admin marker + HMAC and rejects replication secret", () => {
     process.env.CORE_REPLICATION_ROLE = "cloud";
     process.env.CORE_REPLICATION_PEER_URL = "http://127.0.0.1:8788";
-    process.env.CORE_REPLICATION_SECRET = "repl-secret";
-    process.env.CORE_KEY_ADMIN_SECRET = "admin-secret";
+    process.env.CORE_REPLICATION_SECRET = REPL;
+    process.env.CORE_KEY_ADMIN_SECRET = ADMIN;
     const body = JSON.stringify({ name: "CLI" });
     const path = "/internal/core-replication/api-keys";
     const headers = keyAdminAuthHeaderRecord({
-      secret: "admin-secret",
+      secret: ADMIN,
       method: "POST",
       path,
       userId: "owner-1",
@@ -44,6 +48,7 @@ describe("authenticateKeyAdminForward (OS-181)", () => {
       body,
       timestampMs: 1_700_000_000_000,
     });
+    assert.equal(headers.Authorization, `Bearer ${KEY_ADMIN_BEARER_MARKER}`);
     const headerMap = new Map(
       Object.entries(headers).map(([k, v]) => [k.toLowerCase(), v]),
     );
@@ -62,7 +67,7 @@ describe("authenticateKeyAdminForward (OS-181)", () => {
     }
 
     const rejected = authenticateKeyAdminForward({
-      authorization: "Bearer repl-secret",
+      authorization: `Bearer ${REPL}`,
       method: "POST",
       path,
       bodyText: body,
@@ -82,8 +87,8 @@ describe("authenticateKeyAdminForward (OS-181)", () => {
   it("rejects agent-style credentials without key-admin HMAC", () => {
     process.env.CORE_REPLICATION_ROLE = "cloud";
     process.env.CORE_REPLICATION_PEER_URL = "http://127.0.0.1:8788";
-    process.env.CORE_REPLICATION_SECRET = "repl-secret";
-    process.env.CORE_KEY_ADMIN_SECRET = "admin-secret";
+    process.env.CORE_REPLICATION_SECRET = REPL;
+    process.env.CORE_KEY_ADMIN_SECRET = ADMIN;
     const rejected = authenticateKeyAdminForward({
       authorization: "Bearer sk_live_agent_key_not_admin",
       method: "POST",
@@ -94,6 +99,28 @@ describe("authenticateKeyAdminForward (OS-181)", () => {
     assert.equal(rejected.ok, false);
     if (!rejected.ok) {
       assert.equal(rejected.result.status, 401);
+    }
+  });
+
+  it("fails closed when CORE_KEY_ADMIN_SECRET equals replication secret", () => {
+    process.env.CORE_REPLICATION_ROLE = "cloud";
+    process.env.CORE_REPLICATION_PEER_URL = "http://127.0.0.1:8788";
+    process.env.CORE_REPLICATION_SECRET = ADMIN;
+    process.env.CORE_KEY_ADMIN_SECRET = ADMIN;
+    const rejected = authenticateKeyAdminForward({
+      authorization: `Bearer ${KEY_ADMIN_BEARER_MARKER}`,
+      method: "POST",
+      path: "/internal/core-replication/api-keys",
+      bodyText: "{}",
+      headerGet: () => null,
+    });
+    assert.equal(rejected.ok, false);
+    if (!rejected.ok) {
+      assert.equal(rejected.result.status, 503);
+      assert.match(
+        String((rejected.result.body as { error?: string }).error),
+        /differ from CORE_REPLICATION_SECRET/,
+      );
     }
   });
 });

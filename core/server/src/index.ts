@@ -56,6 +56,16 @@ if (replicationConfig) {
     `Core replication enabled (${replicationConfig.role}) → peer ${replicationConfig.peerUrl}`,
   );
 }
+{
+  const { shouldWarnReplicationRoleUnset } = await import(
+    "./lib/api-key-admin-forward-auth.js"
+  );
+  if (shouldWarnReplicationRoleUnset()) {
+    console.warn(
+      "[core-replication] CORE_REPLICATION_PEER_URL is set but CORE_REPLICATION_ROLE is unset — API key minting stays Mac-only. Set CORE_REPLICATION_ROLE=local for hybrid cloud-forward minting.",
+    );
+  }
+}
 
 try {
   const controlTokenResult = await ensureLocalCoreControlToken();

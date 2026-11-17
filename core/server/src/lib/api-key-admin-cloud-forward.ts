@@ -7,8 +7,8 @@
 
 import { getCoreReplicationConfig } from "../services/core-replication/config.js";
 import {
+  inspectCoreKeyAdminSecret,
   keyAdminAuthHeaderRecord,
-  resolveCoreKeyAdminSecret,
 } from "./api-key-admin-forward-auth.js";
 
 const FORWARD_TIMEOUT_MS = 30_000;
@@ -62,8 +62,8 @@ export async function forwardApiKeyAdminToCloud(input: {
       "api_key_cloud_unavailable",
     );
   }
-  const secret = resolveCoreKeyAdminSecret(env);
-  if (!secret) {
+  const inspected = inspectCoreKeyAdminSecret(env);
+  if (!inspected.ok) {
     throw new ApiKeyAdminCloudForwardError(
       API_KEY_CLOUD_UNAVAILABLE_MESSAGE,
       503,
@@ -81,7 +81,7 @@ export async function forwardApiKeyAdminToCloud(input: {
 
   const bodyText = JSON.stringify(input.body ?? {});
   const headers = keyAdminAuthHeaderRecord({
-    secret,
+    secret: inspected.secret,
     method: input.method,
     path: input.path,
     userId: input.userId,

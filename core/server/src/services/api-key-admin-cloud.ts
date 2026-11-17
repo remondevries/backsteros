@@ -6,8 +6,9 @@ import { createApiKeySchema, updateApiKeySchema } from "@backsteros/contracts";
 
 import { extractBearerToken, verifyReplicationSecret } from "./core-replication/auth.js";
 import {
+  inspectCoreKeyAdminSecret,
+  KEY_ADMIN_BEARER_MARKER,
   parseKeyAdminAuthHeaders,
-  resolveCoreKeyAdminSecret,
   verifyKeyAdminRequest,
 } from "../lib/api-key-admin-forward-auth.js";
 import { toApiKey } from "../lib/mappers.js";
@@ -42,8 +43,8 @@ function badRequest(message: string) {
 }
 
 /**
- * Verify dedicated key-admin Bearer + HMAC. Rejects replication-secret-only
- * and any agent/app API key bearer.
+ * Verify key-admin marker Bearer + HMAC. The shared secret never travels;
+ * rejects replication-secret bearers and any agent/app API key bearer.
  */
 export function authenticateKeyAdminForward(input: {
   authorization: string | undefined;
@@ -61,43 +62,50 @@ export function authenticateKeyAdminForward(input: {
   if (!config || config.role !== "cloud") {
     return { ok: false, result: { status: 404, body: { error: "Not found", code: "not_found" } } };
   }
-  const adminSecret = resolveCoreKeyAdminSecret(env);
-  if (!adminSecret) {
+  const inspected = inspectCoreKeyAdminSecret(env);
+  if (!inspected.ok) {
+    const message =
+      inspected.reason === "too_short"
+        ? "CORE_KEY_ADMIN_SECRET must be at least 32 bytes"
+        : inspected.reason === "equals_replication_secret"
+          ? "CORE_KEY_ADMIN_SECRET must differ from CORE_REPLICATION_SECRET"
+          : "CORE_KEY_ADMIN_SECRET is not configured on cloud";
     return {
       ok: false,
       result: {
         status: 503,
         body: {
-          error: "CORE_KEY_ADMIN_SECRET is not configured on cloud",
+          error: message,
           code: "api_key_admin_secret_missing",
         },
       },
     };
   }
+  const adminSecret = inspected.secret;
   const token = extractBearerToken(input.authorization);
   if (!token) {
     return { ok: false, result: unauthorized("Missing key-admin credential") };
   }
-  if (verifyReplicationSecret(token, adminSecret)) {
-    // Dedicated CORE_KEY_ADMIN_SECRET — continue to HMAC.
-  } else if (verifyReplicationSecret(token, config.secret)) {
+  if (verifyReplicationSecret(token, config.secret)) {
     return {
       ok: false,
       result: forbidden(
-        "Replication secret cannot manage API keys; use CORE_KEY_ADMIN_SECRET",
+        "Replication secret cannot manage API keys; use CORE_KEY_ADMIN_SECRET HMAC",
       ),
     };
-  } else {
+  }
+  if (token !== KEY_ADMIN_BEARER_MARKER) {
     return { ok: false, result: unauthorized("Invalid key-admin credential") };
   }
 
   const headers = parseKeyAdminAuthHeaders({
-    [ "x-backsteros-key-admin-user-id"]: input.headerGet("x-backsteros-key-admin-user-id") ?? undefined,
-    [ "x-backsteros-key-admin-workspace-id"]:
+    ["x-backsteros-key-admin-user-id"]:
+      input.headerGet("x-backsteros-key-admin-user-id") ?? undefined,
+    ["x-backsteros-key-admin-workspace-id"]:
       input.headerGet("x-backsteros-key-admin-workspace-id") ?? undefined,
-    [ "x-backsteros-key-admin-timestamp"]:
+    ["x-backsteros-key-admin-timestamp"]:
       input.headerGet("x-backsteros-key-admin-timestamp") ?? undefined,
-    [ "x-backsteros-key-admin-signature"]:
+    ["x-backsteros-key-admin-signature"]:
       input.headerGet("x-backsteros-key-admin-signature") ?? undefined,
   });
   if (!headers) {

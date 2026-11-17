@@ -100,7 +100,7 @@ docker compose -f deploy/cloud/docker-compose.yml exec backsteros sh
 | `CORE_REPLICATION_ROLE` | `cloud` |
 | `CORE_REPLICATION_PEER_URL` | local-core URL (Tailscale or tunnel) |
 | `CORE_REPLICATION_SECRET` | shared bearer for `/api/v1/internal/replication/*` |
-| `CORE_KEY_ADMIN_SECRET` | Dedicated shared secret for local→cloud API key mint/rotate/revoke (OS-181). HMAC-bound to the acting shell user id. **Not** an agent key; **not** `CORE_REPLICATION_SECRET`. Same value on cloud and Mac local-core. |
+| `CORE_KEY_ADMIN_SECRET` | Dedicated shared secret for local→cloud API key mint/rotate/revoke (OS-181). HMAC-bound to the acting shell user id. Min 32 bytes; must differ from `CORE_REPLICATION_SECRET`. **Not** an agent key. Same value on cloud and Mac local-core. Travels as HMAC only (`Bearer key-admin` marker). |
 | `CORE_REPLICATION_WORKSPACE_IDS` | comma-separated workspace ids to sync |
 | `BACKSTEROS_VAULT_PATH` | `/data/vault` (desktop-style cache; shared bytes are in R2 when configured) |
 | `BACKSTEROS_R2_*` | Private file bucket. When set, cloud serves markdown and blobs from R2 instead of `503 pdf_requires_local_core` |

@@ -7,6 +7,9 @@ import {
   forwardApiKeyAdminToCloud,
   shouldForwardApiKeyAdminToCloud,
 } from "./api-key-admin-cloud-forward.js";
+import { KEY_ADMIN_BEARER_MARKER } from "./api-key-admin-forward-auth.js";
+
+const ADMIN = "admin-secret-at-least-32-bytes!!";
 
 const PREV = {
   role: process.env.CORE_REPLICATION_ROLE,
@@ -64,8 +67,8 @@ describe("api-key-admin-cloud-forward (OS-181)", () => {
   it("fails closed when the cloud is down", async () => {
     process.env.CORE_REPLICATION_ROLE = "local";
     process.env.CORE_REPLICATION_PEER_URL = "http://127.0.0.1:8799";
-    process.env.CORE_REPLICATION_SECRET = "repl-secret";
-    process.env.CORE_KEY_ADMIN_SECRET = "admin-secret";
+    process.env.CORE_REPLICATION_SECRET = "repl-secret-not-admin-value!!!!!";
+    process.env.CORE_KEY_ADMIN_SECRET = ADMIN;
     await assert.rejects(
       () =>
         forwardApiKeyAdminToCloud({
@@ -84,11 +87,11 @@ describe("api-key-admin-cloud-forward (OS-181)", () => {
     );
   });
 
-  it("forwards successfully with key-admin headers", async () => {
+  it("forwards successfully with key-admin marker (not the secret)", async () => {
     process.env.CORE_REPLICATION_ROLE = "local";
     process.env.CORE_REPLICATION_PEER_URL = "http://cloud.test:8788";
-    process.env.CORE_REPLICATION_SECRET = "repl-secret";
-    process.env.CORE_KEY_ADMIN_SECRET = "admin-secret";
+    process.env.CORE_REPLICATION_SECRET = "repl-secret-not-admin-value!!!!!";
+    process.env.CORE_KEY_ADMIN_SECRET = ADMIN;
     let sawAuth = "";
     const result = await forwardApiKeyAdminToCloud({
       method: "POST",
@@ -99,7 +102,7 @@ describe("api-key-admin-cloud-forward (OS-181)", () => {
       fetchImpl: async (_url, init) => {
         const headers = new Headers(init?.headers);
         sawAuth = headers.get("Authorization") ?? "";
-        assert.equal(sawAuth, "Bearer admin-secret");
+        assert.equal(sawAuth, `Bearer ${KEY_ADMIN_BEARER_MARKER}`);
         assert.ok(headers.get("x-backsteros-key-admin-signature"));
         return new Response(
           JSON.stringify({
