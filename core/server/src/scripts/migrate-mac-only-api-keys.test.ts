@@ -3,8 +3,10 @@ import { describe, it } from "node:test";
 
 import { DYNAMIC_ISLAND_API_KEY_NAME } from "../lib/dynamic-island-local-key-format.js";
 import {
+  filterMacOnlyKeys,
   parseMigrateMacOnlyApiKeysArgs,
   planMacOnlyApiKeyMigration,
+  writeMigratedApiKeySecretFile,
   type MacOnlyKeySummary,
 } from "./migrate-mac-only-api-keys.js";
 
@@ -61,5 +63,54 @@ describe("migrate-mac-only-api-keys (OS-181)", () => {
       apply.toMint.map((row) => row.id),
       ["k1"],
     );
+  });
+
+  it("filters out keys already present on the cloud", () => {
+    const rows: MacOnlyKeySummary[] = [
+      {
+        id: "mac-only",
+        name: "CLI",
+        prefix: "sk_live_aaaa",
+        workspaceId: "ws",
+        scopes: ["tasks:write"],
+        contactId: null,
+      },
+      {
+        id: "already-cloud",
+        name: "Cloud key",
+        prefix: "sk_live_bbbb",
+        workspaceId: "ws",
+        scopes: ["tasks:write"],
+        contactId: null,
+      },
+    ];
+    const filtered = filterMacOnlyKeys(rows, new Set(["already-cloud"]));
+    assert.deepEqual(
+      filtered.map((row) => row.id),
+      ["mac-only"],
+    );
+  });
+
+  it("writes the one-time secret to a 0600 path without returning the value in logs", async () => {
+    const writes: { path: string; mode?: number }[] = [];
+    const chmods: { path: string; mode: number }[] = [];
+    const path = await writeMigratedApiKeySecretFile({
+      cloudKeyId: "cloud-key-1",
+      secret: "sk_live_never_log_this",
+      mkdirImpl: async () => undefined as unknown as string,
+      writeFileImpl: async (p, _data, opts) => {
+        writes.push({
+          path: String(p),
+          mode: typeof opts === "object" && opts ? (opts as { mode?: number }).mode : undefined,
+        });
+      },
+      chmodImpl: async (p, mode) => {
+        chmods.push({ path: String(p), mode });
+      },
+    });
+    assert.match(path, /migrated-api-keys\/cloud-key-1\.secret$/);
+    assert.equal(writes[0]?.mode, 0o600);
+    assert.equal(chmods[0]?.mode, 0o600);
+    assert.ok(!path.includes("sk_live"));
   });
 });
