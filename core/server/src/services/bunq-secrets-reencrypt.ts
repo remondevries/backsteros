@@ -6,9 +6,9 @@
  *  - plaintext values left on cloud (API key / PEM never Connect'd)
  *
  * Cloud-only. Dry-run by default. Never prints secret values. No bunq HTTP.
- * No-ops when the dedicated key is unset. --apply refuses while the cloud
- * core is responding on its health endpoint, and each column write is a
- * compare-and-set against the value that was planned.
+ * No-ops when the dedicated key is unset. --apply refuses unless the cloud
+ * core probe reports stopped (or --i-confirmed-core-stopped). Each column
+ * write is a compare-and-set against the exact raw DB value that was planned.
  */
 
 import { eq, sql } from "drizzle-orm";
@@ -48,22 +48,55 @@ export function bunqReencryptRefusalReason(
   return null;
 }
 
-/** Health URL used to detect a running cloud core before --apply. */
+/**
+ * Health URL for the cloud core probe.
+ * Default host is the compose service name (`backsteros`) so `docker compose run`
+ * reaches the sibling container — not 127.0.0.1 of the ephemeral runner.
+ */
 export function cloudCoreHealthUrl(env: NodeJS.ProcessEnv = process.env): string {
   const port = env.PORT?.trim() || "8788";
-  const host = env.CORE_HEALTH_HOST?.trim() || "127.0.0.1";
+  const host = env.CORE_HEALTH_HOST?.trim() || "backsteros";
   return `http://${host}:${port}/health`;
 }
 
+export type CloudCoreProbeOutcome = "stopped" | "running" | "uncertain";
+
+export type CloudCoreProbeResult = {
+  outcome: CloudCoreProbeOutcome;
+  detail: string;
+};
+
+/** Node / undici error codes that mean the peer is definitely not listening. */
+const STOPPED_ERRNOS = new Set(["ECONNREFUSED", "ENOTFOUND"]);
+
+function errnoFromUnknown(error: unknown): string | null {
+  if (!error || typeof error !== "object") return null;
+  const direct = error as { code?: unknown; cause?: unknown; name?: unknown };
+  if (typeof direct.code === "string") return direct.code;
+  if (direct.cause && typeof direct.cause === "object") {
+    const cause = direct.cause as { code?: unknown };
+    if (typeof cause.code === "string") return cause.code;
+  }
+  return null;
+}
+
+function isAbortTimeout(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const err = error as { name?: unknown; code?: unknown };
+  return err.name === "TimeoutError" || err.name === "AbortError" || err.code === "ABORT_ERR";
+}
+
 /**
- * True when GET /health returns `{ ok: true }` — the cloud core process is up.
- * Connection errors / non-ok responses mean it is safe to --apply.
+ * Probe the compose-reachable health endpoint.
+ * - connection-refused / DNS not-found → stopped (safe to --apply)
+ * - ok:true → running (refuse)
+ * - timeout, non-ok HTTP, other errors → uncertain (refuse)
  */
-export async function probeCloudCoreRunning(deps: {
+export async function probeCloudCoreStatus(deps: {
   env?: NodeJS.ProcessEnv;
   fetchFn?: typeof fetch;
   timeoutMs?: number;
-} = {}): Promise<boolean> {
+} = {}): Promise<CloudCoreProbeResult> {
   const env = deps.env ?? process.env;
   const url = cloudCoreHealthUrl(env);
   const fetchFn = deps.fetchFn ?? fetch;
@@ -72,12 +105,67 @@ export async function probeCloudCoreRunning(deps: {
     const response = await fetchFn(url, {
       signal: AbortSignal.timeout(timeoutMs),
     });
-    if (!response.ok) return false;
-    const body = (await response.json()) as { ok?: unknown };
-    return body?.ok === true;
-  } catch {
-    return false;
+    if (!response.ok) {
+      return {
+        outcome: "uncertain",
+        detail: `${url} returned HTTP ${response.status}`,
+      };
+    }
+    let body: { ok?: unknown };
+    try {
+      body = (await response.json()) as { ok?: unknown };
+    } catch {
+      return {
+        outcome: "uncertain",
+        detail: `${url} returned non-JSON body`,
+      };
+    }
+    if (body?.ok === true) {
+      return { outcome: "running", detail: `${url} ok:true` };
+    }
+    return {
+      outcome: "uncertain",
+      detail: `${url} responded without ok:true`,
+    };
+  } catch (error) {
+    if (isAbortTimeout(error)) {
+      return {
+        outcome: "uncertain",
+        detail: `${url} timed out after ${timeoutMs}ms`,
+      };
+    }
+    const code = errnoFromUnknown(error);
+    if (code && STOPPED_ERRNOS.has(code)) {
+      return {
+        outcome: "stopped",
+        detail: `${url} ${code}`,
+      };
+    }
+    // Also match message text for environments that wrap the code.
+    const message = error instanceof Error ? error.message : String(error);
+    if (/ECONNREFUSED|ENOTFOUND|getaddrinfo/i.test(message)) {
+      return {
+        outcome: "stopped",
+        detail: `${url} ${message}`,
+      };
+    }
+    return {
+      outcome: "uncertain",
+      detail: `${url} probe error: ${message}`,
+    };
   }
+}
+
+/**
+ * @deprecated Prefer {@link probeCloudCoreStatus}. True only for outcome=running.
+ */
+export async function probeCloudCoreRunning(deps: {
+  env?: NodeJS.ProcessEnv;
+  fetchFn?: typeof fetch;
+  timeoutMs?: number;
+} = {}): Promise<boolean> {
+  const result = await probeCloudCoreStatus(deps);
+  return result.outcome === "running";
 }
 
 export type BunqReencryptRow = {
@@ -97,7 +185,7 @@ export type BunqReencryptDeps = {
     patch: Partial<Record<BunqEncryptedSecretField, string>>,
     expected: Partial<Record<BunqEncryptedSecretField, string | null>>,
   ) => Promise<BunqReencryptApplyResult>;
-  probeCoreRunning?: () => Promise<boolean>;
+  probeCoreStatus?: () => Promise<CloudCoreProbeResult>;
 };
 
 export type BunqReencryptResult = {
@@ -108,7 +196,7 @@ export type BunqReencryptResult = {
   rows: number;
   /** Columns that would be / were written under the dedicated key. */
   columns: number;
-  /** Subset of `columns` that were plaintext (not `v1:`) before the pass. */
+  /** Subset of planned columns that were plaintext (not `v1:`) before the pass. */
   plaintextColumns: number;
   /** Already under the dedicated key (left alone). */
   alreadyDedicated: number;
@@ -120,7 +208,6 @@ export type BunqReencryptResult = {
     field: BunqEncryptedSecretField;
   }>;
 };
-
 
 /** Non-zero when apply left failures or CAS skips (script should exit 2). */
 export function bunqReencryptScriptExitCode(
@@ -261,13 +348,18 @@ export async function defaultApplyPatchWithCas(
 
 /**
  * Dry-run by default. When `--apply` / dryRun:false, writes sealed columns
- * only if the cloud core is not responding and each CAS matches.
- * Never returns secret values.
+ * only if the cloud core probe reports stopped (or confirmedCoreStopped) and
+ * each CAS matches. Never returns secret values.
  */
 export async function reencryptBunqSecretsToDedicatedKey(
   options: {
     workspaceId?: string | null;
     dryRun?: boolean;
+    /**
+     * Skip the health probe — operator confirmed `docker compose ps` shows
+     * the core stopped (CLI `--i-confirmed-core-stopped`).
+     */
+    confirmedCoreStopped?: boolean;
   } = {},
   deps: BunqReencryptDeps = {},
 ): Promise<BunqReencryptResult> {
@@ -289,12 +381,14 @@ export async function reencryptBunqSecretsToDedicatedKey(
     };
   }
 
-  if (!dryRun) {
-    const running = await (deps.probeCoreRunning ??
-      (() => probeCloudCoreRunning({ env })))();
-    if (running) {
+  if (!dryRun && !options.confirmedCoreStopped) {
+    const probe = await (deps.probeCoreStatus ??
+      (() => probeCloudCoreStatus({ env })))();
+    if (probe.outcome !== "stopped") {
       throw new BunqReencryptRefusedError(
-        `cloud core is responding at ${cloudCoreHealthUrl(env)}; stop it before --apply (e.g. docker compose -f deploy/cloud/docker-compose.yml stop backsteros)`,
+        probe.outcome === "running"
+          ? `cloud core is responding at ${cloudCoreHealthUrl(env)}; stop it before --apply (docker compose -f deploy/cloud/docker-compose.yml stop backsteros), confirm with docker compose ps, or pass --i-confirmed-core-stopped`
+          : `cloud core status uncertain (${probe.detail}); stop the core, confirm with docker compose ps, or pass --i-confirmed-core-stopped`,
       );
     }
   }

@@ -12,6 +12,7 @@ import {
   cloudCoreHealthUrl,
   planBunqReencryptForRow,
   probeCloudCoreRunning,
+  probeCloudCoreStatus,
   reencryptBunqSecretsToDedicatedKey,
 } from "./bunq-secrets-reencrypt.js";
 
@@ -35,38 +36,90 @@ describe("bunqReencryptRefusalReason", () => {
   });
 });
 
-describe("cloudCoreHealthUrl / probeCloudCoreRunning", () => {
-  it("defaults to 127.0.0.1:8788/health", () => {
-    assert.equal(cloudCoreHealthUrl({}), "http://127.0.0.1:8788/health");
+describe("cloudCoreHealthUrl / probeCloudCoreStatus", () => {
+  it("defaults to the compose service backsteros:8788/health", () => {
+    assert.equal(cloudCoreHealthUrl({}), "http://backsteros:8788/health");
     assert.equal(
       cloudCoreHealthUrl({ PORT: "9999", CORE_HEALTH_HOST: "10.0.0.1" }),
       "http://10.0.0.1:9999/health",
     );
   });
 
-  it("is true only when health returns ok:true", async () => {
+  it("reports running when health returns ok:true", async () => {
+    const result = await probeCloudCoreStatus({
+      fetchFn: async () =>
+        new Response(JSON.stringify({ ok: true }), { status: 200 }),
+    });
+    assert.equal(result.outcome, "running");
+    assert.equal(await probeCloudCoreRunning({
+      fetchFn: async () =>
+        new Response(JSON.stringify({ ok: true }), { status: 200 }),
+    }), true);
+  });
+
+  it("reports stopped on connection refused", async () => {
+    const err = Object.assign(new TypeError("fetch failed"), {
+      cause: Object.assign(new Error("connect"), { code: "ECONNREFUSED" }),
+    });
+    const result = await probeCloudCoreStatus({
+      fetchFn: async () => {
+        throw err;
+      },
+    });
+    assert.equal(result.outcome, "stopped");
+  });
+
+  it("reports stopped on DNS not found", async () => {
+    const err = Object.assign(new TypeError("fetch failed"), {
+      cause: Object.assign(new Error("getaddrinfo"), { code: "ENOTFOUND" }),
+    });
+    const result = await probeCloudCoreStatus({
+      fetchFn: async () => {
+        throw err;
+      },
+    });
+    assert.equal(result.outcome, "stopped");
+  });
+
+  it("reports uncertain on timeout", async () => {
+    const err = Object.assign(new Error("aborted"), { name: "TimeoutError" });
+    const result = await probeCloudCoreStatus({
+      fetchFn: async () => {
+        throw err;
+      },
+    });
+    assert.equal(result.outcome, "uncertain");
+  });
+
+  it("reports uncertain on non-ok HTTP and ok:false", async () => {
     assert.equal(
-      await probeCloudCoreRunning({
-        fetchFn: async () =>
-          new Response(JSON.stringify({ ok: true }), { status: 200 }),
-      }),
-      true,
+      (
+        await probeCloudCoreStatus({
+          fetchFn: async () => new Response("nope", { status: 503 }),
+        })
+      ).outcome,
+      "uncertain",
     );
     assert.equal(
-      await probeCloudCoreRunning({
-        fetchFn: async () =>
-          new Response(JSON.stringify({ ok: false }), { status: 200 }),
-      }),
-      false,
+      (
+        await probeCloudCoreStatus({
+          fetchFn: async () =>
+            new Response(JSON.stringify({ ok: false }), { status: 200 }),
+        })
+      ).outcome,
+      "uncertain",
     );
-    assert.equal(
-      await probeCloudCoreRunning({
-        fetchFn: async () => {
-          throw new Error("ECONNREFUSED");
-        },
-      }),
-      false,
-    );
+  });
+
+  it("reports uncertain on other probe errors", async () => {
+    const result = await probeCloudCoreStatus({
+      fetchFn: async () => {
+        throw Object.assign(new TypeError("fetch failed"), {
+          cause: Object.assign(new Error("reset"), { code: "ECONNRESET" }),
+        });
+      },
+    });
+    assert.equal(result.outcome, "uncertain");
   });
 });
 
@@ -94,7 +147,8 @@ describe("planBunqReencryptForRow", () => {
     const plan = planBunqReencryptForRow(
       {
         bunqApiKey: "sandbox_plaintext_key",
-        bunqSigningPrivateKeyPem: "-----BEGIN PRIVATE KEY-----\nplain\n-----END PRIVATE KEY-----",
+        bunqSigningPrivateKeyPem:
+          "-----BEGIN PRIVATE KEY-----\nplain\n-----END PRIVATE KEY-----",
       },
       env,
     );
@@ -149,7 +203,6 @@ describe("planBunqReencryptForRow", () => {
     assert.deepEqual(plan.patch, {});
   });
 });
-
 
 describe("bunqReencryptScriptExitCode", () => {
   it("exits 0 when clean", () => {
@@ -208,7 +261,7 @@ describe("reencryptBunqSecretsToDedicatedKey", () => {
     });
   });
 
-  it("refuses --apply while the cloud core is responding", async () => {
+  it("refuses --apply while the cloud core is running", async () => {
     await assert.rejects(
       () =>
         reencryptBunqSecretsToDedicatedKey(
@@ -218,7 +271,10 @@ describe("reencryptBunqSecretsToDedicatedKey", () => {
               CORE_REPLICATION_ROLE: "cloud",
               BACKSTEROS_BUNQ_SECRET_ENCRYPTION_KEY: DEDICATED,
             },
-            probeCoreRunning: async () => true,
+            probeCoreStatus: async () => ({
+              outcome: "running",
+              detail: "ok",
+            }),
             loadRows: async () => {
               throw new Error("must not load");
             },
@@ -228,6 +284,49 @@ describe("reencryptBunqSecretsToDedicatedKey", () => {
         error instanceof BunqReencryptRefusedError &&
         /cloud core is responding/.test(error.message),
     );
+  });
+
+  it("refuses --apply when the probe is uncertain", async () => {
+    await assert.rejects(
+      () =>
+        reencryptBunqSecretsToDedicatedKey(
+          { dryRun: false },
+          {
+            env: {
+              CORE_REPLICATION_ROLE: "cloud",
+              BACKSTEROS_BUNQ_SECRET_ENCRYPTION_KEY: DEDICATED,
+            },
+            probeCoreStatus: async () => ({
+              outcome: "uncertain",
+              detail: "timeout",
+            }),
+            loadRows: async () => {
+              throw new Error("must not load");
+            },
+          },
+        ),
+      (error: unknown) =>
+        error instanceof BunqReencryptRefusedError &&
+        /uncertain/.test(error.message),
+    );
+  });
+
+  it("skips the probe when confirmedCoreStopped is set", async () => {
+    const result = await reencryptBunqSecretsToDedicatedKey(
+      { dryRun: false, confirmedCoreStopped: true },
+      {
+        env: {
+          CORE_REPLICATION_ROLE: "cloud",
+          BACKSTEROS_BUNQ_SECRET_ENCRYPTION_KEY: DEDICATED,
+        },
+        probeCoreStatus: async () => {
+          throw new Error("must not probe");
+        },
+        loadRows: async () => [],
+      },
+    );
+    assert.equal(result.dryRun, false);
+    assert.equal(result.rows, 0);
   });
 
   it("dry-run counts plaintext and ciphertext without writing; apply uses CAS", async () => {
@@ -270,7 +369,10 @@ describe("reencryptBunqSecretsToDedicatedKey", () => {
       {
         env,
         loadRows,
-        probeCoreRunning: async () => false,
+        probeCoreStatus: async () => ({
+          outcome: "stopped",
+          detail: "ECONNREFUSED",
+        }),
         applyPatch: async (_id, patch, expected) => {
           applied += 1;
           assert.ok(patch.bunqApiKey);
@@ -286,9 +388,10 @@ describe("reencryptBunqSecretsToDedicatedKey", () => {
     assert.equal(written.plaintextColumns, 1);
     assert.equal(written.casSkipped, 0);
     assert.equal(applied, 1);
+    assert.equal(bunqReencryptScriptExitCode(written), 0);
   });
 
-  it("counts CAS skips when a concurrent write wins", async () => {
+  it("counts CAS skips when a concurrent write wins and exits non-zero", async () => {
     const env = {
       CORE_REPLICATION_ROLE: "cloud",
       BACKSTEROS_BUNQ_SECRET_ENCRYPTION_KEY: DEDICATED,
@@ -297,7 +400,10 @@ describe("reencryptBunqSecretsToDedicatedKey", () => {
       { dryRun: false },
       {
         env,
-        probeCoreRunning: async () => false,
+        probeCoreStatus: async () => ({
+          outcome: "stopped",
+          detail: "ECONNREFUSED",
+        }),
         loadRows: async () => [
           { workspaceId: "ws1", bunqApiKey: "plain-key" },
         ],

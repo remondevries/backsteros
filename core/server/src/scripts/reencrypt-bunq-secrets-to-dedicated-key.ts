@@ -6,15 +6,18 @@
  *     → dry-run: prints counts only, writes nothing (safe while core is up).
  *   ... --apply
  *     → writes. Requires CORE_REPLICATION_ROLE=cloud, dedicated key set, and
- *       the cloud core STOPPED (GET /health must not return ok:true).
+ *       the cloud core STOPPED (probe http://backsteros:$PORT/health).
+ *   ... --apply --i-confirmed-core-stopped
+ *     → skip the health probe after you verified `docker compose ps`.
  *
  * Never prints secret values. Does not call bunq. No-ops when the dedicated
  * key is unset. Each column write is compare-and-set against the exact raw DB
  * value. Exits 2 when casSkipped>0 or failed>0. Decrypt-back still restores
  * byte-identical plaintext after this pass (keep the dedicated key set).
  *
- * Stop the cloud core before --apply:
+ * Before --apply:
  *   docker compose -f deploy/cloud/docker-compose.yml stop backsteros
+ *   docker compose -f deploy/cloud/docker-compose.yml ps   # confirm stopped
  */
 import { sqlClient } from "../db/index.js";
 import {
@@ -22,19 +25,38 @@ import {
   reencryptBunqSecretsToDedicatedKey,
 } from "../services/bunq-secrets-reencrypt.js";
 
-function parseArgs(argv: readonly string[]): { apply: boolean } {
+function parseArgs(argv: readonly string[]): {
+  apply: boolean;
+  confirmedCoreStopped: boolean;
+} {
   let apply = false;
+  let confirmedCoreStopped = false;
   for (const arg of argv) {
     if (arg === "--apply") apply = true;
+    else if (arg === "--i-confirmed-core-stopped") confirmedCoreStopped = true;
     else if (arg === "--") continue;
-    else throw new Error(`unknown argument: ${arg} (only --apply is supported)`);
+    else {
+      throw new Error(
+        `unknown argument: ${arg} (supported: --apply, --i-confirmed-core-stopped)`,
+      );
+    }
   }
-  return { apply };
+  return { apply, confirmedCoreStopped };
+}
+
+/** Exported for unit tests of CLI exit behaviour. */
+export function exitCodeForReencryptResult(
+  result: Parameters<typeof bunqReencryptScriptExitCode>[0],
+): number {
+  return bunqReencryptScriptExitCode(result);
 }
 
 async function main() {
-  const { apply } = parseArgs(process.argv.slice(2));
-  const result = await reencryptBunqSecretsToDedicatedKey({ dryRun: !apply });
+  const { apply, confirmedCoreStopped } = parseArgs(process.argv.slice(2));
+  const result = await reencryptBunqSecretsToDedicatedKey({
+    dryRun: !apply,
+    confirmedCoreStopped: apply ? confirmedCoreStopped : false,
+  });
 
   if (result.skippedNoKey) {
     console.log(
@@ -59,7 +81,7 @@ async function main() {
   }
   if (!apply) {
     console.log(
-      "\nDRY RUN — nothing changed. Stop the cloud core, then re-run with --apply to write.",
+      "\nDRY RUN — nothing changed. Stop the cloud core, confirm with `docker compose ps`, then re-run with --apply.",
     );
   }
   const code = bunqReencryptScriptExitCode(result);
