@@ -19,7 +19,9 @@ import {
   forwardApiKeyAdminToCloud,
   shouldForwardApiKeyAdminToCloud,
 } from "../lib/api-key-admin-cloud-forward.js";
+import { cloudApiKeyAdminPath } from "../lib/api-key-admin-forward-auth.js";
 import { evaluateApiKeySecretAccess } from "../lib/api-key-secret-access.js";
+import { appendOpsLog } from "../lib/ops-log-buffer.js";
 import { toApiKey } from "../lib/mappers.js";
 import { requestClientAddress } from "../lib/request-address.js";
 import type { AuthContext } from "../middleware/auth.js";
@@ -38,9 +40,15 @@ function badRequest(message: string) {
   return { error: message, code: "bad_request" as const };
 }
 
+const MAC_ONLY_MIGRATE_FIRST = {
+  error:
+    "This API key exists only on this Mac. Migrate it to the cloud first (migrate-mac-only-api-keys), then edit or rotate.",
+  code: "api_key_mac_only_migrate_first" as const,
+};
+
 type CloudMintedShape = {
   id: string;
-  workspaceId: string;
+  workspaceId?: string;
   userId?: string | null;
   name: string;
   prefix?: string;
@@ -150,6 +158,53 @@ export function registerApiKeyRoutes(app: Hono) {
   }
 
   /**
+   * Persist cloud-minted material locally using the shell workspace/user —
+   * toApiKey omits workspaceId, so never trust the wire shape alone.
+   */
+  async function mirrorCloudResponseLocally(
+    auth: AuthContext,
+    payload: { apiKey?: CloudMintedShape; secret?: string },
+  ): Promise<string | undefined> {
+    if (
+      !payload?.apiKey?.id ||
+      typeof payload.secret !== "string" ||
+      !payload.secret
+    ) {
+      return undefined;
+    }
+    try {
+      await mirrorCloudMintedApiKeyLocally({
+        apiKey: {
+          id: payload.apiKey.id,
+          workspaceId: auth.workspaceId,
+          userId: auth.userId ?? payload.apiKey.userId ?? null,
+          name: payload.apiKey.name,
+          prefix: payload.apiKey.prefix,
+          scopes: payload.apiKey.scopes,
+          contactId: payload.apiKey.contactId,
+          expiresAt: payload.apiKey.expiresAt,
+          createdAt: payload.apiKey.createdAt,
+          updatedAt: payload.apiKey.updatedAt,
+          revokedAt: payload.apiKey.revokedAt,
+        },
+        secret: payload.secret,
+      });
+      return undefined;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn(
+        `[api-key-admin] local mirror failed for ${payload.apiKey.id}: ${message}`,
+      );
+      appendOpsLog(
+        "warn",
+        "api-key local mirror failed",
+        payload.apiKey.id,
+      );
+      return "Key saved on cloud but the local mirror failed; it will appear after sync.";
+    }
+  }
+
+  /**
    * Agent persona keys (and the payment-proposal agent key) may only be
    * revealed/rotated from the local shell. Missing keys fall through (404).
    */
@@ -252,29 +307,12 @@ export function registerApiKeyRoutes(app: Hono) {
           apiKey?: CloudMintedShape;
           secret?: string;
         };
-        if (
-          payload?.apiKey &&
-          typeof payload.secret === "string" &&
-          payload.secret
-        ) {
-          await mirrorCloudMintedApiKeyLocally({
-            apiKey: {
-              id: payload.apiKey.id,
-              workspaceId: payload.apiKey.workspaceId,
-              userId: payload.apiKey.userId,
-              name: payload.apiKey.name,
-              prefix: payload.apiKey.prefix,
-              scopes: payload.apiKey.scopes,
-              contactId: payload.apiKey.contactId,
-              expiresAt: payload.apiKey.expiresAt,
-              createdAt: payload.apiKey.createdAt,
-              updatedAt: payload.apiKey.updatedAt,
-              revokedAt: payload.apiKey.revokedAt,
-            },
-            secret: payload.secret,
-          }).catch(() => undefined);
-        }
-        return c.json(forwarded.body, forwarded.status as 201);
+        const mirrorWarning = await mirrorCloudResponseLocally(auth, payload);
+        const body =
+          mirrorWarning && payload && typeof payload === "object"
+            ? { ...payload, localMirrorWarning: mirrorWarning }
+            : forwarded.body;
+        return c.json(body, forwarded.status as 201);
       }
 
       try {
@@ -347,10 +385,19 @@ export function registerApiKeyRoutes(app: Hono) {
         const forwarded = await forwardMutationOrFail({
           auth,
           method: "PATCH",
-          path: `/internal/core-replication/api-keys/${keyId}`,
+          path: cloudApiKeyAdminPath(keyId),
           body: c.req.valid("json"),
         });
         if (forwarded.kind === "error") {
+          if (forwarded.status === 404) {
+            const local = await apiKeyService.getApiKeySecretAccessTarget(
+              auth.workspaceId,
+              keyId,
+            );
+            if (local) {
+              return c.json(MAC_ONLY_MIGRATE_FIRST, 409);
+            }
+          }
           return c.json(forwarded.body, forwarded.status as 400);
         }
         return c.json(forwarded.body, forwarded.status as 200);
@@ -448,39 +495,31 @@ export function registerApiKeyRoutes(app: Hono) {
       const forwarded = await forwardMutationOrFail({
         auth,
         method: "POST",
-        path: `/internal/core-replication/api-keys/${keyId}/rotate`,
+        path: cloudApiKeyAdminPath(keyId, "rotate"),
         body: {},
       });
       if (forwarded.kind === "error") {
+        if (forwarded.status === 404) {
+          const local = await apiKeyService.getApiKeySecretAccessTarget(
+            auth.workspaceId,
+            keyId,
+          );
+          if (local) {
+            return c.json(MAC_ONLY_MIGRATE_FIRST, 409);
+          }
+        }
         return c.json(forwarded.body, forwarded.status as 400);
       }
       const payload = forwarded.body as {
         apiKey?: CloudMintedShape;
         secret?: string;
       };
-      if (
-        payload?.apiKey &&
-        typeof payload.secret === "string" &&
-        payload.secret
-      ) {
-        await mirrorCloudMintedApiKeyLocally({
-          apiKey: {
-            id: payload.apiKey.id,
-            workspaceId: payload.apiKey.workspaceId,
-            userId: payload.apiKey.userId,
-            name: payload.apiKey.name,
-            prefix: payload.apiKey.prefix,
-            scopes: payload.apiKey.scopes,
-            contactId: payload.apiKey.contactId,
-            expiresAt: payload.apiKey.expiresAt,
-            createdAt: payload.apiKey.createdAt,
-            updatedAt: payload.apiKey.updatedAt,
-            revokedAt: payload.apiKey.revokedAt,
-          },
-          secret: payload.secret,
-        }).catch(() => undefined);
-      }
-      return c.json(forwarded.body, forwarded.status as 200);
+      const mirrorWarning = await mirrorCloudResponseLocally(auth, payload);
+      const body =
+        mirrorWarning && payload && typeof payload === "object"
+          ? { ...payload, localMirrorWarning: mirrorWarning }
+          : forwarded.body;
+      return c.json(body, forwarded.status as 200);
     }
 
     try {
@@ -538,15 +577,37 @@ export function registerApiKeyRoutes(app: Hono) {
 
     if (shouldForwardApiKeyAdminToCloud()) {
       const keyId = c.req.param("id");
+      const actor = actorFromAuth(auth, requestClientAddress(c));
       const forwarded = await forwardMutationOrFail({
         auth,
         method: "POST",
-        path: `/internal/core-replication/api-keys/${keyId}/revoke`,
+        path: cloudApiKeyAdminPath(keyId, "revoke"),
         body: {},
       });
       if (forwarded.kind === "error") {
+        // Mac-only keys: cloud 404 — revoke locally (monotonic / never blocked).
+        if (forwarded.status === 404) {
+          const row = await apiKeyService.revokeApiKey(
+            auth.workspaceId,
+            keyId,
+            actor,
+          );
+          if (row) {
+            return c.body(null, 204);
+          }
+        }
         return c.json(forwarded.body, forwarded.status as 400);
       }
+      // Cloud revoke succeeded — tighten the local copy immediately.
+      await apiKeyService
+        .revokeApiKey(auth.workspaceId, keyId, actor)
+        .catch((error: unknown) => {
+          const message = error instanceof Error ? error.message : String(error);
+          console.warn(
+            `[api-key-admin] local revoke after cloud revoke failed for ${keyId}: ${message}`,
+          );
+          appendOpsLog("warn", "api-key local revoke after cloud failed", keyId);
+        });
       return c.body(null, 204);
     }
 
