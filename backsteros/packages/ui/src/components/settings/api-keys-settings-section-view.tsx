@@ -1527,7 +1527,7 @@ export function ApiKeysSettingsSectionView({
     }
   }, [expandedId, filteredKeys]);
 
-  function toggleAgentScope(scope: string) {
+  function toggleDraftScope(scope: string) {
     setDraftScopes((current) =>
       current.includes(scope)
         ? current.filter((entry) => entry !== scope)
@@ -1538,15 +1538,20 @@ export function ApiKeysSettingsSectionView({
   async function createKey() {
     if (!onCreate) return;
 
-    // Access keys always mint the full owner set — never a scoped-down subset.
-    // Agent scopes never include settings:write (server also strips it).
+    // OS-182: Access and Agent both send the selected draft scopes. Access
+    // defaults to the full owner set in the UI but the server persists exactly
+    // what is requested (empty is refused). Agent never includes settings:*.
     const scopes =
       tab === "agent"
         ? draftScopes.filter((scope) =>
             AGENT_KEY_SCOPES.includes(scope as (typeof AGENT_KEY_SCOPES)[number]),
           )
         : tab === "access"
-          ? [...AGENT_API_KEY_SCOPES]
+          ? draftScopes.filter((scope) =>
+              AGENT_API_KEY_SCOPES.includes(
+                scope as (typeof AGENT_API_KEY_SCOPES)[number],
+              ),
+            )
           : [...scopesForApiKeyTab(tab)];
 
     let name = draft.trim();
@@ -1567,6 +1572,14 @@ export function ApiKeysSettingsSectionView({
         return;
       }
       name = contactName;
+    } else if (tab === "access") {
+      if (scopes.length === 0) {
+        setCreateError("Pick at least one scope.");
+        return;
+      }
+      if (!name) {
+        return;
+      }
     } else if (!name) {
       return;
     }
@@ -1777,33 +1790,19 @@ export function ApiKeysSettingsSectionView({
                           {tab === "agent" || tab === "access" ? (
                             <div className="settings-field api-key-detail-field api-key-detail-scopes">
                               <div className="api-key-detail-scopes-label">
-                                <span>
-                                  {tab === "access"
-                                    ? "Full owner access"
-                                    : "Scopes"}
-                                </span>
+                                <span>Scopes</span>
                               </div>
                               <div
                                 className="api-key-scope-grid"
                                 role="group"
-                                aria-label={
-                                  tab === "access"
-                                    ? "Full owner access scopes"
-                                    : "Scopes"
-                                }
+                                aria-label="Scopes"
                               >
                                 {(tab === "access"
                                   ? AGENT_API_KEY_SCOPES
                                   : AGENT_KEY_SCOPES
                                 ).map((scope) => {
-                                  const checked =
-                                    tab === "access"
-                                      ? true
-                                      : draftScopes.includes(scope);
-                                  const disabled =
-                                    tab === "access" ||
-                                    saving ||
-                                    !onCreate;
+                                  const checked = draftScopes.includes(scope);
+                                  const disabled = saving || !onCreate;
                                   return (
                                     <label
                                       key={scope}
@@ -1814,9 +1813,7 @@ export function ApiKeysSettingsSectionView({
                                         disabled={disabled}
                                         ariaLabel={`Scope ${scope}`}
                                         onCheckedChange={() => {
-                                          if (tab === "agent") {
-                                            toggleAgentScope(scope);
-                                          }
+                                          toggleDraftScope(scope);
                                         }}
                                       />
                                       <span>{scope}</span>
@@ -1846,7 +1843,9 @@ export function ApiKeysSettingsSectionView({
                                 !onCreate ||
                                 (tab === "agent"
                                   ? !draftContactId || draftScopes.length === 0
-                                  : !draft.trim())
+                                  : tab === "access"
+                                    ? !draft.trim() || draftScopes.length === 0
+                                    : !draft.trim())
                               }
                               onClick={() => void createKey()}
                             >

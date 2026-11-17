@@ -29,6 +29,7 @@ export {
   isAccessApiKey,
   hasFullAccessApiKeyScopes,
   sanitizeAgentKeyScopes,
+  sanitizeAccessKeyScopes,
   resolveCreateApiKeyFields,
   TV_TODAY_COUNT_STATUSES,
   tvTodayCountStatusSchema,

@@ -101,12 +101,15 @@ const EXCLUSIVE_API_KEY_DOOR_SCOPE_SET = new Set<string>(
 );
 
 /**
- * Non-door scopes. Access keys must always grant every scope in this list
- * (full owner access, including settings:write).
+ * Non-door scopes an Access key may hold. Create persists the requested
+ * subset exactly (OS-182); full owner access means sending every scope in
+ * this list, not an implicit widen on the server.
  */
 export const AGENT_API_KEY_SCOPES = API_KEY_SCOPES.filter(
   (scope) => !EXCLUSIVE_API_KEY_DOOR_SCOPE_SET.has(scope),
 );
+
+const AGENT_API_KEY_SCOPE_SET = new Set<string>(AGENT_API_KEY_SCOPES);
 
 /**
  * Scopes an agent (persona) key may hold. Never includes settings:read or
@@ -241,6 +244,28 @@ export function sanitizeAgentKeyScopes(
 }
 
 /**
+ * Persist Access scopes exactly as requested (deduped, order preserved).
+ * Rejects door scopes and anything outside AGENT_API_KEY_SCOPES.
+ * Empty after validation → ACCESS_SCOPES_REQUIRED (never widen to all).
+ */
+export function sanitizeAccessKeyScopes(
+  scopes: readonly string[],
+): Array<(typeof AGENT_API_KEY_SCOPES)[number]> {
+  const invalid = scopes.filter((scope) => !AGENT_API_KEY_SCOPE_SET.has(scope));
+  if (invalid.length > 0) {
+    throw new Error("ACCESS_SCOPES_INVALID");
+  }
+  const seen = new Set<string>();
+  const out: Array<(typeof AGENT_API_KEY_SCOPES)[number]> = [];
+  for (const scope of scopes) {
+    if (seen.has(scope)) continue;
+    seen.add(scope);
+    out.push(scope as (typeof AGENT_API_KEY_SCOPES)[number]);
+  }
+  return out;
+}
+
+/**
  * Resolve contact + scopes from an explicit create `kind`.
  * Never treats "missing contact" as Access — that requires kind === "access".
  */
@@ -250,11 +275,13 @@ export function resolveCreateApiKeyFields(input: {
   scopes: readonly string[];
 }): { contactId: string | null; scopes: Array<(typeof API_KEY_SCOPES)[number]> } {
   switch (input.kind) {
-    case "access":
-      return {
-        contactId: null,
-        scopes: [...AGENT_API_KEY_SCOPES],
-      };
+    case "access": {
+      const scopes = sanitizeAccessKeyScopes(input.scopes);
+      if (scopes.length === 0) {
+        throw new Error("ACCESS_SCOPES_REQUIRED");
+      }
+      return { contactId: null, scopes: [...scopes] };
+    }
     case "agent": {
       if (!input.contactId) {
         throw new Error("AGENT_CONTACT_REQUIRED");

@@ -350,6 +350,20 @@ export function registerApiKeyRoutes(app: Hono) {
         }
         if (
           error instanceof Error &&
+          (error.message === "ACCESS_SCOPES_REQUIRED" ||
+            error.message === "ACCESS_SCOPES_INVALID")
+        ) {
+          return c.json(
+            badRequest(
+              error.message === "ACCESS_SCOPES_INVALID"
+                ? "Access keys cannot include door-only scopes (applications, tv, carddav)"
+                : "Access keys require at least one non-door scope",
+            ),
+            400,
+          );
+        }
+        if (
+          error instanceof Error &&
           (error.message === "INVALID_EXPIRES_AT" ||
             error.message === "EXPIRES_AT_IN_PAST" ||
             error.message === "EXPIRES_AT_BEYOND_ACTOR")

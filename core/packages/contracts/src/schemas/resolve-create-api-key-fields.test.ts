@@ -6,14 +6,53 @@ import {
   resolveCreateApiKeyFields,
 } from "./common.js";
 
-test("access always gets full owner scopes and null contact", () => {
+test("access persists requested scopes exactly (OS-182)", () => {
   const result = resolveCreateApiKeyFields({
     kind: "access",
     contactId: "ignored",
     scopes: ["tasks:read"],
   });
   assert.equal(result.contactId, null);
+  assert.deepEqual(result.scopes, ["tasks:read"]);
+});
+
+test("access full owner set when every non-door scope is requested", () => {
+  const result = resolveCreateApiKeyFields({
+    kind: "access",
+    contactId: null,
+    scopes: [...AGENT_API_KEY_SCOPES],
+  });
   assert.deepEqual(result.scopes, [...AGENT_API_KEY_SCOPES]);
+});
+
+test("access rejects door scopes and empty lists", () => {
+  assert.throws(
+    () =>
+      resolveCreateApiKeyFields({
+        kind: "access",
+        contactId: null,
+        scopes: ["tasks:read", "applications"],
+      }),
+    /ACCESS_SCOPES_INVALID/,
+  );
+  assert.throws(
+    () =>
+      resolveCreateApiKeyFields({
+        kind: "access",
+        contactId: null,
+        scopes: [],
+      }),
+    /ACCESS_SCOPES_REQUIRED/,
+  );
+});
+
+test("access dedupes while preserving order", () => {
+  const result = resolveCreateApiKeyFields({
+    kind: "access",
+    contactId: null,
+    scopes: ["tasks:write", "tasks:read", "tasks:write"],
+  });
+  assert.deepEqual(result.scopes, ["tasks:write", "tasks:read"]);
 });
 
 test("agent requires contact and strips settings:read/write", () => {

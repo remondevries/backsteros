@@ -1,9 +1,7 @@
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
 
 import {
-  AGENT_API_KEY_SCOPES,
   apiKeyCreateKindFromIdentity,
-  isAccessApiKey,
   resolveCreateApiKeyFields,
   type ApiKeyAuditLogAction,
   type ApiKeyScope,
@@ -564,17 +562,8 @@ export async function updateApiKey(
       .limit(1);
     if (!before) return null;
 
-    // Heal incomplete Access keys only (already no contact). Never promote
-    // an agent key by clearing contact.
-    if (
-      before.contactId == null &&
-      isAccessApiKey({
-        contactId: null,
-        scopes: before.scopes,
-      })
-    ) {
-      patch.scopes = [...AGENT_API_KEY_SCOPES];
-    }
+    // OS-182: never widen Access scopes on rename/expiry — least-privilege
+    // subsets must survive PATCH. Access identity is kind-at-create only.
 
     const [row] = await tx
       .update(apiKeys)

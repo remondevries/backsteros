@@ -262,6 +262,14 @@ function mapApiKeyServiceError(error: unknown): ApiKeyAdminCloudHandlerResult {
       "Agent keys need at least one non-door scope (settings:write is not allowed)",
     );
   }
+  if (error.message === "ACCESS_SCOPES_REQUIRED") {
+    return badRequest("Access keys require at least one non-door scope");
+  }
+  if (error.message === "ACCESS_SCOPES_INVALID") {
+    return badRequest(
+      "Access keys cannot include door-only scopes (applications, tv, carddav)",
+    );
+  }
   if (
     error.message === "INVALID_EXPIRES_AT" ||
     error.message === "EXPIRES_AT_IN_PAST" ||
