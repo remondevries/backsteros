@@ -1038,6 +1038,48 @@ describe("updateAgentMailDraft / getAgentMailDraft (service paths)", () => {
       assert.deepEqual(textUpdate.to, ["bob@example.com"]);
     }
   });
+
+  it("OS-186: PATCH To prefers CRM contact name over org display name", async () => {
+    stubDraftService();
+    mock.method(
+      agentMailDraftLifecycleDeps,
+      "resolveContactByEmail",
+      async (_workspaceId: string, email: string) => {
+        if (email.toLowerCase() === "info@pamu.nl") {
+          return {
+            firstName: "Jan",
+            name: "Jan Jansen",
+            email: "info@pamu.nl",
+          };
+        }
+        return null;
+      },
+    );
+    let draft = shelledAdaDraft();
+    mock.method(AgentMailClient.prototype, "getDraft", async () => draft);
+    const updateBodies: Record<string, unknown>[] = [];
+    mock.method(
+      AgentMailClient.prototype,
+      "updateDraft",
+      async (
+        _inboxId: string,
+        _draftId: string,
+        body: Record<string, unknown>,
+      ) => {
+        updateBodies.push(body);
+        draft = { ...draft, ...body } as AgentMailDraftDetail;
+        return draft;
+      },
+    );
+
+    const patched = await updateAgentMailDraft("ws_1", "inbox_1", "draft_ada", {
+      to: ["Pa-Mu verhuur <info@pamu.nl>"],
+    });
+    assert.equal(patched.greeting, "Hi Jan,");
+    const textUpdate = updateBodies.find((body) => typeof body.text === "string");
+    assert.match(String(textUpdate?.text ?? ""), /^Hi Jan,/);
+    assert.doesNotMatch(String(textUpdate?.text ?? ""), /Pa-Mu/i);
+  });
 });
 
 describe("send self-only To correction + concept subject preserve", () => {
@@ -1279,6 +1321,69 @@ describe("send self-only To correction + concept subject preserve", () => {
       const result = await upsertEmailConceptReply("ws_1", "inbox_1", messageId, { body: "Thanks for your note." });
       assert.equal(result.greeting, expectedGreeting);
     }
+  });
+
+  it("OS-186: concept-reply greets contact when contact+org share the email", async () => {
+    stubService();
+    mock.method(agentMailDraftLifecycleDeps, "getTemplates", async () =>
+      resolveEmailReplyTemplates({
+        greetingTemplateEn: "Hi {firstName},",
+        greetingTemplateNl: "Aan {firstName},",
+        signOffTemplateEn: "Best,\n{name}",
+        signOffName: "Remon",
+      }),
+    );
+    mock.method(
+      agentMailDraftLifecycleDeps,
+      "resolveContactByEmail",
+      async (_workspaceId: string, email: string) => {
+        if (email.toLowerCase() === "info@pamu.nl") {
+          return {
+            firstName: "Jan",
+            name: "Jan Jansen",
+            email: "info@pamu.nl",
+          };
+        }
+        return null;
+      },
+    );
+    mock.method(AgentMailClient.prototype, "listDrafts", async () => []);
+    mock.method(AgentMailClient.prototype, "getMessage", async () => ({
+      inboxId: "inbox_1",
+      threadId: "thread_1",
+      messageId: "msg_pamu",
+      subject: "Quote",
+      from: "Pa-Mu verhuur <info@pamu.nl>",
+      to: ["remon@example.com"],
+      preview: null,
+      timestamp: "2026-10-01T08:00:00.000Z",
+      labels: [],
+      text: "Kunnen jullie een offerte sturen?",
+      html: null,
+      extractedText: "Kunnen jullie een offerte sturen?",
+      extractedHtml: null,
+      inReplyTo: null,
+      attachments: [],
+    }));
+    mock.method(
+      AgentMailClient.prototype,
+      "createDraft",
+      async (_inboxId: string, payload: Record<string, unknown>) =>
+        baseDraft({
+          draftId: "draft_pamu",
+          clientId: conceptReplyClientId("msg_pamu"),
+          inReplyTo: "msg_pamu",
+          text: String(payload.text ?? ""),
+          html: String(payload.html ?? ""),
+          to: (payload.to as string[]) ?? ["info@pamu.nl"],
+        }),
+    );
+    const result = await upsertEmailConceptReply("ws_1", "inbox_1", "msg_pamu", {
+      body: "Hierbij de offerte.",
+    });
+    assert.equal(result.greeting, "Aan Jan,");
+    assert.match(String(result.greeting), /Jan/);
+    assert.doesNotMatch(String(result.greeting), /Pa-Mu/i);
   });
 
 });

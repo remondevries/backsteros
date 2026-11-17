@@ -540,11 +540,12 @@ function extractReplyBodyWithTemplates(
   fullText: string,
   from: string,
   templates: ResolvedEmailReplyTemplates,
+  options?: { firstName?: string | null },
 ): string {
   const trimmed = fullText.replace(/\r\n/g, "\n").trim();
   if (!trimmed) return "";
 
-  const { greeting, signOff } = renderEmailReplyShell(from, templates);
+  const { greeting, signOff } = renderEmailReplyShell(from, templates, options);
   let body = trimmed;
 
   if (body.startsWith(greeting)) {
@@ -565,19 +566,39 @@ export function extractReplyBodyFromAssembled(
   fullText: string,
   from: string,
   templates: EmailReplyTemplateSettings,
+  options?: { firstName?: string | null },
 ): string {
   const trimmed = fullText.replace(/\r\n/g, "\n").trim();
   if (!trimmed) return "";
 
+  const shellOptions =
+    options && "firstName" in options
+      ? { firstName: options.firstName }
+      : undefined;
+
   for (const language of ["en", "nl"] as const) {
     const resolved = resolveTemplatesForLanguage(templates, language);
-    const { greeting, signOff } = renderEmailReplyShell(from, resolved);
+    const { greeting, signOff } = renderEmailReplyShell(
+      from,
+      resolved,
+      shellOptions,
+    );
     // Template shell matched (even with an empty middle) — do not fall through
     // to sanitize, which can promote the greeting line into a fake body.
     if (trimmed.startsWith(greeting) && trimmed.endsWith(signOff)) {
-      return extractReplyBodyWithTemplates(trimmed, from, resolved);
+      return extractReplyBodyWithTemplates(
+        trimmed,
+        from,
+        resolved,
+        shellOptions,
+      );
     }
-    const body = extractReplyBodyWithTemplates(trimmed, from, resolved);
+    const body = extractReplyBodyWithTemplates(
+      trimmed,
+      from,
+      resolved,
+      shellOptions,
+    );
     if (body) return body;
   }
   // Saved / assembled text: strip shell only — never collapse rewrite iterations
@@ -593,21 +614,36 @@ export function resolveEditableDraftBody(
   fullText: string,
   from: string,
   templates: EmailReplyTemplateSettings,
+  options?: { firstName?: string | null },
 ): string {
   const trimmed = fullText.replace(/\r\n/g, "\n").trim();
   if (!trimmed) return "";
 
+  const shellOptions =
+    options && "firstName" in options
+      ? { firstName: options.firstName }
+      : undefined;
+
   for (const language of ["en", "nl"] as const) {
     const resolved = resolveTemplatesForLanguage(templates, language);
-    const { greeting, signOff } = renderEmailReplyShell(from, resolved);
+    const { greeting, signOff } = renderEmailReplyShell(
+      from,
+      resolved,
+      shellOptions,
+    );
     if (trimmed.startsWith(greeting) && trimmed.endsWith(signOff)) {
       // Shell matched — empty middle stays empty (don't sanitize the greeting
       // line into a fake body).
-      return extractReplyBodyWithTemplates(trimmed, from, resolved);
+      return extractReplyBodyWithTemplates(trimmed, from, resolved, shellOptions);
     }
   }
 
-  const extracted = extractReplyBodyFromAssembled(trimmed, from, templates).trim();
+  const extracted = extractReplyBodyFromAssembled(
+    trimmed,
+    from,
+    templates,
+    shellOptions,
+  ).trim();
   if (extracted) return extracted;
   return lightCleanAgentReplyBody(stripAssembledEmailShell(trimmed));
 }
@@ -700,6 +736,10 @@ export function emailHeaderContainsLineBreak(value: string): boolean {
 /**
  * Prefer a display-name form for greetings (`Ada Lovelace <a@…>` → Ada).
  * Falls back to the bare normalized address only when no display form exists.
+ *
+ * This selects the header party string only — CRM contact first names belong in
+ * {@link resolveGreetingFirstNamesFromRecipients} / `recipientFirstName` on
+ * assemble helpers (contact always wins over an org-style display name).
  */
 export function greetingPartyFromRecipients(
   preferred: string | string[] | null | undefined,
@@ -731,6 +771,67 @@ export function greetingPartyFromRecipients(
   if (firstRaw) return firstRaw;
   if (fallbackTrimmed) return fallbackTrimmed;
   return normalizedAddresses[0] || "";
+}
+
+/** Minimal contact shape for greeting first-name resolution. */
+export type GreetingContactNameSource = {
+  firstName?: string | null;
+  name?: string | null;
+  email?: string | null;
+};
+
+/** First name from a linked/resolved contact — never from an email local-part. */
+export function recipientFirstNameFromContact(
+  contact: GreetingContactNameSource | null | undefined,
+): string {
+  const first = contact?.firstName?.trim();
+  if (first) return first;
+  const fromName = contact?.name?.trim().split(/\s+/).filter(Boolean)[0] ?? "";
+  if (fromName && !fromName.includes("@")) return fromName;
+  return "";
+}
+
+/**
+ * Join resolved To greeting names with ` & ` (no commas — mid-line commas break
+ * greeting strippers). Omits empty entries.
+ */
+export function joinGreetingFirstNames(
+  names: readonly (string | null | undefined)[],
+): string {
+  return names
+    .map((name) => name?.trim())
+    .filter((name): name is string => Boolean(name))
+    .join(" & ");
+}
+
+/**
+ * Per-To greeting name: CRM contact first (via lookup), else header display
+ * name, else empty (nameless greeting). Multi-To joins with
+ * {@link joinGreetingFirstNames}.
+ */
+export async function resolveGreetingFirstNamesFromRecipients(
+  recipients: readonly string[],
+  resolveContactByEmail: (
+    email: string,
+  ) => Promise<GreetingContactNameSource | null>,
+): Promise<string> {
+  const names: string[] = [];
+  for (const entry of recipients) {
+    const trimmed = entry.trim();
+    if (!trimmed) continue;
+    const email = parseReplyToAddress(trimmed);
+    const contact = email.includes("@")
+      ? await resolveContactByEmail(email)
+      : null;
+    const fromContact = recipientFirstNameFromContact(contact);
+    if (fromContact) {
+      names.push(fromContact);
+      continue;
+    }
+    const fromHeader = parseSenderFirstName(trimmed);
+    if (fromHeader) names.push(fromHeader);
+  }
+  return joinGreetingFirstNames(names);
 }
 
 /**
@@ -923,6 +1024,9 @@ export function renderEmailComposeShell(
 /**
  * Wrap agent body-only output into a sendable plain-text reply.
  * Greeting + sign-off come from workspace settings — not agent-generated.
+ *
+ * Pass `recipientFirstName` (including `""`) to prefer a CRM/contact name over
+ * the header display name (OS-186).
  */
 export function assembleReplyEmail(input: {
   from: string;
@@ -947,6 +1051,8 @@ export function assembleReplyEmail(input: {
    * `Re:` like a fresh reply to the parent subject.
    */
   preserveSubject?: boolean;
+  /** When set, never derive a greeting name from the From/To header alone. */
+  recipientFirstName?: string | null;
 }): AssembledReplyEmail {
   const baseTemplates = resolveEmailReplyTemplates(input.templates);
   const language =
@@ -971,7 +1077,15 @@ export function assembleReplyEmail(input: {
     to,
     input.from,
   );
-  const { greeting, signOff } = renderEmailReplyShell(greetingParty, templates);
+  const shellOptions =
+    input.recipientFirstName !== undefined
+      ? { firstName: input.recipientFirstName }
+      : undefined;
+  const { greeting, signOff } = renderEmailReplyShell(
+    greetingParty,
+    templates,
+    shellOptions,
+  );
   const text = [greeting, "", body, "", signOff].join("\n");
   return {
     to,

@@ -41,9 +41,16 @@ import { db } from "../../db/index.js";
 import { contacts } from "../../db/schema.js";
 import {
   assembleComposeEmail,
+  joinGreetingFirstNames,
   planDraftSendBodies,
+  recipientFirstNameFromContact,
   resolveEditableDraftBody,
   resolveReplyPartyFromMessage,
+} from "../../lib/email-reply-assembler.js";
+
+export {
+  joinGreetingFirstNames,
+  recipientFirstNameFromContact,
 } from "../../lib/email-reply-assembler.js";
 import {
   buildEmailGrokWakePayload,
@@ -455,30 +462,6 @@ async function defaultResolveContactByEmail(
     name: row.name ?? null,
     email: row.email ?? null,
   };
-}
-
-/** First name from a linked/resolved contact — never from an email local-part. */
-export function recipientFirstNameFromContact(
-  contact: StartEmailContact | null | undefined,
-): string {
-  const first = contact?.firstName?.trim();
-  if (first) return first;
-  const fromName = contact?.name?.trim().split(/\s+/).filter(Boolean)[0] ?? "";
-  if (fromName && !fromName.includes("@")) return fromName;
-  return "";
-}
-
-/**
- * Join resolved To greeting names with ` & ` (no commas — mid-line commas break
- * greeting strippers). Omits empty entries.
- */
-export function joinGreetingFirstNames(
-  names: readonly (string | null | undefined)[],
-): string {
-  return names
-    .map((name) => name?.trim())
-    .filter((name): name is string => Boolean(name))
-    .join(" & ");
 }
 
 export function shouldWrapEmailStartBody(input: {

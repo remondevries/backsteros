@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import {
+  assembleComposeEmail,
   assembleEmailHtml,
   assembleReplyEmail,
   assertValidEmailDraftHeaders,
@@ -10,15 +11,18 @@ import {
   EMAIL_SIGN_OFF_AVATAR_CID,
   extractReplyBodyFromAssembled,
   greetingPartyFromRecipients,
+  joinGreetingFirstNames,
   mergeEmailDraftHeaders,
   normalizeComposeRecipients,
   parseReplyToAddress,
   parseSenderFirstName,
   plainTextEmailToHtml,
+  recipientFirstNameFromContact,
   renderEmailReplyShell,
   replySubject,
   resolveEditableDraftBody,
   resolveEmailReplyTemplates,
+  resolveGreetingFirstNamesFromRecipients,
   resolveReplyPartyFromMessage,
   sanitizeAgentReplyBody,
   splitIntoSentences,
@@ -672,4 +676,127 @@ describe("email-reply-assembler", () => {
     assert.throws(() => assertHasReplyableConceptRecipient([]), (e: unknown) => e instanceof Error && e.message === NO_REPLYABLE_CONCEPT_RECIPIENT_MESSAGE);
   });
 
+});
+
+describe("OS-186 greeting contact resolution", () => {
+  const templates = resolveEmailReplyTemplates({
+    greetingTemplateEn: "Hi {firstName},",
+    greetingTemplateNl: "Aan {firstName},",
+    signOffTemplateEn: "Best,\n{name}",
+    signOffName: "Remon",
+  });
+
+  it("contact wins over org-style display name for the same email", async () => {
+    const firstName = await resolveGreetingFirstNamesFromRecipients(
+      ["Pa-Mu verhuur <info@pamu.nl>"],
+      async (email) => {
+        assert.equal(email.toLowerCase(), "info@pamu.nl");
+        return {
+          firstName: "Jan",
+          name: "Jan Jansen",
+          email: "info@pamu.nl",
+        };
+      },
+    );
+    assert.equal(firstName, "Jan");
+    assert.equal(
+      assembleReplyEmail({
+        from: "Pa-Mu verhuur <info@pamu.nl>",
+        subject: "Quote",
+        body: "Thanks.",
+        templates,
+        languageHint: "en",
+        recipientFirstName: firstName,
+      }).greeting,
+      "Hi Jan,",
+    );
+    assert.equal(
+      assembleComposeEmail({
+        to: "Pa-Mu verhuur <info@pamu.nl>",
+        subject: "Hello",
+        body: "Thanks.",
+        templates,
+        languageHint: "nl",
+        recipientFirstName: firstName,
+      }).greeting,
+      "Aan Jan,",
+    );
+  });
+
+  it("org-only falls back to header display name", async () => {
+    const firstName = await resolveGreetingFirstNamesFromRecipients(
+      ["Pa-Mu verhuur <info@pamu.nl>"],
+      async () => null,
+    );
+    assert.equal(firstName, "Pa-Mu");
+    assert.equal(
+      assembleReplyEmail({
+        from: "Pa-Mu verhuur <info@pamu.nl>",
+        subject: "Quote",
+        body: "Thanks.",
+        templates,
+        languageHint: "nl",
+        recipientFirstName: firstName,
+      }).greeting,
+      "Aan Pa-Mu,",
+    );
+  });
+
+  it("contact-only uses the contact first name for a bare address", async () => {
+    const firstName = await resolveGreetingFirstNamesFromRecipients(
+      ["info@pamu.nl"],
+      async () => ({
+        firstName: "Ewout",
+        name: "Ewout de Vries",
+        email: "info@pamu.nl",
+      }),
+    );
+    assert.equal(firstName, "Ewout");
+    assert.equal(recipientFirstNameFromContact({
+      firstName: "Ewout",
+      name: "Ewout de Vries",
+      email: "info@pamu.nl",
+    }), "Ewout");
+  });
+
+  it("no match yields nameless greeting", async () => {
+    const firstName = await resolveGreetingFirstNamesFromRecipients(
+      ["info@pamu.nl"],
+      async () => null,
+    );
+    assert.equal(firstName, "");
+    assert.equal(
+      assembleReplyEmail({
+        from: "info@pamu.nl",
+        subject: "Quote",
+        body: "Thanks.",
+        templates,
+        languageHint: "en",
+        recipientFirstName: firstName,
+      }).greeting,
+      NAMELESS_EMAIL_GREETING_EN,
+    );
+  });
+
+  it("joins multiple To contact names with ampersands", async () => {
+    const contacts = new Map([
+      ["ewout@example.com", { firstName: "Ewout", name: "Ewout", email: "ewout@example.com" }],
+      ["lars@example.com", { firstName: "Lars", name: "Lars", email: "lars@example.com" }],
+    ]);
+    const firstName = await resolveGreetingFirstNamesFromRecipients(
+      ["ewout@example.com", "lars@example.com"],
+      async (email) => contacts.get(email.toLowerCase()) ?? null,
+    );
+    assert.equal(firstName, joinGreetingFirstNames(["Ewout", "Lars"]));
+    assert.equal(
+      assembleComposeEmail({
+        to: ["ewout@example.com", "lars@example.com"],
+        subject: "Hello",
+        body: "Thanks.",
+        templates,
+        recipientFirstName: firstName,
+      }).greeting,
+      "Hi Ewout & Lars,",
+    );
+  });
 });

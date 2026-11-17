@@ -15,6 +15,7 @@ import {
   resolveInboxEmail,
 } from "./settings.js";
 import { getAvatar } from "../crm-domain.js";
+import { lookupContactByChannel } from "../crm-domain/organizations-contacts.js";
 import {
   assembleComposeEmail,
   type AssembledComposeEmail,
@@ -29,6 +30,7 @@ import {
   detectEmailLanguage,
   EMAIL_SIGN_OFF_AVATAR_CID,
   type EmailReplyTemplateSettings,
+  type GreetingContactNameSource,
   filterReplyableEmailAddresses,
   mergeEmailDraftHeaders,
   NO_REPLYABLE_CONCEPT_RECIPIENT_MESSAGE,
@@ -37,6 +39,7 @@ import {
   parseSenderFirstName,
   replySubject,
   resolveEditableDraftBody,
+  resolveGreetingFirstNamesFromRecipients,
   resolveReplyPartyFromMessage,
 } from "../../lib/email-reply-assembler.js";
 import { renderCircularSignOffAvatarPng } from "../../lib/email-signoff-avatar.js";
@@ -160,6 +163,9 @@ function draftUpdateAttachmentFields(
  * Greeting party for a draft: greet the To recipient. When `replyFrom` is the
  * same mailbox as To, prefer its display-name form (`Ada Lovelace <a@…>`).
  * When To changes to someone else, greet the new To — not the old reply party.
+ *
+ * Header party only — CRM first names come from
+ * {@link resolveDraftRecipientFirstName} (OS-186).
  */
 function resolveDraftGreetingParty(
   replyFrom: string | null | undefined,
@@ -176,23 +182,78 @@ function resolveDraftGreetingParty(
   return reply || primaryTo || "there";
 }
 
-export function mapConceptDraftForApi(input: {
+async function defaultResolveContactByEmailForGreeting(
+  workspaceId: string,
+  email: string,
+): Promise<GreetingContactNameSource | null> {
+  const row = await lookupContactByChannel(workspaceId, { email });
+  if (!row) return null;
+  return {
+    firstName: row.firstName ?? null,
+    name: row.name ?? null,
+    email: row.email ?? null,
+  };
+}
+
+/**
+ * Recipients used for CRM/display-name greeting resolution. Prefers the
+ * display-name form from `replyFrom` when it is the same mailbox as primary To.
+ */
+function draftGreetingRecipientForms(
+  replyFrom: string | null | undefined,
+  to: readonly string[],
+): string[] {
+  const party = resolveDraftGreetingParty(replyFrom, to);
+  if (to.length === 0) return party && party !== "there" ? [party] : [];
+  return to.map((entry, index) => {
+    if (index !== 0) return entry;
+    const entryAddr = parseReplyToAddress(entry).toLowerCase();
+    const partyAddr = parseReplyToAddress(party).toLowerCase();
+    if (entryAddr && partyAddr && entryAddr === partyAddr) return party;
+    return entry;
+  });
+}
+
+/** Contact-first greeting names for draft/reply To lists (OS-186). */
+export async function resolveDraftRecipientFirstName(
+  workspaceId: string,
+  replyFrom: string | null | undefined,
+  to: readonly string[],
+): Promise<string> {
+  const recipients = draftGreetingRecipientForms(replyFrom, to);
+  return resolveGreetingFirstNamesFromRecipients(recipients, (email) =>
+    agentMailDraftLifecycleDeps.resolveContactByEmail(workspaceId, email),
+  );
+}
+
+export async function mapConceptDraftForApi(input: {
   draft: AgentMailDraftDetail;
   replyFrom: string;
   templates: EmailReplyTemplateSettings;
   subject: string;
   fromEmail: string | null;
+  workspaceId: string;
   contextText?: string | null;
+  recipientFirstName?: string | null;
 }) {
   const rawText = input.draft.text ?? "";
   const draftTo = normalizeComposeRecipients(input.draft.to);
   const draftCc = normalizeComposeRecipients(input.draft.cc);
   const draftBcc = normalizeComposeRecipients(input.draft.bcc);
   const greetingParty = resolveDraftGreetingParty(input.replyFrom, draftTo);
+  const recipientFirstName =
+    input.recipientFirstName !== undefined
+      ? (input.recipientFirstName ?? "")
+      : await resolveDraftRecipientFirstName(
+          input.workspaceId,
+          input.replyFrom,
+          draftTo,
+        );
   const editableBody = resolveEditableDraftBody(
     rawText,
     greetingParty,
     input.templates,
+    { firstName: recipientFirstName },
   );
   const isCompose = !input.draft.inReplyTo?.trim();
   const languageHint = detectEmailLanguage(editableBody, input.contextText);
@@ -205,6 +266,7 @@ export function mapConceptDraftForApi(input: {
         body: editableBody,
         templates: input.templates,
         languageHint,
+        recipientFirstName,
       })
     : assembleReplyEmail({
         from: greetingParty,
@@ -216,6 +278,7 @@ export function mapConceptDraftForApi(input: {
         languageHint,
         contextText: input.contextText,
         preserveSubject: true,
+        recipientFirstName,
       });
   return {
     draftId: input.draft.draftId,
@@ -234,21 +297,25 @@ export function mapConceptDraftForApi(input: {
   };
 }
 
-function mapDraftDetailForApi(input: {
+async function mapDraftDetailForApi(input: {
   draft: AgentMailDraftDetail;
   replyFrom: string;
   templates: EmailReplyTemplateSettings;
   inboxEmail: string | null;
+  workspaceId: string;
   contextText?: string | null;
-}): ApiAgentMailDraftDetail {
+  recipientFirstName?: string | null;
+}): Promise<ApiAgentMailDraftDetail> {
   const subject = input.draft.subject?.trim() || "Reply concept";
-  const mapped = mapConceptDraftForApi({
+  const mapped = await mapConceptDraftForApi({
     draft: input.draft,
     replyFrom: input.replyFrom,
     templates: input.templates,
     subject,
     fromEmail: input.inboxEmail,
+    workspaceId: input.workspaceId,
     contextText: input.contextText,
+    recipientFirstName: input.recipientFirstName,
   });
   return {
     inboxId: input.draft.inboxId,
@@ -327,6 +394,8 @@ export const agentMailDraftLifecycleDeps = {
   getCredentials: getAgentMailCredentials,
   getTemplates: getEmailReplyTemplatesForInbox,
   resolveSignOffAvatar: resolveSignOffAvatarAttachment,
+  /** CRM contact lookup for greetings — contacts win over org-shared emails. */
+  resolveContactByEmail: defaultResolveContactByEmailForGreeting,
   getOrCreateThread: (
     workspaceId: string,
     inboxId: string,
@@ -673,6 +742,7 @@ export async function getAgentMailDraft(
     replyFrom: replyContext.replyFrom,
     templates,
     inboxEmail,
+    workspaceId,
     contextText: replyContext.contextText,
   });
 }
@@ -764,6 +834,11 @@ export async function upsertEmailConceptReply(
     );
   }
 
+  const recipientFirstName = await resolveDraftRecipientFirstName(
+    workspaceId,
+    replyParty,
+    nextTo,
+  );
   const assembled = assembleReplyEmail({
     from: replyParty || nextTo[0] || "",
     to: nextTo,
@@ -774,6 +849,7 @@ export async function upsertEmailConceptReply(
     contextText: message.text ?? message.extractedText ?? null,
     // Keep payload/stored subjects (e.g. "Quote"); only prefix Re: for parent fallback.
     preserveSubject,
+    recipientFirstName,
   });
   const draft = await saveConceptReplyDraft(
     client,
@@ -845,6 +921,11 @@ export async function upsertEmailComposeDraft(
   const templates = await getEmailReplyTemplatesForInbox(workspaceId, inboxId);
   const composeSessionId =
     input.composeSessionId?.trim() || crypto.randomUUID();
+  const toList = normalizeComposeRecipients(input.to);
+  const recipientFirstName =
+    input.recipientFirstName !== undefined
+      ? input.recipientFirstName
+      : await resolveDraftRecipientFirstName(workspaceId, null, toList);
   const assembled = assembleComposeEmail({
     to: input.to,
     cc: input.cc,
@@ -852,7 +933,7 @@ export async function upsertEmailComposeDraft(
     subject: input.subject,
     body: input.body,
     templates,
-    recipientFirstName: input.recipientFirstName,
+    recipientFirstName,
     wrap: input.wrap,
   });
   const draft = await saveComposeDraft(
@@ -968,11 +1049,23 @@ export async function ensureDraftHasAssembledShell(
     );
   }
   const greetingParty = resolveDraftGreetingParty(replyFrom, nextTo);
+  const previousGreetingParty = resolveDraftGreetingParty(replyFrom, storedTo);
+  const previousRecipientFirstName = await resolveDraftRecipientFirstName(
+    workspaceId,
+    replyFrom,
+    storedTo,
+  );
+  const recipientFirstName = await resolveDraftRecipientFirstName(
+    workspaceId,
+    replyFrom,
+    nextTo,
+  );
   const editableBody = resolveEditableDraftBody(
     draft.text ?? "",
     // Extract using the greeting that matches stored text/To (pre-correction).
-    resolveDraftGreetingParty(replyFrom, storedTo),
+    previousGreetingParty,
     templates,
+    { firstName: previousRecipientFirstName },
   );
   const isCompose = !draft.inReplyTo?.trim();
   const languageHint = detectEmailLanguage(editableBody, contextText);
@@ -986,6 +1079,7 @@ export async function ensureDraftHasAssembledShell(
         templates,
         languageHint,
         preserveBody: true,
+        recipientFirstName,
       })
     : assembleReplyEmail({
         from: greetingParty,
@@ -998,6 +1092,7 @@ export async function ensureDraftHasAssembledShell(
         contextText,
         preserveBody: true,
         preserveSubject: true,
+        recipientFirstName,
       });
 
   const storedText = (draft.text ?? "").replace(/\r\n/g, "\n").trim();
@@ -1226,9 +1321,20 @@ export async function updateAgentMailDraft(
 
   const previousGreetingParty = resolveDraftGreetingParty(replyFrom, storedTo);
   const nextGreetingParty = resolveDraftGreetingParty(replyFrom, nextTo);
+  const previousRecipientFirstName = await resolveDraftRecipientFirstName(
+    workspaceId,
+    replyFrom,
+    storedTo,
+  );
+  const nextRecipientFirstName = await resolveDraftRecipientFirstName(
+    workspaceId,
+    replyFrom,
+    nextTo,
+  );
   const greetingPartyChanged =
     previousGreetingParty.trim().toLowerCase() !==
       nextGreetingParty.trim().toLowerCase() ||
+    previousRecipientFirstName !== nextRecipientFirstName ||
     parseSenderFirstName(previousGreetingParty) !==
       parseSenderFirstName(nextGreetingParty);
   const bodyProvided = patch.body !== undefined;
@@ -1240,6 +1346,7 @@ export async function updateAgentMailDraft(
         draft.text ?? "",
         previousGreetingParty,
         templates,
+        { firstName: previousRecipientFirstName },
       );
 
   // Header-only PATCH: update To/Cc/Bcc/Subject without rewriting text/HTML.
@@ -1282,7 +1389,9 @@ export async function updateAgentMailDraft(
       replyFrom: replyFrom || nextTo[0] || "",
       templates,
       inboxEmail,
+      workspaceId,
       contextText,
+      recipientFirstName: nextRecipientFirstName,
     });
   }
 
@@ -1297,6 +1406,7 @@ export async function updateAgentMailDraft(
         templates,
         languageHint,
         preserveBody: true,
+        recipientFirstName: nextRecipientFirstName,
       })
     : assembleReplyEmail({
         from: nextGreetingParty,
@@ -1310,6 +1420,7 @@ export async function updateAgentMailDraft(
         preserveBody: true,
         // Subject already resolved above — never re-prefix Re: on PATCH.
         preserveSubject: true,
+        recipientFirstName: nextRecipientFirstName,
       });
   try {
     assertAssembledPreservesEditableBody(assembled.text, editableBody);
@@ -1342,6 +1453,8 @@ export async function updateAgentMailDraft(
     replyFrom: replyFrom || nextTo[0] || "",
     templates,
     inboxEmail,
+    workspaceId,
     contextText,
+    recipientFirstName: nextRecipientFirstName,
   });
 }

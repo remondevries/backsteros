@@ -344,7 +344,7 @@ async function loadAgentMailMessageUncached(
     conceptDraftId: conceptDraft?.draftId ?? null,
     conceptPreview: conceptDraft?.preview ?? conceptDraft?.text?.slice(0, 160) ?? null,
     conceptDraft: conceptDraft
-      ? mapConceptDraftForApi({
+      ? await mapConceptDraftForApi({
           draft: conceptDraft,
           replyFrom: resolveReplyPartyFromMessage(
             { from: conceptParent.from ?? "", to: conceptParent.to ?? [] },
@@ -358,6 +358,7 @@ async function loadAgentMailMessageUncached(
           subject:
             conceptDraft.subject?.trim() || replySubject(conceptParent.subject),
           fromEmail: conceptDraftFromEmail,
+          workspaceId,
           contextText: conceptParent.text ?? conceptParent.extractedText ?? null,
         })
       : null,
