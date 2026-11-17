@@ -194,6 +194,22 @@ describe("replication worker holds cursors on failed rows", () => {
     assert.deepEqual(outcomes, [0, 0, 1]);
   });
 
+  it("OS-174: pull never advances when the dead letter was not recorded", async () => {
+    const outcomes: number[] = [];
+    for (let tick = 1; tick <= CURSOR_HOLD_MAX_ATTEMPTS + 2; tick += 1) {
+      const { setCalls } = await runPull([
+        {
+          id: "b",
+          code: "23505",
+          message: "duplicate key",
+          deadLetterRecorded: false,
+        },
+      ]);
+      outcomes.push(setCalls.length);
+    }
+    assert.deepEqual(outcomes, [0, 0, 0, 0, 0]);
+  });
+
   async function runPush(result: ReplicationApplyResponse) {
     const setCalls: ReplicationCursor[] = [];
     let fetches = 0;

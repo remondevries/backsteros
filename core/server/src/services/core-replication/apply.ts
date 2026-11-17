@@ -79,6 +79,7 @@ import {
 } from "./dead-letters.js";
 import type {
   ReplicationApplyDirection,
+  ReplicationApplyFailed,
   ReplicationApplyResponse,
   ReplicationChange,
   ReplicationRow,
@@ -1375,12 +1376,44 @@ export async function applyReplicationRow(
   }
 }
 
+/**
+ * Attach dead-letter attempts to a failed apply entry. Pure enough for unit
+ * tests: when `record` throws, marks `deadLetterRecorded: false` so the worker
+ * keeps holding the cursor (OS-174).
+ */
+export async function attachDeadLetterToFailedApply(
+  entry: ReplicationApplyFailed,
+  record: () => Promise<{ attempts: number }>,
+): Promise<ReplicationApplyFailed> {
+  try {
+    const recorded = await record();
+    return {
+      ...entry,
+      attempts: recorded.attempts,
+      deadLetterRecorded: true,
+    };
+  } catch {
+    return { ...entry, deadLetterRecorded: false };
+  }
+}
+
 export async function applyRemoteChanges(
   table: KnownTable,
   changes: ReplicationChange[],
-  options?: { direction?: ReplicationApplyDirection },
+  options?: {
+    direction?: ReplicationApplyDirection;
+    /** Test seam for OS-174 dead-letter write failures. */
+    recordDeadLetter?: typeof recordReplicationDeadLetter;
+    applyRow?: (
+      table: KnownTable,
+      row: ReplicationRow,
+    ) => Promise<"applied" | "skipped">;
+  },
 ): Promise<ReplicationApplyResponse> {
   const direction = options?.direction ?? "pull";
+  const recordDeadLetter =
+    options?.recordDeadLetter ?? recordReplicationDeadLetter;
+  const applyRow = options?.applyRow ?? applyReplicationRow;
   let applied = 0;
   let skipped = 0;
   const failed: ReplicationApplyResponse["failed"] = [];
@@ -1391,28 +1424,29 @@ export async function applyRemoteChanges(
       continue;
     }
     try {
-      const result = await applyReplicationRow(table, change.row);
+      const result = await applyRow(table, change.row);
       if (result === "applied") applied += 1;
       else skipped += 1;
     } catch (error) {
       // Never stall an entire twin page on one unrecoverable row — record a
       // dead letter and continue so push/pull cursors can still advance.
-      const entry = toApplyFailed(table, change.row, error);
-      failed.push(entry);
-      try {
-        const recorded = await recordReplicationDeadLetter({
+      let entry = toApplyFailed(table, change.row, error);
+      entry = await attachDeadLetterToFailedApply(entry, () =>
+        recordDeadLetter({
           table,
           rowId: entry.id,
           direction,
           errorCode: entry.code,
           errorMessage: entry.message,
           row: change.row,
-        });
-        entry.attempts = recorded.attempts;
-      } catch (recordError) {
-        console.error(
+        }),
+      );
+      failed.push(entry);
+      if (entry.deadLetterRecorded === false) {
+        appendOpsLog(
+          "error",
           `core replication dead letter record failed ${table}`,
-          recordError,
+          `${entry.id}: holding cursor until a dead letter can be written`,
         );
       }
       appendOpsLog(

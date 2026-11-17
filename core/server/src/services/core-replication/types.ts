@@ -43,6 +43,12 @@ export type ReplicationApplyFailed = {
    * older peers omit it.
    */
   attempts?: number;
+  /**
+   * False when `recordReplicationDeadLetter` itself threw — the row has no
+   * durable letter. Cursor hold must not advance past these via the in-process
+   * counter alone (OS-174). True when a letter was written; omitted by older peers.
+   */
+  deadLetterRecorded?: boolean;
 };
 
 export type ReplicationApplyResponse = {

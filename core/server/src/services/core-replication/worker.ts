@@ -68,22 +68,42 @@ function clearHoldCounts(table: string, direction: "pull" | "push"): void {
 function decideCursorHold(
   table: string,
   direction: "pull" | "push",
-  result: { failed: readonly { id: string; attempts?: number }[] },
+  result: {
+    failed: readonly {
+      id: string;
+      attempts?: number;
+      deadLetterRecorded?: boolean;
+    }[];
+  },
 ): CursorHoldDecision {
   if (result.failed.length === 0) {
     clearHoldCounts(table, direction);
     return { advance: true, holding: [], exhausted: [] };
   }
   for (const failed of result.failed) {
+    // Unrecorded failures must not accrue toward the in-process exhaust budget.
+    if (failed.deadLetterRecorded === false) continue;
     const key = holdKey(table, direction, failed.id);
     holdCounts.set(key, (holdCounts.get(key) ?? 0) + 1);
   }
   const decision = evaluateCursorHold(result, {
-    attemptsFor: (failed) =>
-      holdCounts.get(holdKey(table, direction, String(failed.id ?? "?"))),
+    attemptsFor: (failed) => {
+      if (failed.deadLetterRecorded === false) return 0;
+      return holdCounts.get(holdKey(table, direction, String(failed.id ?? "?")));
+    },
   });
   const fmt = (rows: { id: string; attempts?: number }[]) =>
     rows.map((row) => `${row.id}(${row.attempts ?? 0})`).join(", ");
+  const unrecorded = decision.holding.filter(
+    (row) => row.deadLetterRecorded === false,
+  );
+  if (unrecorded.length > 0) {
+    appendOpsLog(
+      "error",
+      `core replication ${direction} ${table} holding cursor (no dead letter)`,
+      `${unrecorded.length} failed row(s) with no durable dead letter — cursor held until record succeeds: ${fmt(unrecorded)}`,
+    );
+  }
   if (!decision.advance) {
     appendOpsLog(
       "warn",

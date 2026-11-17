@@ -182,6 +182,11 @@ export type FailedRowAttempt = {
   id: string;
   /** Dead-letter attempts for this row; missing/unknown counts as 0 (hold). */
   attempts?: number;
+  /**
+   * False when no durable dead letter was written for this failure. Those rows
+   * must keep holding the cursor (never exhaust via an in-process counter).
+   */
+  deadLetterRecorded?: boolean;
 };
 
 export type CursorHoldDecision = {
@@ -203,21 +208,44 @@ export type CursorHoldDecision = {
  * or a local hold counter) when the failed entry does not carry them.
  */
 export function evaluateCursorHold(
-  result: { failed: readonly { id?: string; attempts?: number }[] },
+  result: {
+    failed: readonly {
+      id?: string;
+      attempts?: number;
+      deadLetterRecorded?: boolean;
+    }[];
+  },
   options?: {
     maxAttempts?: number;
-    attemptsFor?: (failed: { id?: string; attempts?: number }) => number | undefined;
+    attemptsFor?: (failed: {
+      id?: string;
+      attempts?: number;
+      deadLetterRecorded?: boolean;
+    }) => number | undefined;
   },
 ): CursorHoldDecision {
   const max = options?.maxAttempts ?? CURSOR_HOLD_MAX_ATTEMPTS;
   const holding: FailedRowAttempt[] = [];
   const exhausted: FailedRowAttempt[] = [];
   for (const failed of result.failed) {
+    // No durable letter → never treat as exhausted (OS-174).
+    if (failed.deadLetterRecorded === false) {
+      holding.push({
+        id: String(failed.id ?? "?"),
+        attempts: failed.attempts ?? 0,
+        deadLetterRecorded: false,
+      });
+      continue;
+    }
     const attempts = Math.max(
       failed.attempts ?? 0,
       options?.attemptsFor?.(failed) ?? 0,
     );
-    const entry = { id: String(failed.id ?? "?"), attempts };
+    const entry: FailedRowAttempt = {
+      id: String(failed.id ?? "?"),
+      attempts,
+      deadLetterRecorded: failed.deadLetterRecorded,
+    };
     if (attempts >= max) exhausted.push(entry);
     else holding.push(entry);
   }
@@ -225,7 +253,13 @@ export function evaluateCursorHold(
 }
 
 export function shouldAdvanceReplicationCursor(
-  result: { failed: readonly { id?: string; attempts?: number }[] },
+  result: {
+    failed: readonly {
+      id?: string;
+      attempts?: number;
+      deadLetterRecorded?: boolean;
+    }[];
+  },
   options?: Parameters<typeof evaluateCursorHold>[1],
 ): boolean {
   return evaluateCursorHold(result, options).advance;
