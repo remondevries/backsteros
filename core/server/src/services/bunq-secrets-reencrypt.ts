@@ -52,11 +52,22 @@ export function bunqReencryptRefusalReason(
  * Health URL for the cloud core probe.
  * Default host is the compose service name (`backsteros`) so `docker compose run`
  * reaches the sibling container — not 127.0.0.1 of the ephemeral runner.
+ *
+ * Outside compose, that default name often ENOTFOUND — see
+ * {@link isCoreHealthHostExplicit}. ENOTFOUND only counts as stopped when the
+ * operator set CORE_HEALTH_HOST explicitly.
  */
 export function cloudCoreHealthUrl(env: NodeJS.ProcessEnv = process.env): string {
   const port = env.PORT?.trim() || "8788";
   const host = env.CORE_HEALTH_HOST?.trim() || "backsteros";
   return `http://${host}:${port}/health`;
+}
+
+/** True when CORE_HEALTH_HOST is set (non-empty) in the environment. */
+export function isCoreHealthHostExplicit(
+  env: NodeJS.ProcessEnv = process.env,
+): boolean {
+  return Boolean(env.CORE_HEALTH_HOST?.trim());
 }
 
 export type CloudCoreProbeOutcome = "stopped" | "running" | "uncertain";
@@ -65,9 +76,6 @@ export type CloudCoreProbeResult = {
   outcome: CloudCoreProbeOutcome;
   detail: string;
 };
-
-/** Node / undici error codes that mean the peer is definitely not listening. */
-const STOPPED_ERRNOS = new Set(["ECONNREFUSED", "ENOTFOUND"]);
 
 function errnoFromUnknown(error: unknown): string | null {
   if (!error || typeof error !== "object") return null;
@@ -88,7 +96,8 @@ function isAbortTimeout(error: unknown): boolean {
 
 /**
  * Probe the compose-reachable health endpoint.
- * - connection-refused / DNS not-found → stopped (safe to --apply)
+ * - ECONNREFUSED → stopped (safe to --apply)
+ * - ENOTFOUND → stopped only when CORE_HEALTH_HOST is set; else uncertain
  * - ok:true → running (refuse)
  * - timeout, non-ok HTTP, other errors → uncertain (refuse)
  */
@@ -135,15 +144,28 @@ export async function probeCloudCoreStatus(deps: {
       };
     }
     const code = errnoFromUnknown(error);
-    if (code && STOPPED_ERRNOS.has(code)) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (code === "ECONNREFUSED") {
       return {
         outcome: "stopped",
         detail: `${url} ${code}`,
       };
     }
-    // Only errno codes count as stopped — no message-text fallback
-    // (e.g. "getaddrinfo …" without ENOTFOUND must stay uncertain).
-    const message = error instanceof Error ? error.message : String(error);
+    if (code === "ENOTFOUND") {
+      // Default compose hostname often fails DNS outside the network.
+      // Only trust ENOTFOUND as "stopped" when the operator picked the host.
+      if (isCoreHealthHostExplicit(env)) {
+        return {
+          outcome: "stopped",
+          detail: `${url} ${code}`,
+        };
+      }
+      return {
+        outcome: "uncertain",
+        detail: `${url} ENOTFOUND on default host — set CORE_HEALTH_HOST explicitly (or pass --i-confirmed-core-stopped after docker compose ps)`,
+      };
+    }
+    // Only errno codes above count as stopped — no message-text fallback.
     return {
       outcome: "uncertain",
       detail: `${url} probe error: ${message}`,

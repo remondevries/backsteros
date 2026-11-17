@@ -10,6 +10,7 @@ import {
   bunqReencryptRefusalReason,
   bunqReencryptScriptExitCode,
   cloudCoreHealthUrl,
+  isCoreHealthHostExplicit,
   planBunqReencryptForRow,
   probeCloudCoreRunning,
   probeCloudCoreStatus,
@@ -69,13 +70,35 @@ describe("cloudCoreHealthUrl / probeCloudCoreStatus", () => {
     assert.equal(result.outcome, "stopped");
   });
 
-  it("reports stopped on DNS not found errno", async () => {
+  it("reports uncertain on ENOTFOUND when CORE_HEALTH_HOST is unset (OS-179)", async () => {
+    assert.equal(isCoreHealthHostExplicit({}), false);
     const err = Object.assign(new TypeError("fetch failed"), {
       cause: Object.assign(new Error("getaddrinfo ENOTFOUND backsteros"), {
         code: "ENOTFOUND",
       }),
     });
     const result = await probeCloudCoreStatus({
+      env: {},
+      fetchFn: async () => {
+        throw err;
+      },
+    });
+    assert.equal(result.outcome, "uncertain");
+    assert.match(result.detail, /CORE_HEALTH_HOST/);
+  });
+
+  it("reports stopped on ENOTFOUND when CORE_HEALTH_HOST is set (OS-179)", async () => {
+    assert.equal(
+      isCoreHealthHostExplicit({ CORE_HEALTH_HOST: "backsteros" }),
+      true,
+    );
+    const err = Object.assign(new TypeError("fetch failed"), {
+      cause: Object.assign(new Error("getaddrinfo ENOTFOUND backsteros"), {
+        code: "ENOTFOUND",
+      }),
+    });
+    const result = await probeCloudCoreStatus({
+      env: { CORE_HEALTH_HOST: "backsteros" },
       fetchFn: async () => {
         throw err;
       },
