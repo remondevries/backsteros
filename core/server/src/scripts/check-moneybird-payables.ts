@@ -1,12 +1,15 @@
 /**
- * OS-175: read-only Moneybird payables check (round-5 formula vs ~EUR 306.74).
+ * OS-175 / OS-184: read-only Moneybird payables check.
  *
  *   pnpm exec tsx --env-file=.env src/scripts/check-moneybird-payables.ts \
  *     --workspace <uuid>
+ *   pnpm exec tsx --env-file=.env src/scripts/check-moneybird-payables.ts \
+ *     --workspace <uuid> --expected-cents 35425
  *
- * Fetches open purchase invoices and prints totals only. Does not write to
- * Moneybird or BacksterOS. Do NOT pass --apply (rejected). Sander runs this
- * against live Moneybird when ready — agents must not.
+ * Fetches open purchase invoices and prints live totals (same formula as the
+ * finance payables display). Does not write to Moneybird or BacksterOS.
+ * There is no hard-coded expected total — pass `--expected-cents` only when
+ * comparing against a hand count. Do NOT pass --apply (rejected).
  */
 import { sqlClient } from "../db/index.js";
 import { MoneybirdClient } from "../lib/moneybird-client.js";
@@ -19,8 +22,12 @@ import {
   formatPayablesCheckSummary,
 } from "../services/moneybird-payables-check.js";
 
-function parseArgs(argv: readonly string[]): { workspaceId: string } {
+function parseArgs(argv: readonly string[]): {
+  workspaceId: string;
+  expectedCents: number | undefined;
+} {
   let workspaceId: string | null = null;
+  let expectedCents: number | undefined;
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i]!;
     if (arg === "--apply") {
@@ -32,15 +39,24 @@ function parseArgs(argv: readonly string[]): { workspaceId: string } {
       workspaceId = argv[++i] ?? null;
       continue;
     }
+    if (arg === "--expected-cents") {
+      const raw = argv[++i];
+      const parsed = raw == null ? Number.NaN : Number(raw);
+      if (!Number.isFinite(parsed) || !Number.isInteger(parsed)) {
+        throw new Error("--expected-cents requires an integer (EUR cents)");
+      }
+      expectedCents = parsed;
+      continue;
+    }
     if (arg === "--") continue;
     throw new Error(
-      `unknown argument: ${arg} (supported: --workspace <uuid>)`,
+      `unknown argument: ${arg} (supported: --workspace <uuid> [--expected-cents <int>])`,
     );
   }
   if (!workspaceId?.trim()) {
     throw new Error("--workspace <uuid> is required");
   }
-  return { workspaceId: workspaceId.trim() };
+  return { workspaceId: workspaceId.trim(), expectedCents };
 }
 
 async function listAllPurchases(client: MoneybirdClient) {
@@ -60,18 +76,21 @@ async function listAllPurchases(client: MoneybirdClient) {
 }
 
 async function main() {
-  const { workspaceId } = parseArgs(process.argv.slice(2));
+  const { workspaceId, expectedCents } = parseArgs(process.argv.slice(2));
   const { apiToken, administrationId } =
     await getMoneybirdCredentials(workspaceId);
   if (!apiToken || !administrationId) {
     throw new Error("Moneybird API token / administration id not configured");
   }
   const client = new MoneybirdClient({ apiToken, administrationId });
-  const result = await checkMoneybirdPayables({
-    listPurchaseInvoices: () => listAllPurchases(client),
-  });
+  const result = await checkMoneybirdPayables(
+    {
+      listPurchaseInvoices: () => listAllPurchases(client),
+    },
+    expectedCents === undefined ? {} : { expectedCents },
+  );
   console.log(formatPayablesCheckSummary(result));
-  if (!result.withinTolerance) {
+  if (result.withinTolerance === false) {
     process.exitCode = 2;
   }
 }

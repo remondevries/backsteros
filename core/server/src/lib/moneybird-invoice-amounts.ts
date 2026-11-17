@@ -133,17 +133,28 @@ export function invoicePaymentsBaseCents(invoice: InvoiceAmounts): number | null
 }
 
 /**
- * Outstanding EUR cents for one document. Uses `total_unpaid_base` when
- * Moneybird provides it (sales invoices). Purchase invoices carry no unpaid
- * fields, so it is derived: incl-VAT base total (excl as a last resort) minus
- * the sum of `payments[].price_base`. `null` when no EUR figure can be
- * determined.
+ * Outstanding EUR cents for a sales invoice. Prefers `total_unpaid_base`
+ * when Moneybird provides it; otherwise falls through to totals − payments.
  */
 export function invoiceOutstandingBaseCents(
   invoice: InvoiceAmounts,
 ): number | null {
   const unpaid = invoiceUnpaidBaseCents(invoice);
   if (unpaid != null) return unpaid;
+  return purchaseInvoiceOutstandingBaseCents(invoice);
+}
+
+/**
+ * Outstanding EUR cents for a Moneybird purchase invoice / receipt.
+ *
+ * Purchase invoices do not expose `total_unpaid` / `total_unpaid_base` (OS-184).
+ * Always derive: incl-VAT base total (excl as a last resort) minus
+ * `payments[].price_base`. Never trust unpaid fields — a spurious `0` would
+ * make payables display EUR 0.
+ */
+export function purchaseInvoiceOutstandingBaseCents(
+  invoice: InvoiceAmounts,
+): number | null {
   const total =
     invoiceBaseTotalCents(invoice, "incl") ??
     invoiceBaseTotalCents(invoice, "excl");
@@ -153,30 +164,56 @@ export function invoiceOutstandingBaseCents(
   return total - paid;
 }
 
-/**
- * Sum outstanding EUR amounts for documents in `states` (see
- * invoiceOutstandingBaseCents). Documents with no determinable EUR figure are
- * skipped (never face-as-EUR). `late` and `reminded` count as overdue.
- */
-export function sumOutstandingBase(
-  invoices: ReadonlyArray<
-    Pick<MoneybirdSalesInvoice | MoneybirdPurchaseInvoice, "state"> &
-      InvoiceAmounts
-  >,
+type OutstandingInvoice = Pick<
+  MoneybirdSalesInvoice | MoneybirdPurchaseInvoice,
+  "state"
+> &
+  InvoiceAmounts;
+
+function sumOutstandingWith(
+  invoices: ReadonlyArray<OutstandingInvoice>,
   states: ReadonlySet<string>,
+  outstandingCents: (invoice: InvoiceAmounts) => number | null,
 ): MoneybirdOutstandingTotals {
   let totalCents = 0;
   let overdueCents = 0;
   let count = 0;
   for (const invoice of invoices) {
     if (!states.has(invoice.state)) continue;
-    const cents = invoiceOutstandingBaseCents(invoice);
+    const cents = outstandingCents(invoice);
     if (cents == null || cents <= 0) continue;
     totalCents += cents;
     count += 1;
     if (OVERDUE_INVOICE_STATES.has(invoice.state)) overdueCents += cents;
   }
   return { totalCents, overdueCents, count };
+}
+
+/**
+ * Sum outstanding EUR amounts for documents in `states` using sales-invoice
+ * unpaid fields when present. Documents with no determinable EUR figure are
+ * skipped (never face-as-EUR). `late` and `reminded` count as overdue.
+ */
+export function sumOutstandingBase(
+  invoices: ReadonlyArray<OutstandingInvoice>,
+  states: ReadonlySet<string>,
+): MoneybirdOutstandingTotals {
+  return sumOutstandingWith(invoices, states, invoiceOutstandingBaseCents);
+}
+
+/**
+ * Open payables from purchase invoices: totals − payments for payable states.
+ * Shared by the finance outstanding display and the read-only payables check.
+ */
+export function sumPurchasePayablesBase(
+  invoices: ReadonlyArray<OutstandingInvoice>,
+  states: ReadonlySet<string> = PAYABLE_INVOICE_STATES,
+): MoneybirdOutstandingTotals {
+  return sumOutstandingWith(
+    invoices,
+    states,
+    purchaseInvoiceOutstandingBaseCents,
+  );
 }
 
 function monthKeyFromInvoiceDate(invoiceDate: string | null): string | null {

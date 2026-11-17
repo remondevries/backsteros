@@ -3,8 +3,8 @@ import { describe, it } from "node:test";
 
 import type { MoneybirdPurchaseInvoice } from "../lib/moneybird-client.js";
 import {
-  MONEYBIRD_PAYABLES_EXPECTED_CENTS,
   checkMoneybirdPayables,
+  computeMoneybirdPayablesTotals,
   evaluateMoneybirdPayablesCheck,
   formatPayablesCheckSummary,
 } from "./moneybird-payables-check.js";
@@ -31,7 +31,9 @@ function inv(
   };
 }
 
-/** Same fixture as moneybird-invoice-amounts.test.ts (EUR 306.74). */
+/** Synthetic fixture only — not a live Moneybird baseline (OS-184). */
+const FIXTURE_EXPECTED_CENTS = 30_674;
+
 function creditorsFixture(): MoneybirdPurchaseInvoice[] {
   return [
     inv({
@@ -64,18 +66,22 @@ function creditorsFixture(): MoneybirdPurchaseInvoice[] {
   ];
 }
 
-describe("evaluateMoneybirdPayablesCheck (OS-175)", () => {
-  it("matches the EUR 306.74 creditors fixture within tolerance", () => {
+describe("evaluateMoneybirdPayablesCheck (OS-175 / OS-184)", () => {
+  it("reports live totals without a hard-coded expected baseline", () => {
     const result = evaluateMoneybirdPayablesCheck(creditorsFixture());
-    assert.equal(result.totalCents, MONEYBIRD_PAYABLES_EXPECTED_CENTS);
-    assert.equal(result.expectedCents, 30_674);
-    assert.equal(result.deltaCents, 0);
-    assert.equal(result.withinTolerance, true);
+    assert.equal(result.totalCents, FIXTURE_EXPECTED_CENTS);
+    assert.equal(result.expectedCents, null);
+    assert.equal(result.deltaCents, null);
+    assert.equal(result.withinTolerance, null);
     assert.equal(result.count, 3);
     assert.equal(result.overdueCents, 3574);
+    assert.match(
+      formatPayablesCheckSummary(result),
+      /^payablesEUR=306\.74 overdueEUR=35\.74 count=3 filter=/,
+    );
   });
 
-  it("flags when live totals drift outside tolerance", () => {
+  it("compares only when expectedCents is supplied by the caller", () => {
     const result = evaluateMoneybirdPayablesCheck(
       [
         inv({
@@ -83,14 +89,33 @@ describe("evaluateMoneybirdPayablesCheck (OS-175)", () => {
           totalPriceInclTaxBase: "400.00",
         }),
       ],
-      { expectedCents: 30_674, toleranceCents: 1 },
+      { expectedCents: FIXTURE_EXPECTED_CENTS, toleranceCents: 1 },
     );
     assert.equal(result.withinTolerance, false);
-    assert.equal(result.deltaCents, 40_000 - 30_674);
+    assert.equal(result.deltaCents, 40_000 - FIXTURE_EXPECTED_CENTS);
+    assert.match(
+      formatPayablesCheckSummary(result),
+      /expectedEUR=306\.74.*withinTolerance=false/,
+    );
+  });
+
+  it("ignores total_unpaid_base=0 when summing purchase payables", () => {
+    const totals = computeMoneybirdPayablesTotals([
+      inv({
+        state: "open",
+        totalUnpaidBase: "0.00",
+        totalPriceInclTaxBase: "354.25",
+      }),
+    ]);
+    assert.deepEqual(totals, {
+      totalCents: 35_425,
+      overdueCents: 0,
+      count: 1,
+    });
   });
 });
 
-describe("checkMoneybirdPayables (OS-175)", () => {
+describe("checkMoneybirdPayables (OS-175 / OS-184)", () => {
   it("loads via deps and never requires a live Moneybird call", async () => {
     let loads = 0;
     const result = await checkMoneybirdPayables({
@@ -100,10 +125,11 @@ describe("checkMoneybirdPayables (OS-175)", () => {
       },
     });
     assert.equal(loads, 1);
-    assert.equal(result.withinTolerance, true);
+    assert.equal(result.totalCents, FIXTURE_EXPECTED_CENTS);
+    assert.equal(result.withinTolerance, null);
     assert.match(
       formatPayablesCheckSummary(result),
-      /payablesEUR=306\.74.*expectedEUR=306\.74.*withinTolerance=true/,
+      /payablesEUR=306\.74.*count=3/,
     );
   });
 });

@@ -24,12 +24,12 @@ import {
   type MoneybirdSalesInvoice,
 } from "../lib/moneybird-client.js";
 import {
-  PAYABLE_INVOICE_STATES,
   PAYABLES_FILTER,
   RECEIVABLE_INVOICE_STATES,
   RECEIVABLES_FILTER,
   sumBilledRevenueByMonth,
   sumOutstandingBase,
+  sumPurchasePayablesBase,
   type MoneybirdOutstandingTotals,
 } from "../lib/moneybird-invoice-amounts.js";
 import { previewCursorApiKey } from "./cursor-settings.js";
@@ -440,9 +440,10 @@ const OUTSTANDING_PER_PAGE = 100;
 const OUTSTANDING_MAX_PAGES = 50;
 
 /**
- * Outstanding receivables (unpaid sales invoices) and payables (unpaid
+ * Outstanding receivables (unpaid sales invoices) and payables (open
  * purchase invoices) in EUR. Sales use `total_unpaid_base`; purchase invoices
- * have no unpaid fields, so outstanding = incl-VAT base total − payments.
+ * have no unpaid fields, so outstanding = incl-VAT base total − payments
+ * (`sumPurchasePayablesBase`, same formula as the OS-175 read-only check).
  * All periods are included. Payables degrade to `null` + error text when the
  * purchase-invoice endpoint is unavailable; they are never estimated from
  * bank spend.
@@ -478,7 +479,8 @@ export async function getMoneybirdOutstanding(
       purchases.push(...batch);
       if (batch.length < OUTSTANDING_PER_PAGE) break;
     }
-    payables = sumOutstandingBase(purchases, PAYABLE_INVOICE_STATES);
+    // OS-184: display uses the purchase totals−payments path, never unpaid fields.
+    payables = sumPurchasePayablesBase(purchases);
   } catch (error) {
     payablesError =
       error instanceof MoneybirdApiError && error.status === 401

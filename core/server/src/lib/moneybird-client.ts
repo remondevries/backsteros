@@ -59,10 +59,13 @@ export type MoneybirdPurchaseInvoice = {
   totalPriceExclTax: string | null;
   totalPriceInclTaxBase: string | null;
   totalPriceExclTaxBase: string | null;
-  /** Moneybird omits unpaid fields on purchase invoices — usually null. */
+  /**
+   * Not part of Moneybird's purchase_invoice_response schema. Mapped when
+   * present for diagnostics, but payables never use these (OS-184).
+   */
   totalUnpaid: string | null;
   totalUnpaidBase: string | null;
-  /** Used to derive outstanding = total − payments when unpaid is absent. */
+  /** Used to derive outstanding = total − payments (purchase payables path). */
   payments: MoneybirdInvoicePayment[];
   contactId: string | null;
   contactName: string | null;

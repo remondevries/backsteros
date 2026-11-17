@@ -7,10 +7,12 @@ import {
   invoiceUnpaidBaseCents,
   PAYABLE_INVOICE_STATES,
   PAYABLES_FILTER,
+  purchaseInvoiceOutstandingBaseCents,
   RECEIVABLE_INVOICE_STATES,
   RECEIVABLES_FILTER,
   sumBilledRevenueByMonth,
   sumOutstandingBase,
+  sumPurchasePayablesBase,
 } from "./moneybird-invoice-amounts.js";
 
 const BILLED = new Set(["open", "late", "paid"]);
@@ -173,15 +175,12 @@ describe("outstanding totals", () => {
   });
 
   it("sums payables for unpaid purchase states only", () => {
-    const totals = sumOutstandingBase(
-      [
-        inv({ state: "open", totalUnpaidBase: "10.00" }),
-        inv({ state: "late", totalUnpaidBase: "5.25" }),
-        inv({ state: "paid", totalUnpaidBase: "99.00" }),
-        inv({ state: "draft", totalUnpaidBase: "99.00" }),
-      ],
-      PAYABLE_INVOICE_STATES,
-    );
+    const totals = sumPurchasePayablesBase([
+      inv({ state: "open", totalPriceInclTaxBase: "10.00" }),
+      inv({ state: "late", totalPriceInclTaxBase: "5.25" }),
+      inv({ state: "paid", totalPriceInclTaxBase: "99.00" }),
+      inv({ state: "draft", totalPriceInclTaxBase: "99.00" }),
+    ]);
     assert.deepEqual(totals, { totalCents: 1525, overdueCents: 525, count: 2 });
   });
 
@@ -214,7 +213,7 @@ describe("outstanding totals", () => {
 describe("purchase invoice payables (no unpaid fields)", () => {
   it("derives outstanding as incl-base total minus payments[].price_base", () => {
     assert.equal(
-      invoiceOutstandingBaseCents(
+      purchaseInvoiceOutstandingBaseCents(
         inv({
           currency: "USD",
           totalPriceInclTax: "300.00",
@@ -232,13 +231,13 @@ describe("purchase invoice payables (no unpaid fields)", () => {
 
   it("falls back to excl base, and to EUR face only for EUR documents", () => {
     assert.equal(
-      invoiceOutstandingBaseCents(
+      purchaseInvoiceOutstandingBaseCents(
         inv({ currency: "USD", totalPriceExclTaxBase: "80.00" }),
       ),
       8000,
     );
     assert.equal(
-      invoiceOutstandingBaseCents(
+      purchaseInvoiceOutstandingBaseCents(
         inv({
           totalPriceInclTax: "100.00",
           payments: [{ price: "40.00", priceBase: null }],
@@ -248,7 +247,7 @@ describe("purchase invoice payables (no unpaid fields)", () => {
     );
     // USD face payment without a base figure is never treated as EUR.
     assert.equal(
-      invoiceOutstandingBaseCents(
+      purchaseInvoiceOutstandingBaseCents(
         inv({
           currency: "USD",
           totalPriceInclTaxBase: "100.00",
@@ -258,12 +257,14 @@ describe("purchase invoice payables (no unpaid fields)", () => {
       null,
     );
     assert.equal(
-      invoiceOutstandingBaseCents(inv({ currency: "USD", totalPriceInclTax: "100.00" })),
+      purchaseInvoiceOutstandingBaseCents(
+        inv({ currency: "USD", totalPriceInclTax: "100.00" }),
+      ),
       null,
     );
   });
 
-  it("prefers total_unpaid_base when Moneybird provides it", () => {
+  it("sales helper still prefers total_unpaid_base when present", () => {
     assert.equal(
       invoiceOutstandingBaseCents(
         inv({
@@ -276,7 +277,32 @@ describe("purchase invoice payables (no unpaid fields)", () => {
     );
   });
 
-  it("matches the EUR 306.74 creditors fixture", () => {
+  it("ignores spurious total_unpaid_base=0 on purchase invoices (OS-184)", () => {
+    // Moneybird purchase invoices do not document unpaid fields; a mapped 0
+    // must not zero out payables that still have a positive totals−payments.
+    assert.equal(
+      purchaseInvoiceOutstandingBaseCents(
+        inv({
+          totalUnpaidBase: "0.00",
+          totalUnpaid: "0.00",
+          totalPriceInclTaxBase: "47.51",
+          payments: [],
+        }),
+      ),
+      4751,
+    );
+    assert.equal(
+      invoiceOutstandingBaseCents(
+        inv({
+          totalUnpaidBase: "0.00",
+          totalPriceInclTaxBase: "47.51",
+        }),
+      ),
+      0,
+    );
+  });
+
+  it("matches the EUR 306.74 creditors fixture via sumPurchasePayablesBase", () => {
     const purchases = [
       // booked, nothing paid yet
       inv({
@@ -307,10 +333,11 @@ describe("purchase invoice payables (no unpaid fields)", () => {
       inv({ state: "paid", totalPriceInclTaxBase: "999.00" }),
       inv({ state: "draft", totalPriceInclTaxBase: "999.00" }),
     ];
-    assert.deepEqual(sumOutstandingBase(purchases, PAYABLE_INVOICE_STATES), {
+    assert.deepEqual(sumPurchasePayablesBase(purchases), {
       totalCents: 30_674,
       overdueCents: 3574,
       count: 3,
     });
+    assert.equal(PAYABLE_INVOICE_STATES.has("new"), true);
   });
 });

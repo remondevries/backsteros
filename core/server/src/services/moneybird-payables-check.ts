@@ -1,32 +1,29 @@
 /**
- * OS-175: read-only Moneybird payables consistency check.
+ * OS-175 / OS-184: read-only Moneybird payables consistency check.
  *
  * Fetches open purchase invoices/receipts (same filter as
- * `getMoneybirdOutstanding`) and applies the round-5 payables formula
- * (`sumOutstandingBase` / incl-base − payments). Compares the result to the
- * known creditors figure (~EUR 306.74). Never mutates Moneybird; never prints
- * invoice payloads.
+ * `getMoneybirdOutstanding`) and applies `sumPurchasePayablesBase`
+ * (incl-base − payments). Optionally compares to a caller-supplied expected
+ * total — there is no hard-coded product expected figure. Never mutates
+ * Moneybird; never prints invoice payloads.
  */
 
 import {
   PAYABLES_FILTER,
-  PAYABLE_INVOICE_STATES,
-  sumOutstandingBase,
+  sumPurchasePayablesBase,
   type MoneybirdOutstandingTotals,
 } from "../lib/moneybird-invoice-amounts.js";
 import type { MoneybirdPurchaseInvoice } from "../lib/moneybird-client.js";
-
-/** Known BacksterOS creditors fixture from round 5 (EUR 306.74). */
-export const MONEYBIRD_PAYABLES_EXPECTED_CENTS = 30_674;
 
 export const MONEYBIRD_PAYABLES_CHECK_DEFAULT_TOLERANCE_CENTS = 1;
 
 export type MoneybirdPayablesCheckResult = MoneybirdOutstandingTotals & {
   currency: "EUR";
-  expectedCents: number;
-  deltaCents: number;
-  toleranceCents: number;
-  withinTolerance: boolean;
+  /** Present only when the caller passed `expectedCents`. */
+  expectedCents: number | null;
+  deltaCents: number | null;
+  toleranceCents: number | null;
+  withinTolerance: boolean | null;
   filter: string;
 };
 
@@ -36,8 +33,18 @@ export type MoneybirdPayablesCheckDeps = {
 };
 
 /**
- * Pure comparison of already-fetched purchase invoices against the expected
- * payables total.
+ * Pure open-payables totals from already-fetched purchase invoices.
+ * Same computation as the finance outstanding display (OS-184).
+ */
+export function computeMoneybirdPayablesTotals(
+  purchases: readonly MoneybirdPurchaseInvoice[],
+): MoneybirdOutstandingTotals {
+  return sumPurchasePayablesBase(purchases);
+}
+
+/**
+ * Pure evaluation of already-fetched purchase invoices. When `expectedCents`
+ * is omitted, returns live totals only (no pass/fail against a baseline).
  */
 export function evaluateMoneybirdPayablesCheck(
   purchases: readonly MoneybirdPurchaseInvoice[],
@@ -46,19 +53,26 @@ export function evaluateMoneybirdPayablesCheck(
     toleranceCents?: number;
   } = {},
 ): MoneybirdPayablesCheckResult {
+  const totals = computeMoneybirdPayablesTotals(purchases);
   const expectedCents =
-    options.expectedCents ?? MONEYBIRD_PAYABLES_EXPECTED_CENTS;
+    options.expectedCents === undefined ? null : options.expectedCents;
   const toleranceCents =
-    options.toleranceCents ?? MONEYBIRD_PAYABLES_CHECK_DEFAULT_TOLERANCE_CENTS;
-  const totals = sumOutstandingBase(purchases, PAYABLE_INVOICE_STATES);
-  const deltaCents = totals.totalCents - expectedCents;
+    expectedCents == null
+      ? null
+      : (options.toleranceCents ??
+        MONEYBIRD_PAYABLES_CHECK_DEFAULT_TOLERANCE_CENTS);
+  const deltaCents =
+    expectedCents == null ? null : totals.totalCents - expectedCents;
   return {
     currency: "EUR",
     ...totals,
     expectedCents,
     deltaCents,
     toleranceCents,
-    withinTolerance: Math.abs(deltaCents) <= toleranceCents,
+    withinTolerance:
+      deltaCents == null || toleranceCents == null
+        ? null
+        : Math.abs(deltaCents) <= toleranceCents,
     filter: PAYABLES_FILTER,
   };
 }
@@ -82,13 +96,24 @@ export function formatPayablesCheckSummary(
   result: MoneybirdPayablesCheckResult,
 ): string {
   const eur = (cents: number) => (cents / 100).toFixed(2);
-  return [
+  const parts = [
     `payablesEUR=${eur(result.totalCents)}`,
-    `expectedEUR=${eur(result.expectedCents)}`,
-    `deltaEUR=${eur(result.deltaCents)}`,
     `overdueEUR=${eur(result.overdueCents)}`,
     `count=${result.count}`,
-    `withinTolerance=${result.withinTolerance}`,
     `filter=${result.filter}`,
-  ].join(" ");
+  ];
+  if (
+    result.expectedCents != null &&
+    result.deltaCents != null &&
+    result.withinTolerance != null
+  ) {
+    parts.splice(
+      1,
+      0,
+      `expectedEUR=${eur(result.expectedCents)}`,
+      `deltaEUR=${eur(result.deltaCents)}`,
+      `withinTolerance=${result.withinTolerance}`,
+    );
+  }
+  return parts.join(" ");
 }
