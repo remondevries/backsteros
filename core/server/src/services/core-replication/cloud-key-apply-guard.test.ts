@@ -15,6 +15,7 @@ const EXISTING = {
   revokedAt: null as Date | null,
   userId: "owner-1",
   contactId: "contact-ralph",
+  workspaceId: "ws-cloud",
 };
 
 describe("guardCloudApiKeyApplyFromLocal", () => {
@@ -58,7 +59,7 @@ describe("guardCloudApiKeyApplyFromLocal", () => {
     assert.deepEqual(result.ignoredFields, ["revoked_at"]);
   });
 
-  it("ignores scopes, expires_at, user_id and contact_id changes", () => {
+  it("ignores scopes, expires_at, user_id, contact_id and workspace_id changes", () => {
     const result = guardCloudApiKeyApplyFromLocal(EXISTING, {
       name: "Ralph",
       scopes: ["finance:write", "settings:write"],
@@ -66,16 +67,19 @@ describe("guardCloudApiKeyApplyFromLocal", () => {
       revokedAt: null,
       userId: "attacker",
       contactId: null,
+      workspaceId: "ws-attacker",
     });
     assert.deepEqual(result.scopes, ["finance:write"]);
     assert.equal(result.expiresAt, null);
     assert.equal(result.userId, "owner-1");
     assert.equal(result.contactId, "contact-ralph");
+    assert.equal(result.workspaceId, "ws-cloud");
     assert.deepEqual(result.ignoredFields.sort(), [
       "contact_id",
       "expires_at",
       "scopes",
       "user_id",
+      "workspace_id",
     ]);
   });
 });

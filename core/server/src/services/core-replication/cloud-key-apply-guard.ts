@@ -15,6 +15,7 @@ export type ApiKeyGuardExisting = {
   revokedAt: Date | null;
   userId: string | null;
   contactId: string | null;
+  workspaceId: string;
 };
 
 export type ApiKeyGuardIncoming = {
@@ -24,6 +25,7 @@ export type ApiKeyGuardIncoming = {
   revokedAt: Date | null;
   userId: string | null;
   contactId: string | null;
+  workspaceId: string;
 };
 
 export type ApiKeyGuardResult = {
@@ -33,6 +35,7 @@ export type ApiKeyGuardResult = {
   revokedAt: Date | null;
   userId: string | null;
   contactId: string | null;
+  workspaceId: string;
   ignoredFields: string[];
 };
 
@@ -53,7 +56,7 @@ function scopesEqual(a: unknown, b: unknown): boolean {
  * Merge an inbound Mac api_key update into an existing cloud row.
  * - name: always take inbound
  * - revoked_at: only null → value (new revocation); never clear or change
- * - scopes, expires_at, user_id, contact_id: keep existing
+ * - scopes, expires_at, user_id, contact_id, workspace_id: keep existing
  */
 export function guardCloudApiKeyApplyFromLocal(
   existing: ApiKeyGuardExisting,
@@ -73,6 +76,9 @@ export function guardCloudApiKeyApplyFromLocal(
   if ((incoming.contactId ?? null) !== (existing.contactId ?? null)) {
     ignoredFields.push("contact_id");
   }
+  if (incoming.workspaceId !== existing.workspaceId) {
+    ignoredFields.push("workspace_id");
+  }
 
   let revokedAt = existing.revokedAt;
   if (existing.revokedAt == null && incoming.revokedAt != null) {
@@ -88,6 +94,7 @@ export function guardCloudApiKeyApplyFromLocal(
     revokedAt,
     userId: existing.userId,
     contactId: existing.contactId,
+    workspaceId: existing.workspaceId,
     ignoredFields,
   };
 }

@@ -1039,6 +1039,7 @@ async function applyApiKeyRow(
       revokedAt: apiKeys.revokedAt,
       userId: apiKeys.userId,
       contactId: apiKeys.contactId,
+      workspaceId: apiKeys.workspaceId,
     })
     .from(apiKeys)
     .where(eq(apiKeys.id, String(sanitized.id)))
@@ -1081,6 +1082,7 @@ async function applyApiKeyRow(
   let nextRevokedAt = inboundRevokedAt;
   let nextUserId = sanitized.user_id ? String(sanitized.user_id) : null;
   let nextContactId = sanitized.contact_id ? String(sanitized.contact_id) : null;
+  let nextWorkspaceId = String(sanitized.workspace_id);
   let nextPrefix = String(sanitized.prefix);
   let secretCiphertext: string | null;
   let keyHash: string | null;
@@ -1094,6 +1096,7 @@ async function applyApiKeyRow(
         revokedAt: existing.revokedAt,
         userId: existing.userId,
         contactId: existing.contactId,
+        workspaceId: existing.workspaceId,
       },
       {
         name: nextName,
@@ -1102,6 +1105,7 @@ async function applyApiKeyRow(
         revokedAt: inboundRevokedAt,
         userId: nextUserId,
         contactId: nextContactId,
+        workspaceId: nextWorkspaceId,
       },
     );
     if (guarded.ignoredFields.length > 0) {
@@ -1117,6 +1121,7 @@ async function applyApiKeyRow(
     nextRevokedAt = guarded.revokedAt;
     nextUserId = guarded.userId;
     nextContactId = guarded.contactId;
+    nextWorkspaceId = guarded.workspaceId;
 
     const material = resolveCloudApiKeyMaterialFromLocal(
       {
@@ -1165,7 +1170,7 @@ async function applyApiKeyRow(
     .insert(apiKeys)
     .values({
       id: String(sanitized.id),
-      workspaceId: String(sanitized.workspace_id),
+      workspaceId: nextWorkspaceId,
       userId: nextUserId,
       name: nextName,
       prefix: nextPrefix,
@@ -1182,7 +1187,7 @@ async function applyApiKeyRow(
     .onConflictDoUpdate({
       target: apiKeys.id,
       set: {
-        workspaceId: String(sanitized.workspace_id),
+        workspaceId: nextWorkspaceId,
         userId: nextUserId,
         name: nextName,
         prefix: nextPrefix,

@@ -1231,6 +1231,86 @@ export function registerCoreReplicationRoutes(app: Hono) {
   );
 
   /**
+   * OS-181: local→cloud API key admin (dedicated CORE_KEY_ADMIN_SECRET + HMAC).
+   * Not authenticated with CORE_REPLICATION_SECRET or agent keys.
+   */
+  async function handleKeyAdminForward(
+    c: Context,
+    path: string,
+    run: (ctx: {
+      userId: string;
+      workspaceId: string;
+      body: unknown;
+    }) => Promise<{ status: number; body: unknown }>,
+  ): Promise<Response> {
+    const bodyText = await c.req.text();
+    let body: unknown = {};
+    if (bodyText.trim()) {
+      try {
+        body = JSON.parse(bodyText) as unknown;
+      } catch {
+        return c.json({ error: "Invalid JSON", code: "bad_request" }, 400);
+      }
+    }
+    const { authenticateKeyAdminForward } = await import(
+      "../api-key-admin-cloud.js"
+    );
+    const auth = authenticateKeyAdminForward({
+      authorization: c.req.header("Authorization"),
+      method: c.req.method,
+      path,
+      bodyText: bodyText.trim() ? bodyText : "{}",
+      headerGet: (name) => c.req.header(name),
+    });
+    if (!auth.ok) {
+      return c.json(auth.result.body, auth.result.status as 401);
+    }
+    const result = await run({
+      userId: auth.userId,
+      workspaceId: auth.workspaceId,
+      body,
+    });
+    return c.json(result.body, result.status as 200);
+  }
+
+  app.post("/internal/core-replication/api-keys", async (c) => {
+    const { handleCloudApiKeyCreate } = await import("../api-key-admin-cloud.js");
+    return handleKeyAdminForward(
+      c,
+      "/internal/core-replication/api-keys",
+      ({ userId, workspaceId, body }) =>
+        handleCloudApiKeyCreate({ userId, workspaceId, json: body }),
+    );
+  });
+
+  app.patch("/internal/core-replication/api-keys/:id", async (c) => {
+    const keyId = c.req.param("id");
+    const path = `/internal/core-replication/api-keys/${keyId}`;
+    const { handleCloudApiKeyUpdate } = await import("../api-key-admin-cloud.js");
+    return handleKeyAdminForward(c, path, ({ userId, workspaceId, body }) =>
+      handleCloudApiKeyUpdate({ userId, workspaceId, keyId, json: body }),
+    );
+  });
+
+  app.post("/internal/core-replication/api-keys/:id/rotate", async (c) => {
+    const keyId = c.req.param("id");
+    const path = `/internal/core-replication/api-keys/${keyId}/rotate`;
+    const { handleCloudApiKeyRotate } = await import("../api-key-admin-cloud.js");
+    return handleKeyAdminForward(c, path, ({ userId, workspaceId }) =>
+      handleCloudApiKeyRotate({ userId, workspaceId, keyId }),
+    );
+  });
+
+  app.post("/internal/core-replication/api-keys/:id/revoke", async (c) => {
+    const keyId = c.req.param("id");
+    const path = `/internal/core-replication/api-keys/${keyId}/revoke`;
+    const { handleCloudApiKeyRevoke } = await import("../api-key-admin-cloud.js");
+    return handleKeyAdminForward(c, path, ({ userId, workspaceId }) =>
+      handleCloudApiKeyRevoke({ userId, workspaceId, keyId }),
+    );
+  });
+
+  /**
    * Local-core → cloud-core: run Bunq Personal ingestion on cloud egress
    * (OS-171). Local must not call bunq HTTP when role=local. Cloud uses its
    * own workspace secrets; response is counts only (no credentials).
