@@ -121,6 +121,15 @@ export type BunqReencryptResult = {
   }>;
 };
 
+
+/** Non-zero when apply left failures or CAS skips (script should exit 2). */
+export function bunqReencryptScriptExitCode(
+  result: Pick<BunqReencryptResult, "casSkipped" | "failedColumns">,
+): number {
+  if (result.failedColumns.length > 0 || result.casSkipped > 0) return 2;
+  return 0;
+}
+
 const FIELD_TO_DB_COLUMN: Record<BunqEncryptedSecretField, string> = {
   bunqApiKey: "bunq_api_key",
   bunqSigningPrivateKeyPem: "bunq_signing_private_key_pem",
@@ -130,14 +139,16 @@ const FIELD_TO_DB_COLUMN: Record<BunqEncryptedSecretField, string> = {
 
 /**
  * Pure: decide which fields need sealing under the dedicated key.
- * Encrypts plaintext and re-seals ciphertext still under the old shared key.
+ * Encrypts the exact raw DB string (including trailing newlines / surrounding
+ * whitespace) so decrypt-back is byte-identical, and CAS compares against that
+ * same raw value — never a trimmed copy.
  */
 export function planBunqReencryptForRow(
   row: Partial<Record<BunqEncryptedSecretField, string | null | undefined>>,
   env: NodeJS.ProcessEnv,
 ): {
   patch: Partial<Record<BunqEncryptedSecretField, string>>;
-  /** Old values for compare-and-set writes. */
+  /** Exact raw DB values for compare-and-set writes. */
   expected: Partial<Record<BunqEncryptedSecretField, string | null>>;
   alreadyDedicated: BunqEncryptedSecretField[];
   failed: BunqEncryptedSecretField[];
@@ -154,28 +165,30 @@ export function planBunqReencryptForRow(
   }
   for (const field of BUNQ_ENCRYPTED_SECRET_FIELDS) {
     const value = row[field];
+    // Whitespace-only is empty; otherwise keep the exact raw bytes for CAS + seal.
     if (typeof value !== "string" || !value.trim()) continue;
-    const stored = value.trim();
+    const raw = value;
 
-    if (isEncryptedBunqSecret(stored)) {
-      if (decryptSecretWithKeyMaterials(stored, [dedicated]) !== null) {
+    if (isEncryptedBunqSecret(raw)) {
+      const cipher = raw.trim();
+      if (decryptSecretWithKeyMaterials(cipher, [dedicated]) !== null) {
         alreadyDedicated.push(field);
         continue;
       }
-      const plaintext = decryptBunqSecret(stored, env);
+      const plaintext = decryptBunqSecret(cipher, env);
       if (plaintext === null) {
         failed.push(field);
         continue;
       }
       patch[field] = encryptBunqSecret(plaintext, env);
-      expected[field] = stored;
+      expected[field] = raw;
       continue;
     }
 
-    // Plaintext (legacy / never Connect'd).
+    // Plaintext (legacy / never Connect'd) — seal the raw value byte-for-byte.
     plaintextFields.push(field);
-    patch[field] = encryptBunqSecret(stored, env);
-    expected[field] = stored;
+    patch[field] = encryptBunqSecret(raw, env);
+    expected[field] = raw;
   }
   return { patch, expected, alreadyDedicated, failed, plaintextFields };
 }

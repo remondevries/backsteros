@@ -1,10 +1,14 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { encryptBunqSecret } from "../lib/bunq-secret-crypto.js";
+import {
+  decryptBunqSecret,
+  encryptBunqSecret,
+} from "../lib/bunq-secret-crypto.js";
 import {
   BunqReencryptRefusedError,
   bunqReencryptRefusalReason,
+  bunqReencryptScriptExitCode,
   cloudCoreHealthUrl,
   planBunqReencryptForRow,
   probeCloudCoreRunning,
@@ -104,6 +108,28 @@ describe("planBunqReencryptForRow", () => {
     assert.equal(plan.expected.bunqApiKey, "sandbox_plaintext_key");
   });
 
+  it("CAS-expects and seals newline-terminated PEM byte-identically", () => {
+    const pem =
+      "-----BEGIN PRIVATE KEY-----\nMIIE\n-----END PRIVATE KEY-----\n";
+    assert.ok(pem.endsWith("\n"));
+    const plan = planBunqReencryptForRow(
+      { bunqSigningPrivateKeyPem: pem },
+      env,
+    );
+    assert.equal(plan.expected.bunqSigningPrivateKeyPem, pem);
+    assert.notEqual(plan.expected.bunqSigningPrivateKeyPem, pem.trim());
+    const sealed = plan.patch.bunqSigningPrivateKeyPem!;
+    assert.ok(sealed.startsWith("v1:"));
+    assert.equal(decryptBunqSecret(sealed, env), pem);
+  });
+
+  it("CAS-expects and seals surrounding whitespace byte-identically", () => {
+    const raw = "  sandbox_key_with_spaces  ";
+    const plan = planBunqReencryptForRow({ bunqApiKey: raw }, env);
+    assert.equal(plan.expected.bunqApiKey, raw);
+    assert.equal(decryptBunqSecret(plan.patch.bunqApiKey!, env), raw);
+  });
+
   it("leaves columns already under the dedicated key alone", () => {
     const dedicatedCipher = encryptBunqSecret("sandbox_api", env);
     const plan = planBunqReencryptForRow(
@@ -121,6 +147,30 @@ describe("planBunqReencryptForRow", () => {
       { CORE_REPLICATION_SECRET: OLD },
     );
     assert.deepEqual(plan.patch, {});
+  });
+});
+
+
+describe("bunqReencryptScriptExitCode", () => {
+  it("exits 0 when clean", () => {
+    assert.equal(
+      bunqReencryptScriptExitCode({ casSkipped: 0, failedColumns: [] }),
+      0,
+    );
+  });
+
+  it("exits 2 when casSkipped or failed", () => {
+    assert.equal(
+      bunqReencryptScriptExitCode({ casSkipped: 1, failedColumns: [] }),
+      2,
+    );
+    assert.equal(
+      bunqReencryptScriptExitCode({
+        casSkipped: 0,
+        failedColumns: [{ workspaceId: "ws", field: "bunqApiKey" }],
+      }),
+      2,
+    );
   });
 });
 
@@ -257,5 +307,6 @@ describe("reencryptBunqSecretsToDedicatedKey", () => {
     assert.equal(result.columns, 0);
     assert.equal(result.casSkipped, 1);
     assert.equal(result.plaintextColumns, 1);
+    assert.equal(bunqReencryptScriptExitCode(result), 2);
   });
 });

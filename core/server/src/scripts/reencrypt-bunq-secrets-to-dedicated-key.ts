@@ -9,15 +9,16 @@
  *       the cloud core STOPPED (GET /health must not return ok:true).
  *
  * Never prints secret values. Does not call bunq. No-ops when the dedicated
- * key is unset. Each column write is compare-and-set against the value that
- * was planned. Decrypt-back (rollback) still works after this pass as long as
- * the dedicated key remains set.
+ * key is unset. Each column write is compare-and-set against the exact raw DB
+ * value. Exits 2 when casSkipped>0 or failed>0. Decrypt-back still restores
+ * byte-identical plaintext after this pass (keep the dedicated key set).
  *
  * Stop the cloud core before --apply:
  *   docker compose -f deploy/cloud/docker-compose.yml stop backsteros
  */
 import { sqlClient } from "../db/index.js";
 import {
+  bunqReencryptScriptExitCode,
   reencryptBunqSecretsToDedicatedKey,
 } from "../services/bunq-secrets-reencrypt.js";
 
@@ -61,8 +62,12 @@ async function main() {
       "\nDRY RUN — nothing changed. Stop the cloud core, then re-run with --apply to write.",
     );
   }
-  if (result.failedColumns.length > 0) {
-    process.exitCode = 2;
+  const code = bunqReencryptScriptExitCode(result);
+  if (code !== 0) {
+    console.error(
+      `\nRefusing success: casSkipped=${result.casSkipped} failed=${result.failedColumns.length}`,
+    );
+    process.exitCode = code;
   }
 }
 
