@@ -69,9 +69,11 @@ describe("cloudCoreHealthUrl / probeCloudCoreStatus", () => {
     assert.equal(result.outcome, "stopped");
   });
 
-  it("reports stopped on DNS not found", async () => {
+  it("reports stopped on DNS not found errno", async () => {
     const err = Object.assign(new TypeError("fetch failed"), {
-      cause: Object.assign(new Error("getaddrinfo"), { code: "ENOTFOUND" }),
+      cause: Object.assign(new Error("getaddrinfo ENOTFOUND backsteros"), {
+        code: "ENOTFOUND",
+      }),
     });
     const result = await probeCloudCoreStatus({
       fetchFn: async () => {
@@ -79,6 +81,18 @@ describe("cloudCoreHealthUrl / probeCloudCoreStatus", () => {
       },
     });
     assert.equal(result.outcome, "stopped");
+  });
+
+  it("does not treat getaddrinfo message text alone as stopped (OS-178)", async () => {
+    const err = new TypeError(
+      "fetch failed: getaddrinfo EAI_AGAIN backsteros",
+    );
+    const result = await probeCloudCoreStatus({
+      fetchFn: async () => {
+        throw err;
+      },
+    });
+    assert.equal(result.outcome, "uncertain");
   });
 
   it("reports uncertain on timeout", async () => {

@@ -141,14 +141,9 @@ export async function probeCloudCoreStatus(deps: {
         detail: `${url} ${code}`,
       };
     }
-    // Also match message text for environments that wrap the code.
+    // Only errno codes count as stopped — no message-text fallback
+    // (e.g. "getaddrinfo …" without ENOTFOUND must stay uncertain).
     const message = error instanceof Error ? error.message : String(error);
-    if (/ECONNREFUSED|ENOTFOUND|getaddrinfo/i.test(message)) {
-      return {
-        outcome: "stopped",
-        detail: `${url} ${message}`,
-      };
-    }
     return {
       outcome: "uncertain",
       detail: `${url} probe error: ${message}`,
