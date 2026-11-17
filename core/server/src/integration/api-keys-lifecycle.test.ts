@@ -35,8 +35,13 @@ test("API keys: expiry, last-used, rotate, and audit log", async (context) => {
   const workspaceId = id("workspace");
   const ownerSecret = newSecret();
   const ownerKeyId = id("key");
+  const previousRole = process.env.CORE_REPLICATION_ROLE;
+  // Exercise pure-local create (hybrid ROLE=local only accepts local_shell).
+  delete process.env.CORE_REPLICATION_ROLE;
 
   context.after(async () => {
+    if (previousRole === undefined) delete process.env.CORE_REPLICATION_ROLE;
+    else process.env.CORE_REPLICATION_ROLE = previousRole;
     await db
       .delete(apiKeyRequestLogs)
       .where(eq(apiKeyRequestLogs.workspaceId, workspaceId));
@@ -77,7 +82,7 @@ test("API keys: expiry, last-used, rotate, and audit log", async (context) => {
     body: JSON.stringify({
       name: "access-key",
       kind: "access",
-      scopes: ["tasks:read"],
+      scopes: [...AGENT_API_KEY_SCOPES],
       expiresAt,
     }),
   });
@@ -98,14 +103,12 @@ test("API keys: expiry, last-used, rotate, and audit log", async (context) => {
   assert.equal(createdBody.apiKey.expiresAt, expiresAt);
   assert.equal(createdBody.apiKey.lastUsedAt, null);
   assert.equal(createdBody.apiKey.hasRecoverableSecret, true);
-  // kind: access → full owner scopes forced (even if request sent a subset).
+  // Full owner Access when every non-door scope is requested.
   assert.equal(createdBody.apiKey.contactId, null);
-  for (const scope of AGENT_API_KEY_SCOPES) {
-    assert.ok(
-      createdBody.apiKey.scopes.includes(scope),
-      `Access key missing scope ${scope}`,
-    );
-  }
+  assert.deepEqual(
+    [...createdBody.apiKey.scopes].sort(),
+    [...AGENT_API_KEY_SCOPES].sort(),
+  );
 
   // Reveal returns the same secret for new keys with ciphertext
   const revealed = await app.request(
@@ -421,8 +424,12 @@ test("API keys: settings-write key cannot extend expiry beyond its own", async (
   const ownerSecret = newSecret();
   const ownerKeyId = id("key");
   const actorExpiresAt = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000);
+  const previousRole = process.env.CORE_REPLICATION_ROLE;
+  delete process.env.CORE_REPLICATION_ROLE;
 
   context.after(async () => {
+    if (previousRole === undefined) delete process.env.CORE_REPLICATION_ROLE;
+    else process.env.CORE_REPLICATION_ROLE = previousRole;
     await db
       .delete(apiKeyRequestLogs)
       .where(eq(apiKeyRequestLogs.workspaceId, workspaceId));
