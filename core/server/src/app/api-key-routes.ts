@@ -12,11 +12,19 @@ import {
   type ApiKeyRequestLog,
 } from "@backsteros/contracts";
 
+import { rejectNonOwnerShellForCloudForward } from "../lib/api-key-admin-actor.js";
+import {
+  API_KEY_CLOUD_UNAVAILABLE_MESSAGE,
+  ApiKeyAdminCloudForwardError,
+  forwardApiKeyAdminToCloud,
+  shouldForwardApiKeyAdminToCloud,
+} from "../lib/api-key-admin-cloud-forward.js";
 import { evaluateApiKeySecretAccess } from "../lib/api-key-secret-access.js";
 import { toApiKey } from "../lib/mappers.js";
 import { requestClientAddress } from "../lib/request-address.js";
 import type { AuthContext } from "../middleware/auth.js";
 import { canManageApiKeys } from "../lib/powersync-auth.js";
+import { mirrorCloudMintedApiKeyLocally } from "../services/api-key-admin-local-mirror.js";
 import * as apiKeyService from "../services/api-keys.js";
 import type { DbApiKeyAuditLog, DbApiKeyRequestLog } from "../db/schema.js";
 import {
@@ -29,6 +37,20 @@ import {
 function badRequest(message: string) {
   return { error: message, code: "bad_request" as const };
 }
+
+type CloudMintedShape = {
+  id: string;
+  workspaceId: string;
+  userId?: string | null;
+  name: string;
+  prefix?: string;
+  scopes: string[];
+  contactId?: string | null;
+  expiresAt?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+  revokedAt?: string | null;
+};
 
 function toApiKeyAuditLog(row: DbApiKeyAuditLog): ApiKeyAuditLog {
   return {
@@ -73,6 +95,58 @@ export function registerApiKeyRoutes(app: Hono) {
         ? await apiKeyService.apiKeyContactIsWorkspaceOwner(auth)
         : false;
     return canManageApiKeys(auth, { contactIsWorkspaceOwner });
+  }
+
+  /**
+   * OS-181: on hybrid local-core, mutate keys on cloud. Agent/app keys cannot
+   * drive the forward. Dynamic Island pair stays on its own local route.
+   */
+  async function forwardMutationOrFail(input: {
+    auth: AuthContext;
+    method: "POST" | "PATCH";
+    path: string;
+    body: unknown;
+  }): Promise<
+    | { kind: "error"; status: number; body: Record<string, unknown> }
+    | { kind: "ok"; status: number; body: unknown }
+  > {
+    const denied = rejectNonOwnerShellForCloudForward(input.auth);
+    if (denied) {
+      return { kind: "error", status: denied.status, body: denied.body };
+    }
+    try {
+      const result = await forwardApiKeyAdminToCloud({
+        method: input.method,
+        path: input.path,
+        userId: input.auth.userId!,
+        workspaceId: input.auth.workspaceId,
+        body: input.body,
+      });
+      if (result.status >= 400) {
+        const errBody =
+          result.body && typeof result.body === "object"
+            ? (result.body as Record<string, unknown>)
+            : { error: `Cloud returned HTTP ${result.status}`, code: "bad_request" };
+        return { kind: "error", status: result.status, body: errBody };
+      }
+      return { kind: "ok", status: result.status, body: result.body };
+    } catch (error) {
+      if (error instanceof ApiKeyAdminCloudForwardError) {
+        return {
+          kind: "error",
+          status: error.status,
+          body: { error: error.message, code: error.code },
+        };
+      }
+      return {
+        kind: "error",
+        status: 503,
+        body: {
+          error: API_KEY_CLOUD_UNAVAILABLE_MESSAGE,
+          code: "api_key_cloud_unavailable",
+        },
+      };
+    }
   }
 
   /**
@@ -164,6 +238,45 @@ export function registerApiKeyRoutes(app: Hono) {
         );
       }
 
+      if (shouldForwardApiKeyAdminToCloud()) {
+        const forwarded = await forwardMutationOrFail({
+          auth,
+          method: "POST",
+          path: "/internal/core-replication/api-keys",
+          body: c.req.valid("json"),
+        });
+        if (forwarded.kind === "error") {
+          return c.json(forwarded.body, forwarded.status as 400);
+        }
+        const payload = forwarded.body as {
+          apiKey?: CloudMintedShape;
+          secret?: string;
+        };
+        if (
+          payload?.apiKey &&
+          typeof payload.secret === "string" &&
+          payload.secret
+        ) {
+          await mirrorCloudMintedApiKeyLocally({
+            apiKey: {
+              id: payload.apiKey.id,
+              workspaceId: payload.apiKey.workspaceId,
+              userId: payload.apiKey.userId,
+              name: payload.apiKey.name,
+              prefix: payload.apiKey.prefix,
+              scopes: payload.apiKey.scopes,
+              contactId: payload.apiKey.contactId,
+              expiresAt: payload.apiKey.expiresAt,
+              createdAt: payload.apiKey.createdAt,
+              updatedAt: payload.apiKey.updatedAt,
+              revokedAt: payload.apiKey.revokedAt,
+            },
+            secret: payload.secret,
+          }).catch(() => undefined);
+        }
+        return c.json(forwarded.body, forwarded.status as 201);
+      }
+
       try {
         const { row, secret } = await apiKeyService.createApiKey(
           auth.workspaceId,
@@ -227,6 +340,20 @@ export function registerApiKeyRoutes(app: Hono) {
           auth.kind === "api_key" ? forbidden() : unauthorized(),
           auth.kind === "api_key" ? 403 : 401,
         );
+      }
+
+      if (shouldForwardApiKeyAdminToCloud()) {
+        const keyId = c.req.param("id");
+        const forwarded = await forwardMutationOrFail({
+          auth,
+          method: "PATCH",
+          path: `/internal/core-replication/api-keys/${keyId}`,
+          body: c.req.valid("json"),
+        });
+        if (forwarded.kind === "error") {
+          return c.json(forwarded.body, forwarded.status as 400);
+        }
+        return c.json(forwarded.body, forwarded.status as 200);
       }
 
       try {
@@ -316,6 +443,46 @@ export function registerApiKeyRoutes(app: Hono) {
     const denied = await denyApiKeySecretAccess(auth, c.req.param("id"));
     if (denied) return c.json(denied.body, denied.status);
 
+    if (shouldForwardApiKeyAdminToCloud()) {
+      const keyId = c.req.param("id");
+      const forwarded = await forwardMutationOrFail({
+        auth,
+        method: "POST",
+        path: `/internal/core-replication/api-keys/${keyId}/rotate`,
+        body: {},
+      });
+      if (forwarded.kind === "error") {
+        return c.json(forwarded.body, forwarded.status as 400);
+      }
+      const payload = forwarded.body as {
+        apiKey?: CloudMintedShape;
+        secret?: string;
+      };
+      if (
+        payload?.apiKey &&
+        typeof payload.secret === "string" &&
+        payload.secret
+      ) {
+        await mirrorCloudMintedApiKeyLocally({
+          apiKey: {
+            id: payload.apiKey.id,
+            workspaceId: payload.apiKey.workspaceId,
+            userId: payload.apiKey.userId,
+            name: payload.apiKey.name,
+            prefix: payload.apiKey.prefix,
+            scopes: payload.apiKey.scopes,
+            contactId: payload.apiKey.contactId,
+            expiresAt: payload.apiKey.expiresAt,
+            createdAt: payload.apiKey.createdAt,
+            updatedAt: payload.apiKey.updatedAt,
+            revokedAt: payload.apiKey.revokedAt,
+          },
+          secret: payload.secret,
+        }).catch(() => undefined);
+      }
+      return c.json(forwarded.body, forwarded.status as 200);
+    }
+
     try {
       const rotated = await apiKeyService.rotateApiKey(
         auth.workspaceId,
@@ -367,6 +534,20 @@ export function registerApiKeyRoutes(app: Hono) {
         auth.kind === "api_key" ? forbidden() : unauthorized(),
         auth.kind === "api_key" ? 403 : 401,
       );
+    }
+
+    if (shouldForwardApiKeyAdminToCloud()) {
+      const keyId = c.req.param("id");
+      const forwarded = await forwardMutationOrFail({
+        auth,
+        method: "POST",
+        path: `/internal/core-replication/api-keys/${keyId}/revoke`,
+        body: {},
+      });
+      if (forwarded.kind === "error") {
+        return c.json(forwarded.body, forwarded.status as 400);
+      }
+      return c.body(null, 204);
     }
 
     const row = await apiKeyService.revokeApiKey(

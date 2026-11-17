@@ -138,9 +138,11 @@ function toAgentWebhookSettings(agent: Agent): AgentWebhookSettings {
 }
 
 /**
- * Settings → API: API keys stay on local-core (agents door blocks `/api-keys`).
- * Agent roster paints from local-core first (after twin), then cloud merges
- * webhook fields. Key ids are replicated, so linking `apiKeyId` works.
+ * Settings → API: on hybrid local-core, mint/rotate/revoke forwards to cloud
+ * (OS-181) so keys work on the agent door; plaintext is shown once. Agents
+ * door still blocks `/api-keys`. Offline / missing CORE_KEY_ADMIN_SECRET fails
+ * closed with the API error. Agent roster paints from local-core first (after
+ * twin), then cloud merges webhook fields.
  */
 function parseApiKeysSearch(searchStr: string): {
   typeTab: ApiKeyTypeTab;
