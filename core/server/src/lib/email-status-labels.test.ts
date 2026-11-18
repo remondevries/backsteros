@@ -6,6 +6,8 @@ import {
   canPromoteEmailThreadWorkflowStatus,
   emailStatusLabelName,
   emailStatusLabelPatch,
+  isAgentMailOutboundMessage,
+  isNewerInboundMessageId,
   migrateLegacyEmailStatus,
   shouldRetriageEmailThreadOnInbound,
 } from "./email-status-labels.js";
@@ -98,5 +100,33 @@ describe("shouldRetriageEmailThreadOnInbound", () => {
     assert.equal(shouldRetriageEmailThreadOnInbound("canceled"), true);
     assert.equal(shouldRetriageEmailThreadOnInbound("concept"), true);
     assert.equal(shouldRetriageEmailThreadOnInbound("todo"), true);
+  });
+
+  it("explicitly retriages ready_to_start (OS-188 / E-599 class)", () => {
+    assert.equal(shouldRetriageEmailThreadOnInbound("ready_to_start"), true);
+  });
+});
+
+describe("isNewerInboundMessageId", () => {
+  it("treats empty candidates as not newer", () => {
+    assert.equal(isNewerInboundMessageId(null, null), false);
+    assert.equal(isNewerInboundMessageId("msg_1", ""), false);
+    assert.equal(isNewerInboundMessageId("msg_1", "   "), false);
+  });
+
+  it("treats a different id as newer and equal ids as not", () => {
+    assert.equal(isNewerInboundMessageId(null, "msg_1"), true);
+    assert.equal(isNewerInboundMessageId("", "msg_1"), true);
+    assert.equal(isNewerInboundMessageId("msg_1", "msg_1"), false);
+    assert.equal(isNewerInboundMessageId("msg_1", "msg_2"), true);
+  });
+});
+
+describe("isAgentMailOutboundMessage", () => {
+  it("detects the sent label case-insensitively", () => {
+    assert.equal(isAgentMailOutboundMessage(["unread", "sent"]), true);
+    assert.equal(isAgentMailOutboundMessage(["Sent"]), true);
+    assert.equal(isAgentMailOutboundMessage(["unread"]), false);
+    assert.equal(isAgentMailOutboundMessage(null), false);
   });
 });

@@ -352,12 +352,16 @@ Max 5 images per JSON create/update/comment. SVG is rejected.
 
 ## AgentMail inbound webhooks
 
-Register (or let core auto-register when `AGENTS_PUBLIC_URL` is set) a webhook
-that POSTs to:
+Register (or let cloud-core auto-register) a webhook that POSTs to:
 
 ```text
 https://agent.backsteros.com/api/v1/webhooks/agentmail
 ```
+
+Set `AGENTS_PUBLIC_URL=https://agent.backsteros.com` on cloud-core (compose
+passthrough under `deploy/cloud`). When unset on cloud, core still falls back
+to that door; local-core must leave it unset and never registers. Stale
+staging URLs and disabled remote hooks are treated as stale and recreated.
 
 Core emits `email.updated` over `GET /api/v1/email/events` so backsteros/iOS
 refetch messages. This door only forwards the webhook.

@@ -97,11 +97,26 @@ describe("hybrid write bar", () => {
         email.includes("patchEmailThreadMetadataLeaderAware"),
       "inbound retriage must patch leader-first",
     );
+    assert.ok(
+      email.includes("lastProcessedInboundMessageId"),
+      "inbound retriage must persist last processed inbound message id",
+    );
 
     const emailRoutes = readSrc("../app/email-routes.ts");
     assert.ok(
       emailRoutes.includes("retriageEmailThreadOnInbound"),
       "AgentMail message.received must retriage non-Triage threads",
+    );
+    assert.ok(
+      emailRoutes.includes('source: "event"'),
+      "webhook path must record inbound ids as event source",
+    );
+
+    const messages = readSrc("agentmail-settings/messages.ts");
+    assert.ok(
+      messages.includes("retriageEmailThreadOnInbound") &&
+        messages.includes('source: "poll"'),
+      "list ingest must retriage on newer inbound ids only",
     );
 
     const agentmail = readSrc("agentmail-settings.ts");

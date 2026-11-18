@@ -260,6 +260,11 @@ export const updateEmailThreadMetadataSchema = z.object({
   /** Clear the Updated inbox flag after the user views the item. */
   acknowledgeInboxUpdate: z.boolean().optional(),
   inboxUpdatedAt: z.string().datetime().nullable().optional(),
+  /**
+   * Internal cursor for inbound retriage dedupe (OS-188). Optional on writes so
+   * webhook + list ingest can record the last processed AgentMail message id.
+   */
+  lastProcessedInboundMessageId: z.string().nullable().optional(),
 });
 
 export const emailThreadCommentAuthorSchema = z.enum(["user", "agent"]);

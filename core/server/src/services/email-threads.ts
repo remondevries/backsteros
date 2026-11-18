@@ -22,6 +22,7 @@ import {
 import { newId } from "../lib/crypto.js";
 import {
   canPromoteEmailThreadWorkflowStatus,
+  isNewerInboundMessageId,
   shouldRetriageEmailThreadOnInbound,
   type EmailWorkflowPromoteStatus,
 } from "../lib/email-status-labels.js";
@@ -779,6 +780,12 @@ export async function updateEmailThreadMetadata(
     priority: input.priority,
     dueDate,
     ...(inboxUpdatedAt !== undefined ? { inboxUpdatedAt } : {}),
+    ...(input.lastProcessedInboundMessageId !== undefined
+      ? {
+          lastProcessedInboundMessageId:
+            input.lastProcessedInboundMessageId?.trim() || null,
+        }
+      : {}),
     updatedAt: now,
   };
 
@@ -811,6 +818,10 @@ export async function updateEmailThreadMetadata(
       assigneeId: input.assigneeId ?? null,
       projectId: input.projectId ?? null,
       messageParties: nextMessageParties ?? {},
+      lastProcessedInboundMessageId:
+        input.lastProcessedInboundMessageId === undefined
+          ? null
+          : input.lastProcessedInboundMessageId?.trim() || null,
       createdAt: now,
       updatedAt: now,
     })
@@ -923,11 +934,20 @@ export async function promoteEmailThreadWorkflowStatus(
  * Best-effort: when a new inbound message lands on an existing thread that is
  * not Triage, move it back to Triage (and clear Updated) so the reply is
  * obvious. Does not invent thread rows — list/open paths create those.
+ *
+ * `source`:
+ * - `event` (webhook): any unseen inbound id may retriage.
+ * - `poll` (list ingest): first sighting of an id only seeds the cursor so a
+ *   thread the user already moved to Waiting does not bounce back.
  */
 export async function retriageEmailThreadOnInbound(
   workspaceId: string,
   inboxId: string,
-  input: { threadId?: string | null; messageId?: string | null },
+  input: {
+    threadId?: string | null;
+    messageId?: string | null;
+    source?: "event" | "poll";
+  },
 ): Promise<EmailThreadMetadata | null> {
   const messageId = input.messageId?.trim() || "";
   const threadId = input.threadId?.trim() || "";
@@ -937,18 +957,44 @@ export async function retriageEmailThreadOnInbound(
     messageId,
   });
   if (!threadKey) return null;
+  const source = input.source === "poll" ? "poll" : "event";
   try {
     const existing = await getEmailThreadRow(workspaceId, inboxId, threadKey);
     if (!existing) return null;
-    if (!shouldRetriageEmailThreadOnInbound(existing.status)) {
+
+    const storedInboundId = existing.lastProcessedInboundMessageId ?? null;
+    const isNewInbound =
+      messageId.length > 0 &&
+      isNewerInboundMessageId(storedInboundId, messageId);
+
+    // Same inbound id already recorded — never bounce Waiting back to Triage.
+    if (messageId && !isNewInbound) {
+      return toEmailThreadMetadata(workspaceId, existing);
+    }
+
+    // List ingest: seed the cursor on first observation without retriaging.
+    const seedOnly =
+      source === "poll" && isNewInbound && !storedInboundId?.trim();
+    const shouldRetriage =
+      !seedOnly && shouldRetriageEmailThreadOnInbound(existing.status);
+
+    const patch: UpdateEmailThreadMetadataInput = {};
+    if (shouldRetriage) {
+      // Clear Updated so the thread lands cleanly in Triage, not the Updated group.
+      patch.status = "triage";
+      patch.inboxUpdatedAt = null;
+    }
+    if (isNewInbound) {
+      patch.lastProcessedInboundMessageId = messageId;
+    }
+    if (Object.keys(patch).length === 0) {
       return toEmailThreadMetadata(workspaceId, existing);
     }
     return await patchEmailThreadMetadataLeaderAware(
       workspaceId,
       inboxId,
       threadKey,
-      // Clear Updated so the thread lands cleanly in Triage, not the Updated group.
-      { status: "triage", inboxUpdatedAt: null },
+      patch,
     );
   } catch (error) {
     console.warn(

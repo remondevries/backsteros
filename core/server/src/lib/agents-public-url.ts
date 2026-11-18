@@ -46,8 +46,9 @@ export function resolveAgentsPublicBase(
 }
 
 /**
- * AgentMail inbound webhook base, or null when unset / invalid / local-core.
- * Local-core must not register webhooks — the public door is cloud-core.
+ * AgentMail inbound webhook base, or null on local-core.
+ * On cloud, falls back to the agents door when unset or stale (staging), same
+ * as {@link resolveAgentsPublicBase}. Local-core must not register webhooks.
  */
 export function resolveAgentsPublicWebhookBase(
   env: NodeJS.ProcessEnv = process.env,
@@ -56,7 +57,10 @@ export function resolveAgentsPublicWebhookBase(
     return null;
   }
   const configured = env.AGENTS_PUBLIC_URL?.trim().replace(/\/$/, "");
-  if (!configured) return null;
-  if (!isAgentsDoorPublicBase(configured)) return null;
-  return configured;
+  const candidate = (configured || DEFAULT_AGENTS_PUBLIC_URL).replace(
+    /\/$/,
+    "",
+  );
+  if (isAgentsDoorPublicBase(candidate)) return candidate;
+  return DEFAULT_AGENTS_PUBLIC_URL;
 }

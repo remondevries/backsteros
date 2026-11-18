@@ -346,6 +346,7 @@ export function registerEmailRoutes(app: Hono) {
         .retriageEmailThreadOnInbound(result.workspaceId, result.inboxId, {
           threadId: result.threadId,
           messageId: result.messageId,
+          source: "event",
         })
         .catch(() => {
           // Best-effort; retriageEmailThreadOnInbound already logs.

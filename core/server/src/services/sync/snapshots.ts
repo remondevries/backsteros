@@ -441,6 +441,8 @@ export function emailThreadSnapshot(row: typeof emailThreads.$inferSelect) {
     priority: row.priority,
     due_date: row.dueDate?.toISOString() ?? null,
     inbox_updated_at: row.inboxUpdatedAt?.toISOString() ?? null,
+    last_processed_inbound_message_id:
+      row.lastProcessedInboundMessageId ?? null,
     created_at: row.createdAt.toISOString(),
     updated_at: row.updatedAt.toISOString(),
   };

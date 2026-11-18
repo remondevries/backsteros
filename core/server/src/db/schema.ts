@@ -2714,6 +2714,11 @@ export const emailThreads = pgTable(
     priority: integer("priority").notNull().default(0),
     dueDate: timestamp("due_date", { withTimezone: true }),
     inboxUpdatedAt: timestamp("inbox_updated_at", { withTimezone: true }),
+    /**
+     * Last AgentMail inbound message id already considered for Triage retriage
+     * (webhook + list ingest). Same id must not bounce a Waiting thread back.
+     */
+    lastProcessedInboundMessageId: text("last_processed_inbound_message_id"),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },

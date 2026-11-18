@@ -1443,6 +1443,13 @@
       "when": 1796400000000,
       "tag": "0204_ticket_comment_timeline",
       "breakpoints": true
+    },
+    {
+      "idx": 206,
+      "version": "7",
+      "when": 1796410000000,
+      "tag": "0205_email_thread_last_processed_inbound",
+      "breakpoints": true
     }
   ]
 }

@@ -112,3 +112,24 @@ export function shouldRetriageEmailThreadOnInbound(
   if (!normalized) return false;
   return migrateLegacyEmailStatus(normalized) !== "triage";
 }
+
+/**
+ * Whether `candidate` is a new inbound message id relative to the stored cursor.
+ * Equal ids must not retriage again (Waiting after reading must stay put).
+ */
+export function isNewerInboundMessageId(
+  stored: string | null | undefined,
+  candidate: string | null | undefined,
+): boolean {
+  const next = candidate?.trim() || "";
+  if (!next) return false;
+  const prev = stored?.trim() || "";
+  return next !== prev;
+}
+
+/** AgentMail outbound messages carry the `sent` label. */
+export function isAgentMailOutboundMessage(labels: readonly string[] | null | undefined): boolean {
+  return (labels ?? []).some(
+    (label) => label.trim().toLowerCase() === "sent",
+  );
+}

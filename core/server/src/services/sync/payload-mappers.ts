@@ -497,6 +497,7 @@ export const emailThreadKeys = {
   due_date: "dueDate",
   acknowledge_inbox_update: "acknowledgeInboxUpdate",
   inbox_updated_at: "inboxUpdatedAt",
+  last_processed_inbound_message_id: "lastProcessedInboundMessageId",
 };
 
 export const emailThreadCommentKeys = {

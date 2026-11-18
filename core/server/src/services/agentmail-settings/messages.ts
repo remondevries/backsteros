@@ -28,7 +28,11 @@ import {
 import { mapConceptDraftForApi, toApiDraft } from "./drafts.js";
 import * as emailThreadsService from "../email-threads.js";
 import { hasAgentMailNotificationsLabel } from "../../lib/agentmail-notifications.js";
-import { EMAIL_CONCEPT_STATUS, emailStatusLabelPatch } from "../../lib/email-status-labels.js";
+import {
+  EMAIL_CONCEPT_STATUS,
+  emailStatusLabelPatch,
+  isAgentMailOutboundMessage,
+} from "../../lib/email-status-labels.js";
 import {
   peekAgentMailMessageDetailCache,
   writeAgentMailMessageDetailCache,
@@ -165,6 +169,56 @@ export async function listAgentMailMessages(
             }),
     })),
   );
+
+  // Defense in depth (OS-188): list ingest retriages only when a newer inbound
+  // message id appears. Outbound/`sent` list rows never bounce status.
+  const inboundByThread = new Map<
+    string,
+    { inboxId: string; threadId: string | null; messageId: string; at: number }
+  >();
+  for (const message of apiMessages) {
+    if (isAgentMailOutboundMessage(message.labels)) continue;
+    const messageId = message.messageId?.trim() || "";
+    if (!messageId) continue;
+    const threadKey = emailThreadsService.resolveEmailThreadKey({
+      threadId: message.threadId,
+      messageId,
+    });
+    const lookup = emailThreadsService.emailThreadStatusLookupKey(
+      message.inboxId,
+      threadKey,
+    );
+    const at = Date.parse(message.timestamp) || 0;
+    const prev = inboundByThread.get(lookup);
+    if (!prev || at >= prev.at) {
+      inboundByThread.set(lookup, {
+        inboxId: message.inboxId,
+        threadId: message.threadId ?? null,
+        messageId,
+        at,
+      });
+    }
+  }
+  for (const inbound of inboundByThread.values()) {
+    try {
+      await emailThreadsService.retriageEmailThreadOnInbound(
+        workspaceId,
+        inbound.inboxId,
+        {
+          threadId: inbound.threadId,
+          messageId: inbound.messageId,
+          source: "poll",
+        },
+      );
+    } catch (error) {
+      console.warn(
+        "[agentmail] list inbound retriage failed",
+        inbound.inboxId,
+        inbound.messageId,
+        error instanceof Error ? error.message : error,
+      );
+    }
+  }
 
   const metaMap = await emailThreadsService.listEmailThreadListMetaMap(
     workspaceId,

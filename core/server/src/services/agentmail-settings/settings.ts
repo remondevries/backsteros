@@ -15,7 +15,10 @@ import {
   type EmailReplyTemplateSettings,
   resolveEmailReplyTemplates,
 } from "../../lib/email-reply-assembler.js";
-import { resolveAgentsPublicWebhookBase } from "../../lib/agents-public-url.js";
+import {
+  isAgentsDoorPublicBase,
+  resolveAgentsPublicWebhookBase,
+} from "../../lib/agents-public-url.js";
 const INBOX_EMAIL_CACHE_MS = 5 * 60 * 1000;
 
 const inboxEmailCache = new Map<
@@ -699,6 +702,84 @@ export function agentsPublicWebhookUrl(): string | null {
 
 const WEBHOOK_CLIENT_ID = "backsteros-core";
 
+/** True when a stored/remote webhook URL is the agents-door AgentMail path. */
+export function isAgentMailDoorWebhookUrl(url: string | null | undefined): boolean {
+  const trimmed = url?.trim() || "";
+  if (!trimmed) return false;
+  try {
+    const parsed = new URL(trimmed);
+    if (!isAgentsDoorPublicBase(`${parsed.protocol}//${parsed.host}`)) {
+      return false;
+    }
+    return parsed.pathname.replace(/\/$/, "") === "/api/v1/webhooks/agentmail";
+  } catch {
+    return false;
+  }
+}
+
+export type AgentMailWebhookEnsureDecision =
+  | { action: "noop"; reason: string }
+  | { action: "update-inboxes"; toAdd: string[]; toRemove: string[] }
+  | { action: "recreate"; reason: string };
+
+/**
+ * Decide whether the stored/remote AgentMail webhook is healthy or stale.
+ * Non-door URLs and enabled:false remotes always recreate with the full inbox list.
+ */
+export function classifyAgentMailWebhookEnsure(input: {
+  targetUrl: string;
+  storedUrl: string | null;
+  desiredInboxIds: readonly string[];
+  remote: {
+    enabled: boolean;
+    url: string;
+    inboxIds: readonly string[];
+  } | null;
+}): AgentMailWebhookEnsureDecision {
+  const storedUrl = input.storedUrl?.trim() || null;
+  if (!storedUrl || storedUrl !== input.targetUrl) {
+    return {
+      action: "recreate",
+      reason: storedUrl
+        ? `stored url mismatch (have ${storedUrl}, want ${input.targetUrl})`
+        : "no stored webhook url",
+    };
+  }
+  if (!isAgentMailDoorWebhookUrl(storedUrl)) {
+    return {
+      action: "recreate",
+      reason: `stored url is not the agents door (${storedUrl})`,
+    };
+  }
+  if (!input.remote) {
+    return { action: "recreate", reason: "remote webhook missing or unreadable" };
+  }
+  if (!input.remote.enabled) {
+    return { action: "recreate", reason: "remote webhook enabled:false" };
+  }
+  const remoteUrl = input.remote.url.trim();
+  if (remoteUrl !== input.targetUrl || !isAgentMailDoorWebhookUrl(remoteUrl)) {
+    return {
+      action: "recreate",
+      reason: `remote url is not the door target (${remoteUrl || "empty"})`,
+    };
+  }
+  const currentInboxIds = [...input.remote.inboxIds];
+  const toAdd = input.desiredInboxIds.filter(
+    (id) => !currentInboxIds.includes(id),
+  );
+  const toRemove = currentInboxIds.filter(
+    (id) => !input.desiredInboxIds.includes(id),
+  );
+  if (toAdd.length > 0 || toRemove.length > 0) {
+    return { action: "update-inboxes", toAdd, toRemove };
+  }
+  return {
+    action: "noop",
+    reason: "webhook already points at the agents door with the full inbox list",
+  };
+}
+
 async function clearStoredWebhook(
   workspaceId: string,
   apiKey: string | null,
@@ -746,31 +827,85 @@ async function ensureAgentMailWebhook(
     return;
   }
 
-  if (inboxIds.length === 0 || !targetUrl) {
+  if (inboxIds.length === 0) {
+    console.info(
+      "[agentmail] ensureWebhook no-op: no inbox ids configured",
+      workspaceId,
+    );
+    return;
+  }
+  if (!targetUrl) {
+    console.info(
+      "[agentmail] ensureWebhook no-op: agents public webhook base unavailable (local-core or door unset)",
+      workspaceId,
+    );
     return;
   }
 
   const client = new AgentMailClient({ apiKey });
 
   try {
-    if (existingId && existingUrl === targetUrl && existingSecret) {
+    let remote: {
+      enabled: boolean;
+      url: string;
+      inboxIds: string[];
+    } | null = null;
+    if (existingId && existingSecret) {
       try {
         const current = await client.getWebhook(existingId);
-        const currentInboxIds = current.inboxIds;
-        const toAdd = inboxIds.filter((id) => !currentInboxIds.includes(id));
-        const toRemove = currentInboxIds.filter((id) => !inboxIds.includes(id));
-        if (toAdd.length > 0 || toRemove.length > 0) {
-          await client.updateWebhook(existingId, {
-            addInboxIds: toAdd.length > 0 ? toAdd : undefined,
-            removeInboxIds: toRemove.length > 0 ? toRemove : undefined,
-            eventTypes: ["message.received"],
-          });
-        }
-        return;
+        remote = {
+          enabled: current.enabled,
+          url: current.url,
+          inboxIds: current.inboxIds,
+        };
       } catch {
-        // Recreate below.
+        remote = null;
       }
     }
+
+    const decision = classifyAgentMailWebhookEnsure({
+      targetUrl,
+      storedUrl: existingUrl,
+      desiredInboxIds: inboxIds,
+      remote,
+    });
+
+    if (decision.action === "noop") {
+      console.info(
+        "[agentmail] ensureWebhook no-op:",
+        decision.reason,
+        workspaceId,
+        existingId,
+      );
+      return;
+    }
+
+    if (decision.action === "update-inboxes" && existingId) {
+      await client.updateWebhook(existingId, {
+        addInboxIds: decision.toAdd.length > 0 ? decision.toAdd : undefined,
+        removeInboxIds:
+          decision.toRemove.length > 0 ? decision.toRemove : undefined,
+        eventTypes: ["message.received"],
+      });
+      console.info(
+        "[agentmail] ensureWebhook updated inbox list",
+        workspaceId,
+        existingId,
+        { added: decision.toAdd.length, removed: decision.toRemove.length },
+      );
+      return;
+    }
+
+    const recreateReason =
+      decision.action === "recreate"
+        ? decision.reason
+        : "inbox list drift without stored webhook id";
+    console.info(
+      "[agentmail] ensureWebhook recreating:",
+      recreateReason,
+      workspaceId,
+      existingId,
+    );
 
     if (existingId) {
       try {

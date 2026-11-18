@@ -8,7 +8,7 @@ import {
   resolveAgentsPublicWebhookBase,
 } from "./agents-public-url.js";
 
-describe("agents-public-url (OS-100)", () => {
+describe("agents-public-url (OS-100 / OS-188)", () => {
   it("accepts only the agents HTTPS door hostnames", () => {
     assert.equal(isAgentsDoorPublicBase("https://agent.backsteros.com"), true);
     assert.equal(isAgentsDoorPublicBase("https://agents.backsteros.com/"), true);
@@ -41,13 +41,30 @@ describe("agents-public-url (OS-100)", () => {
     );
   });
 
-  it("refuses AgentMail webhook registration on local-core or dead hosts", () => {
+  it("falls back to the agents door for AgentMail webhooks on cloud when unset or stale", () => {
     assert.equal(
       resolveAgentsPublicWebhookBase({
+        CORE_REPLICATION_ROLE: "cloud",
+      }),
+      DEFAULT_AGENTS_PUBLIC_URL,
+    );
+    assert.equal(
+      resolveAgentsPublicWebhookBase({
+        CORE_REPLICATION_ROLE: "cloud",
         AGENTS_PUBLIC_URL: "https://staging.backsteros.com",
       }),
-      null,
+      DEFAULT_AGENTS_PUBLIC_URL,
     );
+    assert.equal(
+      resolveAgentsPublicWebhookBase({
+        CORE_REPLICATION_ROLE: "cloud",
+        AGENTS_PUBLIC_URL: "https://agent.backsteros.com",
+      }),
+      "https://agent.backsteros.com",
+    );
+  });
+
+  it("refuses AgentMail webhook registration on local-core", () => {
     assert.equal(
       resolveAgentsPublicWebhookBase({
         CORE_REPLICATION_ROLE: "local",
@@ -57,10 +74,9 @@ describe("agents-public-url (OS-100)", () => {
     );
     assert.equal(
       resolveAgentsPublicWebhookBase({
-        CORE_REPLICATION_ROLE: "cloud",
-        AGENTS_PUBLIC_URL: "https://agent.backsteros.com",
+        CORE_REPLICATION_ROLE: "local",
       }),
-      "https://agent.backsteros.com",
+      null,
     );
   });
 });

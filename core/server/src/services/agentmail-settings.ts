@@ -12,6 +12,8 @@ export {
   getAgentMailSettings,
   updateAgentMailSettings,
   agentsPublicWebhookUrl,
+  isAgentMailDoorWebhookUrl,
+  classifyAgentMailWebhookEnsure,
   listAgentMailWebhookSecrets,
   listAgentMailInboxes,
   testAgentMailConnection,

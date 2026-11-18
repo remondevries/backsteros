@@ -107,6 +107,7 @@ docker compose -f deploy/cloud/docker-compose.yml exec backsteros sh
 | `GITHUB_API_TOKEN` | Optional PAT for GitHub routes (local-shell desktop + portal API keys) |
 | `LIVEKIT_URL` / `LIVEKIT_CLIENT_URL` | LiveKit SFU URL for `POST /api/v1/meetings/:id/room-token`. Prefer `LIVEKIT_CLIENT_URL` (portal WSS) so host + guests share one SFU. |
 | `LIVEKIT_API_KEY` / `LIVEKIT_API_SECRET` | LiveKit API credentials (must match the SFU). Set in VPS `deploy/cloud/.env` — `~/.config/secrets/livekit.env` is Mac-only. |
+| `AGENTS_PUBLIC_URL` | Public agents door origin for AgentMail inbound webhook auto-registration (OS-188). Compose passthrough `${AGENTS_PUBLIC_URL:-}`. Prefer `https://agent.backsteros.com`. When unset on cloud, core falls back to that default; local-core must leave it unset and never registers. |
 | `PORT` | `8788` |
 | `POWERSYNC_JWT_SECRET` | Signs `GET /api/v1/powersync/token`. Same value is rendered into the PowerSync JWKS. Already required. |
 | `POWERSYNC_URL` | Sync URL returned to non-loopback clients. Default `http://100.83.125.67:8080` (tailnet only). |
