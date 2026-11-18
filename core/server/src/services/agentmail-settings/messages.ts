@@ -35,6 +35,7 @@ import {
   isAgentMailOutboundMessage,
   isNewerInboundMessage,
   latestAgentMailOutboundAt,
+  shouldRetriageEmailThreadOnInbound,
 } from "../../lib/email-status-labels.js";
 import {
   peekAgentMailMessageDetailCache,
@@ -271,6 +272,40 @@ export async function listAgentMailMessages(
           candidateAt: messageAt,
         });
 
+      const rawRow = rawListByKey.get(
+        `${inbound.inboxId}:${inbound.messageId}`,
+      );
+      let from = rawRow?.from?.trim() || "";
+      let headers: Record<string, string> | null = rawRow?.headers ?? null;
+
+      // OS-195: when a list row omits headers and the thread could bounce to
+      // Triage, fetch the full message so out-of-office is not missed.
+      // Use the AgentMail client (not getAgentMailMessage) — API detail strips
+      // headers.
+      if (
+        isNewInbound &&
+        !headers &&
+        existingThread &&
+        shouldRetriageEmailThreadOnInbound(existingThread.status)
+      ) {
+        try {
+          const detail = await getAgentMailMessageForRetriage(
+            workspaceId,
+            inbound.inboxId,
+            inbound.messageId,
+          );
+          if (!from) from = detail.from?.trim() || "";
+          if (detail.headers) headers = detail.headers;
+        } catch (error) {
+          console.warn(
+            "[agentmail] list retriage header fetch failed",
+            inbound.inboxId,
+            inbound.messageId,
+            error instanceof Error ? error.message : error,
+          );
+        }
+      }
+
       try {
         await emailThreadsService.retriageEmailThreadOnInbound(
           workspaceId,
@@ -281,6 +316,8 @@ export async function listAgentMailMessages(
             messageAt,
             lastOutboundAt,
             labels: inbound.labels,
+            from,
+            headers,
             source: "poll",
           },
         );
@@ -295,9 +332,6 @@ export async function listAgentMailMessages(
       // OS-187: only sync linked tickets for a genuinely new inbound. Re-polls
       // must not re-fetch AgentMail threads or bounce ticket status.
       if (!isNewInbound) continue;
-      const rawRow = rawListByKey.get(
-        `${inbound.inboxId}:${inbound.messageId}`,
-      );
       void import("../ticket-email-sync.js")
         .then(({ syncLinkedTicketsForEmailMessage }) =>
           syncLinkedTicketsForEmailMessage({
@@ -308,11 +342,12 @@ export async function listAgentMailMessages(
             // Direction is classified by sender inside sync — never hard-code
             // inbound here (Remon's own mail must not re-triage).
             messageAt,
+            headers,
             message: rawRow
               ? {
                   messageId: inbound.messageId,
                   threadId: rawRow.threadId || inbound.threadId || "",
-                  from: rawRow.from,
+                  from: from || rawRow.from,
                   subject: rawRow.subject,
                   preview: rawRow.preview,
                   text: null,
@@ -323,7 +358,7 @@ export async function listAgentMailMessages(
                         ? rawRow.timestamp
                         : String(messageAt),
                   labels: rawRow.labels,
-                  headers: rawRow.headers,
+                  headers,
                 }
               : null,
           }),
@@ -419,6 +454,32 @@ export async function getAgentMailThread(
   }
   const client = new AgentMailClient({ apiKey });
   return client.getThread(inboxId, threadId);
+}
+
+/**
+ * OS-195: raw AgentMail message for retriage (from + headers). API detail
+ * intentionally omits headers; webhook/poll skip paths need them.
+ */
+export async function getAgentMailMessageForRetriage(
+  workspaceId: string,
+  inboxId: string,
+  messageId: string,
+): Promise<{
+  from: string;
+  timestamp: string;
+  headers: Record<string, string> | null;
+}> {
+  const { apiKey } = await getAgentMailCredentials(workspaceId);
+  if (!apiKey) {
+    throw new AgentMailApiError(400, "", "AgentMail API key is not configured");
+  }
+  const client = new AgentMailClient({ apiKey });
+  const detail = await client.getMessage(inboxId, messageId);
+  return {
+    from: detail.from,
+    timestamp: detail.timestamp,
+    headers: detail.headers ?? null,
+  };
 }
 
 async function loadAgentMailMessageUncached(

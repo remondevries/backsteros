@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import { Hono } from "hono";
 
 import type { AuthContext } from "../../middleware/auth.js";
+import { withAuth } from "../route-shared.js";
 
 // infra-routes transitively imports DB clients; set DATABASE_URL before load.
 process.env.DATABASE_URL ??=
@@ -29,18 +30,27 @@ function assertNoStoreHeaders(response: Response) {
 
 function appWithAuth(auth: AuthContext | null) {
   const app = new Hono();
+  // Mirror production: path-scoped no-store before withAuth (OS-195).
+  app.use("/api/v1/transip/domains/:domainName/auth-code", async (c, next) => {
+    c.header("Cache-Control", "no-store, private");
+    c.header("Pragma", "no-cache");
+    await next();
+  });
   if (auth) {
     app.use("*", async (c, next) => {
       c.set("auth", auth);
       await next();
     });
+  } else {
+    // Real withAuth returns 401 before the route when Authorization is missing.
+    app.use("/api/v1/*", withAuth);
   }
   registerProjectInfraRoutes(app);
   return app;
 }
 
 describe("POST /api/v1/transip/domains/:domainName/auth-code cache headers", () => {
-  it("sets no-store headers on every response (401 and 403)", async () => {
+  it("sets no-store headers on every response (401 from withAuth and 403)", async () => {
     const unauth = await appWithAuth(null).request(
       "/api/v1/transip/domains/example.com/auth-code",
       { method: "POST" },

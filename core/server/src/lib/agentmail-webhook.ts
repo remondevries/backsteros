@@ -153,6 +153,8 @@ export type AgentMailWebhookDeliveryResult = {
   threadId: string | null;
   timestamp: string | null;
   labels: string[];
+  from: string | null;
+  headers: Record<string, string> | null;
 };
 
 export function handleAgentMailWebhookDelivery(input: {
@@ -170,7 +172,23 @@ export function handleAgentMailWebhookDelivery(input: {
     threadId: null,
     timestamp: null,
     labels: [] as string[],
+    from: null,
+    headers: null,
   } satisfies AgentMailWebhookDeliveryResult;
+  const unpublished = (
+    workspaceId: string,
+  ): AgentMailWebhookDeliveryResult => ({
+    ok: true,
+    published: false,
+    workspaceId,
+    inboxId: null,
+    messageId: null,
+    threadId: null,
+    timestamp: null,
+    labels: [],
+    from: null,
+    headers: null,
+  });
   const { rawBody, headers, secrets } = input;
   if (secrets.length === 0) {
     return empty;
@@ -197,42 +215,15 @@ export function handleAgentMailWebhookDelivery(input: {
     parseAgentMailWebhookPayload(payload)?.eventId ||
     null;
   if (deliveryKey && rememberWebhookDelivery(deliveryIdOrFallback(deliveryKey))) {
-    return {
-      ok: true,
-      published: false,
-      workspaceId: matched.workspaceId,
-      inboxId: null,
-      messageId: null,
-      threadId: null,
-      timestamp: null,
-      labels: [],
-    };
+    return unpublished(matched.workspaceId);
   }
 
   const parsed = parseAgentMailWebhookPayload(payload);
   if (!parsed || parsed.eventType !== "message.received") {
-    return {
-      ok: true,
-      published: false,
-      workspaceId: matched.workspaceId,
-      inboxId: null,
-      messageId: null,
-      threadId: null,
-      timestamp: null,
-      labels: [],
-    };
+    return unpublished(matched.workspaceId);
   }
   if (!parsed.inboxId) {
-    return {
-      ok: true,
-      published: false,
-      workspaceId: matched.workspaceId,
-      inboxId: null,
-      messageId: null,
-      threadId: null,
-      timestamp: null,
-      labels: [],
-    };
+    return unpublished(matched.workspaceId);
   }
 
   invalidateAgentMailMessageDetailCache(
@@ -309,6 +300,8 @@ export function handleAgentMailWebhookDelivery(input: {
     threadId: parsed.threadId,
     timestamp: parsed.timestamp,
     labels: parsed.labels,
+    from: parsed.from,
+    headers: parsed.headers,
   };
 }
 

@@ -641,6 +641,111 @@ test("OS-187: visibility, authorship, triage, dedupe, deterministic id, list ing
     ),
   );
 
+  // OS-195: header-less list row must fetch full message before status decide;
+  // auto-reply stays put; real client reply still retriages.
+  await json(app, `/api/v1/tickets/${ticketId}`, secret, {
+    method: "PATCH",
+    body: JSON.stringify({
+      status: "waiting",
+      followUpDate: "2026-11-20T12:00:00.000Z",
+      activityActor: "user",
+    }),
+  });
+  const headerlessOooId = `msg-headerless-ooo-${randomUUID()}`;
+  let headerlessFetchCalls = 0;
+  const headerlessOooDeps = {
+    ...deps,
+    fetchThreadMessages: async () => {
+      headerlessFetchCalls += 1;
+      return [
+        {
+          messageId: headerlessOooId,
+          threadId: "thread-os187",
+          from: "client@pa-mu.test",
+          subject: "Out of office",
+          preview: "Away",
+          text: "Away",
+          timestamp: "2026-11-12T12:00:00.000Z",
+          headers: {
+            "Auto-Submitted": "auto-replied",
+            "X-Autoreply": "yes",
+            Precedence: "bulk",
+          },
+        } satisfies TicketEmailMessage,
+      ];
+    },
+  };
+  await syncLinkedTicketsForEmailMessage({
+    workspaceId,
+    inboxId: "inbox-os187",
+    messageId: headerlessOooId,
+    threadId: "thread-os187",
+    messageAt: "2026-11-12T12:00:00.000Z",
+    message: {
+      messageId: headerlessOooId,
+      threadId: "thread-os187",
+      from: "client@pa-mu.test",
+      subject: "Out of office",
+      preview: "Away",
+      text: "Away",
+      timestamp: "2026-11-12T12:00:00.000Z",
+      // Intentionally no headers — poll list row.
+    },
+    deps: headerlessOooDeps,
+  });
+  assert.ok(headerlessFetchCalls >= 1, "header-less list row must fetch full message");
+  const afterHeaderlessOoo = await json(
+    app,
+    `/api/v1/tickets/${ticketId}`,
+    secret,
+  );
+  assert.equal(afterHeaderlessOoo.body?.status, "waiting");
+
+  const headerlessClientId = `msg-headerless-client-${randomUUID()}`;
+  let headerlessClientFetches = 0;
+  const headerlessClientDeps = {
+    ...deps,
+    fetchThreadMessages: async () => {
+      headerlessClientFetches += 1;
+      return [
+        {
+          messageId: headerlessClientId,
+          threadId: "thread-os187",
+          from: "client@pa-mu.test",
+          subject: "Real reply",
+          preview: "Need help",
+          text: "Need help again",
+          timestamp: "2026-11-12T13:00:00.000Z",
+          headers: { "Auto-Submitted": "no" },
+        } satisfies TicketEmailMessage,
+      ];
+    },
+  };
+  await syncLinkedTicketsForEmailMessage({
+    workspaceId,
+    inboxId: "inbox-os187",
+    messageId: headerlessClientId,
+    threadId: "thread-os187",
+    messageAt: "2026-11-12T13:00:00.000Z",
+    message: {
+      messageId: headerlessClientId,
+      threadId: "thread-os187",
+      from: "client@pa-mu.test",
+      subject: "Real reply",
+      preview: "Need help",
+      text: "Need help again",
+      timestamp: "2026-11-12T13:00:00.000Z",
+    },
+    deps: headerlessClientDeps,
+  });
+  assert.ok(headerlessClientFetches >= 1);
+  const afterHeaderlessClient = await json(
+    app,
+    `/api/v1/tickets/${ticketId}`,
+    secret,
+  );
+  assert.equal(afterHeaderlessClient.body?.status, "triage");
+
   // PATCH comment must 404 when comment belongs to another ticket.
   const foreign = await upsertEmailTimelineComment(workspaceId, {
     taskId: ticketId2,

@@ -19,6 +19,7 @@ import {
   type DbEmailThreadComment,
   type DbProject,
 } from "../db/schema.js";
+import { isAutomatedMailSkipStatus } from "../lib/automated-mail.js";
 import { newId } from "../lib/crypto.js";
 import {
   canPromoteEmailThreadWorkflowStatus,
@@ -1014,6 +1015,13 @@ export async function retriageEmailThreadOnInbound(
     /** Latest outbound/`sent` message time on the thread (poll path). */
     lastOutboundAt?: string | Date | number | null;
     labels?: readonly string[] | null;
+    /** Sender for automated-mail skip (OS-195). */
+    from?: string | null;
+    /** Headers for automated-mail skip (OS-195). */
+    headers?:
+      | Array<{ name: string; value: string }>
+      | Record<string, string>
+      | null;
     source?: "event" | "poll";
   },
 ): Promise<EmailThreadMetadata | null> {
@@ -1049,7 +1057,13 @@ export async function retriageEmailThreadOnInbound(
       return toEmailThreadMetadata(workspaceId, existing);
     }
 
+    const skipAutomated = isAutomatedMailSkipStatus({
+      from: input.from?.trim() || "",
+      headers: input.headers,
+    });
+
     const mayBounceStatus =
+      !skipAutomated &&
       shouldRetriageEmailThreadOnInbound(existing.status) &&
       shouldBounceWaitingThreadOnInbound({
         status: existing.status,

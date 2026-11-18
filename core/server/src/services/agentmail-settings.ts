@@ -38,6 +38,7 @@ export {
   listAgentMailMessages,
   getAgentMailMessage,
   getAgentMailThread,
+  getAgentMailMessageForRetriage,
   getAgentMailMessageAttachment,
   deleteAgentMailMessage,
   deleteAgentMailThreadMessage,

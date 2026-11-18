@@ -21,6 +21,13 @@ import { registerAgentChatRoutes } from "./agent-chat-routes.js";
 import { forbidden, getAuth, isAgentPersonaAuth } from "./route-helpers.js";
 
 export function registerApiRoutes(app: Hono) {
+  // OS-195 / OS-194 follow-up: auth-code reveal must never be cached, including
+  // the 401 that withAuth returns before the route handler runs.
+  app.use("/api/v1/transip/domains/:domainName/auth-code", async (c, next) => {
+    c.header("Cache-Control", "no-store, private");
+    c.header("Pragma", "no-cache");
+    await next();
+  });
   app.use("/api/v1/*", withAuth);
   // OS-146: agent persona keys never read/write integration settings.
   app.use("/api/v1/settings/*", async (c, next) => {

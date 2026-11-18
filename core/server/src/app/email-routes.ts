@@ -355,6 +355,8 @@ export function registerEmailRoutes(app: Hono) {
         // Waiting/Done cutoff does not fall back to updatedAt (bumped by edits).
         let messageAt: string | null = result.timestamp?.trim() || null;
         let lastOutboundAt: string | null = null;
+        let from: string | null = result.from?.trim() || null;
+        let headers: Record<string, string> | null = result.headers ?? null;
         const lookupThreadId = threadId?.trim() || null;
         if (lookupThreadId) {
           try {
@@ -367,26 +369,43 @@ export function registerEmailRoutes(app: Hono) {
             if (outboundMs != null) {
               lastOutboundAt = new Date(outboundMs).toISOString();
             }
-            if (!messageAt && messageId) {
+            if (messageId) {
               const match = thread.messages.find(
                 (entry) => entry.messageId === messageId,
               );
-              messageAt = match?.timestamp?.trim() || null;
+              if (!messageAt) {
+                messageAt = match?.timestamp?.trim() || null;
+              }
+              if (!from) {
+                from = match?.from?.trim() || null;
+              }
+              if (!headers && match?.headers) {
+                headers = match.headers;
+              }
             }
           } catch {
             // Fall through to single-message fetch below.
           }
         }
-        if (!messageAt && messageId) {
+        if ((!messageAt || !headers) && messageId) {
           try {
-            const detail = await agentmailSettingsService.getAgentMailMessage(
-              workspaceId,
-              inboxId,
-              messageId,
-            );
-            messageAt = detail.timestamp?.trim() || null;
+            const detail =
+              await agentmailSettingsService.getAgentMailMessageForRetriage(
+                workspaceId,
+                inboxId,
+                messageId,
+              );
+            if (!messageAt) {
+              messageAt = detail.timestamp?.trim() || null;
+            }
+            if (!from) {
+              from = detail.from?.trim() || null;
+            }
+            if (!headers && detail.headers) {
+              headers = detail.headers;
+            }
           } catch {
-            messageAt = null;
+            // Keep whatever we already resolved.
           }
         }
         await emailThreadsService.retriageEmailThreadOnInbound(
@@ -398,6 +417,8 @@ export function registerEmailRoutes(app: Hono) {
             messageAt,
             lastOutboundAt,
             labels,
+            from,
+            headers,
             source: "event",
           },
         );

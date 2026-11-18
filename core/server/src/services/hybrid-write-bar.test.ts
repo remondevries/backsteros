@@ -143,8 +143,23 @@ describe("hybrid write bar", () => {
       "Waiting must not bounce on inbound older than last outbound",
     );
     assert.ok(
-      emailRoutes.includes("getAgentMailMessage"),
-      "webhook without payload timestamp must fetch the message",
+      email.includes("isAutomatedMailSkipStatus"),
+      "inbound retriage must skip out-of-office / auto-replies (OS-195)",
+    );
+    assert.ok(
+      emailRoutes.includes("getAgentMailMessageForRetriage") &&
+        emailRoutes.includes("from") &&
+        emailRoutes.includes("headers"),
+      "webhook retriage must pass from/headers (fetch when missing)",
+    );
+    assert.ok(
+      messages.includes("getAgentMailMessageForRetriage") &&
+        messages.includes("headers"),
+      "poll retriage must fetch headers when list rows omit them",
+    );
+    assert.ok(
+      emailRoutes.includes("getAgentMailMessageForRetriage"),
+      "webhook without payload timestamp/headers must fetch the message",
     );
     assert.equal(
       emailRoutes.includes("new Date().toISOString()"),
