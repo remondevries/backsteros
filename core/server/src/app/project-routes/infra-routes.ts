@@ -97,6 +97,10 @@ export function registerProjectInfraRoutes(app: Hono) {
   });
 
   app.post("/api/v1/transip/domains/:domainName/auth-code", async (c) => {
+    // Never cache transfer codes (or the fact of a reveal attempt).
+    c.header("Cache-Control", "no-store, private");
+    c.header("Pragma", "no-cache");
+
     const auth = getAuth(c);
     if (!auth) {
       return c.json(unauthorized(), 401);
