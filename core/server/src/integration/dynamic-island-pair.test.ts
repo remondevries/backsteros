@@ -4,7 +4,7 @@ import test from "node:test";
 
 import { and, eq, isNull } from "drizzle-orm";
 
-import { API_KEY_SCOPES } from "@backsteros/contracts";
+import { AGENT_API_KEY_SCOPES } from "@backsteros/contracts";
 
 import { createApp } from "../app.js";
 import { db, sqlClient } from "../db/index.js";
@@ -132,7 +132,7 @@ test("OS-88 Dynamic Island pair is local-shell owner only and rotates one key", 
     name: "os88-owner-full",
     prefix: apiKeyLookupPrefix(ownerSecret),
     keyHash: hashApiKey(ownerSecret),
-    scopes: [...API_KEY_SCOPES],
+    scopes: [...AGENT_API_KEY_SCOPES],
     contactId: null,
   });
   extraKeyIds.push(ownerKeyId);
@@ -162,7 +162,7 @@ test("OS-88 Dynamic Island pair is local-shell owner only and rotates one key", 
     name: "os88-agent",
     prefix: apiKeyLookupPrefix(agentSecret),
     keyHash: hashApiKey(agentSecret),
-    scopes: [...API_KEY_SCOPES],
+    scopes: [...AGENT_API_KEY_SCOPES],
     contactId: agentContactId,
   });
   extraKeyIds.push(agentKeyId);

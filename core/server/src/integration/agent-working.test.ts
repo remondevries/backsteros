@@ -4,7 +4,7 @@ import test, { after } from "node:test";
 
 import { eq } from "drizzle-orm";
 
-import { API_KEY_SCOPES } from "@backsteros/contracts";
+import { AGENT_API_KEY_SCOPES } from "@backsteros/contracts";
 
 import { createApp } from "../app.js";
 import { db, sqlClient } from "../db/index.js";
@@ -108,7 +108,7 @@ async function seed() {
       name: "ralph",
       prefix: apiKeyLookupPrefix(ralphSecret),
       keyHash: hashApiKey(ralphSecret),
-      scopes: [...API_KEY_SCOPES],
+      scopes: [...AGENT_API_KEY_SCOPES],
     },
     {
       id: id("other-key"),
@@ -118,7 +118,7 @@ async function seed() {
       name: "other",
       prefix: apiKeyLookupPrefix(otherSecret),
       keyHash: hashApiKey(otherSecret),
-      scopes: [...API_KEY_SCOPES],
+      scopes: [...AGENT_API_KEY_SCOPES],
     },
     {
       id: id("owner-key"),
@@ -128,7 +128,7 @@ async function seed() {
       name: "owner",
       prefix: apiKeyLookupPrefix(ownerSecret),
       keyHash: hashApiKey(ownerSecret),
-      scopes: [...API_KEY_SCOPES],
+      scopes: [...AGENT_API_KEY_SCOPES],
     },
   ]);
   await db.insert(projects).values({

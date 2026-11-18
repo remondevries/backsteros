@@ -109,6 +109,19 @@ export async function listAgentMailMessages(
 
   const apiMessages: AgentMailMessage[] = [];
   const draftRecords: { inboxId: string; draft: AgentMailDraftSummary }[] = [];
+  /** Raw AgentMail rows (headers/from) for OS-187 ticket timeline sync. */
+  const rawListByKey = new Map<
+    string,
+    {
+      from: string;
+      subject: string;
+      preview: string | null;
+      timestamp: string;
+      threadId: string;
+      labels: string[];
+      headers?: Record<string, string> | null;
+    }
+  >();
 
   for (const [index, page] of pages.entries()) {
     if (page.status !== "fulfilled") {
@@ -119,14 +132,22 @@ export async function listAgentMailMessages(
       continue;
     }
     const { inboxId, messages, rawDrafts } = page.value;
-    apiMessages.push(
-      ...messages
-        .filter((message) => {
-          const isNotification = hasAgentMailNotificationsLabel(message.labels);
-          return notificationMode === "only" ? isNotification : !isNotification;
-        })
-        .map(toApiMessage),
-    );
+    const visible = messages.filter((message) => {
+      const isNotification = hasAgentMailNotificationsLabel(message.labels);
+      return notificationMode === "only" ? isNotification : !isNotification;
+    });
+    for (const message of visible) {
+      rawListByKey.set(`${message.inboxId}:${message.messageId}`, {
+        from: message.from,
+        subject: message.subject,
+        preview: message.preview,
+        timestamp: message.timestamp,
+        threadId: message.threadId ?? "",
+        labels: [...(message.labels ?? [])],
+        headers: message.headers ?? null,
+      });
+    }
+    apiMessages.push(...visible.map(toApiMessage));
     for (const draft of rawDrafts) {
       draftRecords.push({ inboxId, draft });
     }
@@ -271,9 +292,8 @@ export async function listAgentMailMessages(
       // OS-187: only sync linked tickets for a genuinely new inbound. Re-polls
       // must not re-fetch AgentMail threads or bounce ticket status.
       if (!isNewInbound) continue;
-      const listRow = apiMessages.find(
-        (row) =>
-          row.messageId === inbound.messageId && row.inboxId === inbound.inboxId,
+      const rawRow = rawListByKey.get(
+        `${inbound.inboxId}:${inbound.messageId}`,
       );
       void import("../ticket-email-sync.js")
         .then(({ syncLinkedTicketsForEmailMessage }) =>
@@ -282,24 +302,25 @@ export async function listAgentMailMessages(
             inboxId: inbound.inboxId,
             messageId: inbound.messageId,
             threadId: inbound.threadId,
-            direction: "inbound",
+            // Direction is classified by sender inside sync — never hard-code
+            // inbound here (Remon's own mail must not re-triage).
             messageAt,
-            message: listRow
+            message: rawRow
               ? {
-                  messageId: listRow.messageId,
-                  threadId: listRow.threadId || inbound.threadId || "",
-                  from: listRow.from,
-                  subject: listRow.subject,
-                  preview: listRow.preview,
+                  messageId: inbound.messageId,
+                  threadId: rawRow.threadId || inbound.threadId || "",
+                  from: rawRow.from,
+                  subject: rawRow.subject,
+                  preview: rawRow.preview,
                   text: null,
                   timestamp:
                     typeof messageAt === "number"
                       ? new Date(messageAt).toISOString()
                       : messageAt == null
-                        ? listRow.timestamp
+                        ? rawRow.timestamp
                         : String(messageAt),
-                  direction: "inbound",
-                  labels: listRow.labels,
+                  labels: rawRow.labels,
+                  headers: rawRow.headers,
                 }
               : null,
           }),

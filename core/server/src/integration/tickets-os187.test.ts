@@ -257,7 +257,39 @@ test("OS-187: visibility, authorship, triage, dedupe, deterministic id, list ing
   );
   assert.equal(portalEscalation.response.status, 403);
 
+  // GET /activities?taskId= applies the same portal visibility rule.
+  const portalActivities = await json(
+    app,
+    `/api/v1/activities?taskId=${ticketId}&types=comment`,
+    portalSecret,
+  );
+  assert.equal(portalActivities.response.status, 200);
+  const portalActivityRows = (portalActivities.body?.activities ?? []) as Array<{
+    type: string;
+    body: string | null;
+    data?: { visibility?: string };
+  }>;
+  assert.ok(
+    portalActivityRows.every(
+      (row) =>
+        row.type !== "comment" ||
+        row.data?.visibility !== "internal",
+    ),
+  );
+  assert.ok(!portalActivityRows.some((row) => row.body?.includes("Internal note")));
+  const portalActivitiesEscalate = await json(
+    app,
+    `/api/v1/activities?taskId=${ticketId}&visibility=all`,
+    portalSecret,
+  );
+  assert.equal(portalActivitiesEscalate.response.status, 403);
+
   let sendMailCalls = 0;
+  const outboundIdentity = {
+    inboxEmails: ["remon@lemo-design.nl"],
+    ownEmails: ["remon@lemo-design.nl", "email@remondevries.com"],
+    ownDomains: ["lemo-design.nl"],
+  };
   const messages: TicketEmailMessage[] = [
     {
       messageId: emptyMessageId,
@@ -267,7 +299,6 @@ test("OS-187: visibility, authorship, triage, dedupe, deterministic id, list ing
       preview: null,
       text: null,
       timestamp: "2026-11-09T08:00:00.000Z",
-      direction: "inbound",
     },
     {
       messageId,
@@ -277,7 +308,6 @@ test("OS-187: visibility, authorship, triage, dedupe, deterministic id, list ing
       preview: "Need editor rights",
       text: "Need editor rights",
       timestamp: "2026-11-09T09:00:00.000Z",
-      direction: "inbound",
     },
     {
       messageId: messageId2,
@@ -287,7 +317,6 @@ test("OS-187: visibility, authorship, triage, dedupe, deterministic id, list ing
       preview: "Granted",
       text: "Granted",
       timestamp: "2026-11-10T10:00:00.000Z",
-      direction: "outbound",
     },
   ];
   const deps = {
@@ -300,6 +329,7 @@ test("OS-187: visibility, authorship, triage, dedupe, deterministic id, list ing
       if (email === "client@pa-mu.test") return clientContactId;
       return null;
     },
+    resolveOutboundIdentity: async () => outboundIdentity,
   };
 
   // Placeholder first, then real body on the same message id.
@@ -486,7 +516,6 @@ test("OS-187: visibility, authorship, triage, dedupe, deterministic id, list ing
           preview: "Granted",
           text: "Granted",
           timestamp: "2026-11-10T10:00:00.000Z",
-          direction: "outbound",
         },
       ],
     },
@@ -494,6 +523,123 @@ test("OS-187: visibility, authorship, triage, dedupe, deterministic id, list ing
   const stillCompleted = await json(app, `/api/v1/tickets/${ticketId}`, secret);
   assert.equal(stillCompleted.body?.status, "completed");
   assert.equal(sendMailCalls, 0);
+
+  // Poll hard-coding inbound must not re-triage Remon's own mail.
+  const ownMailId = `msg-own-${randomUUID()}`;
+  const ownMailPatch = await json(app, `/api/v1/tickets/${ticketId}`, secret, {
+    method: "PATCH",
+    body: JSON.stringify({ status: "in_progress", activityActor: "user" }),
+  });
+  assert.equal(ownMailPatch.response.status, 200);
+  assert.equal(ownMailPatch.body?.status, "in_progress");
+  await syncLinkedTicketsForEmailMessage({
+    workspaceId,
+    inboxId: "inbox-os187",
+    messageId: ownMailId,
+    threadId: "thread-os187",
+    direction: "inbound",
+    messageAt: "2026-11-12T09:00:00.000Z",
+    message: {
+      messageId: ownMailId,
+      threadId: "thread-os187",
+      from: "Remon <remon@lemo-design.nl>",
+      subject: "Own reply",
+      preview: "Working on it",
+      text: "Working on it",
+      timestamp: "2026-11-12T09:00:00.000Z",
+      direction: "inbound",
+    },
+    deps,
+  });
+  const afterOwnMail = await json(app, `/api/v1/tickets/${ticketId}`, secret);
+  assert.equal(afterOwnMail.body?.status, "in_progress");
+
+  // Auto-reply headers must skip triage even when direction looks inbound.
+  const autoReplyId = `msg-auto-${randomUUID()}`;
+  await syncLinkedTicketsForEmailMessage({
+    workspaceId,
+    inboxId: "inbox-os187",
+    messageId: autoReplyId,
+    threadId: "thread-os187",
+    messageAt: "2026-11-12T10:00:00.000Z",
+    message: {
+      messageId: autoReplyId,
+      threadId: "thread-os187",
+      from: "client@pa-mu.test",
+      subject: "Out of office",
+      preview: "I am away",
+      text: "I am away",
+      timestamp: "2026-11-12T10:00:00.000Z",
+      headers: {
+        "Auto-Submitted": "auto-replied",
+        "X-Autoreply": "yes",
+        Precedence: "bulk",
+      },
+    },
+    deps,
+  });
+  const afterAutoReply = await json(app, `/api/v1/tickets/${ticketId}`, secret);
+  assert.equal(afterAutoReply.body?.status, "in_progress");
+
+  // Preview-only poll entry upgrades to full body without re-triage.
+  const previewId = `msg-preview-${randomUUID()}`;
+  await syncLinkedTicketsForEmailMessage({
+    workspaceId,
+    inboxId: "inbox-os187",
+    messageId: previewId,
+    threadId: "thread-os187",
+    messageAt: "2026-11-12T11:00:00.000Z",
+    message: {
+      messageId: previewId,
+      threadId: "thread-os187",
+      from: "client@pa-mu.test",
+      subject: "Preview first",
+      preview: "Short preview",
+      text: null,
+      timestamp: "2026-11-12T11:00:00.000Z",
+    },
+    deps,
+  });
+  const afterPreview = await json(app, `/api/v1/tickets/${ticketId}`, secret);
+  assert.equal(afterPreview.body?.status, "triage");
+  await json(app, `/api/v1/tickets/${ticketId}`, secret, {
+    method: "PATCH",
+    body: JSON.stringify({ status: "in_progress", activityActor: "user" }),
+  });
+  await syncLinkedTicketsForEmailMessage({
+    workspaceId,
+    inboxId: "inbox-os187",
+    messageId: previewId,
+    threadId: "thread-os187",
+    messageAt: "2026-11-12T11:00:00.000Z",
+    message: {
+      messageId: previewId,
+      threadId: "thread-os187",
+      from: "client@pa-mu.test",
+      subject: "Preview first",
+      preview: "Short preview",
+      text: "Full body that is longer than the short preview from the list poll.",
+      timestamp: "2026-11-12T11:00:00.000Z",
+    },
+    deps,
+  });
+  const afterUpgrade = await json(app, `/api/v1/tickets/${ticketId}`, secret);
+  assert.equal(afterUpgrade.body?.status, "in_progress");
+  const upgraded = await db
+    .select({ body: taskComments.body })
+    .from(taskComments)
+    .where(
+      eq(
+        taskComments.id,
+        ticketEmailTimelineCommentId(workspaceId, ticketId, previewId),
+      ),
+    )
+    .limit(1);
+  assert.ok(
+    upgraded[0]?.body.includes(
+      "Full body that is longer than the short preview",
+    ),
+  );
 
   // PATCH comment must 404 when comment belongs to another ticket.
   const foreign = await upsertEmailTimelineComment(workspaceId, {

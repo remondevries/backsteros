@@ -4,7 +4,7 @@ import test from "node:test";
 
 import { eq, inArray } from "drizzle-orm";
 
-import { API_KEY_SCOPES } from "@backsteros/contracts";
+import { AGENT_API_KEY_SCOPES } from "@backsteros/contracts";
 
 import { createApp } from "../app.js";
 import { db, sqlClient } from "../db/index.js";
@@ -60,7 +60,7 @@ test("API enforces auth, scopes, workspace isolation, and domain contracts", asy
       name: "integration",
       prefix: apiKeyLookupPrefix(fullSecret),
       keyHash: hashApiKey(fullSecret),
-      scopes: [...API_KEY_SCOPES],
+      scopes: [...AGENT_API_KEY_SCOPES],
     },
     {
       id: id("key"),
@@ -69,7 +69,7 @@ test("API enforces auth, scopes, workspace isolation, and domain contracts", asy
       name: "isolated",
       prefix: apiKeyLookupPrefix(otherSecret),
       keyHash: hashApiKey(otherSecret),
-      scopes: [...API_KEY_SCOPES],
+      scopes: [...AGENT_API_KEY_SCOPES],
     },
     {
       id: id("key"),

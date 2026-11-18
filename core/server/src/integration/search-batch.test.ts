@@ -4,7 +4,7 @@ import test from "node:test";
 
 import { eq } from "drizzle-orm";
 
-import { API_KEY_SCOPES } from "@backsteros/contracts";
+import { AGENT_API_KEY_SCOPES } from "@backsteros/contracts";
 
 import { createApp } from "../app.js";
 import { db } from "../db/index.js";
@@ -115,7 +115,7 @@ test("OS-76 search batch + include=task + short-TTL cache", async (context) => {
     name: "os76",
     prefix: apiKeyLookupPrefix(secret),
     keyHash: hashApiKey(secret),
-    scopes: [...API_KEY_SCOPES],
+    scopes: [...AGENT_API_KEY_SCOPES],
   });
   await db.insert(projects).values({
     id: projectId,
@@ -277,7 +277,7 @@ test("OS-76 include=task cursor follow reaches the end without looping", async (
     name: "os76-cursor",
     prefix: apiKeyLookupPrefix(secret),
     keyHash: hashApiKey(secret),
-    scopes: [...API_KEY_SCOPES],
+    scopes: [...AGENT_API_KEY_SCOPES],
   });
   await db.insert(projects).values({
     id: projectId,
@@ -409,7 +409,7 @@ test("OS-76 search cache invalidates after task create (read-after-write)", asyn
     name: "os76-raw",
     prefix: apiKeyLookupPrefix(secret),
     keyHash: hashApiKey(secret),
-    scopes: [...API_KEY_SCOPES],
+    scopes: [...AGENT_API_KEY_SCOPES],
   });
   await db.insert(projects).values({
     id: projectId,

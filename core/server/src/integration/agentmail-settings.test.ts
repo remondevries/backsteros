@@ -4,7 +4,7 @@ import test from "node:test";
 
 import { eq } from "drizzle-orm";
 
-import { API_KEY_SCOPES, updateAgentMailSettingsSchema } from "@backsteros/contracts";
+import { AGENT_API_KEY_SCOPES, updateAgentMailSettingsSchema } from "@backsteros/contracts";
 
 import { createApp } from "../app.js";
 import { db } from "../db/index.js";
@@ -47,7 +47,7 @@ test("AgentMail settings PATCH stores API key", async (context) => {
     name: "settings",
     prefix: apiKeyLookupPrefix(secret),
     keyHash: hashApiKey(secret),
-    scopes: [...API_KEY_SCOPES],
+    scopes: [...AGENT_API_KEY_SCOPES],
   });
 
   const response = await app.request("/api/v1/settings/agentmail", {

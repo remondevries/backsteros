@@ -91,7 +91,9 @@ export const API_KEY_SCOPES = [
    * Client-portal marker (OS-187). May mix with tasks:read etc.
    * Restricts comment visibility to `client_visible` (cannot request all/internal).
    * Not an exclusive door and not required for full Access.
-   * Mark the live portal key by appending this scope — do not rotate the secret.
+   * Mark the live portal key via a DB scopes update or a new key (PATCH cannot
+   * change scopes) — do not rotate the secret. Rebuild desktop first: 0.2.271
+   * rejects unknown scopes.
    */
   "portal",
 ] as const;
@@ -109,7 +111,10 @@ const EXCLUSIVE_API_KEY_DOOR_SCOPE_SET = new Set<string>(
 
 /**
  * Marker scope for the client portal API key (OS-187).
- * Append via PATCH scopes without rotating the secret.
+ * `updateApiKeySchema` has no `scopes` field, so append via a direct DB update
+ * on `api_keys.scopes` (or mint a new key that includes `portal`). Do not rotate
+ * the live portal secret. Rebuild desktop before the key is used: 0.2.271
+ * rejects unknown scopes and will fail auth until contracts include `portal`.
  */
 export const PORTAL_API_KEY_MARKER_SCOPE = "portal" as const satisfies
   (typeof API_KEY_SCOPES)[number];

@@ -4,7 +4,7 @@ import test from "node:test";
 
 import { and, eq, isNull } from "drizzle-orm";
 
-import { API_KEY_SCOPES } from "@backsteros/contracts";
+import { AGENT_API_KEY_SCOPES } from "@backsteros/contracts";
 
 import { createApp } from "../app.js";
 import { db, sqlClient } from "../db/index.js";
@@ -85,7 +85,7 @@ test("project restore: soft-delete → restore same identity; auth and edge case
       name: "write",
       prefix: apiKeyLookupPrefix(secret),
       keyHash: hashApiKey(secret),
-      scopes: [...API_KEY_SCOPES],
+      scopes: [...AGENT_API_KEY_SCOPES],
     },
     {
       id: id("key"),

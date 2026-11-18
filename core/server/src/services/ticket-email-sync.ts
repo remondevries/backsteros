@@ -110,10 +110,19 @@ function headerMap(
   return out;
 }
 
+function isMailerDaemonLocal(local: string): boolean {
+  return (
+    local === "mailer-daemon" ||
+    local === "postmaster" ||
+    local.startsWith("mailer-daemon+") ||
+    local.startsWith("postmaster+")
+  );
+}
+
 /**
  * Auto-replies and bounces must not move ticket status.
- * Checks Auto-Submitted, X-Autoreply/X-Autorespond, Precedence, and
- * mailer-daemon/postmaster senders.
+ * Checks Auto-Submitted, X-Autoreply/X-Autorespond, Precedence, Return-Path,
+ * and mailer-daemon/postmaster senders.
  */
 export function isAutomatedMailSkipStatus(input: {
   from: string;
@@ -121,14 +130,7 @@ export function isAutomatedMailSkipStatus(input: {
 }): boolean {
   const fromEmail = extractEmailAddress(input.from);
   const local = fromEmail.split("@")[0] ?? "";
-  if (
-    local === "mailer-daemon" ||
-    local === "postmaster" ||
-    local.startsWith("mailer-daemon+") ||
-    local.startsWith("postmaster+")
-  ) {
-    return true;
-  }
+  if (isMailerDaemonLocal(local)) return true;
 
   const headers = headerMap(input.headers);
   const autoSubmitted = headers.get("auto-submitted")?.trim().toLowerCase();
@@ -142,7 +144,48 @@ export function isAutomatedMailSkipStatus(input: {
   ) {
     return true;
   }
+  const returnPath = headers.get("return-path")?.trim() ?? "";
+  if (returnPath) {
+    const returnEmail = extractEmailAddress(returnPath);
+    const returnLocal = returnEmail.split("@")[0] ?? "";
+    if (isMailerDaemonLocal(returnLocal)) return true;
+  }
   return false;
+}
+
+/**
+ * Shared/public mailbox domains — never treat as "own" for outbound
+ * classification. Only exact own addresses and custom owned domains count.
+ */
+export const SHARED_PUBLIC_EMAIL_DOMAINS = [
+  "agentmail.to",
+  "gmail.com",
+  "googlemail.com",
+  "outlook.com",
+  "hotmail.com",
+  "icloud.com",
+  "me.com",
+  "live.com",
+  "yahoo.com",
+  "proton.me",
+  "protonmail.com",
+] as const;
+
+const SHARED_PUBLIC_EMAIL_DOMAIN_SET = new Set<string>(
+  SHARED_PUBLIC_EMAIL_DOMAINS,
+);
+
+export function isSharedPublicEmailDomain(domain: string): boolean {
+  const normalized = domain.trim().toLowerCase().replace(/^@/, "");
+  return SHARED_PUBLIC_EMAIL_DOMAIN_SET.has(normalized);
+}
+
+function pushOwnDomain(ownDomains: string[], domain: string | undefined) {
+  if (!domain) return;
+  const normalized = domain.trim().toLowerCase().replace(/^@/, "");
+  if (!normalized.includes(".")) return;
+  if (isSharedPublicEmailDomain(normalized)) return;
+  ownDomains.push(normalized);
 }
 
 function normalizeEmailSet(values: Iterable<string> | undefined): Set<string> {
@@ -167,7 +210,11 @@ function normalizeDomainSet(values: Iterable<string> | undefined): Set<string> {
 
 /**
  * Outbound when the sender is a workspace inbox, Remon/owner address,
- * workspace domain, internal agent contact, or AgentMail `sent` label.
+ * owned custom domain, internal agent contact, or AgentMail `sent` label.
+ *
+ * Always classify by sender when `from` is present — an explicit direction
+ * hint must not override own-address/domain checks (poll used to hard-code
+ * inbound and win before the own-address check).
  */
 export function resolveTicketEmailDirection(input: {
   from: string;
@@ -177,22 +224,26 @@ export function resolveTicketEmailDirection(input: {
   ownDomains?: Iterable<string>;
   labels?: readonly string[] | null;
 }): "inbound" | "outbound" {
-  if (input.explicit) return input.explicit;
   if (isAgentMailOutboundMessage(input.labels)) return "outbound";
 
   const fromEmail = extractEmailAddress(input.from);
-  if (!fromEmail.includes("@")) return "inbound";
+  if (fromEmail.includes("@")) {
+    const inboxEmails = normalizeEmailSet(input.inboxEmails);
+    const ownEmails = normalizeEmailSet(input.ownEmails);
+    if (inboxEmails.has(fromEmail) || ownEmails.has(fromEmail)) {
+      return "outbound";
+    }
 
-  const inboxEmails = normalizeEmailSet(input.inboxEmails);
-  const ownEmails = normalizeEmailSet(input.ownEmails);
-  if (inboxEmails.has(fromEmail) || ownEmails.has(fromEmail)) {
-    return "outbound";
+    const domain = fromEmail.split("@")[1] ?? "";
+    const ownDomains = normalizeDomainSet(input.ownDomains);
+    if (domain && ownDomains.has(domain) && !isSharedPublicEmailDomain(domain)) {
+      return "outbound";
+    }
+    return "inbound";
   }
 
-  const domain = fromEmail.split("@")[1] ?? "";
-  const ownDomains = normalizeDomainSet(input.ownDomains);
-  if (domain && ownDomains.has(domain)) return "outbound";
-
+  // No usable From — fall back to an explicit hint only.
+  if (input.explicit) return input.explicit;
   return "inbound";
 }
 
@@ -252,8 +303,7 @@ async function defaultResolveOutboundIdentity(
         if (!email || !email.includes("@")) continue;
         inboxEmails.push(email);
         ownEmails.push(email);
-        const domain = email.split("@")[1];
-        if (domain) ownDomains.push(domain);
+        pushOwnDomain(ownDomains, email.split("@")[1]);
       }
     }
   } catch {
@@ -269,8 +319,7 @@ async function defaultResolveOutboundIdentity(
   const ownerEmail = owner?.email?.trim().toLowerCase();
   if (ownerEmail?.includes("@")) {
     ownEmails.push(ownerEmail);
-    const domain = ownerEmail.split("@")[1];
-    if (domain) ownDomains.push(domain);
+    pushOwnDomain(ownDomains, ownerEmail.split("@")[1]);
   }
 
   // Agent persona contacts (API keys attached to a contact).
@@ -317,6 +366,9 @@ async function defaultFetchThreadMessages(input: {
     text: message.text ?? message.extractedText,
     timestamp: message.timestamp,
     labels: message.labels,
+    headers: message.headers ?? null,
+    // Direction is always re-resolved from sender at upsert time; leave unset
+    // so an explicit hint cannot override own-address checks.
     direction: resolveDirection(
       message.from,
       inboxEmail,
@@ -656,15 +708,20 @@ export async function syncTicketLinkedEmails(input: {
 
 const EMPTY_EMAIL_PLACEHOLDER = "(empty email)";
 
-function needsPlaceholderReplace(
+/**
+ * Upgrade empty placeholders and preview-only bodies when a fuller message
+ * arrives (poll snapshot → webhook/full fetch). Never shrink a longer body.
+ */
+export function needsTimelineBodyUpgrade(
   existingBody: string,
   nextBody: string,
 ): boolean {
-  return (
-    existingBody.trim() === EMPTY_EMAIL_PLACEHOLDER &&
-    nextBody.trim().length > 0 &&
-    nextBody.trim() !== EMPTY_EMAIL_PLACEHOLDER
-  );
+  const existing = existingBody.trim();
+  const next = nextBody.trim();
+  if (!next || next === EMPTY_EMAIL_PLACEHOLDER) return false;
+  if (existing === EMPTY_EMAIL_PLACEHOLDER) return true;
+  if (existing === next) return false;
+  return next.length > existing.length;
 }
 
 /**
@@ -680,11 +737,21 @@ export async function syncLinkedTicketsForEmailMessage(input: {
   inboxId: string;
   messageId: string;
   threadId?: string | null;
-  direction: "inbound" | "outbound";
+  /**
+   * Hint only when From is missing. Sender classification always wins when
+   * From is present — do not hard-code inbound on the poll/webhook path.
+   */
+  direction?: "inbound" | "outbound";
   /** Real message timestamp when known (list/webhook). */
   messageAt?: string | Date | number | null;
   /** Optional snapshot — skips AgentMail getThread when provided. */
   message?: Partial<TicketEmailMessage> | null;
+  /**
+   * Headers from a webhook/list payload when the body snapshot is incomplete.
+   * Merged onto the resolved message so auto-reply skip still works after a
+   * full thread fetch.
+   */
+  headers?: TicketEmailMessage["headers"];
   deps?: TicketEmailSyncDeps;
 }): Promise<void> {
   void input.deps?.sendMail;
@@ -709,8 +776,22 @@ export async function syncLinkedTicketsForEmailMessage(input: {
     deps.resolveOutboundIdentity ?? defaultResolveOutboundIdentity;
   const identity = await resolveIdentity(input.workspaceId);
 
+  const snapshotProvided = Boolean(input.message?.messageId || input.message);
+  const snapshotBody = snapshotProvided
+    ? formatTimelineBody({
+        messageId: input.messageId,
+        threadId: thread.threadKey,
+        from: input.message?.from ?? "",
+        subject: input.message?.subject ?? "",
+        preview: input.message?.preview ?? null,
+        text: input.message?.text ?? null,
+        timestamp: input.message?.timestamp ?? "",
+      })
+    : null;
+
   // Cheap re-poll guard: if every linked ticket already has this message and
-  // none need placeholder replacement, skip AgentMail entirely.
+  // none need a body upgrade, skip AgentMail entirely. When no snapshot is
+  // provided (webhook), allow a full fetch so preview-only rows can upgrade.
   let anyNeedsWork = false;
   const existingByTicket = new Map<
     string,
@@ -728,14 +809,26 @@ export async function syncLinkedTicketsForEmailMessage(input: {
       anyNeedsWork = true;
       continue;
     }
-    if (existing.body.trim() === EMPTY_EMAIL_PLACEHOLDER) {
+    if (snapshotProvided) {
+      if (
+        snapshotBody &&
+        needsTimelineBodyUpgrade(existing.body, snapshotBody)
+      ) {
+        anyNeedsWork = true;
+      }
+      continue;
+    }
+    // No list/webhook body snapshot: allow a full fetch to upgrade
+    // preview-only rows (or fill placeholders). Bare re-polls without
+    // headers/snapshot stay no-ops so we do not re-fetch forever.
+    if (existing.body.trim() === EMPTY_EMAIL_PLACEHOLDER || input.headers) {
       anyNeedsWork = true;
     }
   }
   if (!anyNeedsWork) return;
 
   let messages: TicketEmailMessage[] = [];
-  if (input.message?.messageId || input.message) {
+  if (snapshotProvided) {
     const atMs =
       input.messageAt instanceof Date
         ? input.messageAt.getTime()
@@ -756,7 +849,8 @@ export async function syncLinkedTicketsForEmailMessage(input: {
         preview: input.message?.preview ?? null,
         text: input.message?.text ?? null,
         timestamp: timestamp || new Date().toISOString(),
-        direction: input.message?.direction ?? input.direction,
+        // Never stamp an explicit direction from the poll/webhook hint —
+        // classify by sender below.
         labels: input.message?.labels,
         headers: input.message?.headers,
       },
@@ -801,7 +895,6 @@ export async function syncLinkedTicketsForEmailMessage(input: {
       preview: input.message?.preview ?? null,
       text: input.message?.text ?? null,
       timestamp: fallbackTimestamp ?? new Date().toISOString(),
-      direction: input.direction,
       labels: input.message?.labels,
       headers: input.message?.headers,
     } satisfies TicketEmailMessage);
@@ -809,11 +902,17 @@ export async function syncLinkedTicketsForEmailMessage(input: {
   if (fallbackTimestamp && (!message.timestamp || message.from === "")) {
     message.timestamp = message.timestamp || fallbackTimestamp;
   }
+  if (!message.headers && input.headers) {
+    message.headers = input.headers;
+  } else if (!message.headers && input.message?.headers) {
+    message.headers = input.message.headers;
+  }
 
   const direction = resolveDirection(
     message.from,
     null,
-    message.direction ?? input.direction,
+    // Only use the caller hint when From is missing.
+    message.from?.trim() ? undefined : input.direction,
     identity,
     message.labels,
   );
@@ -822,8 +921,8 @@ export async function syncLinkedTicketsForEmailMessage(input: {
     const existing = existingByTicket.get(ticket.id);
     if (existing && !existing.deletedAt) {
       const nextBody = formatTimelineBody(message);
-      if (!needsPlaceholderReplace(existing.body, nextBody)) {
-        // Already recorded — never re-triage on re-poll / placeholder skip.
+      if (!needsTimelineBodyUpgrade(existing.body, nextBody)) {
+        // Already recorded — never re-triage on re-poll / body-upgrade skip.
         continue;
       }
     }

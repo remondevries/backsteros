@@ -9,7 +9,7 @@ import test, { after } from "node:test";
 
 import { eq } from "drizzle-orm";
 
-import { AGENT_API_KEY_SCOPES, API_KEY_SCOPES } from "@backsteros/contracts";
+import { AGENT_API_KEY_SCOPES } from "@backsteros/contracts";
 
 import { createApp } from "../app.js";
 import { db, sqlClient } from "../db/index.js";
@@ -199,7 +199,7 @@ test("email draft card: mock send, discard, owner-only, one-shot 409", async (co
     name: "owner",
     prefix: apiKeyLookupPrefix(ownerSecret),
     keyHash: hashApiKey(ownerSecret),
-    scopes: [...API_KEY_SCOPES],
+    scopes: [...AGENT_API_KEY_SCOPES],
   });
   await db.insert(apiKeys).values({
     id: agentKeyId,

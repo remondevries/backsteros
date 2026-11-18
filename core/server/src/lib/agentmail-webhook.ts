@@ -1,5 +1,9 @@
 import { Webhook } from "svix";
 
+import {
+  formatAgentMailAddress,
+  mapAgentMailMessageHeaders,
+} from "./agentmail-client.js";
 import { invalidateAgentMailMessageDetailCache } from "./agentmail-message-detail-cache.js";
 import { publishEmailUpdated } from "./email-inbox-events.js";
 
@@ -22,6 +26,11 @@ export type AgentMailWebhookPayload = {
   threadId: string | null;
   timestamp: string | null;
   labels: string[];
+  from: string | null;
+  subject: string | null;
+  preview: string | null;
+  text: string | null;
+  headers: Record<string, string> | null;
 };
 
 export function pruneWebhookDedupe(now = Date.now()): void {
@@ -89,8 +98,38 @@ export function parseAgentMailWebhookPayload(
   const labels = rawLabels.filter(
     (value): value is string => typeof value === "string" && value.trim().length > 0,
   );
+  const from = message ? formatAgentMailAddress(message.from) || null : null;
+  const subject =
+    (message && typeof message.subject === "string" && message.subject) || null;
+  const preview =
+    (message && typeof message.preview === "string" && message.preview) || null;
+  const text =
+    (message && typeof message.text === "string" && message.text) ||
+    (message &&
+      typeof message.extracted_text === "string" &&
+      message.extracted_text) ||
+    (message &&
+      typeof message.extractedText === "string" &&
+      message.extractedText) ||
+    null;
+  const headers = message
+    ? mapAgentMailMessageHeaders(message.headers)
+    : null;
   if (!eventType) return null;
-  return { eventType, eventId, inboxId, messageId, threadId, timestamp, labels };
+  return {
+    eventType,
+    eventId,
+    inboxId,
+    messageId,
+    threadId,
+    timestamp,
+    labels,
+    from,
+    subject,
+    preview,
+    text,
+    headers,
+  };
 }
 
 export function verifyAgentMailWebhook(
@@ -226,7 +265,9 @@ export function handleAgentMailWebhookDelivery(input: {
           error instanceof Error ? error.message : error,
         );
       });
-    // OS-187: append inbound mail to linked support-ticket timelines (no send).
+    // OS-187: append mail to linked support-ticket timelines (no send).
+    // Pass headers always; use a body snapshot only when text/preview is present
+    // so a headers-only webhook still fetches the full thread for upgrades.
     void import("../services/ticket-email-sync.js")
       .then(({ syncLinkedTicketsForEmailMessage }) =>
         syncLinkedTicketsForEmailMessage({
@@ -234,8 +275,22 @@ export function handleAgentMailWebhookDelivery(input: {
           inboxId: parsed.inboxId!,
           messageId: parsed.messageId!,
           threadId: parsed.threadId,
-          direction: "inbound",
           messageAt: parsed.timestamp ?? null,
+          headers: parsed.headers,
+          message:
+            parsed.text || parsed.preview
+              ? {
+                  messageId: parsed.messageId!,
+                  threadId: parsed.threadId ?? "",
+                  from: parsed.from ?? "",
+                  subject: parsed.subject ?? "",
+                  preview: parsed.preview,
+                  text: parsed.text,
+                  timestamp: parsed.timestamp ?? "",
+                  labels: parsed.labels,
+                  headers: parsed.headers,
+                }
+              : null,
         }),
       )
       .catch((error) => {

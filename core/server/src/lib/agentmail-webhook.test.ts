@@ -38,7 +38,37 @@ describe("agentmail-webhook", () => {
       threadId: "thread_1",
       timestamp: null,
       labels: [],
+      from: null,
+      subject: null,
+      preview: null,
+      text: null,
+      headers: null,
     });
+  });
+
+  it("parses message headers/from for ticket auto-reply skip", () => {
+    const parsed = parseAgentMailWebhookPayload({
+      event_type: "message.received",
+      message: {
+        inbox_id: "inbox_1",
+        message_id: "msg_1",
+        from: "Client <client@pa-mu.test>",
+        subject: "Out of office",
+        preview: "I am away",
+        text: "I am away until Monday.",
+        headers: {
+          "Auto-Submitted": "auto-replied",
+          "X-Autoreply": "yes",
+          Precedence: "bulk",
+          "Return-Path": "<mailer-daemon@mail.example>",
+        },
+      },
+    });
+    assert.equal(parsed?.from, "Client <client@pa-mu.test>");
+    assert.equal(parsed?.subject, "Out of office");
+    assert.equal(parsed?.text, "I am away until Monday.");
+    assert.equal(parsed?.headers?.["Auto-Submitted"], "auto-replied");
+    assert.equal(parsed?.headers?.["Return-Path"], "<mailer-daemon@mail.example>");
   });
 
   it("parses message timestamp and labels for inbound retriage", () => {

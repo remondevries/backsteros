@@ -320,6 +320,12 @@ export type ListActivitiesFilter = {
   includeDeleted?: boolean;
   limit?: number;
   cursor?: string | null;
+  /**
+   * Comment visibility (OS-187). Same rule as GET /comments:
+   * `all` → no filter; `client_visible` / `internal` → filter comment rows
+   * via `data.visibility` (system events always included).
+   */
+  visibility?: "client_visible" | "internal" | "all";
 };
 
 function encodeActivitiesCursor(createdAt: Date, id: string): string {
@@ -407,6 +413,7 @@ export async function listActivities(
     .map((value) => value.trim())
     .filter(Boolean);
   const cursor = decodeActivitiesCursor(filter.cursor);
+  const visibility = filter.visibility ?? "all";
 
   const conditions = [
     eq(taskActivities.workspaceId, workspaceId),
@@ -420,6 +427,15 @@ export async function listActivities(
       : []),
     ...(types.length > 0 ? [inArray(taskActivities.type, types)] : []),
     ...(filter.includeDeleted ? [] : [isNull(taskActivities.deletedAt)]),
+    // Portal / visibility filter: hide internal comment bodies from restricted keys.
+    ...(visibility === "all"
+      ? []
+      : [
+          or(
+            sql`${taskActivities.type} <> 'comment'`,
+            sql`coalesce(${taskActivities.data}->>'visibility', 'client_visible') = ${visibility}`,
+          )!,
+        ]),
   ];
 
   if (cursor) {

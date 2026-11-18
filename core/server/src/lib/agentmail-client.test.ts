@@ -84,10 +84,15 @@ describe("agentmail-client mappers", () => {
       from: { name: "Ada", email: "ada@example.com" },
       preview: "Please find attached",
       timestamp: "2026-08-19T10:00:00Z",
+      headers: {
+        "Auto-Submitted": "auto-replied",
+        Precedence: "bulk",
+      },
     });
     assert.equal(mapped.messageId, "msg_1");
     assert.equal(mapped.from, "Ada <ada@example.com>");
     assert.deepEqual(mapped.to, []);
+    assert.equal(mapped.headers?.["Auto-Submitted"], "auto-replied");
     assert.equal(formatAgentMailAddress("ops@example.com"), "ops@example.com");
   });
 

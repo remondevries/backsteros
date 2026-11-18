@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { and, eq } from "drizzle-orm";
 
-import { API_KEY_SCOPES } from "@backsteros/contracts";
+import { AGENT_API_KEY_SCOPES } from "@backsteros/contracts";
 
 import { createApp } from "../app.js";
 import { db } from "../db/index.js";
@@ -44,7 +44,7 @@ export async function createTestWorkspace(label: string) {
     name: label,
     prefix: apiKeyLookupPrefix(secret),
     keyHash: hashApiKey(secret),
-    scopes: [...API_KEY_SCOPES],
+    scopes: [...AGENT_API_KEY_SCOPES],
   });
 
   async function call(

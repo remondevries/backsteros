@@ -4,7 +4,7 @@ import test from "node:test";
 
 import { eq } from "drizzle-orm";
 
-import { API_KEY_SCOPES } from "@backsteros/contracts";
+import { AGENT_API_KEY_SCOPES } from "@backsteros/contracts";
 
 import { createApp } from "../app.js";
 import { db, sqlClient } from "../db/index.js";
@@ -80,7 +80,7 @@ test("OS-47: linkedEmailIds on task read/write; unknown emails do not 500", asyn
     name: "os47",
     prefix: apiKeyLookupPrefix(secret),
     keyHash: hashApiKey(secret),
-    scopes: [...API_KEY_SCOPES],
+    scopes: [...AGENT_API_KEY_SCOPES],
   });
   await db.insert(projects).values({
     id: projectId,

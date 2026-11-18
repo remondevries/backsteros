@@ -100,6 +100,11 @@ export type AgentMailMessageSummary = {
   timestamp: string;
   /** AgentMail labels (e.g. `unread` / `read`) when the list payload includes them. */
   labels: string[];
+  /**
+   * Message headers when AgentMail includes them (list/get/thread/webhook).
+   * Map form from the API; used for auto-reply/bounce detection (OS-187).
+   */
+  headers?: Record<string, string> | null;
 };
 
 export type AgentMailMessageAttachment = {
@@ -185,9 +190,32 @@ function asTimestamp(value: unknown, fallback?: unknown): string {
   throw new Error("AgentMail response missing timestamp");
 }
 
+/** Normalize AgentMail `headers` (map) into a lowercase-safe string record. */
+export function mapAgentMailMessageHeaders(
+  raw: unknown,
+): Record<string, string> | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const out: Record<string, string> = {};
+  for (const [name, value] of Object.entries(raw as Record<string, unknown>)) {
+    const key = name.trim();
+    if (!key) continue;
+    if (typeof value === "string") {
+      out[key] = value;
+      continue;
+    }
+    if (value == null) {
+      out[key] = "";
+      continue;
+    }
+    out[key] = String(value);
+  }
+  return Object.keys(out).length > 0 ? out : null;
+}
+
 export function mapAgentMailMessageSummary(
   raw: Record<string, unknown>,
 ): AgentMailMessageSummary {
+  const headers = mapAgentMailMessageHeaders(raw.headers);
   return {
     inboxId: asRequiredString(raw.inbox_id, "inbox_id"),
     threadId: asOptionalString(raw.thread_id) ?? "",
@@ -200,6 +228,7 @@ export function mapAgentMailMessageSummary(
     labels: Array.isArray(raw.labels)
       ? raw.labels.filter((label): label is string => typeof label === "string")
       : [],
+    ...(headers ? { headers } : {}),
   };
 }
 
@@ -907,6 +936,7 @@ export function mergeAgentMailMessageDetail(
     inReplyTo: overlay.inReplyTo ?? base.inReplyTo,
     attachments:
       overlay.attachments.length > 0 ? overlay.attachments : base.attachments,
+    headers: overlay.headers ?? base.headers,
   };
 }
 

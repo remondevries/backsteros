@@ -4,7 +4,7 @@ import test, { after } from "node:test";
 
 import { eq } from "drizzle-orm";
 
-import { API_KEY_SCOPES } from "@backsteros/contracts";
+import { AGENT_API_KEY_SCOPES } from "@backsteros/contracts";
 
 import { createApp } from "../app.js";
 import { db, sqlClient } from "../db/index.js";
@@ -85,7 +85,7 @@ async function seed() {
       name: "full",
       prefix: apiKeyLookupPrefix(fullSecret),
       keyHash: hashApiKey(fullSecret),
-      scopes: [...API_KEY_SCOPES],
+      scopes: [...AGENT_API_KEY_SCOPES],
     },
     {
       id: readKeyId,

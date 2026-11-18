@@ -4,7 +4,7 @@ import test from "node:test";
 
 import { eq } from "drizzle-orm";
 
-import { API_KEY_SCOPES } from "@backsteros/contracts";
+import { AGENT_API_KEY_SCOPES } from "@backsteros/contracts";
 
 import { createApp } from "../app.js";
 import { db, sqlClient } from "../db/index.js";
@@ -62,21 +62,21 @@ test("Settings API keys gate: owner keys pass, agent persona keys stay blocked",
   ]);
 
   const keys = {
-    unbound: { secret: newSecret(), contactId: null, scopes: [...API_KEY_SCOPES] },
+    unbound: { secret: newSecret(), contactId: null, scopes: [...AGENT_API_KEY_SCOPES] },
     ownerContact: {
       secret: newSecret(),
       contactId: ownerContactId,
-      scopes: [...API_KEY_SCOPES],
+      scopes: [...AGENT_API_KEY_SCOPES],
     },
     agentContact: {
       secret: newSecret(),
       contactId: agentContactId,
-      scopes: [...API_KEY_SCOPES],
+      scopes: [...AGENT_API_KEY_SCOPES],
     },
     noSettingsWrite: {
       secret: newSecret(),
       contactId: ownerContactId,
-      scopes: API_KEY_SCOPES.filter((scope) => scope !== "settings:write"),
+      scopes: AGENT_API_KEY_SCOPES.filter((scope) => scope !== "settings:write"),
     },
   };
   for (const [name, key] of Object.entries(keys)) {

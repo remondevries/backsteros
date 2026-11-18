@@ -863,9 +863,26 @@ export async function findTaskCommentByEmailMessageId(
 }
 
 /**
+ * Upgrade empty placeholders and shorter preview-only bodies when a fuller
+ * message arrives. Never shrinks an existing longer body.
+ */
+function needsEmailTimelineBodyUpgrade(
+  existingBody: string,
+  nextBody: string,
+): boolean {
+  const existing = existingBody.trim();
+  const next = nextBody.trim();
+  if (!next || next === EMPTY_EMAIL_PLACEHOLDER) return false;
+  if (existing === EMPTY_EMAIL_PLACEHOLDER) return true;
+  if (existing === next) return false;
+  return next.length > existing.length;
+}
+
+/**
  * Idempotent email → ticket timeline entry. Returns `{ created: false }` when
  * the message id already exists for this task (including soft-deleted).
- * Replaces the `(empty email)` placeholder when a real body arrives.
+ * Replaces the `(empty email)` placeholder and upgrades preview-only bodies
+ * when a fuller body arrives (without counting as created / re-triage).
  * Never sends mail.
  */
 export async function upsertEmailTimelineComment(
@@ -899,12 +916,10 @@ export async function upsertEmailTimelineComment(
   );
   if (existing) {
     const nextBody = input.body.trim();
-    const shouldReplacePlaceholder =
+    const shouldUpgradeBody =
       !existing.deletedAt &&
-      existing.body.trim() === EMPTY_EMAIL_PLACEHOLDER &&
-      nextBody.length > 0 &&
-      nextBody !== EMPTY_EMAIL_PLACEHOLDER;
-    if (shouldReplacePlaceholder) {
+      needsEmailTimelineBodyUpgrade(existing.body, nextBody);
+    if (shouldUpgradeBody) {
       const occurredAt =
         parseOptionalDate(input.occurredAt) ?? existing.occurredAt;
       const [updated] = await executor

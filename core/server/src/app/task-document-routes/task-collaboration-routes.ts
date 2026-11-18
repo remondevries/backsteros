@@ -78,6 +78,16 @@ export function registerTaskCollaborationRoutes(app: Hono) {
         return c.json(auth ? forbidden() : unauthorized(), auth ? 403 : 401);
       }
       const query = c.req.valid("query");
+      const resolvedVisibility = resolveCommentListVisibility(
+        auth,
+        c.req.query("visibility"),
+      );
+      if (!resolvedVisibility.ok) {
+        return c.json(
+          { error: resolvedVisibility.error, code: "forbidden" as const },
+          resolvedVisibility.status,
+        );
+      }
       const types = query.types
         ? query.types
             .split(",")
@@ -91,6 +101,7 @@ export function registerTaskCollaborationRoutes(app: Hono) {
         includeDeleted: query.includeDeleted,
         limit: query.limit,
         cursor: query.cursor,
+        visibility: resolvedVisibility.visibility,
       });
       if (!result) {
         return c.json(

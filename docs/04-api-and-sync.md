@@ -415,15 +415,18 @@ auto-append inbound/outbound AgentMail messages as comments with
 workspace + task + message id. Authorship is the mail sender / matched CRM
 contact — never the importing agent. Ticket status moves to `triage` only
 when a **genuinely new** inbound timeline entry is created (`created: true`)
-— never on placeholder replacement or re-poll of the same message id. Own
-outbound mail (any workspace inbox address, owner/Remon addresses, workspace
-inbox domains, agent persona contacts, or AgentMail `sent` label) never moves
-status; auto-replies and bounces are skipped for status moves. List/poll
-ingest (OS-188) syncs linked tickets only when the inbound is newer than
-`last_processed_inbound_at` (same cursor as email-thread retriage) and passes
-the list snapshot so it does not re-fetch whole AgentMail threads. Backfill
-sets `importedAt` / `importedByActor` / `importedByContactId` and uses the
-original email timestamp.
+— never on placeholder/preview-body upgrade or re-poll of the same message id.
+Own outbound mail (exact workspace inbox / owner / agent addresses, owned
+custom domains — never shared domains like `agentmail.to` / `gmail.com` — or
+AgentMail `sent` label) never moves status; direction is always classified by
+sender (poll/webhook must not hard-code inbound). Auto-replies and bounces are
+skipped for status moves when headers (`Auto-Submitted`, `X-Autoreply`,
+`X-Autorespond`, `Precedence`, `Return-Path`) are present on the AgentMail
+message. List/poll ingest (OS-188) syncs linked tickets only when the inbound
+is newer than `last_processed_inbound_at` (same cursor as email-thread
+retriage) and passes the list snapshot so it does not re-fetch whole AgentMail
+threads. Backfill sets `importedAt` / `importedByActor` / `importedByContactId`
+and uses the original email timestamp.
 
 **Visibility:** Staff/agent keys (CLI, BacksterDEV, Access, agent personas)
 default to `all` on `GET /tasks/:id/comments` and `GET /tickets/:id/comments`
@@ -435,12 +438,15 @@ routes — use `/api/v1/email/…` with `email:send` only when you intend to
 mail.
 
 **Client portal:** request `?visibility=client_visible` (portal already does).
-Mark the portal API key with the `portal` scope (append via Access key
-update — **do not rotate** the secret) so the server refuses
-`visibility=all|internal` with 403 even if a caller forgets the query.
-Internal notes never appear. Email timeline rows are `client_visible` (the
-client already saw the mail). Portal ticket list remains
-`GET /tasks?support=true` filtered by org.
+Mark the portal API key with the `portal` scope so the server refuses
+`visibility=all|internal` with 403 even if a caller forgets the query
+(also applies to `GET /api/v1/activities?taskId=`). PATCH cannot change
+scopes (`updateApiKeySchema` has no `scopes` field) — append `portal` with a
+DB update on `api_keys.scopes` or mint a new key; **do not rotate** the live
+secret. Rebuild desktop first: **0.2.271 rejects unknown scopes**. Internal
+notes never appear. Email timeline rows are `client_visible` (the client
+already saw the mail). Portal ticket list remains `GET /tasks?support=true`
+filtered by org.
 
 ### Write (agents)
 
