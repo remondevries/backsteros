@@ -383,7 +383,50 @@ GET  /api/v1/tasks?paginated=true&projectId=OS&includeTotalCount=true
 GET  /api/v1/tasks?paginated=true&projectId=OS&status=all
 GET  /api/v1/tasks?paginated=true&projectId=OS&status=in_progress
 GET  /api/v1/tasks?paginated=true&status=waiting
+GET  /api/v1/tasks?paginated=true&support=true   # support tickets (same as /tickets)
 ```
+
+### Support tickets (OS-187)
+
+Tickets are **tasks with `support: true`**, exposed as a first-class agents
+resource under `/api/v1/tickets`. Status `waiting` means **waiting on the
+client** (`waiting_on_client` is accepted on write as an alias).
+
+```http
+GET    /api/v1/tickets
+GET    /api/v1/tickets/{id|KEY-number}?include=comments
+POST   /api/v1/tickets
+       { "title": "…", "status": "waiting_on_client", "followUpDate": "…", "activityActor": "agent" }
+PATCH  /api/v1/tickets/{id}
+POST   /api/v1/tickets/from-email
+       { "inboxId": "…", "threadId": "…", "backfill": true, "activityActor": "agent" }
+POST   /api/v1/tickets/{id}/sync-emails
+       { "backfill": true }   # import historical mail; idempotent on message id
+GET    /api/v1/tickets/{id}/comments?visibility=client_visible|internal|all
+POST   /api/v1/tickets/{id}/comments
+       { "body": "…", "visibility": "internal", "authorSide": "team", "activityActor": "agent" }
+```
+
+**Email timeline:** linked threads (`linkedEmailIds` → `email_threads.id`)
+auto-append inbound/outbound AgentMail messages as comments with
+`emailMessageId`, `emailDirection`, `emailSender`, real `occurredAt`, and
+`authorSide` (`client` | `team`). Sync is **idempotent on message id**.
+Outbound reply → ticket `waiting`; inbound client reply → `in_progress`
+(closed tickets are left alone). Backfill sets `importedAt` /
+`importedByActor` / `importedByContactId` and uses the original email
+timestamp.
+
+**Visibility:** `client_visible` (default) vs `internal`. Ticket/comment/
+sync/backfill writes **never send mail** and **never notify the client**
+(`sentMail: false` on sync responses). There is no send flag on these
+routes — use `/api/v1/email/…` with `email:send` only when you intend to
+mail.
+
+**Client portal:** only `client_visible` timeline entries/comments should
+appear (request `?visibility=client_visible` or filter on the BFF).
+Internal notes, import audit fields, and agent-only metadata stay staff-side.
+Email timeline rows default to `client_visible` (the client already saw the
+mail). Portal ticket list remains `GET /tasks?support=true` filtered by org.
 
 ### Write (agents)
 

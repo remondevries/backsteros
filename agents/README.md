@@ -277,7 +277,7 @@ POST /api/v1/chat/conversations
 POST /api/v1/chat/conversations
 { "channel": "x", "contactId": "…", "content": "Hi" }
 
-# Support ticket (subject required)
+# Support ticket via Chatwoot channel (subject required) — separate from task tickets
 POST /api/v1/chat/conversations
 { "channel": "support", "contactId": "…", "subject": "Help with invoice", "content": "…" }
 
@@ -285,6 +285,40 @@ POST /api/v1/chat/conversations
 POST /api/v1/chat/conversations/{id}/messages
 { "content": "Follow-up" }
 ```
+
+## Support tickets (task tickets, OS-187)
+
+Prefer **`/api/v1/tickets`** for client support tickets that stay in sync with
+AgentMail. A ticket is a task with `support: true`. Status `waiting` /
+`waiting_on_client` = waiting on the client.
+
+```http
+GET  /api/v1/tickets?paginated=true
+POST /api/v1/tickets
+{ "title": "Pa-Mu login", "contactId": "…", "activityActor": "agent" }
+
+# From an existing email thread (links the thread; optional historical backfill)
+POST /api/v1/tickets/from-email
+{ "inboxId": "…", "threadId": "…", "backfill": true, "activityActor": "agent" }
+
+PATCH /api/v1/tickets/{id|KEY-number}
+{ "status": "waiting_on_client", "followUpDate": "2026-11-25T12:00:00.000Z" }
+
+# Sync / re-backfill linked mail → timeline (idempotent on message id; never sends)
+POST /api/v1/tickets/{id}/sync-emails
+{ "backfill": true }
+
+# Internal note (not shown in client portal) — never emails the client
+POST /api/v1/tickets/{id}/comments
+{ "body": "Called Jeannie; waiting on editor rights", "visibility": "internal", "authorSide": "team", "activityActor": "agent" }
+
+GET /api/v1/tickets/{id}/comments?visibility=client_visible
+```
+
+Inbound/outbound mail on a linked thread appends timeline entries automatically
+(direction, sender, real timestamp, message id). These ticket routes **do not
+send mail**; use `/api/v1/email/…` + `email:send` only when mailing is intended.
+Portal shows `client_visible` comments/entries only.
 
 ## Task images (screenshots)
 
