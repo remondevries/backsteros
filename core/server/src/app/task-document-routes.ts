@@ -10,6 +10,7 @@ import { registerDocumentsRoutes } from "./task-document-routes/documents-routes
 import { registerHabitsRoutes } from "./task-document-routes/habits-routes.js";
 import { registerMeetingsRoutes } from "./task-document-routes/meetings-routes.js";
 import { registerWhoopRoutes } from "./task-document-routes/whoop-routes.js";
+import { registerTicketsRoutes } from "./task-document-routes/tickets-routes.js";
 
 export function registerTaskDocumentRoutes(app: Hono) {
   registerTasksRoutes(app);
@@ -19,4 +20,5 @@ export function registerTaskDocumentRoutes(app: Hono) {
   registerHabitsRoutes(app);
   registerMeetingsRoutes(app);
   registerWhoopRoutes(app);
+  registerTicketsRoutes(app);
 }

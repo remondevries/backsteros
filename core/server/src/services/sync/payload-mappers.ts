@@ -387,7 +387,17 @@ export const taskCommentKeys = {
   author_contact_id: "authorContactId",
   author_email: "authorEmail",
   body: "body",
+  visibility: "visibility",
+  author_side: "authorSide",
+  email_message_id: "emailMessageId",
+  email_direction: "emailDirection",
+  email_sender: "emailSender",
+  occurred_at: "occurredAt",
+  imported_at: "importedAt",
+  imported_by_contact_id: "importedByContactId",
+  imported_by_actor: "importedByActor",
   resolved_at: "resolvedAt",
+  created_at: "createdAt",
 };
 
 export const taskActivityKeys = {

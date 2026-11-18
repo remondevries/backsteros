@@ -205,6 +205,23 @@ export function handleAgentMailWebhookDelivery(input: {
           error instanceof Error ? error.message : error,
         );
       });
+    // OS-187: append inbound mail to linked support-ticket timelines (no send).
+    void import("../services/ticket-email-sync.js")
+      .then(({ syncLinkedTicketsForEmailMessage }) =>
+        syncLinkedTicketsForEmailMessage({
+          workspaceId: matched.workspaceId,
+          inboxId: parsed.inboxId!,
+          messageId: parsed.messageId!,
+          threadId: parsed.threadId,
+          direction: "inbound",
+        }),
+      )
+      .catch((error) => {
+        console.warn(
+          "[agentmail] ticket email timeline sync failed",
+          error instanceof Error ? error.message : error,
+        );
+      });
   }
   return {
     ok: true,

@@ -1418,6 +1418,8 @@ export async function applySyncChange(
         const parsed = updateTaskCommentSchema.safeParse({
           body: payload.body,
           resolvedAt: payload.resolvedAt,
+          visibility: payload.visibility,
+          authorSide: payload.authorSide,
         });
         if (!parsed.success) throw new Error("INVALID_TASK_COMMENT");
         const updated = await taskCommentService.updateTaskComment(
@@ -1440,6 +1442,21 @@ export async function applySyncChange(
         typeof payload.taskId === "string" ? payload.taskId.trim() : "";
       const body = typeof payload.body === "string" ? payload.body.trim() : "";
       if (!taskId || !body) throw new Error("INVALID_TASK_COMMENT");
+      const visibility =
+        payload.visibility === "internal" ? "internal" : "client_visible";
+      const authorSide =
+        payload.authorSide === "client" || payload.authorSide === "team"
+          ? payload.authorSide
+          : null;
+      const emailDirection =
+        payload.emailDirection === "inbound" ||
+        payload.emailDirection === "outbound"
+          ? payload.emailDirection
+          : null;
+      const importedByActor =
+        payload.importedByActor === "user" || payload.importedByActor === "agent"
+          ? payload.importedByActor
+          : null;
       const row = await taskCommentService.createTaskCommentRow(
         workspaceId,
         change.entity_id,
@@ -1460,6 +1477,26 @@ export async function applySyncChange(
               : null,
           authorEmail:
             typeof payload.authorEmail === "string" ? payload.authorEmail : null,
+          visibility,
+          authorSide,
+          emailMessageId:
+            typeof payload.emailMessageId === "string"
+              ? payload.emailMessageId
+              : null,
+          emailDirection,
+          emailSender:
+            typeof payload.emailSender === "string" ? payload.emailSender : null,
+          occurredAt:
+            typeof payload.occurredAt === "string" ? payload.occurredAt : null,
+          createdAt:
+            typeof payload.createdAt === "string" ? payload.createdAt : null,
+          importedAt:
+            typeof payload.importedAt === "string" ? payload.importedAt : null,
+          importedByContactId:
+            typeof payload.importedByContactId === "string"
+              ? payload.importedByContactId
+              : null,
+          importedByActor,
         },
         executor,
       );

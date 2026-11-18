@@ -231,6 +231,21 @@ export function toTaskComment(
   const listRow = row as TaskCommentListRow;
   const authorContactId = row.authorContactId ?? null;
   const isGenericAgent = row.authorUserId == null && authorContactId == null;
+  const visibility =
+    row.visibility === "internal" ? "internal" : "client_visible";
+  const authorSide =
+    row.authorSide === "client" || row.authorSide === "team"
+      ? row.authorSide
+      : null;
+  const emailDirection =
+    row.emailDirection === "inbound" || row.emailDirection === "outbound"
+      ? row.emailDirection
+      : null;
+  const importedByActor =
+    row.importedByActor === "user" || row.importedByActor === "agent"
+      ? row.importedByActor
+      : null;
+  const occurredAt = row.occurredAt ?? row.createdAt;
   return {
     id: row.id,
     taskId: row.taskId,
@@ -248,6 +263,15 @@ export function toTaskComment(
           contactName: listRow.contactName ?? null,
         }),
     body: row.body,
+    visibility,
+    authorSide,
+    emailMessageId: row.emailMessageId ?? null,
+    emailDirection,
+    emailSender: row.emailSender ?? null,
+    occurredAt: occurredAt.toISOString(),
+    importedAt: toIso(row.importedAt),
+    importedByContactId: row.importedByContactId ?? null,
+    importedByActor,
     resolvedAt: toIso(row.resolvedAt),
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),

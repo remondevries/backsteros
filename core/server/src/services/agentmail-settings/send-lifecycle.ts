@@ -371,6 +371,25 @@ export async function sendAgentMailDraft(
     },
   );
 
+  // OS-187: append outbound mail to linked support-ticket timelines (already sent;
+  // this path does not send again).
+  void import("../ticket-email-sync.js")
+    .then(({ syncLinkedTicketsForEmailMessage }) =>
+      syncLinkedTicketsForEmailMessage({
+        workspaceId,
+        inboxId: sent.inboxId,
+        messageId: sent.messageId,
+        threadId: sent.threadId ?? null,
+        direction: "outbound",
+      }),
+    )
+    .catch((error) => {
+      console.warn(
+        "[agentmail] ticket email timeline sync (outbound) failed",
+        error instanceof Error ? error.message : error,
+      );
+    });
+
   return {
     inboxId: sent.inboxId,
     messageId: sent.messageId,

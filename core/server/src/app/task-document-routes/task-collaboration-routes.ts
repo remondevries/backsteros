@@ -540,6 +540,17 @@ export function registerTaskCollaborationRoutes(app: Hono) {
               authorUserId: profile.userId,
               authorContactId: profile.contactId,
               authorEmail: profile.email,
+              visibility:
+                commentFields.visibility === "internal"
+                  ? "internal"
+                  : "client_visible",
+              authorSide:
+                commentFields.authorSide === "client" ||
+                commentFields.authorSide === "team"
+                  ? commentFields.authorSide
+                  : actor.kind === "contact"
+                    ? "client"
+                    : "team",
             }),
           });
           const row = await taskCommentService.getTaskCommentRow(
