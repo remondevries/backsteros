@@ -3,7 +3,8 @@
  * Sync desktop app version from package.json → tauri.conf.json, Cargo.toml,
  * Cargo.lock, and src-tauri/Info.plist (CFBundleShortVersionString /
  * CFBundleVersion). Does not rewrite files that already match (keeps the tree
- * clean across builds). Override with DESKTOP_APP_VERSION=x.y.z.
+ * clean across builds). package.json is the source of truth; if
+ * DESKTOP_APP_VERSION is set it must match (no silent override/drift).
  *
  * Signing: set APPLE_SIGNING_IDENTITY to a Developer ID Application identity
  * when one is available. Apple Development alone cannot notarize distribution builds.
@@ -19,22 +20,24 @@ const desktopRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "
 const pkgPath = path.join(desktopRoot, "package.json");
 const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
 
-const version =
-  process.env.DESKTOP_APP_VERSION?.trim() ||
-  (typeof pkg.version === "string" && pkg.version.trim() ? pkg.version.trim() : null);
+const pkgVersion =
+  typeof pkg.version === "string" && pkg.version.trim() ? pkg.version.trim() : null;
+const envVersion = process.env.DESKTOP_APP_VERSION?.trim() || null;
 
-if (!version) {
-  console.error("[sync-app-version] package.json has no version and DESKTOP_APP_VERSION is unset");
+if (!pkgVersion) {
+  console.error("[sync-app-version] package.json has no version");
+  process.exit(1);
+}
+if (envVersion && envVersion !== pkgVersion) {
+  console.error(
+    `[sync-app-version] DESKTOP_APP_VERSION=${envVersion} does not match package.json version ${pkgVersion}. Bump package.json (source of truth), then rebuild — do not override via env.`,
+  );
   process.exit(1);
 }
 
-let wrote = false;
+const version = pkgVersion;
 
-if (pkg.version !== version) {
-  pkg.version = version;
-  fs.writeFileSync(pkgPath, `${JSON.stringify(pkg, null, 2)}\n`);
-  wrote = true;
-}
+let wrote = false;
 
 const tauriPath = path.join(desktopRoot, "src-tauri", "tauri.conf.json");
 const tauri = JSON.parse(fs.readFileSync(tauriPath, "utf8"));

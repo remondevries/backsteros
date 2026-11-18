@@ -340,9 +340,41 @@ function isDirectRun() {
   return Boolean(entry) && path.resolve(entry) === fileURLToPath(import.meta.url);
 }
 
+/**
+ * Prefer the built bundle's CFBundleShortVersionString so install paths match
+ * what was actually built (package.json / DESKTOP_APP_VERSION cannot drift).
+ * Falls back to package.json; DESKTOP_APP_VERSION must match if set.
+ */
+function resolveInstallVersion(builtAppPath) {
+  const pkgVersion = readDesktopVersion();
+  const envVersion = process.env.DESKTOP_APP_VERSION?.trim() || null;
+  if (envVersion && envVersion !== pkgVersion) {
+    throw new Error(
+      `DESKTOP_APP_VERSION=${envVersion} does not match package.json version ${pkgVersion}`,
+    );
+  }
+  try {
+    const plistPath = path.join(builtAppPath, "Contents", "Info.plist");
+    const xml = fs.readFileSync(plistPath, "utf8");
+    const short = readPlistString(xml, "CFBundleShortVersionString");
+    if (short) {
+      if (short !== pkgVersion) {
+        throw new Error(
+          `built app version ${short} does not match package.json ${pkgVersion}; run sync:version / rebuild`,
+        );
+      }
+      return short;
+    }
+  } catch (err) {
+    if (err instanceof Error && /does not match/.test(err.message)) throw err;
+    // Missing/unreadable plist → package.json
+  }
+  return pkgVersion;
+}
+
 if (isDirectRun()) {
   const { replaceStable, force, applicationsDir, builtAppPath } = parseArgs(process.argv.slice(2));
-  const version = process.env.DESKTOP_APP_VERSION?.trim() || readDesktopVersion();
+  const version = resolveInstallVersion(builtAppPath);
   const plan = installMacosApp({
     builtAppPath,
     applicationsDir,
