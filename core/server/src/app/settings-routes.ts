@@ -469,6 +469,9 @@ export function registerSettingsRoutes(app: Hono) {
    * - sales_invoice_state_changed_to_late → reminder ladder only if Manual/portal-sent
    * - sales_invoice_state_changed_to_paid → cancel pending reminders
    * Public URL: https://agent.backsteros.com/api/v1/webhooks/moneybird
+   * Moneybird webhook `enabled_events` must include all three (see
+   * MONEYBIRD_REMINDER_WEBHOOK_EVENTS). Missing late/paid means the ladder
+   * never starts and paid never cancels until the tick reconcile GETs state.
    */
   app.post("/api/v1/webhooks/moneybird", async (c) => {
     const {

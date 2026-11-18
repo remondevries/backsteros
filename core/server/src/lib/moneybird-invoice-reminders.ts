@@ -3,14 +3,33 @@ import { and, eq, isNotNull, isNull, lte, or } from "drizzle-orm";
 import { db } from "../db/index.js";
 import {
   moneybirdInvoiceReminderTracks,
+  workspaceIntegrationSecrets,
   type DbMoneybirdInvoiceReminderTrack,
 } from "../db/schema.js";
+import { MoneybirdClient } from "./moneybird-client.js";
 import { sendPortalInvoiceEmailViaPortal } from "./portal-invoice-email-proxy.js";
 import { sendPortalInvoiceReminderEmailViaPortal } from "./portal-invoice-reminder-email-proxy.js";
 import type { MoneybirdWebhookPayload } from "./moneybird-manual-send.js";
 
 export const MONEYBIRD_LATE_ACTION = "sales_invoice_state_changed_to_late";
 export const MONEYBIRD_PAID_ACTION = "sales_invoice_state_changed_to_paid";
+
+/**
+ * Events the Moneybird → agent.backsteros.com webhook must subscribe to.
+ * Live admin currently may only have `sales_invoice_send_manually` — without
+ * late/paid, the ladder never starts and paid never cancels (reconcile below
+ * is the safety net until the subscription is updated by hand).
+ */
+export const MONEYBIRD_REMINDER_WEBHOOK_EVENTS = [
+  "sales_invoice_send_manually",
+  MONEYBIRD_LATE_ACTION,
+  MONEYBIRD_PAID_ACTION,
+] as const;
+
+/** Read-only paid check used by the reminder tick reconcile. */
+export type MoneybirdInvoicePaidLookup = (
+  invoiceId: string,
+) => Promise<"paid" | "open" | "unknown">;
 
 type ReminderStep = 1 | 2 | 3;
 
@@ -73,6 +92,13 @@ const tracks = new Map<string, ReminderTrack>();
 let persistenceEnabled = false;
 let schedulerStarted = false;
 let schedulerTimer: ReturnType<typeof setInterval> | null = null;
+/** Injected for tests; production resolves via Moneybird GET. */
+let paidLookupForTests: MoneybirdInvoicePaidLookup | null = null;
+let reconcileTickCounter = 0;
+/** Run paid reconcile every N due-ticks (60s each) — rate-limit friendly. */
+const RECONCILE_EVERY_N_TICKS = 5;
+/** Max Moneybird GETs per reconcile pass. */
+const RECONCILE_MAX_PER_PASS = 5;
 
 function asString(value: unknown): string | null {
   if (typeof value === "string" && value.trim()) return value.trim();
@@ -736,6 +762,15 @@ export async function handleMoneybirdLateReminderWebhook(
   };
 }
 
+async function cancelPendingRemindersForInvoice(
+  invoiceId: string,
+): Promise<void> {
+  const track = await getOrCreateTrack(invoiceId, null);
+  track.dueAt = {};
+  track.cancelledAt = new Date().toISOString();
+  await persistTrack(invoiceId, track);
+}
+
 export async function handleMoneybirdPaidCancelReminders(
   payload: MoneybirdWebhookPayload,
 ): Promise<{ handled: boolean; skipped?: string; invoiceId?: string }> {
@@ -744,17 +779,102 @@ export async function handleMoneybirdPaidCancelReminders(
     return { handled: false, skipped: `ignored_action:${action || "none"}` };
   }
 
+  // Tracks are keyed by Moneybird sales invoice id (entity_id), not the
+  // printed invoice number (entity.invoice_id / "2026-0244").
   const invoiceId =
     asString(payload.entity_id) || asString(payload.entity?.id);
   if (!invoiceId) {
     return { handled: true, skipped: "missing_invoice_id" };
   }
 
-  const track = await getOrCreateTrack(invoiceId, null);
-  track.dueAt = {};
-  track.cancelledAt = new Date().toISOString();
-  await persistTrack(invoiceId, track);
+  await cancelPendingRemindersForInvoice(invoiceId);
   return { handled: true, invoiceId, skipped: "cancelled_pending" };
+}
+
+async function defaultMoneybirdPaidLookup(
+  invoiceId: string,
+): Promise<"paid" | "open" | "unknown"> {
+  const [row] = await db
+    .select({
+      apiToken: workspaceIntegrationSecrets.moneybirdApiToken,
+      administrationId: workspaceIntegrationSecrets.moneybirdAdministrationId,
+    })
+    .from(workspaceIntegrationSecrets)
+    .where(isNotNull(workspaceIntegrationSecrets.moneybirdApiToken))
+    .limit(1);
+  const apiToken = row?.apiToken?.trim() || null;
+  const administrationId = row?.administrationId?.trim() || null;
+  if (!apiToken || !administrationId) return "unknown";
+
+  try {
+    const client = new MoneybirdClient({ apiToken, administrationId });
+    const invoice = await client.getSalesInvoice(invoiceId);
+    const state = invoice.state?.trim().toLowerCase() || "";
+    if (state === "paid") return "paid";
+    if (!state) return "unknown";
+    return "open";
+  } catch {
+    return "unknown";
+  }
+}
+
+function resolvePaidLookup(
+  override?: MoneybirdInvoicePaidLookup,
+): MoneybirdInvoicePaidLookup {
+  return override ?? paidLookupForTests ?? defaultMoneybirdPaidLookup;
+}
+
+/**
+ * Cancel open Manual/portal reminder tracks whose Moneybird invoice is already
+ * paid. Read-only Moneybird GETs only; capped per pass for rate limits.
+ * Safety net when `sales_invoice_state_changed_to_paid` is not subscribed.
+ */
+export async function reconcilePaidOpenReminderTracks(options?: {
+  limit?: number;
+  lookup?: MoneybirdInvoicePaidLookup;
+}): Promise<{ checked: number; cancelled: string[] }> {
+  const limit = Math.max(1, options?.limit ?? RECONCILE_MAX_PER_PASS);
+  const lookup = resolvePaidLookup(options?.lookup);
+  const cancelled: string[] = [];
+
+  const openIds: string[] = [];
+  if (persistenceEnabled) {
+    try {
+      const rows = await db
+        .select({ invoiceId: moneybirdInvoiceReminderTracks.invoiceId })
+        .from(moneybirdInvoiceReminderTracks)
+        .where(
+          and(
+            eq(moneybirdInvoiceReminderTracks.eligibleFromManualSend, true),
+            isNull(moneybirdInvoiceReminderTracks.cancelledAt),
+          ),
+        )
+        .limit(limit);
+      for (const row of rows) openIds.push(row.invoiceId);
+    } catch (error) {
+      console.error(
+        "invoice reminder paid reconcile query failed",
+        error instanceof Error ? error.message : error,
+      );
+      return { checked: 0, cancelled };
+    }
+  } else {
+    for (const [invoiceId, track] of tracks) {
+      if (!track.eligibleFromManualSend || track.cancelledAt) continue;
+      openIds.push(invoiceId);
+      if (openIds.length >= limit) break;
+    }
+  }
+
+  let checked = 0;
+  for (const invoiceId of openIds) {
+    checked += 1;
+    const status = await lookup(invoiceId);
+    if (status !== "paid") continue;
+    await cancelPendingRemindersForInvoice(invoiceId);
+    cancelled.push(invoiceId);
+  }
+  return { checked, cancelled };
 }
 
 async function tickDueReminders(): Promise<void> {
@@ -795,6 +915,19 @@ async function tickDueReminders(): Promise<void> {
         error instanceof Error ? error.message : error,
       );
       return;
+    }
+  }
+
+  reconcileTickCounter += 1;
+  if (reconcileTickCounter >= RECONCILE_EVERY_N_TICKS) {
+    reconcileTickCounter = 0;
+    try {
+      await reconcilePaidOpenReminderTracks();
+    } catch (error) {
+      console.error(
+        "invoice reminder paid reconcile failed",
+        error instanceof Error ? error.message : error,
+      );
     }
   }
 
@@ -851,9 +984,18 @@ export async function startInvoiceReminderScheduler(): Promise<void> {
 export function resetInvoiceReminderStateForTests(): void {
   tracks.clear();
   persistenceEnabled = false;
+  paidLookupForTests = null;
+  reconcileTickCounter = 0;
   if (schedulerTimer) {
     clearInterval(schedulerTimer);
     schedulerTimer = null;
   }
   schedulerStarted = false;
+}
+
+/** Test helper — inject paid lookup without hitting Moneybird. */
+export function setInvoicePaidLookupForTests(
+  lookup: MoneybirdInvoicePaidLookup | null,
+): void {
+  paidLookupForTests = lookup;
 }

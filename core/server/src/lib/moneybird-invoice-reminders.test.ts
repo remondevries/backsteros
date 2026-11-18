@@ -7,9 +7,12 @@ import {
   handleMoneybirdPaidCancelReminders,
   MONEYBIRD_LATE_ACTION,
   MONEYBIRD_PAID_ACTION,
+  MONEYBIRD_REMINDER_WEBHOOK_EVENTS,
+  reconcilePaidOpenReminderTracks,
   registerManualPortalInvoiceForReminders,
   resetInvoiceReminderStateForTests,
   sendInvoiceReminderManually,
+  setInvoicePaidLookupForTests,
 } from "./moneybird-invoice-reminders.js";
 
 describe("moneybird invoice reminders", () => {
@@ -79,6 +82,65 @@ describe("moneybird invoice reminders", () => {
       entity_id: "inv_1",
     });
     assert.equal(late.skipped, "cancelled");
+  });
+
+  it("keys paid cancel on Moneybird entity id, not printed invoice number", async () => {
+    await registerManualPortalInvoiceForReminders("503278967163192923", "nl");
+    const wrong = await handleMoneybirdPaidCancelReminders({
+      action: MONEYBIRD_PAID_ACTION,
+      entity_id: "2026-0244",
+      entity: { id: "2026-0244", invoice_id: "2026-0244" },
+    });
+    assert.equal(wrong.invoiceId, "2026-0244");
+    const stillOpen = await getInvoiceReminderTrackSnapshot(
+      "503278967163192923",
+    );
+    assert.equal(stillOpen?.cancelledAt, null);
+    assert.equal(stillOpen?.nextStep, 1);
+
+    const right = await handleMoneybirdPaidCancelReminders({
+      action: MONEYBIRD_PAID_ACTION,
+      entity_id: "503278967163192923",
+      entity: { id: "503278967163192923", invoice_id: "2026-0244" },
+    });
+    assert.equal(right.invoiceId, "503278967163192923");
+    const cancelled = await getInvoiceReminderTrackSnapshot(
+      "503278967163192923",
+    );
+    assert.ok(cancelled?.cancelledAt);
+    assert.equal(cancelled?.nextStep, null);
+  });
+
+  it("reconcile cancels open tracks when Moneybird reports paid", async () => {
+    await registerManualPortalInvoiceForReminders("inv_paid", "nl");
+    await registerManualPortalInvoiceForReminders("inv_open", "nl");
+    setInvoicePaidLookupForTests(async (invoiceId) =>
+      invoiceId === "inv_paid" ? "paid" : "open",
+    );
+    const result = await reconcilePaidOpenReminderTracks({ limit: 10 });
+    assert.equal(result.checked, 2);
+    assert.deepEqual(result.cancelled, ["inv_paid"]);
+    assert.ok(
+      (await getInvoiceReminderTrackSnapshot("inv_paid"))?.cancelledAt,
+    );
+    assert.equal(
+      (await getInvoiceReminderTrackSnapshot("inv_open"))?.cancelledAt,
+      null,
+    );
+  });
+
+  it("documents required Moneybird webhook events for the ladder", () => {
+    assert.ok(
+      MONEYBIRD_REMINDER_WEBHOOK_EVENTS.includes(MONEYBIRD_PAID_ACTION),
+    );
+    assert.ok(
+      MONEYBIRD_REMINDER_WEBHOOK_EVENTS.includes(MONEYBIRD_LATE_ACTION),
+    );
+    assert.ok(
+      MONEYBIRD_REMINDER_WEBHOOK_EVENTS.includes(
+        "sales_invoice_send_manually",
+      ),
+    );
   });
 
   it("exposes portal track snapshot after Manual registration", async () => {
