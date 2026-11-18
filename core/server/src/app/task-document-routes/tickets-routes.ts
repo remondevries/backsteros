@@ -43,6 +43,7 @@ import {
   collectQueryParams,
 } from "../route-deps.js";
 import type { Hono } from "../route-deps.js";
+import { resolveCommentListVisibility } from "../../lib/comment-visibility-auth.js";
 import {
   createTicketFromEmail,
   ticketCreateFields,
@@ -206,11 +207,15 @@ export function registerTicketsRoutes(app: Hono) {
     const includeComments = include.split(",").includes("comments");
     let comments;
     if (includeComments) {
+      const visibility = resolveCommentListVisibility(
+        auth,
+        c.req.query("visibility"),
+      );
       const listed = await taskCommentService.listTaskComments(
         auth.workspaceId,
         row.id,
         db,
-        { limit: 20 },
+        { limit: 20, visibility },
       );
       comments = (listed ?? []).map(toTaskComment);
     }
@@ -351,15 +356,16 @@ export function registerTicketsRoutes(app: Hono) {
     );
     if (!existing) return c.json(notFound("Ticket"), 404);
     const query = listTicketCommentsQuerySchema.parse({
-      visibility: c.req.query("visibility") ?? "all",
+      visibility: c.req.query("visibility") ?? undefined,
       limit: c.req.query("limit"),
     });
+    const visibility = resolveCommentListVisibility(auth, query.visibility);
     const rows = await taskCommentService.listTaskComments(
       auth.workspaceId,
       existing.id,
       db,
       {
-        visibility: query.visibility,
+        visibility,
         limit: query.limit,
       },
     );
@@ -450,6 +456,19 @@ export function registerTicketsRoutes(app: Hono) {
       if (!existing) return c.json(notFound("Ticket"), 404);
       const commentId = c.req.param("commentId");
       const patch = c.req.valid("json");
+
+      // Verify the comment belongs to this ticket before any write.
+      const existingComment = await taskCommentService.getTaskCommentRow(
+        auth.workspaceId,
+        commentId,
+      );
+      if (
+        !existingComment ||
+        existingComment.taskId !== existing.id ||
+        existingComment.deletedAt
+      ) {
+        return c.json(notFound("Comment"), 404);
+      }
 
       if (isRestLeaderFirstWrite()) {
         await commitRestEntityWrite({

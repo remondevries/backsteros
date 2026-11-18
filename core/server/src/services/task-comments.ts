@@ -300,7 +300,8 @@ export async function listTaskComments(
       ? Math.min(Math.floor(options.limit), 200)
       : undefined;
 
-  const visibility = options?.visibility ?? "all";
+  // Portal-safe default when callers omit visibility (OS-187).
+  const visibility = options?.visibility ?? "client_visible";
   const visibilityFilter =
     visibility === "all"
       ? undefined
@@ -829,13 +830,22 @@ export async function createTaskCommentRow(
   return row;
 }
 
+const EMPTY_EMAIL_PLACEHOLDER = "(empty email)";
+
 export async function findTaskCommentByEmailMessageId(
   workspaceId: string,
   emailMessageId: string,
   executor: DbExecutor = db,
+  options?: {
+    taskId?: string;
+    /** When true (default), include soft-deleted rows so sync does not recreate them. */
+    includeDeleted?: boolean;
+  },
 ) {
   const messageId = emailMessageId.trim();
   if (!messageId) return null;
+  const includeDeleted = options?.includeDeleted !== false;
+  const taskId = options?.taskId?.trim() || null;
   const [row] = await executor
     .select()
     .from(taskComments)
@@ -843,7 +853,8 @@ export async function findTaskCommentByEmailMessageId(
       and(
         eq(taskComments.workspaceId, workspaceId),
         eq(taskComments.emailMessageId, messageId),
-        isNull(taskComments.deletedAt),
+        taskId ? eq(taskComments.taskId, taskId) : undefined,
+        includeDeleted ? undefined : isNull(taskComments.deletedAt),
       ),
     )
     .limit(1);
@@ -852,7 +863,9 @@ export async function findTaskCommentByEmailMessageId(
 
 /**
  * Idempotent email → ticket timeline entry. Returns `{ created: false }` when
- * the message id already exists. Never sends mail.
+ * the message id already exists for this task (including soft-deleted).
+ * Replaces the `(empty email)` placeholder when a real body arrives.
+ * Never sends mail.
  */
 export async function upsertEmailTimelineComment(
   workspaceId: string,
@@ -881,8 +894,68 @@ export async function upsertEmailTimelineComment(
     workspaceId,
     emailMessageId,
     executor,
+    { taskId: input.taskId, includeDeleted: true },
   );
   if (existing) {
+    const nextBody = input.body.trim();
+    const shouldReplacePlaceholder =
+      !existing.deletedAt &&
+      existing.body.trim() === EMPTY_EMAIL_PLACEHOLDER &&
+      nextBody.length > 0 &&
+      nextBody !== EMPTY_EMAIL_PLACEHOLDER;
+    if (shouldReplacePlaceholder) {
+      const [updated] = await executor
+        .update(taskComments)
+        .set({
+          body: nextBody,
+          emailSender: input.emailSender?.trim() || existing.emailSender,
+          authorEmail: input.authorEmail?.trim() || existing.authorEmail,
+          authorContactId: input.authorContactId ?? existing.authorContactId,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(taskComments.id, existing.id),
+            eq(taskComments.workspaceId, workspaceId),
+          ),
+        )
+        .returning();
+      if (updated) {
+        await upsertCommentActivity(
+          workspaceId,
+          {
+            id: updated.id,
+            taskId: updated.taskId,
+            body: updated.body,
+            parentId: updated.parentCommentId ?? null,
+            resolvedAt: updated.resolvedAt,
+            actorUserId: updated.authorUserId,
+            actorContactId: updated.authorContactId,
+            actorEmail: updated.authorEmail,
+            actorName: activityActorName({
+              actorUserId: updated.authorUserId,
+              actorContactId: updated.authorContactId,
+              actorEmail: updated.authorEmail,
+              userDisplayName: null,
+              contactName: null,
+            }),
+            createdAt: updated.createdAt,
+            updatedAt: updated.updatedAt,
+            visibility: updated.visibility,
+            authorSide: updated.authorSide,
+            emailMessageId: updated.emailMessageId,
+            emailDirection: updated.emailDirection,
+            emailSender: updated.emailSender,
+            occurredAt: updated.occurredAt,
+            importedAt: updated.importedAt,
+            importedByContactId: updated.importedByContactId,
+            importedByActor: updated.importedByActor,
+          },
+          executor,
+        );
+        return { row: updated, created: false };
+      }
+    }
     return { row: existing, created: false };
   }
 
@@ -915,11 +988,12 @@ export async function upsertEmailTimelineComment(
     if (!row) return null;
     return { row, created: true };
   } catch (error) {
-    // Concurrent insert on unique (workspace, email_message_id) — treat as skip.
+    // Concurrent insert on unique (workspace, task, email_message_id) — treat as skip.
     const existingAfter = await findTaskCommentByEmailMessageId(
       workspaceId,
       emailMessageId,
       executor,
+      { taskId: input.taskId, includeDeleted: true },
     );
     if (existingAfter) {
       return { row: existingAfter, created: false };

@@ -1055,20 +1055,22 @@ export const taskCommentSchema = z.object({
   /**
    * `client_visible` shows in the client portal; `internal` is staff/agents only.
    * Comment/ticket writes never send mail or notify the client.
+   * Optional/defaulted so desktop/mobile mappers that predate OS-187 still typecheck;
+   * API responses always set these (default `client_visible` / null / createdAt).
    */
-  visibility: commentVisibilitySchema,
+  visibility: commentVisibilitySchema.optional(),
   /** client contact vs Remon/team when known. */
-  authorSide: commentAuthorSideSchema.nullable(),
+  authorSide: commentAuthorSideSchema.nullable().optional(),
   /** AgentMail message id when this row mirrors a linked email. */
-  emailMessageId: z.string().nullable(),
-  emailDirection: commentEmailDirectionSchema.nullable(),
-  emailSender: z.string().nullable(),
-  /** Timeline instant (email timestamp for sync/import). */
-  occurredAt: z.string().datetime(),
+  emailMessageId: z.string().nullable().optional(),
+  emailDirection: commentEmailDirectionSchema.nullable().optional(),
+  emailSender: z.string().nullable().optional(),
+  /** Timeline instant (email timestamp for sync/import). Falls back to createdAt. */
+  occurredAt: z.string().datetime().optional(),
   /** Set when backfilled from historical mail. */
-  importedAt: z.string().datetime().nullable(),
-  importedByContactId: z.string().nullable(),
-  importedByActor: z.enum(["user", "agent"]).nullable(),
+  importedAt: z.string().datetime().nullable().optional(),
+  importedByContactId: z.string().nullable().optional(),
+  importedByActor: z.enum(["user", "agent"]).nullable().optional(),
   /** Set when a root comment thread is resolved. */
   resolvedAt: z.string().datetime().nullable(),
   createdAt: z.string().datetime(),

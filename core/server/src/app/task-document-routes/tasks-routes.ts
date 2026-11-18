@@ -1,3 +1,4 @@
+import { resolveCommentListVisibility } from "../../lib/comment-visibility-auth.js";
 import {
   DUE_TASKS_LIST_PAGINATED_ONLY_KEYS,
   ListQueryError,
@@ -256,11 +257,15 @@ export function registerTasksRoutes(app: Hono) {
       | Array<ReturnType<typeof toTaskComment> & { images?: Awaited<ReturnType<typeof taskImageService.listTaskImages>> }>
       | undefined;
     if (includes.has("comments")) {
+      const visibility = resolveCommentListVisibility(
+        auth,
+        c.req.query("visibility"),
+      );
       const commentRows = await taskCommentService.listTaskComments(
         auth.workspaceId,
         taskId,
         db,
-        { limit: 20 },
+        { limit: 20, visibility },
       );
       const mapped = (commentRows ?? []).map(toTaskComment);
       const byComment = await taskImageService.listTaskImagesForComments(

@@ -410,23 +410,28 @@ POST   /api/v1/tickets/{id}/comments
 **Email timeline:** linked threads (`linkedEmailIds` → `email_threads.id`)
 auto-append inbound/outbound AgentMail messages as comments with
 `emailMessageId`, `emailDirection`, `emailSender`, real `occurredAt`, and
-`authorSide` (`client` | `team`). Sync is **idempotent on message id**.
-Outbound reply → ticket `waiting`; inbound client reply → `in_progress`
-(closed tickets are left alone). Backfill sets `importedAt` /
-`importedByActor` / `importedByContactId` and uses the original email
-timestamp.
+`authorSide` (`client` | `team`). Sync is **idempotent on (task, message id)**
+(including soft-deleted rows) with a deterministic entry id from
+workspace + task + message id. Authorship is the mail sender / matched CRM
+contact — never the importing agent. Inbound client reply → ticket `triage`
+from **every** status (including completed); own outbound mail never moves
+status. List/poll ingest (OS-188) and the AgentMail webhook both call
+`syncLinkedTicketsForEmailMessage` for every linked ticket. Backfill sets
+`importedAt` / `importedByActor` / `importedByContactId` and uses the
+original email timestamp.
 
-**Visibility:** `client_visible` (default) vs `internal`. Ticket/comment/
+**Visibility:** `client_visible` is the **default** on
+`GET /tasks/:id/comments` and `GET /tickets/:id/comments`. Staff/agent keys
+may request `?visibility=all` (or `internal`) explicitly. Ticket/comment/
 sync/backfill writes **never send mail** and **never notify the client**
 (`sentMail: false` on sync responses). There is no send flag on these
 routes — use `/api/v1/email/…` with `email:send` only when you intend to
 mail.
 
-**Client portal:** only `client_visible` timeline entries/comments should
-appear (request `?visibility=client_visible` or filter on the BFF).
-Internal notes, import audit fields, and agent-only metadata stay staff-side.
-Email timeline rows default to `client_visible` (the client already saw the
-mail). Portal ticket list remains `GET /tasks?support=true` filtered by org.
+**Client portal:** must request `?visibility=client_visible` (and the API
+defaults to that). Internal notes never appear. Email timeline rows are
+`client_visible` (the client already saw the mail). Portal ticket list
+remains `GET /tasks?support=true` filtered by org.
 
 ### Write (agents)
 

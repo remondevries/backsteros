@@ -1512,7 +1512,7 @@ export const taskComments = pgTable(
     visibility: text("visibility").notNull().default("client_visible"),
     /** Who wrote this entry: client contact vs Remon/team (OS-187). */
     authorSide: text("author_side"),
-    /** AgentMail message id — unique per workspace when set (email timeline). */
+    /** AgentMail message id — unique per workspace+task when set (email timeline). */
     emailMessageId: text("email_message_id"),
     /** inbound | outbound when sourced from email. */
     emailDirection: text("email_direction"),
@@ -1554,9 +1554,9 @@ export const taskComments = pgTable(
     index("task_comments_resolved_at_idx").on(table.resolvedAt),
     index("task_comments_author_contact_id_idx").on(table.authorContactId),
     index("task_comments_visibility_idx").on(table.visibility),
-    uniqueIndex("task_comments_workspace_email_message_uidx")
-      .on(table.workspaceId, table.emailMessageId)
-      .where(sql`${table.emailMessageId} is not null and ${table.deletedAt} is null`),
+    uniqueIndex("task_comments_workspace_task_email_message_uidx")
+      .on(table.workspaceId, table.taskId, table.emailMessageId)
+      .where(sql`${table.emailMessageId} is not null`),
     foreignKey({
       columns: [table.parentCommentId],
       foreignColumns: [table.id],

@@ -218,6 +218,25 @@ export async function listAgentMailMessages(
         error instanceof Error ? error.message : error,
       );
     }
+    // OS-187: list/poll ingest also syncs linked tickets (webhook fallback).
+    void import("../ticket-email-sync.js")
+      .then(({ syncLinkedTicketsForEmailMessage }) =>
+        syncLinkedTicketsForEmailMessage({
+          workspaceId,
+          inboxId: inbound.inboxId,
+          messageId: inbound.messageId,
+          threadId: inbound.threadId,
+          direction: "inbound",
+        }),
+      )
+      .catch((error) => {
+        console.warn(
+          "[agentmail] list ticket email timeline sync failed",
+          inbound.inboxId,
+          inbound.messageId,
+          error instanceof Error ? error.message : error,
+        );
+      });
   }
 
   const metaMap = await emailThreadsService.listEmailThreadListMetaMap(

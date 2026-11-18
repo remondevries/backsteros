@@ -1,3 +1,4 @@
+import { resolveCommentListVisibility } from "../../lib/comment-visibility-auth.js";
 import {
   attachImagesToCommentBody,
   buildTaskActivityRestPayload,
@@ -112,9 +113,15 @@ export function registerTaskCollaborationRoutes(app: Hono) {
     const taskIdRaw = c.req.param("id");
     const taskId = await routeTaskId(auth.workspaceId, taskIdRaw);
     if (!taskId) return c.json(notFound("Task"), 404);
+    const visibility = resolveCommentListVisibility(
+      auth,
+      c.req.query("visibility"),
+    );
     const rows = await taskCommentService.listTaskComments(
       auth.workspaceId,
       taskId,
+      db,
+      { visibility },
     );
     if (!rows) return c.json(notFound("Task"), 404);
     const mapped = rows.map(toTaskComment);

@@ -118,6 +118,10 @@ describe("hybrid write bar", () => {
         messages.includes('source: "poll"'),
       "list ingest must retriage on newer inbound ids only",
     );
+    assert.ok(
+      messages.includes("syncLinkedTicketsForEmailMessage"),
+      "list ingest must sync linked tickets when webhook is down (OS-187)",
+    );
 
     const agentmail = readSrc("agentmail-settings.ts");
     assert.ok(agentmail.includes("deleteEmailThreadLeaderAware"));

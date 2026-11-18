@@ -304,7 +304,7 @@ POST /api/v1/tickets/from-email
 PATCH /api/v1/tickets/{id|KEY-number}
 { "status": "waiting_on_client", "followUpDate": "2026-11-25T12:00:00.000Z" }
 
-# Sync / re-backfill linked mail → timeline (idempotent on message id; never sends)
+# Sync / re-backfill linked mail → timeline (idempotent; never sends)
 POST /api/v1/tickets/{id}/sync-emails
 { "backfill": true }
 
@@ -312,13 +312,17 @@ POST /api/v1/tickets/{id}/sync-emails
 POST /api/v1/tickets/{id}/comments
 { "body": "Called Jeannie; waiting on editor rights", "visibility": "internal", "authorSide": "team", "activityActor": "agent" }
 
-GET /api/v1/tickets/{id}/comments?visibility=client_visible
+# Staff/agents: pass visibility=all explicitly (default is client_visible)
+GET /api/v1/tickets/{id}/comments?visibility=all
 ```
 
 Inbound/outbound mail on a linked thread appends timeline entries automatically
-(direction, sender, real timestamp, message id). These ticket routes **do not
-send mail**; use `/api/v1/email/…` + `email:send` only when mailing is intended.
-Portal shows `client_visible` comments/entries only.
+(direction, sender, real timestamp, message id; deterministic id; soft-delete
+safe). Client reply → ticket `triage` (every status, including completed); own
+outbound never moves status. List/poll ingest also syncs when the webhook is
+down. These ticket routes **do not send mail**; use `/api/v1/email/…` +
+`email:send` only when mailing is intended. Portal requests
+`?visibility=client_visible` and never sees internal notes.
 
 ## Task images (screenshots)
 

@@ -78,6 +78,24 @@ export function meetingCrmActivityId(
     .slice(0, 21);
 }
 
+/**
+ * Stable ticket email-timeline comment id (OS-187).
+ * Includes taskId so one AgentMail message can land on every linked ticket
+ * without cloud/Mac racing on random ids.
+ */
+export function ticketEmailTimelineCommentId(
+  workspaceId: string,
+  taskId: string,
+  emailMessageId: string,
+): string {
+  return createHash("sha256")
+    .update(
+      `ticket-email-timeline:${workspaceId}:${taskId}:${emailMessageId.trim()}`,
+    )
+    .digest("hex")
+    .slice(0, 21);
+}
+
 export function hasScope(scopes: ApiKeyScope[], required: ApiKeyScope): boolean {
   return scopes.includes(required);
 }

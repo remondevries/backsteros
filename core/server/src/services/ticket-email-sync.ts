@@ -1,13 +1,11 @@
 /**
  * OS-187: sync linked AgentMail messages into support-ticket timeline entries.
- * Idempotent on email message id. Never sends mail or notifies the client.
+ * Idempotent on (task, email message id), including soft-deleted rows.
+ * Never sends mail or notifies the client.
  */
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 
-import {
-  buildWaitingStatusPatch,
-  type TicketEmailSyncResult,
-} from "@backsteros/contracts";
+import type { TicketEmailSyncResult } from "@backsteros/contracts";
 
 import { db } from "../db/index.js";
 import { emailThreads, tasks } from "../db/schema.js";
@@ -15,21 +13,24 @@ import {
   AgentMailClient,
   type AgentMailMessageDetail,
 } from "../lib/agentmail-client.js";
-import { newId } from "../lib/crypto.js";
+import { ticketEmailTimelineCommentId } from "../lib/crypto.js";
 import { toTaskComment } from "../lib/mappers.js";
-import { getAgentMailCredentials, resolveInboxEmail } from "./agentmail-settings/settings.js";
+import {
+  getAgentMailCredentials,
+  resolveInboxEmail,
+} from "./agentmail-settings/settings.js";
+import { lookupContactByChannel } from "./crm-domain/organizations-contacts.js";
 import {
   getOrCreateEmailThreadMetadata,
   resolveEmailThreadKey,
 } from "./email-threads.js";
-import {
-  upsertEmailTimelineComment,
-} from "./task-comments.js";
+import { upsertEmailTimelineComment } from "./task-comments.js";
 import * as taskProjectService from "./tasks-projects.js";
 
 type DbExecutor = Pick<typeof db, "select" | "insert" | "update">;
 
-const CLOSED_STATUSES = new Set(["completed", "canceled", "duplicated"]);
+/** Task status used when a client reply reopens / retriages a linked ticket. */
+export const TICKET_INBOUND_STATUS = "triage" as const;
 
 export type TicketEmailMessage = {
   messageId: string;
@@ -50,6 +51,10 @@ export type TicketEmailSyncDeps = {
   }) => Promise<TicketEmailMessage[]>;
   /** Test seam: must remain unused by production sync (no-send guarantee). */
   sendMail?: (...args: unknown[]) => Promise<unknown>;
+  resolveContactIdByEmail?: (
+    workspaceId: string,
+    email: string,
+  ) => Promise<string | null>;
 };
 
 function extractEmailAddress(from: string): string {
@@ -70,12 +75,22 @@ function resolveDirection(
   return "inbound";
 }
 
-function formatTimelineBody(message: TicketEmailMessage): string {
+export function formatTimelineBody(message: TicketEmailMessage): string {
   const text = message.text?.trim() || message.preview?.trim() || "";
   const subject = message.subject?.trim();
   if (subject && text) return `**${subject}**\n\n${text}`;
   if (subject) return `**${subject}**`;
   return text || "(empty email)";
+}
+
+async function defaultResolveContactIdByEmail(
+  workspaceId: string,
+  email: string,
+): Promise<string | null> {
+  const normalized = email.trim().toLowerCase();
+  if (!normalized.includes("@")) return null;
+  const row = await lookupContactByChannel(workspaceId, { email: normalized });
+  return row?.id ?? null;
 }
 
 async function defaultFetchThreadMessages(input: {
@@ -102,6 +117,7 @@ async function defaultFetchThreadMessages(input: {
 
 export const ticketEmailSyncDeps: TicketEmailSyncDeps = {
   fetchThreadMessages: defaultFetchThreadMessages,
+  resolveContactIdByEmail: defaultResolveContactIdByEmail,
 };
 
 export async function listSupportTicketsForEmailThread(
@@ -180,9 +196,9 @@ export async function resolveEmailThreadRowForAgentMail(input: {
 
 /**
  * Apply ticket status from the latest synced message direction.
- * outbound (team reply) → waiting (waiting on client)
- * inbound (client reply) → in_progress
- * Skips closed tickets. Never sends mail.
+ * inbound (client reply) → triage from every status (including completed).
+ * outbound (own mail) → never moves status (Remon 18 Nov).
+ * Never sends mail.
  */
 export async function applyTicketStatusFromEmailDirection(input: {
   workspaceId: string;
@@ -191,36 +207,44 @@ export async function applyTicketStatusFromEmailDirection(input: {
   currentStatus: string;
   currentFollowUpDate?: Date | string | null;
 }): Promise<string | undefined> {
-  if (CLOSED_STATUSES.has(input.currentStatus)) {
-    return undefined;
-  }
+  // Own outgoing messages never move ticket status.
   if (input.direction === "outbound") {
-    if (input.currentStatus === "waiting") return undefined;
-    const patch = buildWaitingStatusPatch({
-      currentFollowUpDate: input.currentFollowUpDate
-        ? typeof input.currentFollowUpDate === "string"
-          ? input.currentFollowUpDate
-          : input.currentFollowUpDate.toISOString()
-        : null,
-    });
-    await taskProjectService.updateTask(input.workspaceId, input.taskId, patch);
-    return patch.status;
-  }
-  // inbound → open the ticket for work
-  if (
-    input.currentStatus === "in_progress" ||
-    input.currentStatus === "ready_to_start" ||
-    input.currentStatus === "triage"
-  ) {
     return undefined;
   }
-  if (input.currentStatus === "waiting" || input.currentStatus === "on_hold") {
-    await taskProjectService.updateTask(input.workspaceId, input.taskId, {
-      status: "in_progress",
-    });
-    return "in_progress";
+  // Inbound client reply → Triage (reopens completed / canceled / etc.).
+  if (input.currentStatus === TICKET_INBOUND_STATUS) {
+    return undefined;
   }
-  return undefined;
+  await taskProjectService.updateTask(input.workspaceId, input.taskId, {
+    status: TICKET_INBOUND_STATUS,
+  });
+  return TICKET_INBOUND_STATUS;
+}
+
+/**
+ * Author email timeline entries as the mail sender / matched CRM contact.
+ * Never attributes client mail to the importing agent (`importerContactId` is
+ * audit-only via importedByContactId on the caller).
+ */
+async function resolveEmailAuthor(input: {
+  workspaceId: string;
+  message: TicketEmailMessage;
+  direction: "inbound" | "outbound";
+  deps: TicketEmailSyncDeps;
+}): Promise<{
+  authorContactId: string | null;
+  authorEmail: string | null;
+  authorSide: "client" | "team";
+}> {
+  const authorSide = input.direction === "outbound" ? "team" : "client";
+  const authorEmail = extractEmailAddress(input.message.from) || null;
+  let authorContactId: string | null = null;
+  if (authorEmail) {
+    const resolve =
+      input.deps.resolveContactIdByEmail ?? defaultResolveContactIdByEmail;
+    authorContactId = await resolve(input.workspaceId, authorEmail);
+  }
+  return { authorContactId, authorEmail, authorSide };
 }
 
 export async function syncTicketLinkedEmails(input: {
@@ -312,17 +336,21 @@ export async function syncTicketLinkedEmails(input: {
 
     for (const message of messages) {
       const direction = message.direction ?? "inbound";
-      const authorSide = direction === "outbound" ? "team" : "client";
+      const author = await resolveEmailAuthor({
+        workspaceId: input.workspaceId,
+        message,
+        direction,
+        deps,
+      });
       const result = await upsertEmailTimelineComment(input.workspaceId, {
         taskId: task.id,
         emailMessageId: message.messageId,
         body: formatTimelineBody(message),
         emailDirection: direction,
         emailSender: message.from,
-        authorEmail: extractEmailAddress(message.from) || null,
-        authorContactId:
-          authorSide === "client" ? input.authorContactId ?? null : null,
-        authorSide,
+        authorEmail: author.authorEmail,
+        authorContactId: author.authorContactId,
+        authorSide: author.authorSide,
         occurredAt: message.timestamp,
         visibility: "client_visible",
         imported: input.backfill === true,
@@ -334,7 +362,11 @@ export async function syncTicketLinkedEmails(input: {
               ? "user"
               : "agent"
             : null,
-        id: newId(),
+        id: ticketEmailTimelineCommentId(
+          input.workspaceId,
+          task.id,
+          message.messageId,
+        ),
       });
       if (!result) continue;
       if (result.created) {
@@ -435,21 +467,31 @@ export async function syncLinkedTicketsForEmailMessage(input: {
     } satisfies TicketEmailMessage);
 
   const direction = message.direction ?? input.direction;
-  const authorSide = direction === "outbound" ? "team" : "client";
 
   for (const ticket of tickets) {
+    const author = await resolveEmailAuthor({
+      workspaceId: input.workspaceId,
+      message,
+      direction,
+      deps,
+    });
     await upsertEmailTimelineComment(input.workspaceId, {
       taskId: ticket.id,
       emailMessageId: message.messageId,
       body: formatTimelineBody(message),
       emailDirection: direction,
       emailSender: message.from || null,
-      authorEmail: extractEmailAddress(message.from) || null,
-      authorSide,
+      authorEmail: author.authorEmail,
+      authorContactId: author.authorContactId,
+      authorSide: author.authorSide,
       occurredAt: message.timestamp,
       visibility: "client_visible",
       imported: false,
-      id: newId(),
+      id: ticketEmailTimelineCommentId(
+        input.workspaceId,
+        ticket.id,
+        message.messageId,
+      ),
     });
     await applyTicketStatusFromEmailDirection({
       workspaceId: input.workspaceId,
