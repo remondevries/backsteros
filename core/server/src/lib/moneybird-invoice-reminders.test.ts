@@ -129,6 +129,31 @@ describe("moneybird invoice reminders", () => {
     );
   });
 
+  it("reconcile rotates so all open tracks beyond the per-pass limit get checked", async () => {
+    const ids = Array.from({ length: 7 }, (_, i) => `inv_rot_${i}`);
+    for (const id of ids) {
+      await registerManualPortalInvoiceForReminders(id, "nl");
+    }
+    const checkedOrder: string[] = [];
+    setInvoicePaidLookupForTests(async (invoiceId) => {
+      checkedOrder.push(invoiceId);
+      return "open";
+    });
+
+    const pass1 = await reconcilePaidOpenReminderTracks({ limit: 5 });
+    assert.equal(pass1.checked, 5);
+    assert.equal(new Set(checkedOrder).size, 5);
+
+    const pass2 = await reconcilePaidOpenReminderTracks({ limit: 5 });
+    assert.equal(pass2.checked, 5);
+    assert.equal(
+      new Set(checkedOrder).size,
+      7,
+      "all 7 open tracks must be checked across two capped passes",
+    );
+    assert.equal(checkedOrder.length, 10);
+  });
+
   it("documents required Moneybird webhook events for the ladder", () => {
     assert.ok(
       MONEYBIRD_REMINDER_WEBHOOK_EVENTS.includes(MONEYBIRD_PAID_ACTION),

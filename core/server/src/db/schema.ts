@@ -3653,6 +3653,10 @@ export const moneybirdInvoiceReminderTracks = pgTable(
     reminderMessageId3: text("reminder_message_id_3"),
     reminderInboxId3: text("reminder_inbox_id_3"),
     reminderTo3: text("reminder_to_3"),
+    /** Last paid-reconcile Moneybird GET for this open track (fair rotation). */
+    paidReconcileCheckedAt: timestamp("paid_reconcile_checked_at", {
+      withTimezone: true,
+    }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),

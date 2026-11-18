@@ -1,4 +1,4 @@
-import { and, eq, isNotNull, isNull, lte, or } from "drizzle-orm";
+import { and, eq, isNotNull, isNull, lte, or, sql } from "drizzle-orm";
 
 import { db } from "../db/index.js";
 import {
@@ -54,6 +54,8 @@ type ReminderTrack = {
   dueAt: Partial<Record<2 | 3, number>>;
   locale: string | null;
   cancelledAt: string | null;
+  /** ISO time of last paid-reconcile GET (null = never checked). */
+  paidReconcileCheckedAt: string | null;
 };
 
 function emptyMailRef(): PortalMailRef {
@@ -133,6 +135,7 @@ function emptyTrack(locale: string | null): ReminderTrack {
     dueAt: {},
     locale,
     cancelledAt: null,
+    paidReconcileCheckedAt: null,
   };
 }
 
@@ -189,6 +192,9 @@ function rowToTrack(row: DbMoneybirdInvoiceReminderTrack): ReminderTrack {
     dueAt,
     locale: row.locale,
     cancelledAt: row.cancelledAt ? row.cancelledAt.toISOString() : null,
+    paidReconcileCheckedAt: row.paidReconcileCheckedAt
+      ? row.paidReconcileCheckedAt.toISOString()
+      : null,
   };
 }
 
@@ -235,6 +241,9 @@ async function persistTrack(
       reminderMessageId3: track.reminderMail[3]?.messageId ?? null,
       reminderInboxId3: track.reminderMail[3]?.inboxId ?? null,
       reminderTo3: track.reminderMail[3]?.to ?? null,
+      paidReconcileCheckedAt: isoToDate(
+        track.paidReconcileCheckedAt ?? undefined,
+      ),
       createdAt: now,
       updatedAt: now,
     })
@@ -263,6 +272,9 @@ async function persistTrack(
         reminderMessageId3: track.reminderMail[3]?.messageId ?? null,
         reminderInboxId3: track.reminderMail[3]?.inboxId ?? null,
         reminderTo3: track.reminderMail[3]?.to ?? null,
+        paidReconcileCheckedAt: isoToDate(
+          track.paidReconcileCheckedAt ?? undefined,
+        ),
         updatedAt: now,
       },
     });
@@ -827,6 +839,7 @@ function resolvePaidLookup(
 /**
  * Cancel open Manual/portal reminder tracks whose Moneybird invoice is already
  * paid. Read-only Moneybird GETs only; capped per pass for rate limits.
+ * Rotates fairly via paidReconcileCheckedAt (never-checked / oldest first).
  * Safety net when `sales_invoice_state_changed_to_paid` is not subscribed.
  */
 export async function reconcilePaidOpenReminderTracks(options?: {
@@ -849,6 +862,10 @@ export async function reconcilePaidOpenReminderTracks(options?: {
             isNull(moneybirdInvoiceReminderTracks.cancelledAt),
           ),
         )
+        .orderBy(
+          sql`${moneybirdInvoiceReminderTracks.paidReconcileCheckedAt} ASC NULLS FIRST`,
+          moneybirdInvoiceReminderTracks.invoiceId,
+        )
         .limit(limit);
       for (const row of rows) openIds.push(row.invoiceId);
     } catch (error) {
@@ -859,17 +876,30 @@ export async function reconcilePaidOpenReminderTracks(options?: {
       return { checked: 0, cancelled };
     }
   } else {
-    for (const [invoiceId, track] of tracks) {
-      if (!track.eligibleFromManualSend || track.cancelledAt) continue;
-      openIds.push(invoiceId);
-      if (openIds.length >= limit) break;
-    }
+    const open = [...tracks.entries()]
+      .filter(
+        ([, track]) => track.eligibleFromManualSend && !track.cancelledAt,
+      )
+      .sort(([idA, a], [idB, b]) => {
+        const aMs = a.paidReconcileCheckedAt
+          ? Date.parse(a.paidReconcileCheckedAt)
+          : Number.NEGATIVE_INFINITY;
+        const bMs = b.paidReconcileCheckedAt
+          ? Date.parse(b.paidReconcileCheckedAt)
+          : Number.NEGATIVE_INFINITY;
+        if (aMs !== bMs) return aMs - bMs;
+        return idA.localeCompare(idB);
+      });
+    for (const [invoiceId] of open.slice(0, limit)) openIds.push(invoiceId);
   }
 
   let checked = 0;
   for (const invoiceId of openIds) {
     checked += 1;
     const status = await lookup(invoiceId);
+    const track = await getOrCreateTrack(invoiceId, null);
+    track.paidReconcileCheckedAt = new Date().toISOString();
+    await persistTrack(invoiceId, track);
     if (status !== "paid") continue;
     await cancelPendingRemindersForInvoice(invoiceId);
     cancelled.push(invoiceId);
