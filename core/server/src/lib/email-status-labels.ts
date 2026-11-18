@@ -113,9 +113,56 @@ export function shouldRetriageEmailThreadOnInbound(
   return migrateLegacyEmailStatus(normalized) !== "triage";
 }
 
+function parseInboundCursorTime(
+  value: string | Date | number | null | undefined,
+): number | null {
+  if (value == null) return null;
+  if (value instanceof Date) {
+    const ms = value.getTime();
+    return Number.isFinite(ms) ? ms : null;
+  }
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : null;
+  }
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const ms = Date.parse(trimmed);
+  return Number.isFinite(ms) ? ms : null;
+}
+
 /**
- * Whether `candidate` is a new inbound message id relative to the stored cursor.
- * Equal ids must not retriage again (Waiting after reading must stay put).
+ * Whether `candidate` is a newer inbound than the stored cursor.
+ * Equal ids never retriage. Prefer timestamps so a lagging list cannot move the
+ * cursor backwards or bounce a thread twice (OS-188).
+ */
+export function isNewerInboundMessage(input: {
+  storedId?: string | null;
+  storedAt?: string | Date | number | null;
+  candidateId?: string | null;
+  candidateAt?: string | Date | number | null;
+}): boolean {
+  const nextId = input.candidateId?.trim() || "";
+  if (!nextId) return false;
+  const prevId = input.storedId?.trim() || "";
+  if (prevId && nextId === prevId) return false;
+
+  const nextAt = parseInboundCursorTime(input.candidateAt);
+  const prevAt = parseInboundCursorTime(input.storedAt);
+
+  if (prevAt != null) {
+    if (nextAt == null) return false;
+    return nextAt > prevAt;
+  }
+
+  // No stored timestamp: empty cursor → first sighting is newer; otherwise
+  // require a candidate timestamp before treating a different id as newer.
+  if (!prevId) return true;
+  return nextAt != null;
+}
+
+/**
+ * @deprecated Prefer {@link isNewerInboundMessage} (timestamp-aware).
+ * Id-only fallback: different id counts as newer (no timestamp guard).
  */
 export function isNewerInboundMessageId(
   stored: string | null | undefined,

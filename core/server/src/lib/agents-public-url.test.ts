@@ -79,4 +79,14 @@ describe("agents-public-url (OS-100 / OS-188)", () => {
       null,
     );
   });
+
+  it("refuses AgentMail webhook registration when CORE_REPLICATION_ROLE is unset", () => {
+    assert.equal(
+      resolveAgentsPublicWebhookBase({
+        AGENTS_PUBLIC_URL: "https://agent.backsteros.com",
+      }),
+      null,
+    );
+    assert.equal(resolveAgentsPublicWebhookBase({}), null);
+  });
 });

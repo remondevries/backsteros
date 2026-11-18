@@ -2719,6 +2719,13 @@ export const emailThreads = pgTable(
      * (webhook + list ingest). Same id must not bounce a Waiting thread back.
      */
     lastProcessedInboundMessageId: text("last_processed_inbound_message_id"),
+    /**
+     * Timestamp of the last inbound message considered for retriage. Compare by
+     * time so a lagging list cannot move the cursor backwards (OS-188).
+     */
+    lastProcessedInboundAt: timestamp("last_processed_inbound_at", {
+      withTimezone: true,
+    }),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },

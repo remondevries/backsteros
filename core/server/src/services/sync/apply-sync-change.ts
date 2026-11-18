@@ -1124,12 +1124,33 @@ export async function applySyncChange(
       if (!inboxId || !threadKey) throw new Error("INVALID_EMAIL_THREAD");
       const parsed = updateEmailThreadMetadataSchema.safeParse(payload);
       if (!parsed.success) throw new Error("INVALID_EMAIL_THREAD");
+      // Cursor fields are internal (not on the public update schema) but must
+      // still round-trip through leader sync (OS-188).
+      const internalPatch: emailThreadsService.EmailThreadMetadataPatch = {
+        ...parsed.data,
+      };
+      if (payload.lastProcessedInboundMessageId !== undefined) {
+        internalPatch.lastProcessedInboundMessageId =
+          typeof payload.lastProcessedInboundMessageId === "string"
+            ? payload.lastProcessedInboundMessageId
+            : payload.lastProcessedInboundMessageId === null
+              ? null
+              : undefined;
+      }
+      if (payload.lastProcessedInboundAt !== undefined) {
+        internalPatch.lastProcessedInboundAt =
+          typeof payload.lastProcessedInboundAt === "string"
+            ? payload.lastProcessedInboundAt
+            : payload.lastProcessedInboundAt === null
+              ? null
+              : undefined;
+      }
       const preferredNumber = asNumber(payload.number);
       const meta = await emailThreadsService.updateEmailThreadMetadata(
         workspaceId,
         inboxId,
         threadKey,
-        parsed.data,
+        internalPatch,
         executor,
         change.entity_id,
         preferredNumber,

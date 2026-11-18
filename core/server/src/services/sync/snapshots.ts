@@ -443,6 +443,7 @@ export function emailThreadSnapshot(row: typeof emailThreads.$inferSelect) {
     inbox_updated_at: row.inboxUpdatedAt?.toISOString() ?? null,
     last_processed_inbound_message_id:
       row.lastProcessedInboundMessageId ?? null,
+    last_processed_inbound_at: row.lastProcessedInboundAt?.toISOString() ?? null,
     created_at: row.createdAt.toISOString(),
     updated_at: row.updatedAt.toISOString(),
   };

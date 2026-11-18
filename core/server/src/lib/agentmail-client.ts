@@ -878,7 +878,8 @@ export function mapAgentMailWebhook(
   return {
     webhookId: asRequiredString(raw.webhook_id ?? raw.webhookId, "webhook_id"),
     url: asRequiredString(raw.url, "url"),
-    secret: asRequiredString(raw.secret, "secret"),
+    // List responses may omit secret; create/get include it. Adopt path refetches.
+    secret: asOptionalString(raw.secret) ?? "",
     enabled: Boolean(raw.enabled),
     eventTypes,
     inboxIds,

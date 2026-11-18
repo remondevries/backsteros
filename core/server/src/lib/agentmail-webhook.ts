@@ -20,6 +20,8 @@ export type AgentMailWebhookPayload = {
   inboxId: string | null;
   messageId: string | null;
   threadId: string | null;
+  timestamp: string | null;
+  labels: string[];
 };
 
 export function pruneWebhookDedupe(now = Date.now()): void {
@@ -78,8 +80,17 @@ export function parseAgentMailWebhookPayload(
     (message && typeof message.thread_id === "string" && message.thread_id.trim()) ||
     (message && typeof message.threadId === "string" && message.threadId.trim()) ||
     null;
+  const timestamp =
+    (message && typeof message.timestamp === "string" && message.timestamp.trim()) ||
+    (message && typeof message.created_at === "string" && message.created_at.trim()) ||
+    (message && typeof message.createdAt === "string" && message.createdAt.trim()) ||
+    null;
+  const rawLabels = message && Array.isArray(message.labels) ? message.labels : [];
+  const labels = rawLabels.filter(
+    (value): value is string => typeof value === "string" && value.trim().length > 0,
+  );
   if (!eventType) return null;
-  return { eventType, eventId, inboxId, messageId, threadId };
+  return { eventType, eventId, inboxId, messageId, threadId, timestamp, labels };
 }
 
 export function verifyAgentMailWebhook(
@@ -101,6 +112,8 @@ export type AgentMailWebhookDeliveryResult = {
   inboxId: string | null;
   messageId: string | null;
   threadId: string | null;
+  timestamp: string | null;
+  labels: string[];
 };
 
 export function handleAgentMailWebhookDelivery(input: {
@@ -116,6 +129,8 @@ export function handleAgentMailWebhookDelivery(input: {
     inboxId: null,
     messageId: null,
     threadId: null,
+    timestamp: null,
+    labels: [] as string[],
   } satisfies AgentMailWebhookDeliveryResult;
   const { rawBody, headers, secrets } = input;
   if (secrets.length === 0) {
@@ -150,6 +165,8 @@ export function handleAgentMailWebhookDelivery(input: {
       inboxId: null,
       messageId: null,
       threadId: null,
+      timestamp: null,
+      labels: [],
     };
   }
 
@@ -162,6 +179,8 @@ export function handleAgentMailWebhookDelivery(input: {
       inboxId: null,
       messageId: null,
       threadId: null,
+      timestamp: null,
+      labels: [],
     };
   }
   if (!parsed.inboxId) {
@@ -172,6 +191,8 @@ export function handleAgentMailWebhookDelivery(input: {
       inboxId: null,
       messageId: null,
       threadId: null,
+      timestamp: null,
+      labels: [],
     };
   }
 
@@ -230,6 +251,8 @@ export function handleAgentMailWebhookDelivery(input: {
     inboxId: parsed.inboxId,
     messageId: parsed.messageId,
     threadId: parsed.threadId,
+    timestamp: parsed.timestamp,
+    labels: parsed.labels,
   };
 }
 

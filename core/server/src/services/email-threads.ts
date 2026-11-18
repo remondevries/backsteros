@@ -22,10 +22,20 @@ import {
 import { newId } from "../lib/crypto.js";
 import {
   canPromoteEmailThreadWorkflowStatus,
-  isNewerInboundMessageId,
+  isAgentMailOutboundMessage,
+  isNewerInboundMessage,
   shouldRetriageEmailThreadOnInbound,
   type EmailWorkflowPromoteStatus,
 } from "../lib/email-status-labels.js";
+
+/**
+ * Internal patch for email thread metadata writes. Cursor fields are not on the
+ * public update schema — only webhook/list ingest and sync apply may set them.
+ */
+export type EmailThreadMetadataPatch = UpdateEmailThreadMetadataInput & {
+  lastProcessedInboundMessageId?: string | null;
+  lastProcessedInboundAt?: string | null;
+};
 import {
   getContactById,
   getOrganizationById,
@@ -706,7 +716,7 @@ export async function updateEmailThreadMetadata(
   workspaceId: string,
   inboxId: string,
   threadKey: string,
-  input: UpdateEmailThreadMetadataInput,
+  input: EmailThreadMetadataPatch,
   executor: DbExecutor = db,
   /** When inserting a new thread row, use this id (sync / leader-first). */
   id: string = newId(),
@@ -786,6 +796,15 @@ export async function updateEmailThreadMetadata(
             input.lastProcessedInboundMessageId?.trim() || null,
         }
       : {}),
+    ...(() => {
+      if (input.lastProcessedInboundAt === undefined) return {};
+      if (input.lastProcessedInboundAt === null) {
+        return { lastProcessedInboundAt: null as Date | null };
+      }
+      const parsed = new Date(input.lastProcessedInboundAt);
+      if (Number.isNaN(parsed.getTime())) return {};
+      return { lastProcessedInboundAt: parsed };
+    })(),
     updatedAt: now,
   };
 
@@ -802,6 +821,15 @@ export async function updateEmailThreadMetadata(
     typeof preferredNumber === "number" && Number.isInteger(preferredNumber)
       ? preferredNumber
       : await nextEmailThreadNumber(workspaceId, executor);
+  const insertInboundAt =
+    input.lastProcessedInboundAt === undefined
+      ? null
+      : input.lastProcessedInboundAt === null
+        ? null
+        : (() => {
+            const parsed = new Date(input.lastProcessedInboundAt);
+            return Number.isNaN(parsed.getTime()) ? null : parsed;
+          })();
   const [row] = await executor
     .insert(emailThreads)
     .values({
@@ -822,6 +850,7 @@ export async function updateEmailThreadMetadata(
         input.lastProcessedInboundMessageId === undefined
           ? null
           : input.lastProcessedInboundMessageId?.trim() || null,
+      lastProcessedInboundAt: insertInboundAt,
       createdAt: now,
       updatedAt: now,
     })
@@ -834,7 +863,7 @@ export async function patchEmailThreadMetadataLeaderAware(
   workspaceId: string,
   inboxId: string,
   threadKey: string,
-  patch: UpdateEmailThreadMetadataInput,
+  patch: EmailThreadMetadataPatch,
 ): Promise<EmailThreadMetadata | null> {
   const existing = await getEmailThreadRow(workspaceId, inboxId, threadKey);
   const { shouldForwardMutationsToLeader } = await import(
@@ -935,10 +964,11 @@ export async function promoteEmailThreadWorkflowStatus(
  * not Triage, move it back to Triage (and clear Updated) so the reply is
  * obvious. Does not invent thread rows — list/open paths create those.
  *
- * `source`:
- * - `event` (webhook): any unseen inbound id may retriage.
- * - `poll` (list ingest): first sighting of an id only seeds the cursor so a
- *   thread the user already moved to Waiting does not bounce back.
+ * Decide by time (and id): retriage when the inbound is newer than the stored
+ * cursor. Poll never seed-only-swallows a real reply; one-off seeding of
+ * existing threads belongs in migration 0207. A webhook for an id the poll
+ * already processed no-ops; a poll that sees a reply the webhook missed
+ * retriages. Never move the cursor backwards when the list lags the webhook.
  */
 export async function retriageEmailThreadOnInbound(
   workspaceId: string,
@@ -946,6 +976,9 @@ export async function retriageEmailThreadOnInbound(
   input: {
     threadId?: string | null;
     messageId?: string | null;
+    /** ISO / epoch of the inbound message (required for time-based compare). */
+    messageAt?: string | Date | number | null;
+    labels?: readonly string[] | null;
     source?: "event" | "poll";
   },
 ): Promise<EmailThreadMetadata | null> {
@@ -957,28 +990,33 @@ export async function retriageEmailThreadOnInbound(
     messageId,
   });
   if (!threadKey) return null;
-  const source = input.source === "poll" ? "poll" : "event";
+  if (isAgentMailOutboundMessage(input.labels)) {
+    return null;
+  }
   try {
     const existing = await getEmailThreadRow(workspaceId, inboxId, threadKey);
     if (!existing) return null;
 
     const storedInboundId = existing.lastProcessedInboundMessageId ?? null;
+    const storedInboundAt = existing.lastProcessedInboundAt ?? null;
     const isNewInbound =
       messageId.length > 0 &&
-      isNewerInboundMessageId(storedInboundId, messageId);
+      isNewerInboundMessage({
+        storedId: storedInboundId,
+        storedAt: storedInboundAt,
+        candidateId: messageId,
+        candidateAt: input.messageAt,
+      });
 
-    // Same inbound id already recorded — never bounce Waiting back to Triage.
+    // Same / older inbound — never bounce Waiting back to Triage, never move
+    // the cursor backwards when a lagging list trails the webhook.
     if (messageId && !isNewInbound) {
       return toEmailThreadMetadata(workspaceId, existing);
     }
 
-    // List ingest: seed the cursor on first observation without retriaging.
-    const seedOnly =
-      source === "poll" && isNewInbound && !storedInboundId?.trim();
-    const shouldRetriage =
-      !seedOnly && shouldRetriageEmailThreadOnInbound(existing.status);
+    const shouldRetriage = shouldRetriageEmailThreadOnInbound(existing.status);
 
-    const patch: UpdateEmailThreadMetadataInput = {};
+    const patch: EmailThreadMetadataPatch = {};
     if (shouldRetriage) {
       // Clear Updated so the thread lands cleanly in Triage, not the Updated group.
       patch.status = "triage";
@@ -986,6 +1024,19 @@ export async function retriageEmailThreadOnInbound(
     }
     if (isNewInbound) {
       patch.lastProcessedInboundMessageId = messageId;
+      const atMs =
+        input.messageAt instanceof Date
+          ? input.messageAt.getTime()
+          : typeof input.messageAt === "number"
+            ? input.messageAt
+            : typeof input.messageAt === "string"
+              ? Date.parse(input.messageAt)
+              : Number.NaN;
+      if (Number.isFinite(atMs)) {
+        patch.lastProcessedInboundAt = new Date(atMs).toISOString();
+      } else if (!storedInboundAt) {
+        patch.lastProcessedInboundAt = new Date().toISOString();
+      }
     }
     if (Object.keys(patch).length === 0) {
       return toEmailThreadMetadata(workspaceId, existing);

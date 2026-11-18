@@ -498,6 +498,7 @@ export const emailThreadKeys = {
   acknowledge_inbox_update: "acknowledgeInboxUpdate",
   inbox_updated_at: "inboxUpdatedAt",
   last_processed_inbound_message_id: "lastProcessedInboundMessageId",
+  last_processed_inbound_at: "lastProcessedInboundAt",
 };
 
 export const emailThreadCommentKeys = {

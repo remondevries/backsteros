@@ -780,6 +780,35 @@ export function classifyAgentMailWebhookEnsure(input: {
   };
 }
 
+/** True when getWebhook failed because the webhook is gone (only then recreate). */
+export function isAgentMailWebhookNotFoundError(error: unknown): boolean {
+  if (error instanceof AgentMailApiError) {
+    if (error.status === 404) return true;
+    const body = `${error.message} ${error.body}`.toLowerCase();
+    return error.status === 400 && body.includes("not found");
+  }
+  if (error instanceof Error) {
+    const msg = error.message.toLowerCase();
+    return msg.includes("not found") && msg.includes("404");
+  }
+  return false;
+}
+
+/** Pick a healthy remote webhook that already points at the agents door URL. */
+export function pickAdoptableAgentMailWebhook<
+  T extends { webhookId: string; url: string; enabled: boolean },
+>(webhooks: readonly T[], targetUrl: string): T | null {
+  const want = targetUrl.trim();
+  if (!want || !isAgentMailDoorWebhookUrl(want)) return null;
+  for (const hook of webhooks) {
+    if (!hook.enabled) continue;
+    if (hook.url.trim() !== want) continue;
+    if (!hook.webhookId.trim()) continue;
+    return hook;
+  }
+  return null;
+}
+
 async function clearStoredWebhook(
   workspaceId: string,
   apiKey: string | null,
@@ -846,20 +875,35 @@ async function ensureAgentMailWebhook(
 
   try {
     let remote: {
+      webhookId: string;
       enabled: boolean;
       url: string;
       inboxIds: string[];
+      secret: string;
     } | null = null;
     if (existingId && existingSecret) {
       try {
         const current = await client.getWebhook(existingId);
         remote = {
+          webhookId: current.webhookId,
           enabled: current.enabled,
           url: current.url,
           inboxIds: current.inboxIds,
+          secret: current.secret,
         };
-      } catch {
-        remote = null;
+      } catch (error) {
+        if (isAgentMailWebhookNotFoundError(error)) {
+          remote = null;
+        } else {
+          // 5xx / 429 / network: keep the existing webhook; do not delete+recreate.
+          console.warn(
+            "[agentmail] ensureWebhook keeping existing webhook after getWebhook error:",
+            error instanceof Error ? error.message : error,
+            workspaceId,
+            existingId,
+          );
+          return;
+        }
       }
     }
 
@@ -896,6 +940,84 @@ async function ensureAgentMailWebhook(
       return;
     }
 
+    // Before creating a duplicate: adopt an existing healthy door webhook
+    // (e.g. ops-created ep_* that cloud DB does not yet store).
+    const shouldTryAdopt =
+      decision.action === "recreate" &&
+      (decision.reason === "no stored webhook url" ||
+        decision.reason === "remote webhook missing or unreadable" ||
+        !existingId ||
+        !existingSecret);
+    if (shouldTryAdopt) {
+      try {
+        const listed = await client.listWebhooks();
+        const adoptable = pickAdoptableAgentMailWebhook(listed, targetUrl);
+        if (adoptable) {
+          let adopted = adoptable;
+          if (!adopted.secret?.trim()) {
+            adopted = await client.getWebhook(adoptable.webhookId);
+          }
+          if (adopted.secret?.trim() && adopted.enabled) {
+            await upsertAgentMailSecrets(workspaceId, apiKey, inboxIds, {
+              webhook: {
+                webhookId: adopted.webhookId,
+                webhookSecret: adopted.secret,
+                webhookUrl: adopted.url,
+              },
+            });
+            console.info(
+              "[agentmail] ensureWebhook adopted existing door webhook:",
+              adopted.webhookId,
+              adopted.url,
+              workspaceId,
+            );
+            const inboxDecision = classifyAgentMailWebhookEnsure({
+              targetUrl,
+              storedUrl: adopted.url,
+              desiredInboxIds: inboxIds,
+              remote: {
+                enabled: adopted.enabled,
+                url: adopted.url,
+                inboxIds: adopted.inboxIds,
+              },
+            });
+            if (
+              inboxDecision.action === "update-inboxes" &&
+              adopted.webhookId
+            ) {
+              await client.updateWebhook(adopted.webhookId, {
+                addInboxIds:
+                  inboxDecision.toAdd.length > 0
+                    ? inboxDecision.toAdd
+                    : undefined,
+                removeInboxIds:
+                  inboxDecision.toRemove.length > 0
+                    ? inboxDecision.toRemove
+                    : undefined,
+                eventTypes: ["message.received"],
+              });
+              console.info(
+                "[agentmail] ensureWebhook updated adopted webhook inboxes",
+                workspaceId,
+                adopted.webhookId,
+                {
+                  added: inboxDecision.toAdd.length,
+                  removed: inboxDecision.toRemove.length,
+                },
+              );
+            }
+            return;
+          }
+        }
+      } catch (error) {
+        console.warn(
+          "[agentmail] ensureWebhook adopt lookup failed; will recreate:",
+          error instanceof Error ? error.message : error,
+          workspaceId,
+        );
+      }
+    }
+
     const recreateReason =
       decision.action === "recreate"
         ? decision.reason
@@ -907,14 +1029,8 @@ async function ensureAgentMailWebhook(
       existingId,
     );
 
-    if (existingId) {
-      try {
-        await client.deleteWebhook(existingId);
-      } catch {
-        // Ignore missing remote webhook.
-      }
-    }
-
+    // Create the replacement first; only delete the old webhook after success
+    // so a create failure cannot leave us with no webhook.
     const created = await client.createWebhook({
       url: targetUrl,
       eventTypes: ["message.received"],
@@ -928,6 +1044,13 @@ async function ensureAgentMailWebhook(
         webhookUrl: created.url,
       },
     });
+    if (existingId && existingId !== created.webhookId) {
+      try {
+        await client.deleteWebhook(existingId);
+      } catch {
+        // Ignore missing remote webhook.
+      }
+    }
   } catch (error) {
     console.error("Failed to ensure AgentMail webhook:", error);
   }

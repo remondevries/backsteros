@@ -14,6 +14,8 @@ export {
   agentsPublicWebhookUrl,
   isAgentMailDoorWebhookUrl,
   classifyAgentMailWebhookEnsure,
+  isAgentMailWebhookNotFoundError,
+  pickAdoptableAgentMailWebhook,
   listAgentMailWebhookSecrets,
   listAgentMailInboxes,
   testAgentMailConnection,

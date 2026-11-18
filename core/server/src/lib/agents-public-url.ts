@@ -46,14 +46,15 @@ export function resolveAgentsPublicBase(
 }
 
 /**
- * AgentMail inbound webhook base, or null on local-core.
+ * AgentMail inbound webhook base, or null unless this process is explicitly
+ * cloud-core. Unset `CORE_REPLICATION_ROLE` counts as local (no registration).
  * On cloud, falls back to the agents door when unset or stale (staging), same
- * as {@link resolveAgentsPublicBase}. Local-core must not register webhooks.
+ * as {@link resolveAgentsPublicBase}.
  */
 export function resolveAgentsPublicWebhookBase(
   env: NodeJS.ProcessEnv = process.env,
 ): string | null {
-  if (env.CORE_REPLICATION_ROLE?.trim().toLowerCase() === "local") {
+  if (env.CORE_REPLICATION_ROLE?.trim().toLowerCase() !== "cloud") {
     return null;
   }
   const configured = env.AGENTS_PUBLIC_URL?.trim().replace(/\/$/, "");

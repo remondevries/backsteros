@@ -98,8 +98,13 @@ describe("hybrid write bar", () => {
       "inbound retriage must patch leader-first",
     );
     assert.ok(
-      email.includes("lastProcessedInboundMessageId"),
-      "inbound retriage must persist last processed inbound message id",
+      email.includes("lastProcessedInboundMessageId") &&
+        email.includes("lastProcessedInboundAt"),
+      "inbound retriage must persist last processed inbound id + at",
+    );
+    assert.ok(
+      email.includes("isNewerInboundMessage"),
+      "inbound retriage must compare by timestamp, not id inequality alone",
     );
 
     const emailRoutes = readSrc("../app/email-routes.ts");

@@ -7,6 +7,7 @@ import {
   emailStatusLabelName,
   emailStatusLabelPatch,
   isAgentMailOutboundMessage,
+  isNewerInboundMessage,
   isNewerInboundMessageId,
   migrateLegacyEmailStatus,
   shouldRetriageEmailThreadOnInbound,
@@ -107,16 +108,93 @@ describe("shouldRetriageEmailThreadOnInbound", () => {
   });
 });
 
-describe("isNewerInboundMessageId", () => {
+describe("isNewerInboundMessage", () => {
+  const t1 = "2026-11-18T09:40:00.000Z";
+  const t2 = "2026-11-18T09:50:00.000Z";
+
   it("treats empty candidates as not newer", () => {
-    assert.equal(isNewerInboundMessageId(null, null), false);
-    assert.equal(isNewerInboundMessageId("msg_1", ""), false);
-    assert.equal(isNewerInboundMessageId("msg_1", "   "), false);
+    assert.equal(
+      isNewerInboundMessage({ storedId: "msg_1", candidateId: null }),
+      false,
+    );
+    assert.equal(
+      isNewerInboundMessage({ storedId: "msg_1", candidateId: "  " }),
+      false,
+    );
   });
 
-  it("treats a different id as newer and equal ids as not", () => {
+  it("never treats equal ids as newer", () => {
+    assert.equal(
+      isNewerInboundMessage({
+        storedId: "msg_1",
+        storedAt: t1,
+        candidateId: "msg_1",
+        candidateAt: t2,
+      }),
+      false,
+    );
+  });
+
+  it("compares by timestamp and refuses to move the cursor backwards", () => {
+    assert.equal(
+      isNewerInboundMessage({
+        storedId: "msg_new",
+        storedAt: t2,
+        candidateId: "msg_old",
+        candidateAt: t1,
+      }),
+      false,
+    );
+    assert.equal(
+      isNewerInboundMessage({
+        storedId: "msg_old",
+        storedAt: t1,
+        candidateId: "msg_new",
+        candidateAt: t2,
+      }),
+      true,
+    );
+  });
+
+  it("treats an empty cursor as newer (real reply must retriage)", () => {
+    assert.equal(
+      isNewerInboundMessage({
+        storedId: null,
+        storedAt: null,
+        candidateId: "msg_1",
+        candidateAt: t1,
+      }),
+      true,
+    );
+  });
+
+  it("uses migration-seeded storedAt when id is empty", () => {
+    assert.equal(
+      isNewerInboundMessage({
+        storedId: null,
+        storedAt: t2,
+        candidateId: "msg_old",
+        candidateAt: t1,
+      }),
+      false,
+    );
+    assert.equal(
+      isNewerInboundMessage({
+        storedId: null,
+        storedAt: t1,
+        candidateId: "msg_new",
+        candidateAt: t2,
+      }),
+      true,
+    );
+  });
+});
+
+describe("isNewerInboundMessageId", () => {
+  it("keeps id-only fallback for empty / equal / different", () => {
+    assert.equal(isNewerInboundMessageId(null, null), false);
+    assert.equal(isNewerInboundMessageId("msg_1", ""), false);
     assert.equal(isNewerInboundMessageId(null, "msg_1"), true);
-    assert.equal(isNewerInboundMessageId("", "msg_1"), true);
     assert.equal(isNewerInboundMessageId("msg_1", "msg_1"), false);
     assert.equal(isNewerInboundMessageId("msg_1", "msg_2"), true);
   });

@@ -346,6 +346,8 @@ export function registerEmailRoutes(app: Hono) {
         .retriageEmailThreadOnInbound(result.workspaceId, result.inboxId, {
           threadId: result.threadId,
           messageId: result.messageId,
+          messageAt: result.timestamp ?? new Date().toISOString(),
+          labels: result.labels,
           source: "event",
         })
         .catch(() => {

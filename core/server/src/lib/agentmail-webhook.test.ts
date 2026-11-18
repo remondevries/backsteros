@@ -36,7 +36,23 @@ describe("agentmail-webhook", () => {
       inboxId: "inbox_1",
       messageId: "msg_1",
       threadId: "thread_1",
+      timestamp: null,
+      labels: [],
     });
+  });
+
+  it("parses message timestamp and labels for inbound retriage", () => {
+    const parsed = parseAgentMailWebhookPayload({
+      event_type: "message.received",
+      message: {
+        inbox_id: "inbox_1",
+        message_id: "msg_1",
+        timestamp: "2026-11-18T09:46:00.000Z",
+        labels: ["unread", "sent"],
+      },
+    });
+    assert.equal(parsed?.timestamp, "2026-11-18T09:46:00.000Z");
+    assert.deepEqual(parsed?.labels, ["unread", "sent"]);
   });
 
   it("rejects invalid signatures", () => {

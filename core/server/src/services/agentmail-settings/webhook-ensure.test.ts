@@ -1,9 +1,15 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { describe, it } from "node:test";
+import { fileURLToPath } from "node:url";
 
+import { AgentMailApiError } from "../../lib/agentmail-client.js";
 import {
   classifyAgentMailWebhookEnsure,
   isAgentMailDoorWebhookUrl,
+  isAgentMailWebhookNotFoundError,
+  pickAdoptableAgentMailWebhook,
 } from "./settings.js";
 
 const DOOR =
@@ -91,5 +97,91 @@ describe("AgentMail webhook ensure (OS-188)", () => {
       },
     });
     assert.equal(decision.action, "noop");
+  });
+
+  it("treats only 404/not-found as missing; 5xx stays transient", () => {
+    assert.equal(
+      isAgentMailWebhookNotFoundError(new AgentMailApiError(404, "gone")),
+      true,
+    );
+    assert.equal(
+      isAgentMailWebhookNotFoundError(
+        new AgentMailApiError(400, '{"message":"webhook not found"}'),
+      ),
+      true,
+    );
+    assert.equal(
+      isAgentMailWebhookNotFoundError(new AgentMailApiError(500, "boom")),
+      false,
+    );
+    assert.equal(
+      isAgentMailWebhookNotFoundError(new AgentMailApiError(429, "slow")),
+      false,
+    );
+    assert.equal(
+      isAgentMailWebhookNotFoundError(new Error("fetch failed")),
+      false,
+    );
+  });
+
+  it("adopts an existing healthy door webhook instead of duplicating", () => {
+    const picked = pickAdoptableAgentMailWebhook(
+      [
+        {
+          webhookId: "ep_stale",
+          url: STAGING,
+          enabled: true,
+        },
+        {
+          webhookId: "ep_3MH1oiuNtrFCY",
+          url: DOOR,
+          enabled: true,
+        },
+        {
+          webhookId: "ep_disabled",
+          url: DOOR,
+          enabled: false,
+        },
+      ],
+      DOOR,
+    );
+    assert.equal(picked?.webhookId, "ep_3MH1oiuNtrFCY");
+    assert.equal(pickAdoptableAgentMailWebhook([], DOOR), null);
+    assert.equal(
+      pickAdoptableAgentMailWebhook(
+        [{ webhookId: "ep_x", url: DOOR, enabled: false }],
+        DOOR,
+      ),
+      null,
+    );
+  });
+
+  it("creates the replacement webhook before deleting the old one", () => {
+    const src = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), "settings.ts"),
+      "utf8",
+    );
+    const recreateIdx = src.indexOf("ensureWebhook recreating:");
+    assert.ok(recreateIdx > 0);
+    const slice = src.slice(recreateIdx, recreateIdx + 1200);
+    const createIdx = slice.indexOf("createWebhook");
+    const deleteIdx = slice.indexOf("deleteWebhook");
+    assert.ok(createIdx >= 0, "recreate path must call createWebhook");
+    assert.ok(deleteIdx >= 0, "recreate path must call deleteWebhook");
+    assert.ok(
+      createIdx < deleteIdx,
+      "must create the new webhook before deleting the old one",
+    );
+  });
+
+  it("keeps the existing webhook on getWebhook 5xx (source guard)", () => {
+    const src = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), "settings.ts"),
+      "utf8",
+    );
+    assert.ok(src.includes("isAgentMailWebhookNotFoundError"));
+    assert.ok(
+      src.includes("ensureWebhook keeping existing webhook after getWebhook error"),
+    );
   });
 });

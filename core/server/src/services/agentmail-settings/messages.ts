@@ -170,11 +170,17 @@ export async function listAgentMailMessages(
     })),
   );
 
-  // Defense in depth (OS-188): list ingest retriages only when a newer inbound
-  // message id appears. Outbound/`sent` list rows never bounce status.
+  // Defense in depth (OS-188): list ingest retriages when a newer inbound
+  // (by timestamp) appears. Outbound/`sent` list rows never bounce status.
   const inboundByThread = new Map<
     string,
-    { inboxId: string; threadId: string | null; messageId: string; at: number }
+    {
+      inboxId: string;
+      threadId: string | null;
+      messageId: string;
+      at: number;
+      labels: string[];
+    }
   >();
   for (const message of apiMessages) {
     if (isAgentMailOutboundMessage(message.labels)) continue;
@@ -196,6 +202,7 @@ export async function listAgentMailMessages(
         threadId: message.threadId ?? null,
         messageId,
         at,
+        labels: [...(message.labels ?? [])],
       });
     }
   }
@@ -207,6 +214,8 @@ export async function listAgentMailMessages(
         {
           threadId: inbound.threadId,
           messageId: inbound.messageId,
+          messageAt: inbound.at > 0 ? inbound.at : new Date().toISOString(),
+          labels: inbound.labels,
           source: "poll",
         },
       );
