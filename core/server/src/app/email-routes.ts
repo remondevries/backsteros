@@ -46,6 +46,7 @@ import {
   readIdempotencyKey,
   withIdempotency,
 } from "../lib/idempotency.js";
+import { latestAgentMailOutboundAt } from "../lib/email-status-labels.js";
 
 export function registerEmailRoutes(app: Hono) {
   app.get("/api/v1/email/inboxes", async (c) => {
@@ -350,7 +351,32 @@ export function registerEmailRoutes(app: Hono) {
       void (async () => {
         // Never invent `now` when the payload omits a timestamp — fetch or
         // treat as unknown so Waiting cannot bounce on a synthetic clock.
+        // Also resolve last outbound/`sent` time (like poll ingest) so the
+        // Waiting/Done cutoff does not fall back to updatedAt (bumped by edits).
         let messageAt: string | null = result.timestamp?.trim() || null;
+        let lastOutboundAt: string | null = null;
+        const lookupThreadId = threadId?.trim() || null;
+        if (lookupThreadId) {
+          try {
+            const thread = await agentmailSettingsService.getAgentMailThread(
+              workspaceId,
+              inboxId,
+              lookupThreadId,
+            );
+            const outboundMs = latestAgentMailOutboundAt(thread.messages);
+            if (outboundMs != null) {
+              lastOutboundAt = new Date(outboundMs).toISOString();
+            }
+            if (!messageAt && messageId) {
+              const match = thread.messages.find(
+                (entry) => entry.messageId === messageId,
+              );
+              messageAt = match?.timestamp?.trim() || null;
+            }
+          } catch {
+            // Fall through to single-message fetch below.
+          }
+        }
         if (!messageAt && messageId) {
           try {
             const detail = await agentmailSettingsService.getAgentMailMessage(
@@ -370,6 +396,7 @@ export function registerEmailRoutes(app: Hono) {
             threadId,
             messageId,
             messageAt,
+            lastOutboundAt,
             labels,
             source: "event",
           },

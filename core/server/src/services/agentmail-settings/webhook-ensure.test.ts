@@ -322,4 +322,79 @@ describe("AgentMail webhook ensure (OS-188)", () => {
       src.includes("ensureWebhook keeping existing webhook after getWebhook error"),
     );
   });
+
+  it("keeps the existing webhook on listWebhooks error (no duplicate create)", async () => {
+    const src = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), "settings.ts"),
+      "utf8",
+    );
+    assert.ok(
+      src.includes(
+        "ensureWebhook keeping existing webhook after listWebhooks error",
+      ),
+    );
+    assert.equal(
+      src.includes("adopt lookup failed; will recreate"),
+      false,
+      "listWebhooks errors must not fall through to recreate",
+    );
+
+    let createCalls = 0;
+    mock.method(agentMailWebhookEnsureDeps, "agentsPublicWebhookUrl", () => DOOR);
+    mock.method(agentMailWebhookEnsureDeps, "getSecretRow", async () => ({
+      agentmailApiKey: "am_test",
+      agentmailInboxId: "inbox_a",
+      agentmailInboxIds: ["inbox_a"],
+      agentmailInboxContacts: {},
+      agentmailReplyGreetingTemplate: null,
+      agentmailReplyGreetingTemplateEn: null,
+      agentmailReplyGreetingTemplateNl: null,
+      agentmailReplySignOffTemplate: null,
+      agentmailReplySignOffTemplateEn: null,
+      agentmailReplySignOffTemplateNl: null,
+      agentmailReplySignOffName: null,
+      agentmailWebhookId: "ep_stale_staging",
+      agentmailWebhookSecret: "whsec_stale",
+      agentmailWebhookUrl: STAGING,
+      emailGrokWebhookUrl: null,
+      emailGrokWebhookKey: null,
+    }));
+    mock.method(agentMailWebhookEnsureDeps, "upsertSecrets", async () => {
+      throw new Error("must not upsert on listWebhooks failure");
+    });
+
+    const fakeClient = {
+      async getWebhook(webhookId: string) {
+        return {
+          webhookId,
+          enabled: true,
+          url: STAGING,
+          inboxIds: ["inbox_a"],
+          secret: "whsec_stale",
+          eventTypes: ["message.received"],
+        };
+      },
+      async listWebhooks() {
+        throw new AgentMailApiError(503, "temporary");
+      },
+      async createWebhook() {
+        createCalls += 1;
+        throw new Error("must not create on listWebhooks failure");
+      },
+      async updateWebhook() {
+        throw new Error("must not update on listWebhooks failure");
+      },
+      async deleteWebhook() {
+        throw new Error("must not delete on listWebhooks failure");
+      },
+    };
+    mock.method(
+      agentMailWebhookEnsureDeps,
+      "createClient",
+      () => fakeClient as unknown as AgentMailClient,
+    );
+
+    await ensureAgentMailWebhook("ws_test", "am_test", ["inbox_a"]);
+    assert.equal(createCalls, 0);
+  });
 });

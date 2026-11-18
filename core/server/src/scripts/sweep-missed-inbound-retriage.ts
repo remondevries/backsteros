@@ -1,11 +1,12 @@
 /**
  * OS-188: one-time sweep after deploy — list Waiting/Done threads whose latest
- * inbound (non-sent) message is newer than the latest outbound/`sent` message.
+ * inbound (non-sent) message is newer than the latest outbound/`sent` message
+ * and would actually bounce under the real retriage rule.
  *
  *   pnpm exec tsx --env-file=.env src/scripts/sweep-missed-inbound-retriage.ts
  *     → dry-run (default): prints thread id / display id / subject / status only.
  *   ... --apply
- *     → retriages matching threads to Triage (writes).
+ *     → retriages matching threads to Triage (writes); reports threads actually changed.
  *
  * No writes unless --apply. Safe to run read-only against cloud after migration.
  */
@@ -14,7 +15,13 @@ import { and, eq, inArray } from "drizzle-orm";
 import { db, sqlClient } from "../db/index.js";
 import { emailThreads, workspaceIntegrationSecrets } from "../db/schema.js";
 import { AgentMailClient } from "../lib/agentmail-client.js";
-import { isAgentMailOutboundMessage } from "../lib/email-status-labels.js";
+import {
+  isAgentMailOutboundMessage,
+  isLikelyClientThankYouMessage,
+  isNewerInboundMessage,
+  latestAgentMailOutboundAt,
+  shouldBounceWaitingThreadOnInbound,
+} from "../lib/email-status-labels.js";
 import * as emailThreadsService from "../services/email-threads.js";
 import { formatEmailDisplayId } from "../services/email-threads.js";
 
@@ -39,6 +46,19 @@ export type SweepThreadMessage = {
   messageId: string;
   timestamp: string;
   labels: string[];
+  preview?: string | null;
+  text?: string | null;
+};
+
+export type SweepMissedInboundRow = {
+  id: string;
+  number: number;
+  inboxId: string;
+  threadKey: string;
+  status: string;
+  updatedAt?: Date | string | null;
+  lastProcessedInboundMessageId?: string | null;
+  lastProcessedInboundAt?: Date | string | null;
 };
 
 export function parseSweepMissedInboundArgs(
@@ -66,38 +86,90 @@ export function parseSweepMissedInboundArgs(
 export function latestOutboundAt(
   messages: ReadonlyArray<Pick<SweepThreadMessage, "labels" | "timestamp">>,
 ): number | null {
-  let max = 0;
-  for (const message of messages) {
-    if (!isAgentMailOutboundMessage(message.labels)) continue;
-    const at = Date.parse(message.timestamp) || 0;
-    if (at > max) max = at;
-  }
-  return max > 0 ? max : null;
+  return latestAgentMailOutboundAt(messages);
 }
 
 export function latestInbound(
   messages: ReadonlyArray<SweepThreadMessage>,
-): { messageId: string; at: number } | null {
-  let best: { messageId: string; at: number } | null = null;
+): { messageId: string; at: number; preview: string | null; text: string | null } | null {
+  let best: {
+    messageId: string;
+    at: number;
+    preview: string | null;
+    text: string | null;
+  } | null = null;
   for (const message of messages) {
     if (isAgentMailOutboundMessage(message.labels)) continue;
     const messageId = message.messageId?.trim() || "";
     if (!messageId) continue;
     const at = Date.parse(message.timestamp) || 0;
     if (at <= 0) continue;
-    if (!best || at >= best.at) best = { messageId, at };
+    if (!best || at >= best.at) {
+      best = {
+        messageId,
+        at,
+        preview: message.preview ?? null,
+        text: message.text ?? null,
+      };
+    }
   }
   return best;
 }
 
+/**
+ * Mirror retriageEmailThreadOnInbound bounce predicates so dry-run candidates
+ * match threads --apply would actually move (cursor + outbound/waiting floor).
+ * Done + short client thank-you is skipped unless that real rule would bounce.
+ */
+export function wouldSweepRetriageHit(input: {
+  status: string;
+  inboundMessageId: string;
+  inboundAt: number;
+  inboundPreview?: string | null;
+  inboundText?: string | null;
+  lastOutboundAt: number | null;
+  updatedAt?: Date | string | null;
+  lastProcessedInboundMessageId?: string | null;
+  lastProcessedInboundAt?: Date | string | null;
+}): boolean {
+  const isNew = isNewerInboundMessage({
+    storedId: input.lastProcessedInboundMessageId,
+    storedAt: input.lastProcessedInboundAt,
+    candidateId: input.inboundMessageId,
+    candidateAt: input.inboundAt,
+  });
+  if (!isNew) return false;
+
+  const mayBounce = shouldBounceWaitingThreadOnInbound({
+    status: input.status,
+    inboundAt: input.inboundAt,
+    lastOutboundAt: input.lastOutboundAt,
+    waitingEnteredAt: input.updatedAt,
+  });
+  if (!mayBounce) return false;
+
+  const status = (input.status ?? "").trim();
+  if (status === "completed" || status === "done") {
+    const thankYou =
+      isLikelyClientThankYouMessage(input.inboundText) ||
+      isLikelyClientThankYouMessage(input.inboundPreview);
+    if (thankYou) {
+      // Thank-you alone is not enough: only keep if bounce still holds when the
+      // outbound floor is ignored (status-entered / updatedAt cutoff) — i.e. a
+      // real post-Done reply, not a thanks that landed before Done was set.
+      return shouldBounceWaitingThreadOnInbound({
+        status: input.status,
+        inboundAt: input.inboundAt,
+        lastOutboundAt: null,
+        waitingEnteredAt: input.updatedAt,
+      });
+    }
+  }
+  return true;
+}
+
 export async function findMissedInboundRetriageCandidates(input: {
-  rows: ReadonlyArray<{
-    id: string;
-    number: number;
-    inboxId: string;
-    threadKey: string;
-    status: string;
-  }>;
+  rows: ReadonlyArray<SweepMissedInboundRow>;
   getThread: (
     inboxId: string,
     threadId: string,
@@ -117,6 +189,21 @@ export async function findMissedInboundRetriageCandidates(input: {
     if (!inbound) continue;
     const outboundAt = latestOutboundAt(thread.messages);
     if (outboundAt != null && inbound.at <= outboundAt) continue;
+    if (
+      !wouldSweepRetriageHit({
+        status: row.status,
+        inboundMessageId: inbound.messageId,
+        inboundAt: inbound.at,
+        inboundPreview: inbound.preview,
+        inboundText: inbound.text,
+        lastOutboundAt: outboundAt,
+        updatedAt: row.updatedAt,
+        lastProcessedInboundMessageId: row.lastProcessedInboundMessageId,
+        lastProcessedInboundAt: row.lastProcessedInboundAt,
+      })
+    ) {
+      continue;
+    }
     hits.push({
       id: row.id,
       displayId: formatEmailDisplayId(row.number),
@@ -131,6 +218,33 @@ export async function findMissedInboundRetriageCandidates(input: {
     });
   }
   return hits;
+}
+
+export async function applyMissedInboundRetriageHits(input: {
+  workspaceId: string;
+  hits: ReadonlyArray<SweepMissedInboundHit>;
+  retriage?: typeof emailThreadsService.retriageEmailThreadOnInbound;
+}): Promise<{ changed: SweepMissedInboundHit[]; unchanged: number }> {
+  const retriage =
+    input.retriage ?? emailThreadsService.retriageEmailThreadOnInbound;
+  const changed: SweepMissedInboundHit[] = [];
+  let unchanged = 0;
+  for (const hit of input.hits) {
+    const beforeStatus = hit.status;
+    const result = await retriage(input.workspaceId, hit.inboxId, {
+      threadId: hit.threadKey,
+      messageId: hit.inboundMessageId,
+      messageAt: hit.inboundAt,
+      lastOutboundAt: hit.lastOutboundAt,
+      source: "poll",
+    });
+    if (result?.status === "triage" && beforeStatus !== "triage") {
+      changed.push(hit);
+    } else {
+      unchanged += 1;
+    }
+  }
+  return { changed, unchanged };
 }
 
 async function main() {
@@ -155,6 +269,7 @@ async function main() {
   }
 
   const allHits: SweepMissedInboundHit[] = [];
+  const allChanged: SweepMissedInboundHit[] = [];
   for (const workspace of workspaces) {
     const apiKey = workspace.apiKey!.trim();
     const client = new AgentMailClient({ apiKey });
@@ -165,6 +280,9 @@ async function main() {
         inboxId: emailThreads.inboxId,
         threadKey: emailThreads.threadKey,
         status: emailThreads.status,
+        updatedAt: emailThreads.updatedAt,
+        lastProcessedInboundMessageId: emailThreads.lastProcessedInboundMessageId,
+        lastProcessedInboundAt: emailThreads.lastProcessedInboundAt,
       })
       .from(emailThreads)
       .where(
@@ -182,37 +300,40 @@ async function main() {
             messageId: message.messageId,
             timestamp: message.timestamp,
             labels: message.labels ?? [],
+            preview: message.preview,
+            text: message.text,
           })),
         })),
     });
     allHits.push(...hits);
 
     if (args.apply) {
-      for (const hit of hits) {
-        await emailThreadsService.retriageEmailThreadOnInbound(
-          workspace.workspaceId,
-          hit.inboxId,
-          {
-            threadId: hit.threadKey,
-            messageId: hit.inboundMessageId,
-            messageAt: hit.inboundAt,
-            lastOutboundAt: hit.lastOutboundAt,
-            source: "poll",
-          },
-        );
-      }
+      const { changed } = await applyMissedInboundRetriageHits({
+        workspaceId: workspace.workspaceId,
+        hits,
+      });
+      allChanged.push(...changed);
     }
   }
 
-  console.log(
-    args.apply
-      ? `Applied retriage to ${allHits.length} thread(s):`
-      : `Dry-run: ${allHits.length} Waiting/Done thread(s) with inbound newer than last outbound:`,
-  );
-  for (const hit of allHits) {
+  if (args.apply) {
     console.log(
-      `${hit.displayId}\t${hit.id}\t${hit.status}\t${hit.subject.replace(/\s+/g, " ").slice(0, 80)}`,
+      `Applied retriage to ${allChanged.length} thread(s) (${allHits.length} candidate(s)):`,
     );
+    for (const hit of allChanged) {
+      console.log(
+        `${hit.displayId}\t${hit.id}\t${hit.status}\t${hit.subject.replace(/\s+/g, " ").slice(0, 80)}`,
+      );
+    }
+  } else {
+    console.log(
+      `Dry-run: ${allHits.length} Waiting/Done thread(s) with inbound newer than last outbound:`,
+    );
+    for (const hit of allHits) {
+      console.log(
+        `${hit.displayId}\t${hit.id}\t${hit.status}\t${hit.subject.replace(/\s+/g, " ").slice(0, 80)}`,
+      );
+    }
   }
 
   await sqlClient.end({ timeout: 2 });

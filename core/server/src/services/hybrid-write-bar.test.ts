@@ -116,6 +116,12 @@ describe("hybrid write bar", () => {
       emailRoutes.includes('source: "event"'),
       "webhook path must record inbound ids as event source",
     );
+    assert.ok(
+      emailRoutes.includes("getAgentMailThread") &&
+        emailRoutes.includes("lastOutboundAt") &&
+        emailRoutes.includes("latestAgentMailOutboundAt"),
+      "webhook retriage must pass lastOutboundAt (not updatedAt-only cutoff)",
+    );
 
     const messages = readSrc("agentmail-settings/messages.ts");
     assert.ok(

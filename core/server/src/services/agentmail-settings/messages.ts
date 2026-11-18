@@ -12,6 +12,7 @@ import {
   AgentMailClient,
   type AgentMailDraftSummary,
   type AgentMailMessageAttachment,
+  type AgentMailThread,
   type EmailSourceHeader,
   hydrateAgentMailThreadMessages,
   parseEmailSourceHeaders,
@@ -33,6 +34,7 @@ import {
   emailStatusLabelPatch,
   isAgentMailOutboundMessage,
   isNewerInboundMessage,
+  latestAgentMailOutboundAt,
 } from "../../lib/email-status-labels.js";
 import {
   peekAgentMailMessageDetailCache,
@@ -223,9 +225,10 @@ export async function listAgentMailMessages(
       );
       const at = Date.parse(message.timestamp) || 0;
       if (isAgentMailOutboundMessage(message.labels)) {
-        if (at > 0) {
+        const outboundAt = latestAgentMailOutboundAt([message]);
+        if (outboundAt != null) {
           const prevOut = outboundAtByThread.get(lookup) ?? 0;
-          if (at >= prevOut) outboundAtByThread.set(lookup, at);
+          if (outboundAt >= prevOut) outboundAtByThread.set(lookup, outboundAt);
         }
         continue;
       }
@@ -402,6 +405,20 @@ export async function getAgentMailMessage(
   );
   writeAgentMailMessageDetailCache(workspaceId, inboxId, messageId, detail);
   return detail;
+}
+
+/** Light thread fetch for webhook retriage outbound cutoff (OS-188). */
+export async function getAgentMailThread(
+  workspaceId: string,
+  inboxId: string,
+  threadId: string,
+): Promise<AgentMailThread> {
+  const { apiKey } = await getAgentMailCredentials(workspaceId);
+  if (!apiKey) {
+    throw new AgentMailApiError(400, "", "AgentMail API key is not configured");
+  }
+  const client = new AgentMailClient({ apiKey });
+  return client.getThread(inboxId, threadId);
 }
 
 async function loadAgentMailMessageUncached(

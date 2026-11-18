@@ -213,3 +213,42 @@ export function isAgentMailOutboundMessage(labels: readonly string[] | null | un
     (label) => label.trim().toLowerCase() === "sent",
   );
 }
+
+/**
+ * Latest outbound/`sent` message timestamp (ms), or null when the thread has
+ * no sent messages. Shared by poll ingest, webhook retriage, and the sweep.
+ */
+export function latestAgentMailOutboundAt(
+  messages: ReadonlyArray<{
+    labels?: readonly string[] | null;
+    timestamp?: string | null;
+  }>,
+): number | null {
+  let max = 0;
+  for (const message of messages) {
+    if (!isAgentMailOutboundMessage(message.labels)) continue;
+    const at = Date.parse(message.timestamp ?? "") || 0;
+    if (at > max) max = at;
+  }
+  return max > 0 ? max : null;
+}
+
+/**
+ * Short client thank-you / acknowledgement (Done threads should not reopen on
+ * these during the one-time missed-inbound sweep unless the real bounce rule
+ * would move them anyway).
+ */
+export function isLikelyClientThankYouMessage(
+  text: string | null | undefined,
+): boolean {
+  const normalized = (text ?? "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase()
+    .replace(/[.!?,;:]+$/g, "")
+    .trim();
+  if (!normalized || normalized.length > 60) return false;
+  return /^(?:(?:hi|hey|hello|hoi|hallo)[,!\s]+)?(?:thanks|thank you|thx|ty|bedankt|dankjewel|dank je wel|dank u wel|dank je|dank u|merci)(?:\s+\w+){0,2}$/i.test(
+    normalized,
+  );
+}

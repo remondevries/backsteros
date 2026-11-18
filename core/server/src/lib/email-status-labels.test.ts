@@ -7,8 +7,10 @@ import {
   emailStatusLabelName,
   emailStatusLabelPatch,
   isAgentMailOutboundMessage,
+  isLikelyClientThankYouMessage,
   isNewerInboundMessage,
   isNewerInboundMessageId,
+  latestAgentMailOutboundAt,
   shouldBounceWaitingThreadOnInbound,
   migrateLegacyEmailStatus,
   shouldRetriageEmailThreadOnInbound,
@@ -276,5 +278,33 @@ describe("isAgentMailOutboundMessage", () => {
     assert.equal(isAgentMailOutboundMessage(["Sent"]), true);
     assert.equal(isAgentMailOutboundMessage(["unread"]), false);
     assert.equal(isAgentMailOutboundMessage(null), false);
+  });
+});
+
+describe("latestAgentMailOutboundAt", () => {
+  it("returns the newest sent timestamp", () => {
+    assert.equal(
+      latestAgentMailOutboundAt([
+        { labels: ["unread"], timestamp: "2026-11-18T09:00:00.000Z" },
+        { labels: ["sent"], timestamp: "2026-11-17T12:00:00.000Z" },
+        { labels: ["sent"], timestamp: "2026-11-16T08:00:00.000Z" },
+      ]),
+      Date.parse("2026-11-17T12:00:00.000Z"),
+    );
+    assert.equal(latestAgentMailOutboundAt([{ labels: [], timestamp: "x" }]), null);
+  });
+});
+
+describe("isLikelyClientThankYouMessage", () => {
+  it("matches short thank-you / bedankt acknowledgements", () => {
+    assert.equal(isLikelyClientThankYouMessage("Thanks!"), true);
+    assert.equal(isLikelyClientThankYouMessage("Thank you"), true);
+    assert.equal(isLikelyClientThankYouMessage("Bedankt"), true);
+    assert.equal(isLikelyClientThankYouMessage("Hi, thanks"), true);
+    assert.equal(
+      isLikelyClientThankYouMessage("Thanks, can we also change the date?"),
+      false,
+    );
+    assert.equal(isLikelyClientThankYouMessage(null), false);
   });
 });

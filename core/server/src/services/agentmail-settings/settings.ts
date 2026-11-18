@@ -1029,11 +1029,15 @@ export async function ensureAgentMailWebhook(
           }
         }
       } catch (error) {
+        // Transient listWebhooks/getWebhook failure: keep the current
+        // registration — never fall through to createWebhook (duplicate hook).
         console.warn(
-          "[agentmail] ensureWebhook adopt lookup failed; will recreate:",
+          "[agentmail] ensureWebhook keeping existing webhook after listWebhooks error:",
           error instanceof Error ? error.message : error,
           workspaceId,
+          existingId,
         );
+        return;
       }
     }
 
