@@ -403,6 +403,7 @@ export async function applyTicketStatusFromEmailDirection(input: {
   direction: "inbound" | "outbound";
   currentStatus: string;
   currentFollowUpDate?: Date | string | null;
+  executor?: DbExecutor;
 }): Promise<string | undefined> {
   // Own outgoing messages never move ticket status.
   if (input.direction === "outbound") {
@@ -412,9 +413,14 @@ export async function applyTicketStatusFromEmailDirection(input: {
   if (input.currentStatus === TICKET_INBOUND_STATUS) {
     return undefined;
   }
-  await taskProjectService.updateTask(input.workspaceId, input.taskId, {
-    status: TICKET_INBOUND_STATUS,
-  });
+  await taskProjectService.updateTask(
+    input.workspaceId,
+    input.taskId,
+    {
+      status: TICKET_INBOUND_STATUS,
+    },
+    input.executor ?? db,
+  );
   return TICKET_INBOUND_STATUS;
 }
 
@@ -473,6 +479,127 @@ export function shouldMoveStatusForMessage(input: {
     }
   }
   return true;
+}
+
+/**
+ * OS-195: when email thread(s) are newly linked to a normal (non-support) task,
+ * move to Triage only if the chronologically newest message across those threads
+ * is a genuine inbound client reply. Does not upsert timeline comments (ticket
+ * sync owns that). Live reply retriage is unchanged.
+ */
+export async function maybeTriageTaskOnLinkedEmails(input: {
+  workspaceId: string;
+  taskId: string;
+  newlyLinkedEmailIds: readonly string[];
+  currentStatus: string;
+  currentFollowUpDate?: Date | string | null;
+  /** Support tickets use syncTicketLinkedEmails instead. */
+  support?: boolean | null;
+  deps?: TicketEmailSyncDeps;
+  executor?: DbExecutor;
+}): Promise<string | undefined> {
+  void input.deps?.sendMail;
+  if (input.support) return undefined;
+  if (input.currentStatus === TICKET_INBOUND_STATUS) return undefined;
+
+  const linkedIds = input.newlyLinkedEmailIds.filter(
+    (id): id is string => typeof id === "string" && id.trim().length > 0,
+  );
+  if (linkedIds.length === 0) return undefined;
+
+  const executor = input.executor ?? db;
+  const threadRows = await executor
+    .select({
+      id: emailThreads.id,
+      inboxId: emailThreads.inboxId,
+      threadKey: emailThreads.threadKey,
+    })
+    .from(emailThreads)
+    .where(
+      and(
+        eq(emailThreads.workspaceId, input.workspaceId),
+        inArray(emailThreads.id, linkedIds),
+      ),
+    );
+  if (threadRows.length === 0) return undefined;
+
+  const deps = input.deps ?? ticketEmailSyncDeps;
+  const resolveIdentity =
+    deps.resolveOutboundIdentity ?? defaultResolveOutboundIdentity;
+  const identity = await resolveIdentity(input.workspaceId);
+
+  let newestOverall: {
+    direction: "inbound" | "outbound";
+    message: TicketEmailMessage;
+  } | null = null;
+  let lastOutboundAt: string | null = null;
+
+  for (const thread of threadRows) {
+    let messages: TicketEmailMessage[] = [];
+    try {
+      messages = await deps.fetchThreadMessages({
+        workspaceId: input.workspaceId,
+        inboxId: thread.inboxId,
+        threadId: thread.threadKey,
+      });
+    } catch (error) {
+      console.warn(
+        "[tasks] linked-email triage fetch failed",
+        thread.inboxId,
+        thread.threadKey,
+        error instanceof Error ? error.message : error,
+      );
+      continue;
+    }
+
+    for (const message of messages) {
+      const direction = resolveDirection(
+        message.from,
+        null,
+        message.direction,
+        identity,
+        message.labels,
+      );
+      if (direction === "outbound") {
+        if (
+          !lastOutboundAt ||
+          new Date(message.timestamp).getTime() >
+            new Date(lastOutboundAt).getTime()
+        ) {
+          lastOutboundAt = message.timestamp;
+        }
+      }
+      if (
+        !newestOverall ||
+        new Date(message.timestamp).getTime() >
+          new Date(newestOverall.message.timestamp).getTime()
+      ) {
+        newestOverall = { direction, message };
+      }
+    }
+  }
+
+  if (
+    !newestOverall ||
+    !shouldMoveStatusForMessage({
+      // Linking itself is the status-relevant event (no timeline upsert here).
+      created: true,
+      direction: newestOverall.direction,
+      message: newestOverall.message,
+      lastOutboundAt,
+    })
+  ) {
+    return undefined;
+  }
+
+  return applyTicketStatusFromEmailDirection({
+    workspaceId: input.workspaceId,
+    taskId: input.taskId,
+    direction: "inbound",
+    currentStatus: input.currentStatus,
+    currentFollowUpDate: input.currentFollowUpDate,
+    executor,
+  });
 }
 
 export async function syncTicketLinkedEmails(input: {

@@ -13,6 +13,7 @@ import {
   contactDisplayName,
   type DbExecutor,
   dueDateIso,
+  linkedEmailIdsEqual,
   normalizeLinkedEmailIds,
   normalizeRelatedContactIds,
   normalizeRelatedOrganizationIds,
@@ -22,6 +23,7 @@ import {
   relatedOrganizationDisplayNames,
   relatedOrganizationIdsEqual,
 } from "./shared.js";
+import type { TicketEmailSyncDeps } from "../ticket-email-sync.js";
 import { contacts, type DbTask, entityCounters, habits, tasks } from "../../db/schema.js";
 import * as taskActivityService from "../task-activities.js";
 import type { TaskWriteActor } from "../task-activities.js";
@@ -56,7 +58,50 @@ export type TaskWriteOptions = {
   skipActivitySideEffects?: boolean;
   allowAgentInboxApproval?: boolean;
   authKind?: "api_key" | "local_shell";
+  /**
+   * OS-195: test seam for triage-on-link (AgentMail fetch / outbound identity).
+   * Production leaves this unset.
+   */
+  linkedEmailTriageDeps?: TicketEmailSyncDeps;
 };
+
+/**
+ * OS-195: after linking email thread(s) to a normal task, triage when the
+ * newest message is a genuine client reply. Dynamic import avoids a cycle with
+ * ticket-email-sync → tasks-projects. Skipped on peer replay / support tickets.
+ */
+async function applyLinkedEmailTriageAfterWrite(input: {
+  workspaceId: string;
+  task: DbTask;
+  newlyLinkedEmailIds: readonly string[];
+  skip: boolean;
+  deps?: TicketEmailSyncDeps;
+  executor: DbExecutor;
+}): Promise<DbTask> {
+  if (
+    input.skip ||
+    input.task.support ||
+    input.newlyLinkedEmailIds.length === 0 ||
+    input.task.status === "triage"
+  ) {
+    return input.task;
+  }
+  const { maybeTriageTaskOnLinkedEmails } = await import(
+    "../ticket-email-sync.js"
+  );
+  const nextStatus = await maybeTriageTaskOnLinkedEmails({
+    workspaceId: input.workspaceId,
+    taskId: input.task.id,
+    newlyLinkedEmailIds: input.newlyLinkedEmailIds,
+    currentStatus: input.task.status,
+    currentFollowUpDate: input.task.followUpDate,
+    support: input.task.support,
+    deps: input.deps,
+    executor: input.executor,
+  });
+  if (!nextStatus || nextStatus === input.task.status) return input.task;
+  return { ...input.task, status: nextStatus };
+}
 
 function taskScope(projectId?: string | null, contactId?: string | null) {
   return projectId
@@ -232,7 +277,7 @@ async function createTaskWithExecutor(
     penpotObjectId: input.penpotObjectId,
   });
 
-  const [row] = await executor
+  let [row] = await executor
     .insert(tasks)
     .values({
       id,
@@ -356,6 +401,15 @@ async function createTaskWithExecutor(
         );
       }
     }
+
+    row = await applyLinkedEmailTriageAfterWrite({
+      workspaceId,
+      task: row,
+      newlyLinkedEmailIds: linkedEmailIds,
+      skip: skipActivity,
+      deps: options?.linkedEmailTriageDeps,
+      executor,
+    });
   }
 
   bumpAgentSearchCache(workspaceId);
@@ -597,7 +651,7 @@ export async function updateTask(
     agentWorking.label !== (existing.agentWorkingLabel ?? null) ||
     agentWorking.kind !== existingKind;
 
-  const [row] = await executor
+  let [row] = await executor
     .update(tasks)
     .set({
       projectId: input.projectId,
@@ -943,6 +997,22 @@ export async function updateTask(
       timestamp: writeAt,
       executor,
     });
+
+    if (nextLinkedEmailIds !== undefined) {
+      const previousLinked = normalizeLinkedEmailIds(existing.linkedEmailIds);
+      const previousSet = new Set(previousLinked);
+      const newlyLinked = linkedEmailIdsEqual(previousLinked, nextLinkedEmailIds)
+        ? []
+        : nextLinkedEmailIds.filter((id) => !previousSet.has(id));
+      row = await applyLinkedEmailTriageAfterWrite({
+        workspaceId,
+        task: row,
+        newlyLinkedEmailIds: newlyLinked,
+        skip: skipActivity,
+        deps: options?.linkedEmailTriageDeps,
+        executor,
+      });
+    }
   }
 
   bumpAgentSearchCache(workspaceId);

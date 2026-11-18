@@ -7,6 +7,7 @@ import {
   formatTimelineBody,
   isAutomatedMailSkipStatus,
   isSharedPublicEmailDomain,
+  maybeTriageTaskOnLinkedEmails,
   needsTimelineBodyUpgrade,
   resolveTicketEmailDirection,
   shouldMoveStatusForMessage,
@@ -322,6 +323,41 @@ describe("OS-187 ticket email sync behaviour", () => {
       }),
       true,
       "newer client reply after our outbound still moves",
+    );
+  });
+
+  it("OS-195: maybeTriageTaskOnLinkedEmails no-ops for support / triage / empty", async () => {
+    assert.equal(
+      await maybeTriageTaskOnLinkedEmails({
+        workspaceId: "ws",
+        taskId: "task",
+        newlyLinkedEmailIds: ["email-1"],
+        currentStatus: "completed",
+        support: true,
+      }),
+      undefined,
+      "support tickets stay on syncTicketLinkedEmails",
+    );
+    assert.equal(
+      await maybeTriageTaskOnLinkedEmails({
+        workspaceId: "ws",
+        taskId: "task",
+        newlyLinkedEmailIds: ["email-1"],
+        currentStatus: "triage",
+        support: false,
+      }),
+      undefined,
+      "already triage must not move",
+    );
+    assert.equal(
+      await maybeTriageTaskOnLinkedEmails({
+        workspaceId: "ws",
+        taskId: "task",
+        newlyLinkedEmailIds: [],
+        currentStatus: "completed",
+        support: false,
+      }),
+      undefined,
     );
   });
 });

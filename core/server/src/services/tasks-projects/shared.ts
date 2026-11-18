@@ -147,13 +147,12 @@ export function normalizeLinkedEmailIds(
   return normalizeRelatedContactIds(value);
 }
 
-function linkedEmailIdsEqual(
+export function linkedEmailIdsEqual(
   a: readonly string[],
   b: readonly string[],
 ): boolean {
   return relatedContactIdsEqual(a, b);
 }
-void linkedEmailIdsEqual;
 
 export async function assertRelatedOrganizationIds(
   workspaceId: string,
