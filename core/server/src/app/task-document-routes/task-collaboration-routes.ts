@@ -113,15 +113,21 @@ export function registerTaskCollaborationRoutes(app: Hono) {
     const taskIdRaw = c.req.param("id");
     const taskId = await routeTaskId(auth.workspaceId, taskIdRaw);
     if (!taskId) return c.json(notFound("Task"), 404);
-    const visibility = resolveCommentListVisibility(
+    const resolvedVisibility = resolveCommentListVisibility(
       auth,
       c.req.query("visibility"),
     );
+    if (!resolvedVisibility.ok) {
+      return c.json(
+        { error: resolvedVisibility.error, code: "forbidden" as const },
+        resolvedVisibility.status,
+      );
+    }
     const rows = await taskCommentService.listTaskComments(
       auth.workspaceId,
       taskId,
       db,
-      { visibility },
+      { visibility: resolvedVisibility.visibility },
     );
     if (!rows) return c.json(notFound("Task"), 404);
     const mapped = rows.map(toTaskComment);

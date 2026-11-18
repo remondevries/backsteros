@@ -257,15 +257,21 @@ export function registerTasksRoutes(app: Hono) {
       | Array<ReturnType<typeof toTaskComment> & { images?: Awaited<ReturnType<typeof taskImageService.listTaskImages>> }>
       | undefined;
     if (includes.has("comments")) {
-      const visibility = resolveCommentListVisibility(
+      const resolvedVisibility = resolveCommentListVisibility(
         auth,
         c.req.query("visibility"),
       );
+      if (!resolvedVisibility.ok) {
+        return c.json(
+          { error: resolvedVisibility.error, code: "forbidden" as const },
+          resolvedVisibility.status,
+        );
+      }
       const commentRows = await taskCommentService.listTaskComments(
         auth.workspaceId,
         taskId,
         db,
-        { limit: 20, visibility },
+        { limit: 20, visibility: resolvedVisibility.visibility },
       );
       const mapped = (commentRows ?? []).map(toTaskComment);
       const byComment = await taskImageService.listTaskImagesForComments(

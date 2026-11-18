@@ -235,6 +235,7 @@ export function handleAgentMailWebhookDelivery(input: {
           messageId: parsed.messageId!,
           threadId: parsed.threadId,
           direction: "inbound",
+          messageAt: parsed.timestamp ?? null,
         }),
       )
       .catch((error) => {

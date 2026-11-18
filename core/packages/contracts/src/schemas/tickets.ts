@@ -185,13 +185,10 @@ export const ticketCommentSchema = taskCommentSchema;
 
 export const listTicketCommentsQuerySchema = z.object({
   /**
-   * Filter by visibility. Default `client_visible` (portal-safe).
-   * Staff/agent keys may request `all` or `internal` explicitly.
+   * Filter by visibility. Omitted → `all` for staff/agent keys (CLI /
+   * BacksterDEV); portal keys (scope `portal`) are locked to `client_visible`.
    */
-  visibility: z
-    .enum(["client_visible", "internal", "all"])
-    .optional()
-    .default("client_visible"),
+  visibility: z.enum(["client_visible", "internal", "all"]).optional(),
   limit: z.coerce.number().int().positive().max(200).optional(),
 });
 

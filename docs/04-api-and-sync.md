@@ -413,25 +413,34 @@ auto-append inbound/outbound AgentMail messages as comments with
 `authorSide` (`client` | `team`). Sync is **idempotent on (task, message id)**
 (including soft-deleted rows) with a deterministic entry id from
 workspace + task + message id. Authorship is the mail sender / matched CRM
-contact — never the importing agent. Inbound client reply → ticket `triage`
-from **every** status (including completed); own outbound mail never moves
-status. List/poll ingest (OS-188) and the AgentMail webhook both call
-`syncLinkedTicketsForEmailMessage` for every linked ticket. Backfill sets
-`importedAt` / `importedByActor` / `importedByContactId` and uses the
+contact — never the importing agent. Ticket status moves to `triage` only
+when a **genuinely new** inbound timeline entry is created (`created: true`)
+— never on placeholder replacement or re-poll of the same message id. Own
+outbound mail (any workspace inbox address, owner/Remon addresses, workspace
+inbox domains, agent persona contacts, or AgentMail `sent` label) never moves
+status; auto-replies and bounces are skipped for status moves. List/poll
+ingest (OS-188) syncs linked tickets only when the inbound is newer than
+`last_processed_inbound_at` (same cursor as email-thread retriage) and passes
+the list snapshot so it does not re-fetch whole AgentMail threads. Backfill
+sets `importedAt` / `importedByActor` / `importedByContactId` and uses the
 original email timestamp.
 
-**Visibility:** `client_visible` is the **default** on
-`GET /tasks/:id/comments` and `GET /tickets/:id/comments`. Staff/agent keys
-may request `?visibility=all` (or `internal`) explicitly. Ticket/comment/
+**Visibility:** Staff/agent keys (CLI, BacksterDEV, Access, agent personas)
+default to `all` on `GET /tasks/:id/comments` and `GET /tickets/:id/comments`
+when `visibility` is omitted, so internal notes stay visible. They may also
+request `?visibility=all|internal|client_visible` explicitly. Ticket/comment/
 sync/backfill writes **never send mail** and **never notify the client**
 (`sentMail: false` on sync responses). There is no send flag on these
 routes — use `/api/v1/email/…` with `email:send` only when you intend to
 mail.
 
-**Client portal:** must request `?visibility=client_visible` (and the API
-defaults to that). Internal notes never appear. Email timeline rows are
-`client_visible` (the client already saw the mail). Portal ticket list
-remains `GET /tasks?support=true` filtered by org.
+**Client portal:** request `?visibility=client_visible` (portal already does).
+Mark the portal API key with the `portal` scope (append via Access key
+update — **do not rotate** the secret) so the server refuses
+`visibility=all|internal` with 403 even if a caller forgets the query.
+Internal notes never appear. Email timeline rows are `client_visible` (the
+client already saw the mail). Portal ticket list remains
+`GET /tasks?support=true` filtered by org.
 
 ### Write (agents)
 

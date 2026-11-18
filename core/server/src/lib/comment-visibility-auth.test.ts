@@ -4,6 +4,7 @@ import { describe, it } from "node:test";
 import type { AuthContext } from "../middleware/auth.js";
 import {
   canListAllCommentVisibilities,
+  isPortalCommentVisibilityKey,
   resolveCommentListVisibility,
 } from "./comment-visibility-auth.js";
 
@@ -23,14 +24,14 @@ function auth(
 }
 
 describe("comment visibility auth (OS-187)", () => {
-  it("defaults to client_visible when omitted", () => {
-    assert.equal(
+  it("defaults staff/agent to all when visibility is omitted", () => {
+    assert.deepEqual(
       resolveCommentListVisibility(auth({ kind: "api_key" }), null),
-      "client_visible",
+      { ok: true, visibility: "all" },
     );
-    assert.equal(
+    assert.deepEqual(
       resolveCommentListVisibility(auth({ kind: "local_shell" }), undefined),
-      "client_visible",
+      { ok: true, visibility: "all" },
     );
   });
 
@@ -40,22 +41,51 @@ describe("comment visibility auth (OS-187)", () => {
       canListAllCommentVisibilities(auth({ kind: "local_shell" })),
       true,
     );
-    assert.equal(
+    assert.deepEqual(
       resolveCommentListVisibility(auth({ kind: "api_key" }), "all"),
-      "all",
+      { ok: true, visibility: "all" },
     );
-    assert.equal(
+    assert.deepEqual(
       resolveCommentListVisibility(auth({ kind: "local_shell" }), "internal"),
-      "internal",
+      { ok: true, visibility: "internal" },
     );
+    assert.deepEqual(
+      resolveCommentListVisibility(auth({ kind: "api_key" }), "client_visible"),
+      { ok: true, visibility: "client_visible" },
+    );
+  });
+
+  it("locks portal-scoped keys to client_visible and refuses all/internal", () => {
+    const portal = auth({
+      kind: "api_key",
+      scopes: ["tasks:read", "tasks:write", "portal"],
+    });
+    assert.equal(isPortalCommentVisibilityKey(portal), true);
+    assert.equal(canListAllCommentVisibilities(portal), false);
+    assert.deepEqual(resolveCommentListVisibility(portal, null), {
+      ok: true,
+      visibility: "client_visible",
+    });
+    assert.deepEqual(
+      resolveCommentListVisibility(portal, "client_visible"),
+      { ok: true, visibility: "client_visible" },
+    );
+    const refused = resolveCommentListVisibility(portal, "all");
+    assert.equal(refused.ok, false);
+    if (!refused.ok) {
+      assert.equal(refused.status, 403);
+    }
   });
 
   it("forces client_visible when auth cannot escalate", () => {
     assert.equal(canListAllCommentVisibilities(null), false);
-    assert.equal(resolveCommentListVisibility(null, "all"), "client_visible");
-    assert.equal(
-      resolveCommentListVisibility(null, "internal"),
-      "client_visible",
-    );
+    assert.deepEqual(resolveCommentListVisibility(null, "all"), {
+      ok: true,
+      visibility: "client_visible",
+    });
+    assert.deepEqual(resolveCommentListVisibility(null, "internal"), {
+      ok: true,
+      visibility: "client_visible",
+    });
   });
 });

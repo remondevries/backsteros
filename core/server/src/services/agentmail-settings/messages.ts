@@ -32,6 +32,7 @@ import {
   EMAIL_CONCEPT_STATUS,
   emailStatusLabelPatch,
   isAgentMailOutboundMessage,
+  isNewerInboundMessage,
 } from "../../lib/email-status-labels.js";
 import {
   peekAgentMailMessageDetailCache,
@@ -207,6 +208,27 @@ export async function listAgentMailMessages(
     }
   }
   for (const inbound of inboundByThread.values()) {
+    const threadKey = emailThreadsService.resolveEmailThreadKey({
+      threadId: inbound.threadId,
+      messageId: inbound.messageId,
+    });
+    const existingThread = threadKey
+      ? await emailThreadsService.getEmailThreadByInboxKey(
+          workspaceId,
+          inbound.inboxId,
+          threadKey,
+        )
+      : null;
+    const messageAt = inbound.at > 0 ? inbound.at : new Date().toISOString();
+    const isNewInbound =
+      inbound.messageId.length > 0 &&
+      isNewerInboundMessage({
+        storedId: existingThread?.lastProcessedInboundMessageId ?? null,
+        storedAt: existingThread?.lastProcessedInboundAt ?? null,
+        candidateId: inbound.messageId,
+        candidateAt: messageAt,
+      });
+
     try {
       await emailThreadsService.retriageEmailThreadOnInbound(
         workspaceId,
@@ -214,7 +236,7 @@ export async function listAgentMailMessages(
         {
           threadId: inbound.threadId,
           messageId: inbound.messageId,
-          messageAt: inbound.at > 0 ? inbound.at : new Date().toISOString(),
+          messageAt,
           labels: inbound.labels,
           source: "poll",
         },
@@ -227,7 +249,13 @@ export async function listAgentMailMessages(
         error instanceof Error ? error.message : error,
       );
     }
-    // OS-187: list/poll ingest also syncs linked tickets (webhook fallback).
+    // OS-187: only sync linked tickets for a genuinely new inbound. Re-polls
+    // must not re-fetch AgentMail threads or bounce ticket status.
+    if (!isNewInbound) continue;
+    const listRow = apiMessages.find(
+      (row) =>
+        row.messageId === inbound.messageId && row.inboxId === inbound.inboxId,
+    );
     void import("../ticket-email-sync.js")
       .then(({ syncLinkedTicketsForEmailMessage }) =>
         syncLinkedTicketsForEmailMessage({
@@ -236,6 +264,23 @@ export async function listAgentMailMessages(
           messageId: inbound.messageId,
           threadId: inbound.threadId,
           direction: "inbound",
+          messageAt,
+          message: listRow
+            ? {
+                messageId: listRow.messageId,
+                threadId: listRow.threadId || inbound.threadId || "",
+                from: listRow.from,
+                subject: listRow.subject,
+                preview: listRow.preview,
+                text: null,
+                timestamp:
+                  typeof messageAt === "number"
+                    ? new Date(messageAt).toISOString()
+                    : String(messageAt),
+                direction: "inbound",
+                labels: listRow.labels,
+              }
+            : null,
         }),
       )
       .catch((error) => {

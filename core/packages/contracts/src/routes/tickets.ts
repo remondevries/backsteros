@@ -144,7 +144,7 @@ export const ticketsRoutes: AppRouter = c.router({
       404: errorSchema,
     },
     summary:
-      "List ticket timeline comments. Use visibility=client_visible for portal-safe rows.",
+      "List ticket timeline comments. Staff/agent default to all; portal keys (scope portal) are locked to client_visible.",
   },
   createTicketComment: {
     method: "POST",

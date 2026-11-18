@@ -207,15 +207,21 @@ export function registerTicketsRoutes(app: Hono) {
     const includeComments = include.split(",").includes("comments");
     let comments;
     if (includeComments) {
-      const visibility = resolveCommentListVisibility(
+      const resolvedVisibility = resolveCommentListVisibility(
         auth,
         c.req.query("visibility"),
       );
+      if (!resolvedVisibility.ok) {
+        return c.json(
+          { error: resolvedVisibility.error, code: "forbidden" as const },
+          resolvedVisibility.status,
+        );
+      }
       const listed = await taskCommentService.listTaskComments(
         auth.workspaceId,
         row.id,
         db,
-        { limit: 20, visibility },
+        { limit: 20, visibility: resolvedVisibility.visibility },
       );
       comments = (listed ?? []).map(toTaskComment);
     }
@@ -359,13 +365,22 @@ export function registerTicketsRoutes(app: Hono) {
       visibility: c.req.query("visibility") ?? undefined,
       limit: c.req.query("limit"),
     });
-    const visibility = resolveCommentListVisibility(auth, query.visibility);
+    const resolvedVisibility = resolveCommentListVisibility(
+      auth,
+      query.visibility,
+    );
+    if (!resolvedVisibility.ok) {
+      return c.json(
+        { error: resolvedVisibility.error, code: "forbidden" as const },
+        resolvedVisibility.status,
+      );
+    }
     const rows = await taskCommentService.listTaskComments(
       auth.workspaceId,
       existing.id,
       db,
       {
-        visibility,
+        visibility: resolvedVisibility.visibility,
         limit: query.limit,
       },
     );

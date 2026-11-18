@@ -300,8 +300,9 @@ export async function listTaskComments(
       ? Math.min(Math.floor(options.limit), 200)
       : undefined;
 
-  // Portal-safe default when callers omit visibility (OS-187).
-  const visibility = options?.visibility ?? "client_visible";
+  // Staff/agent default is all (pre-OS-187). Routes pass an explicit filter;
+  // portal callers must request client_visible (and portal-scoped keys enforce it).
+  const visibility = options?.visibility ?? "all";
   const visibilityFilter =
     visibility === "all"
       ? undefined
@@ -904,6 +905,8 @@ export async function upsertEmailTimelineComment(
       nextBody.length > 0 &&
       nextBody !== EMPTY_EMAIL_PLACEHOLDER;
     if (shouldReplacePlaceholder) {
+      const occurredAt =
+        parseOptionalDate(input.occurredAt) ?? existing.occurredAt;
       const [updated] = await executor
         .update(taskComments)
         .set({
@@ -911,6 +914,7 @@ export async function upsertEmailTimelineComment(
           emailSender: input.emailSender?.trim() || existing.emailSender,
           authorEmail: input.authorEmail?.trim() || existing.authorEmail,
           authorContactId: input.authorContactId ?? existing.authorContactId,
+          occurredAt,
           updatedAt: new Date(),
         })
         .where(

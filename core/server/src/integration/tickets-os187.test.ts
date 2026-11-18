@@ -4,7 +4,7 @@ import test from "node:test";
 
 import { eq } from "drizzle-orm";
 
-import { API_KEY_SCOPES } from "@backsteros/contracts";
+import { AGENT_API_KEY_SCOPES } from "@backsteros/contracts";
 
 import { createApp } from "../app.js";
 import { db, sqlClient } from "../db/index.js";
@@ -67,6 +67,7 @@ test("OS-187: visibility, authorship, triage, dedupe, deterministic id, list ing
   const agentContactId = id("agent");
   const messageId = `msg-${randomUUID()}`;
   const messageId2 = `msg-${randomUUID()}`;
+  const messageId3 = `msg-${randomUUID()}`;
   const emptyMessageId = `msg-empty-${randomUUID()}`;
 
   context.after(async () => {
@@ -98,7 +99,7 @@ test("OS-187: visibility, authorship, triage, dedupe, deterministic id, list ing
     name: "os187",
     prefix: apiKeyLookupPrefix(secret),
     keyHash: hashApiKey(secret),
-    scopes: [...API_KEY_SCOPES],
+    scopes: [...AGENT_API_KEY_SCOPES],
   });
   await db.insert(contacts).values([
     {
@@ -190,7 +191,7 @@ test("OS-187: visibility, authorship, triage, dedupe, deterministic id, list ing
   );
   assert.equal(visible.response.status, 201);
 
-  // Default list (no visibility query) is portal-safe.
+  // Staff/agent default list (no visibility query) includes internal notes.
   const defaultTicketComments = await json(
     app,
     `/api/v1/tickets/${ticketId}/comments`,
@@ -201,8 +202,8 @@ test("OS-187: visibility, authorship, triage, dedupe, deterministic id, list ing
     visibility: string;
     body: string;
   }>;
-  assert.ok(defaultRows.every((c) => c.visibility === "client_visible"));
-  assert.ok(!defaultRows.some((c) => c.body.includes("Internal note")));
+  assert.ok(defaultRows.some((c) => c.visibility === "internal"));
+  assert.ok(defaultRows.some((c) => c.body.includes("Internal note")));
 
   const defaultTaskComments = await json(
     app,
@@ -214,8 +215,20 @@ test("OS-187: visibility, authorship, triage, dedupe, deterministic id, list ing
     visibility: string;
     body: string;
   }>;
-  assert.ok(defaultTaskRows.every((c) => c.visibility === "client_visible"));
-  assert.ok(!defaultTaskRows.some((c) => c.body.includes("Internal note")));
+  assert.ok(defaultTaskRows.some((c) => c.visibility === "internal"));
+
+  const portalOnly = await json(
+    app,
+    `/api/v1/tickets/${ticketId}/comments?visibility=client_visible`,
+    secret,
+  );
+  assert.equal(portalOnly.response.status, 200);
+  const portalRows = portalOnly.body?.comments as Array<{
+    visibility: string;
+    body: string;
+  }>;
+  assert.ok(portalRows.every((c) => c.visibility === "client_visible"));
+  assert.ok(!portalRows.some((c) => c.body.includes("Internal note")));
 
   const staffAll = await json(
     app,
@@ -225,6 +238,24 @@ test("OS-187: visibility, authorship, triage, dedupe, deterministic id, list ing
   assert.equal(staffAll.response.status, 200);
   const allRows = staffAll.body?.comments as Array<{ visibility: string }>;
   assert.ok(allRows.some((c) => c.visibility === "internal"));
+
+  // Portal-scoped key cannot escalate to visibility=all.
+  const portalSecret = `sk_live_${randomUUID().replaceAll("-", "")}`;
+  await db.insert(apiKeys).values({
+    id: id("portal-key"),
+    workspaceId,
+    userId,
+    name: "portal",
+    prefix: apiKeyLookupPrefix(portalSecret),
+    keyHash: hashApiKey(portalSecret),
+    scopes: ["tasks:read", "tasks:write", "portal"],
+  });
+  const portalEscalation = await json(
+    app,
+    `/api/v1/tickets/${ticketId}/comments?visibility=all`,
+    portalSecret,
+  );
+  assert.equal(portalEscalation.response.status, 403);
 
   let sendMailCalls = 0;
   const messages: TicketEmailMessage[] = [
@@ -344,29 +375,26 @@ test("OS-187: visibility, authorship, triage, dedupe, deterministic id, list ing
     .limit(1);
   assert.ok(resurrected[0]?.deletedAt);
 
-  // List/poll ingest path: syncLinkedTicketsForEmailMessage updates ALL linked
-  // tickets to triage on inbound (including completed), without sending mail.
+  // List/poll ingest path: a genuinely new inbound creates timeline rows on
+  // ALL linked tickets and moves them to triage (including completed).
   await syncLinkedTicketsForEmailMessage({
     workspaceId,
     inboxId: "inbox-os187",
-    messageId,
+    messageId: messageId3,
     threadId: "thread-os187",
     direction: "inbound",
-    deps: {
-      ...deps,
-      fetchThreadMessages: async () => [
-        {
-          messageId,
-          threadId: "thread-os187",
-          from: "client@pa-mu.test",
-          subject: "Login",
-          preview: "Need editor rights",
-          text: "Need editor rights",
-          timestamp: "2026-11-09T09:00:00.000Z",
-          direction: "inbound",
-        },
-      ],
+    messageAt: "2026-11-11T09:00:00.000Z",
+    message: {
+      messageId: messageId3,
+      threadId: "thread-os187",
+      from: "client@pa-mu.test",
+      subject: "Follow-up",
+      preview: "Still locked out",
+      text: "Still locked out",
+      timestamp: "2026-11-11T09:00:00.000Z",
+      direction: "inbound",
     },
+    deps,
   });
   assert.equal(sendMailCalls, 0);
 
@@ -375,7 +403,72 @@ test("OS-187: visibility, authorship, triage, dedupe, deterministic id, list ing
   assert.equal(ticket1.body?.status, "triage");
   assert.equal(ticket2.body?.status, "triage");
 
-  // Outbound never moves status away from triage.
+  // Re-poll the same inbound must not bounce a manual status change, and must
+  // not fetch AgentMail when the list snapshot is already recorded.
+  let fetchCalls = 0;
+  const rePollDeps = {
+    ...deps,
+    fetchThreadMessages: async () => {
+      fetchCalls += 1;
+      return [
+        {
+          messageId: messageId3,
+          threadId: "thread-os187",
+          from: "client@pa-mu.test",
+          subject: "Follow-up",
+          preview: "Still locked out",
+          text: "Still locked out",
+          timestamp: "2026-11-11T09:00:00.000Z",
+          direction: "inbound" as const,
+        },
+      ];
+    },
+  };
+  await json(app, `/api/v1/tickets/${ticketId}`, secret, {
+    method: "PATCH",
+    body: JSON.stringify({ status: "in_progress", activityActor: "user" }),
+  });
+  await syncLinkedTicketsForEmailMessage({
+    workspaceId,
+    inboxId: "inbox-os187",
+    messageId: messageId3,
+    threadId: "thread-os187",
+    direction: "inbound",
+    messageAt: "2026-11-11T09:00:00.000Z",
+    message: {
+      messageId: messageId3,
+      threadId: "thread-os187",
+      from: "client@pa-mu.test",
+      subject: "Follow-up",
+      preview: "Still locked out",
+      text: "Still locked out",
+      timestamp: "2026-11-11T09:00:00.000Z",
+      direction: "inbound",
+    },
+    deps: rePollDeps,
+  });
+  const afterInProgress = await json(app, `/api/v1/tickets/${ticketId}`, secret);
+  assert.equal(afterInProgress.body?.status, "in_progress");
+  assert.equal(fetchCalls, 0, "re-poll must not fetch AgentMail when already synced");
+
+  await json(app, `/api/v1/tickets/${ticketId}`, secret, {
+    method: "PATCH",
+    body: JSON.stringify({ status: "completed", activityActor: "user" }),
+  });
+  await syncLinkedTicketsForEmailMessage({
+    workspaceId,
+    inboxId: "inbox-os187",
+    messageId: messageId3,
+    threadId: "thread-os187",
+    direction: "inbound",
+    messageAt: "2026-11-11T09:00:00.000Z",
+    deps: rePollDeps,
+  });
+  const afterCompleted = await json(app, `/api/v1/tickets/${ticketId}`, secret);
+  assert.equal(afterCompleted.body?.status, "completed");
+  assert.equal(fetchCalls, 0);
+
+  // Outbound never moves status away from completed.
   await syncLinkedTicketsForEmailMessage({
     workspaceId,
     inboxId: "inbox-os187",
@@ -398,8 +491,8 @@ test("OS-187: visibility, authorship, triage, dedupe, deterministic id, list ing
       ],
     },
   });
-  const stillTriage = await json(app, `/api/v1/tickets/${ticketId}`, secret);
-  assert.equal(stillTriage.body?.status, "triage");
+  const stillCompleted = await json(app, `/api/v1/tickets/${ticketId}`, secret);
+  assert.equal(stillCompleted.body?.status, "completed");
   assert.equal(sendMailCalls, 0);
 
   // PATCH comment must 404 when comment belongs to another ticket.

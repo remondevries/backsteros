@@ -12,14 +12,16 @@ import {
   sanitizeAgentKeyScopes,
 } from "./common.js";
 
-test("AGENT_API_KEY_SCOPES excludes exclusive door scopes", () => {
+test("AGENT_API_KEY_SCOPES excludes exclusive door scopes and portal marker", () => {
   assert.ok(AGENT_API_KEY_SCOPES.includes("settings:write"));
   assert.ok(AGENT_API_KEY_SCOPES.includes("tasks:write"));
   assert.equal(
     AGENT_API_KEY_SCOPES.includes("applications" as never),
     false,
   );
-  assert.equal(AGENT_API_KEY_SCOPES.length + 3, API_KEY_SCOPES.length);
+  assert.equal(AGENT_API_KEY_SCOPES.includes("portal" as never), false);
+  // 3 exclusive doors + portal marker
+  assert.equal(AGENT_API_KEY_SCOPES.length + 4, API_KEY_SCOPES.length);
 });
 
 test("AGENT_KEY_SCOPES never includes settings:read or settings:write", () => {
