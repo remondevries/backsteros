@@ -1464,6 +1464,13 @@
       "when": 1796430000000,
       "tag": "0207_email_thread_last_processed_inbound_at",
       "breakpoints": true
+    },
+    {
+      "idx": 209,
+      "version": "7",
+      "when": 1796440000000,
+      "tag": "0208_transip_auth_code_reveal_logs",
+      "breakpoints": true
     }
   ]
 }

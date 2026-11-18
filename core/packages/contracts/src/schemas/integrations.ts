@@ -952,10 +952,18 @@ export const transipDomainDetailSchema = z.object({
   renewalDate: z.string().nullable(),
   isDnsOnly: z.boolean(),
   tags: z.array(z.string()),
-  authCode: z.string().nullable(),
-  authCodeError: z.string().nullable(),
   nameservers: z.array(transipDomainNameserverSchema),
   contacts: z.array(transipDomainWhoisContactSchema),
+});
+
+/**
+ * Explicit owner/elevated reveal of the transfer / EPP code.
+ * Never cached, synced, or embedded in domain detail/list responses.
+ */
+export const transipDomainAuthCodeResultSchema = z.object({
+  domainName: z.string(),
+  authCode: z.string().nullable(),
+  error: z.string().nullable(),
 });
 
 export const updateTransipDomainTagsInputSchema = z.object({
@@ -1457,6 +1465,10 @@ export type TransipDomainSyncResult = z.infer<
 >;
 
 export type TransipDomainDetail = z.infer<typeof transipDomainDetailSchema>;
+
+export type TransipDomainAuthCodeResult = z.infer<
+  typeof transipDomainAuthCodeResultSchema
+>;
 
 export type UpdateTransipDomainTagsInput = z.infer<
   typeof updateTransipDomainTagsInputSchema

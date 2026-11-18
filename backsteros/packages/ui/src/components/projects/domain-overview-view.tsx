@@ -38,6 +38,7 @@ import type {
   ProjectDetailViewProject,
 } from "./project-detail-view.js";
 import {
+  type DomainAuthCodeRevealResult,
   type DomainRegistrarContact,
   type DomainRegistrarDetail,
 } from "./domain-registrar-panel.js";
@@ -60,6 +61,10 @@ export type DomainOverviewViewProps = {
   /** Known TransIP tags across domains — for the tags dropdown. */
   knownTags?: string[];
   loadDetail: (domainName: string) => Promise<DomainRegistrarDetail>;
+  /** Explicit owner/elevated reveal — never loaded with domain detail. */
+  revealAuthCode?: (
+    domainName: string,
+  ) => Promise<DomainAuthCodeRevealResult>;
   onSaveName?: (
     name: string,
   ) =>
@@ -169,6 +174,7 @@ export function DomainOverviewView({
   nestedAreas = [],
   knownTags = [],
   loadDetail,
+  revealAuthCode,
   onSaveName,
   onSaveKey,
   onStatusChange,
@@ -196,7 +202,9 @@ export function DomainOverviewView({
   const [detail, setDetail] = useState<DomainRegistrarDetail | null>(null);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [detailLoading, setDetailLoading] = useState(true);
-  const [authRevealed, setAuthRevealed] = useState(false);
+  const [authCode, setAuthCode] = useState<string | null>(null);
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [authLoading, setAuthLoading] = useState(false);
   const [copied, setCopied] = useState(false);
   const [tags, setTags] = useState<string[]>(() =>
     parseTransipDomainTagsFromIcon(project.icon),
@@ -255,7 +263,8 @@ export function DomainOverviewView({
     setDetailLoading(true);
     setDetailError(null);
     setDetail(null);
-    setAuthRevealed(false);
+    setAuthCode(null);
+    setAuthError(null);
     setCopied(false);
     void loadDetail(project.name)
       .then((next) => {
@@ -453,10 +462,32 @@ export function DomainOverviewView({
     [project.areaId, subAreasForParent],
   );
 
-  async function copyAuthCode() {
-    if (!detail?.authCode) return;
+  async function handleRevealAuthCode() {
+    if (!revealAuthCode) return;
+    const confirmed = window.confirm(
+      `Reveal the transfer code for ${project.name}? This is audited.`,
+    );
+    if (!confirmed) return;
+    setAuthLoading(true);
+    setAuthError(null);
     try {
-      await navigator.clipboard.writeText(detail.authCode);
+      const result = await revealAuthCode(project.name);
+      setAuthCode(result.authCode);
+      setAuthError(result.error);
+    } catch (err: unknown) {
+      setAuthCode(null);
+      setAuthError(
+        err instanceof Error ? err.message : "Could not reveal transfer code",
+      );
+    } finally {
+      setAuthLoading(false);
+    }
+  }
+
+  async function copyAuthCode() {
+    if (!authCode) return;
+    try {
+      await navigator.clipboard.writeText(authCode);
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1500);
     } catch {
@@ -555,20 +586,11 @@ export function DomainOverviewView({
         ) : null}
       </EntityOverviewSubgroup>
 
-      <EntityOverviewSubgroup title="Auth code">
+      <EntityOverviewSubgroup title="Transfer code">
         <DetailsField label="EPP / auth">
-          {detail?.authCode ? (
+          {authCode ? (
             <div className="domain-overview__auth-row">
-              <code className="domain-overview__auth-code">
-                {authRevealed ? detail.authCode : "••••••••••••"}
-              </code>
-              <button
-                type="button"
-                className="domain-overview__button"
-                onClick={() => setAuthRevealed((value) => !value)}
-              >
-                {authRevealed ? "Hide" : "Show"}
-              </button>
+              <code className="domain-overview__auth-code">{authCode}</code>
               <button
                 type="button"
                 className="domain-overview__button"
@@ -578,13 +600,40 @@ export function DomainOverviewView({
               >
                 {copied ? "Copied" : "Copy"}
               </button>
+              <button
+                type="button"
+                className="domain-overview__button"
+                onClick={() => {
+                  setAuthCode(null);
+                  setAuthError(null);
+                }}
+              >
+                Hide
+              </button>
             </div>
           ) : (
-            <span className="domain-overview__muted">
-              {detailLoading
-                ? "…"
-                : (detail?.authCodeError ?? "Not available for this TLD")}
-            </span>
+            <div className="domain-overview__auth-row">
+              {revealAuthCode && !detailLoading ? (
+                <button
+                  type="button"
+                  className="domain-overview__button"
+                  disabled={authLoading}
+                  onClick={() => {
+                    void handleRevealAuthCode();
+                  }}
+                >
+                  {authLoading ? "Revealing…" : "Reveal transfer code"}
+                </button>
+              ) : null}
+              <span className="domain-overview__muted">
+                {detailLoading
+                  ? "…"
+                  : (authError ??
+                    (revealAuthCode
+                      ? null
+                      : "Transfer code reveal unavailable"))}
+              </span>
+            </div>
           )}
         </DetailsField>
       </EntityOverviewSubgroup>

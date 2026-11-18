@@ -3202,6 +3202,7 @@ export {
   DomainRegistrarPanel,
   type DomainRegistrarPanelProps,
   type DomainRegistrarDetail,
+  type DomainAuthCodeRevealResult,
   type DomainRegistrarContact,
   type DomainRegistrarNameserver,
 } from "./components/projects/domain-registrar-panel.js";

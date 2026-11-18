@@ -32,15 +32,22 @@ export type DomainRegistrarDetail = {
   renewalDate?: string | null;
   isDnsOnly?: boolean;
   tags: string[];
-  authCode: string | null;
-  authCodeError: string | null;
   nameservers: DomainRegistrarNameserver[];
   contacts: DomainRegistrarContact[];
+};
+
+export type DomainAuthCodeRevealResult = {
+  authCode: string | null;
+  error: string | null;
 };
 
 export type DomainRegistrarPanelProps = {
   domainName: string;
   loadDetail: (domainName: string) => Promise<DomainRegistrarDetail>;
+  /** Explicit owner/elevated reveal — never loaded with domain detail. */
+  revealAuthCode?: (
+    domainName: string,
+  ) => Promise<DomainAuthCodeRevealResult>;
 };
 
 function contactDisplayName(contact: DomainRegistrarContact): string {
@@ -58,16 +65,19 @@ function contactAddress(contact: DomainRegistrarContact): string | null {
 
 /**
  * TransIP registrar extras for Catalog Domains side panel:
- * auth/EPP code, nameservers, WHOIS contacts.
+ * nameservers, WHOIS contacts, and an explicit transfer-code reveal.
  */
 export function DomainRegistrarPanel({
   domainName,
   loadDetail,
+  revealAuthCode,
 }: DomainRegistrarPanelProps) {
   const [detail, setDetail] = useState<DomainRegistrarDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [authRevealed, setAuthRevealed] = useState(false);
+  const [authCode, setAuthCode] = useState<string | null>(null);
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [authLoading, setAuthLoading] = useState(false);
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
@@ -75,7 +85,8 @@ export function DomainRegistrarPanel({
     setLoading(true);
     setError(null);
     setDetail(null);
-    setAuthRevealed(false);
+    setAuthCode(null);
+    setAuthError(null);
     setCopied(false);
     void loadDetail(domainName)
       .then((next) => {
@@ -96,10 +107,32 @@ export function DomainRegistrarPanel({
     };
   }, [domainName, loadDetail]);
 
-  async function copyAuthCode() {
-    if (!detail?.authCode) return;
+  async function handleRevealAuthCode() {
+    if (!revealAuthCode) return;
+    const confirmed = window.confirm(
+      `Reveal the transfer code for ${domainName}? This is audited.`,
+    );
+    if (!confirmed) return;
+    setAuthLoading(true);
+    setAuthError(null);
     try {
-      await navigator.clipboard.writeText(detail.authCode);
+      const result = await revealAuthCode(domainName);
+      setAuthCode(result.authCode);
+      setAuthError(result.error);
+    } catch (err: unknown) {
+      setAuthCode(null);
+      setAuthError(
+        err instanceof Error ? err.message : "Could not reveal transfer code",
+      );
+    } finally {
+      setAuthLoading(false);
+    }
+  }
+
+  async function copyAuthCode() {
+    if (!authCode) return;
+    try {
+      await navigator.clipboard.writeText(authCode);
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1500);
     } catch {
@@ -119,19 +152,12 @@ export function DomainRegistrarPanel({
       {detail ? (
         <>
           <div className="domain-registrar-panel__block">
-            <div className="domain-registrar-panel__label">Auth code</div>
-            {detail.authCode ? (
+            <div className="domain-registrar-panel__label">Transfer code</div>
+            {authCode ? (
               <div className="domain-registrar-panel__auth-row">
                 <code className="domain-registrar-panel__auth-code">
-                  {authRevealed ? detail.authCode : "••••••••••••"}
+                  {authCode}
                 </code>
-                <button
-                  type="button"
-                  className="domain-registrar-panel__button"
-                  onClick={() => setAuthRevealed((value) => !value)}
-                >
-                  {authRevealed ? "Hide" : "Show"}
-                </button>
                 <button
                   type="button"
                   className="domain-registrar-panel__button"
@@ -141,11 +167,39 @@ export function DomainRegistrarPanel({
                 >
                   {copied ? "Copied" : "Copy"}
                 </button>
+                <button
+                  type="button"
+                  className="domain-registrar-panel__button"
+                  onClick={() => {
+                    setAuthCode(null);
+                    setAuthError(null);
+                  }}
+                >
+                  Hide
+                </button>
               </div>
             ) : (
-              <p className="domain-registrar-panel__muted">
-                {detail.authCodeError ?? "Not available for this TLD"}
-              </p>
+              <div className="domain-registrar-panel__auth-row">
+                {revealAuthCode ? (
+                  <button
+                    type="button"
+                    className="domain-registrar-panel__button"
+                    disabled={authLoading}
+                    onClick={() => {
+                      void handleRevealAuthCode();
+                    }}
+                  >
+                    {authLoading ? "Revealing…" : "Reveal transfer code"}
+                  </button>
+                ) : null}
+                {authError ? (
+                  <p className="domain-registrar-panel__muted">{authError}</p>
+                ) : !revealAuthCode ? (
+                  <p className="domain-registrar-panel__muted">
+                    Transfer code reveal unavailable
+                  </p>
+                ) : null}
+              </div>
             )}
           </div>
 

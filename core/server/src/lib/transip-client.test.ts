@@ -139,6 +139,88 @@ describe("TransipClient.listDomains", () => {
   });
 });
 
+describe("TransipClient.getDomainDetail", () => {
+  it("never calls the TransIP auth-code endpoint and omits authCode", async () => {
+    const calls: string[] = [];
+    const fetchImpl: typeof fetch = async (input) => {
+      const url = String(input);
+      calls.push(url);
+      assert.equal(
+        url.includes("/auth-code"),
+        false,
+        "domain detail must not fetch auth-code",
+      );
+      return new Response(
+        JSON.stringify({
+          domain: {
+            name: "example.com",
+            status: "registered",
+            isDnsOnly: false,
+            tags: ["prod"],
+            nameservers: [{ hostname: "ns1.example.com" }],
+            contacts: [
+              {
+                type: "registrant",
+                firstName: "Ada",
+                lastName: "Lovelace",
+                email: "ada@example.com",
+              },
+            ],
+          },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    };
+
+    const client = new TransipClient({
+      accessToken: "token",
+      fetchImpl,
+    });
+    const detail = await client.getDomainDetail("Example.COM");
+    assert.equal(calls.length, 1);
+    assert.ok(calls[0]?.includes("/domains/example.com"));
+    assert.ok(calls[0]?.includes("include=nameservers,contacts"));
+    assert.equal(detail.name, "example.com");
+    assert.equal(detail.nameservers.length, 1);
+    assert.equal(detail.contacts.length, 1);
+    assert.equal(
+      Object.prototype.hasOwnProperty.call(detail, "authCode"),
+      false,
+    );
+    assert.equal(
+      Object.prototype.hasOwnProperty.call(detail, "authCodeError"),
+      false,
+    );
+  });
+});
+
+describe("TransipClient.getDomainAuthCode", () => {
+  it("calls only the auth-code endpoint", async () => {
+    const calls: string[] = [];
+    const fetchImpl: typeof fetch = async (input) => {
+      const url = String(input);
+      calls.push(url);
+      return new Response(JSON.stringify({ authCode: "SECRET-EPP" }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    };
+
+    const client = new TransipClient({
+      accessToken: "token",
+      fetchImpl,
+    });
+    const result = await client.getDomainAuthCode("Example.COM");
+    assert.equal(calls.length, 1);
+    assert.ok(calls[0]?.includes("/domains/example.com/auth-code"));
+    assert.deepEqual(result, {
+      domainName: "example.com",
+      authCode: "SECRET-EPP",
+      error: null,
+    });
+  });
+});
+
 describe("TransipClient.updateDomainTags", () => {
   it("PUTs the full domain with replaced tags", async () => {
     const calls: Array<{ url: string; method: string; body: string | null }> =

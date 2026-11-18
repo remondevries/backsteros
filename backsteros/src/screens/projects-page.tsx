@@ -280,6 +280,7 @@ function ProjectDetailScreen({
   const {
     knownDomainTags,
     loadDomainRegistrarDetail,
+    revealDomainAuthCode,
     updateDomainTags,
     updateDomainContacts,
     loadCloudflareDnsRecords,
@@ -2929,6 +2930,7 @@ function ProjectDetailScreen({
       nestedAreas={mapWorkspaceNestedAreas(workspace.areas)}
       knownTags={knownDomainTags}
       loadDetail={loadDomainRegistrarDetail}
+      revealAuthCode={revealDomainAuthCode}
       copyIdShortcutEnabled={keepAliveActive}
       onTagsChange={async (tags: string[]) => {
         try {

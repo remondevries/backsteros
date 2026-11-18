@@ -1,6 +1,7 @@
 import { useCallback, useMemo } from "react";
 
 import type {
+  DomainAuthCodeRevealResult,
   DomainCloudflareDnsResult,
   DomainRegistrarContact,
   DomainRegistrarDetail,
@@ -30,6 +31,16 @@ export function useDomainProjectApi() {
     async (domainName: string): Promise<DomainRegistrarDetail> => {
       return client.requestJson<DomainRegistrarDetail>(
         `/api/v1/transip/domains/${encodeURIComponent(domainName)}`,
+      );
+    },
+    [client],
+  );
+
+  const revealDomainAuthCode = useCallback(
+    async (domainName: string): Promise<DomainAuthCodeRevealResult> => {
+      return client.requestJson<DomainAuthCodeRevealResult>(
+        `/api/v1/transip/domains/${encodeURIComponent(domainName)}/auth-code`,
+        { method: "POST" },
       );
     },
     [client],
@@ -83,6 +94,7 @@ export function useDomainProjectApi() {
   return {
     knownDomainTags,
     loadDomainRegistrarDetail,
+    revealDomainAuthCode,
     updateDomainTags,
     updateDomainContacts,
     loadCloudflareDnsRecords,

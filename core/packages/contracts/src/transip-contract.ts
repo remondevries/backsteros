@@ -24,7 +24,22 @@ export const transipContract = c.router(
         404: errorSchema,
       },
       summary:
-        "TransIP domain detail: auth/EPP code, nameservers, WHOIS contacts",
+        "TransIP domain detail: nameservers and WHOIS contacts (never the transfer code)",
+    },
+    revealTransipDomainAuthCode: {
+      method: "POST",
+      path: "/api/v1/transip/domains/:domainName/auth-code",
+      pathParams: z.object({ domainName: z.string().min(1) }),
+      body: z.undefined().optional(),
+      responses: {
+        200: s.transipDomainAuthCodeResultSchema,
+        400: badRequestSchema,
+        401: errorSchema,
+        403: errorSchema,
+        404: errorSchema,
+      },
+      summary:
+        "Owner/elevated reveal of the TransIP transfer/EPP code (audited; never cached)",
     },
     updateTransipDomainTags: {
       method: "PUT",

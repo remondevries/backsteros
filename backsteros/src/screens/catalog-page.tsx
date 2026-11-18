@@ -115,6 +115,7 @@ function CatalogPageBody() {
   const {
     knownDomainTags,
     loadDomainRegistrarDetail,
+    revealDomainAuthCode,
     updateDomainTags,
     updateDomainContacts,
     loadCloudflareDnsRecords,
@@ -784,6 +785,7 @@ function CatalogPageBody() {
           nestedAreas: mapWorkspaceNestedAreas(workspace.areas),
           knownTags: knownDomainTags,
           loadDetail: loadDomainRegistrarDetail,
+          revealAuthCode: revealDomainAuthCode,
           loadCloudflareDnsRecords,
           purgeCloudflareCache,
           onSaveName: async (name: string) => {

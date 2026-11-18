@@ -53,10 +53,15 @@ export type TransipWhoisContact = {
 };
 
 export type TransipDomainDetail = TransipDomain & {
-  authCode: string | null;
-  authCodeError: string | null;
   nameservers: TransipNameserver[];
   contacts: TransipWhoisContact[];
+};
+
+/** Transfer / EPP code — fetched only via the explicit reveal action. */
+export type TransipDomainAuthCode = {
+  domainName: string;
+  authCode: string | null;
+  error: string | null;
 };
 
 type RawDomain = {
@@ -318,8 +323,8 @@ export class TransipClient {
   }
 
   /**
-   * Domain detail with nameservers + WHOIS contacts, plus auth/EPP code when
-   * the TLD exposes it via GET (some TLDs only email the code).
+   * Domain detail with nameservers + WHOIS contacts.
+   * Never fetches the transfer/auth code — use {@link getDomainAuthCode}.
    */
   async getDomainDetail(domainName: string): Promise<TransipDomainDetail> {
     const name = domainName.trim().toLowerCase();
@@ -347,32 +352,49 @@ export class TransipClient {
           .filter((entry): entry is TransipWhoisContact => entry != null)
       : [];
 
-    let authCode: string | null = null;
-    let authCodeError: string | null = null;
+    return {
+      ...mapped,
+      nameservers,
+      contacts,
+    };
+  }
+
+  /**
+   * Fetch the transfer / EPP auth code for a domain. Call only from the
+   * explicit owner/elevated reveal action — never from list/detail reads.
+   * Some TLDs only email the code; then `authCode` is null with an error.
+   */
+  async getDomainAuthCode(domainName: string): Promise<TransipDomainAuthCode> {
+    const name = domainName.trim().toLowerCase();
+    if (!name) {
+      throw new TransipApiError(400, "transip_api_error", "Domain name required");
+    }
+    const encoded = encodeURIComponent(name);
     try {
       const authBody = await this.requestJson<{ authCode?: unknown }>(
         "GET",
         `/domains/${encoded}/auth-code`,
       );
-      authCode = asOptionalString(authBody.authCode);
-      if (!authCode) {
-        authCodeError = "Auth code not returned for this TLD";
-      }
+      const authCode = asOptionalString(authBody.authCode);
+      return {
+        domainName: name,
+        authCode,
+        error: authCode ? null : "Auth code not returned for this TLD",
+      };
     } catch (error) {
       if (error instanceof TransipApiError) {
-        authCodeError = error.message;
-      } else {
-        authCodeError = "Could not load auth code";
+        return {
+          domainName: name,
+          authCode: null,
+          error: error.message,
+        };
       }
+      return {
+        domainName: name,
+        authCode: null,
+        error: "Could not load auth code",
+      };
     }
-
-    return {
-      ...mapped,
-      authCode,
-      authCodeError,
-      nameservers,
-      contacts,
-    };
   }
 
   /**

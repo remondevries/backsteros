@@ -716,6 +716,39 @@ export const apiKeyAuditLogs = pgTable(
 );
 
 /**
+ * Append-only audit of TransIP transfer-code reveals (OS-194).
+ * Never stores the auth code itself. Core-local only — not replicated / PowerSync.
+ */
+export const transipAuthCodeRevealLogs = pgTable(
+  "transip_auth_code_reveal_logs",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    domainName: text("domain_name").notNull(),
+    actorKind: text("actor_kind").notNull(),
+    actorUserId: text("actor_user_id"),
+    actorApiKeyId: text("actor_api_key_id"),
+    actorApiKeyName: text("actor_api_key_name"),
+    actorContactId: text("actor_contact_id"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("transip_auth_code_reveal_logs_workspace_created_idx").on(
+      table.workspaceId,
+      table.createdAt,
+    ),
+    index("transip_auth_code_reveal_logs_domain_idx").on(
+      table.workspaceId,
+      table.domainName,
+    ),
+  ],
+);
+
+/**
  * Per-request usage for API keys on this core only (not replicated).
  * High volume — application code caps rows per workspace.
  */
@@ -2780,6 +2813,8 @@ export const emailThreadComments = pgTable(
 export type DbUser = typeof users.$inferSelect;
 export type DbApiKey = typeof apiKeys.$inferSelect;
 export type DbApiKeyAuditLog = typeof apiKeyAuditLogs.$inferSelect;
+export type DbTransipAuthCodeRevealLog =
+  typeof transipAuthCodeRevealLogs.$inferSelect;
 export type DbApiKeyRequestLog = typeof apiKeyRequestLogs.$inferSelect;
 export type DbProject = typeof projects.$inferSelect;
 export type DbRecurringTask = typeof recurringTasks.$inferSelect;

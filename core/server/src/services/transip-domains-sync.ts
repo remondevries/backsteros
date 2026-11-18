@@ -1,5 +1,7 @@
 import type { CreateProjectInput, UpdateProjectInput } from "@backsteros/contracts";
 
+import { db } from "../db/index.js";
+import { transipAuthCodeRevealLogs } from "../db/schema.js";
 import { newId } from "../lib/crypto.js";
 import {
   allocateUniqueProjectKey,
@@ -16,9 +18,11 @@ import {
   tagsEqual,
   transipYmdToIso,
   type TransipDomain,
+  type TransipDomainAuthCode,
   type TransipNameserver,
   type TransipWhoisContact,
 } from "../lib/transip-client.js";
+import type { AuthContext } from "../middleware/auth.js";
 import { getWorkspaceOrEnvTransipToken } from "./transip-settings.js";
 import {
   buildProjectRestPayload,
@@ -407,6 +411,81 @@ export async function getTransipDomainDetail(
     fetchImpl: options?.fetchImpl,
   });
   return client.getDomainDetail(domainName);
+}
+
+export type TransipAuthCodeRevealActor = {
+  kind: AuthContext["kind"];
+  userId: string | null;
+  apiKeyId: string | null;
+  apiKeyName?: string | null;
+  contactId: string | null;
+};
+
+export type RevealTransipDomainAuthCodeOptions = {
+  accessToken?: string | null;
+  fetchImpl?: typeof fetch;
+  /** Test seam — defaults to inserting a core-local audit row (never the code). */
+  recordAudit?: (entry: {
+    workspaceId: string;
+    domainName: string;
+    actor: TransipAuthCodeRevealActor;
+  }) => Promise<void>;
+};
+
+async function recordTransipAuthCodeRevealAudit(input: {
+  workspaceId: string;
+  domainName: string;
+  actor: TransipAuthCodeRevealActor;
+}): Promise<void> {
+  await db.insert(transipAuthCodeRevealLogs).values({
+    id: newId(),
+    workspaceId: input.workspaceId,
+    domainName: input.domainName,
+    actorKind: input.actor.kind,
+    actorUserId: input.actor.userId,
+    actorApiKeyId: input.actor.apiKeyId,
+    actorApiKeyName: input.actor.apiKeyName?.trim() || null,
+    actorContactId: input.actor.contactId,
+  });
+}
+
+/**
+ * Explicit reveal of the transfer / EPP code. Writes an audit row (who / when /
+ * domain) and never persists the code itself.
+ */
+export async function revealTransipDomainAuthCode(
+  workspaceId: string,
+  domainName: string,
+  actor: TransipAuthCodeRevealActor,
+  options?: RevealTransipDomainAuthCodeOptions,
+): Promise<TransipDomainAuthCode> {
+  const accessToken =
+    options?.accessToken?.trim() ||
+    (await getWorkspaceOrEnvTransipToken(workspaceId));
+  if (!accessToken) {
+    throw new TransipApiError(
+      400,
+      "transip_token_missing",
+      "TransIP access token is not configured. Add login + private key in Settings → TransIP (or set TRANSIP_ACCESS_TOKEN).",
+    );
+  }
+  const name = domainName.trim().toLowerCase();
+  if (!name) {
+    throw new TransipApiError(400, "transip_api_error", "Domain name required");
+  }
+
+  const recordAudit = options?.recordAudit ?? recordTransipAuthCodeRevealAudit;
+  await recordAudit({
+    workspaceId,
+    domainName: name,
+    actor,
+  });
+
+  const client = new TransipClient({
+    accessToken,
+    fetchImpl: options?.fetchImpl,
+  });
+  return client.getDomainAuthCode(name);
 }
 
 export async function updateTransipDomainTags(

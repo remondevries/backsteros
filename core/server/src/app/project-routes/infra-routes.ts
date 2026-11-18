@@ -16,6 +16,7 @@ import {
   updateTransipDomainNameserversInputSchema,
 } from "../route-deps.js";
 import type { Hono } from "../route-deps.js";
+import { canRevealTransipDomainAuthCode } from "../../lib/transip-auth-code-access.js";
 
 /** TransIP domains and Cloudflare zones. */
 export function registerProjectInfraRoutes(app: Hono) {
@@ -81,6 +82,49 @@ export function registerProjectInfraRoutes(app: Hono) {
         decodeURIComponent(domainName),
       );
       return c.json(detail);
+    } catch (error) {
+      if (error instanceof TransipApiError) {
+        const status =
+          error.status === 404
+            ? 404
+            : error.status === 401 || error.status === 403
+              ? error.status
+              : 400;
+        return c.json({ error: error.message, code: error.code }, status);
+      }
+      throw error;
+    }
+  });
+
+  app.post("/api/v1/transip/domains/:domainName/auth-code", async (c) => {
+    const auth = getAuth(c);
+    if (!auth) {
+      return c.json(unauthorized(), 401);
+    }
+    const access = canRevealTransipDomainAuthCode(auth);
+    if (!access.allowed) {
+      return c.json({ error: access.reason, code: "forbidden" as const }, 403);
+    }
+    const domainName = c.req.param("domainName")?.trim() ?? "";
+    if (!domainName) {
+      return c.json(
+        { error: "Domain name required", code: "bad_request" },
+        400,
+      );
+    }
+    try {
+      const result = await transipDomainsSyncService.revealTransipDomainAuthCode(
+        auth.workspaceId,
+        decodeURIComponent(domainName),
+        {
+          kind: auth.kind,
+          userId: auth.userId,
+          apiKeyId: auth.apiKeyId,
+          apiKeyName: auth.apiKeyName ?? null,
+          contactId: auth.contactId,
+        },
+      );
+      return c.json(result);
     } catch (error) {
       if (error instanceof TransipApiError) {
         const status =
