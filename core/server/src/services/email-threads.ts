@@ -24,6 +24,8 @@ import {
   canPromoteEmailThreadWorkflowStatus,
   isAgentMailOutboundMessage,
   isNewerInboundMessage,
+  parseEmailInboundCursorTime,
+  shouldBounceWaitingThreadOnInbound,
   shouldRetriageEmailThreadOnInbound,
   type EmailWorkflowPromoteStatus,
 } from "../lib/email-status-labels.js";
@@ -790,20 +792,46 @@ export async function updateEmailThreadMetadata(
     priority: input.priority,
     dueDate,
     ...(inboxUpdatedAt !== undefined ? { inboxUpdatedAt } : {}),
-    ...(input.lastProcessedInboundMessageId !== undefined
-      ? {
+    ...(() => {
+      // Leader-only forward cursor: reject backward last_processed_inbound_at
+      // from a stale Mac replica (OS-188).
+      if (input.lastProcessedInboundAt === undefined) {
+        if (input.lastProcessedInboundMessageId === undefined) return {};
+        return {
           lastProcessedInboundMessageId:
             input.lastProcessedInboundMessageId?.trim() || null,
-        }
-      : {}),
-    ...(() => {
-      if (input.lastProcessedInboundAt === undefined) return {};
+        };
+      }
       if (input.lastProcessedInboundAt === null) {
-        return { lastProcessedInboundAt: null as Date | null };
+        return {
+          lastProcessedInboundAt: null as Date | null,
+          ...(input.lastProcessedInboundMessageId !== undefined
+            ? {
+                lastProcessedInboundMessageId:
+                  input.lastProcessedInboundMessageId?.trim() || null,
+              }
+            : {}),
+        };
       }
       const parsed = new Date(input.lastProcessedInboundAt);
       if (Number.isNaN(parsed.getTime())) return {};
-      return { lastProcessedInboundAt: parsed };
+      const storedMs = parseEmailInboundCursorTime(
+        existing?.lastProcessedInboundAt ?? null,
+      );
+      const nextMs = parsed.getTime();
+      if (storedMs != null && nextMs < storedMs) {
+        // Ignore backward cursor (+ paired id) from forwarded mutations.
+        return {};
+      }
+      return {
+        lastProcessedInboundAt: parsed,
+        ...(input.lastProcessedInboundMessageId !== undefined
+          ? {
+              lastProcessedInboundMessageId:
+                input.lastProcessedInboundMessageId?.trim() || null,
+            }
+          : {}),
+      };
     })(),
     updatedAt: now,
   };
@@ -821,15 +849,16 @@ export async function updateEmailThreadMetadata(
     typeof preferredNumber === "number" && Number.isInteger(preferredNumber)
       ? preferredNumber
       : await nextEmailThreadNumber(workspaceId, executor);
+  // Seed the inbound cursor on insert so a row first created as Waiting does
+  // not treat an older client message as new (OS-188).
   const insertInboundAt =
-    input.lastProcessedInboundAt === undefined
-      ? null
-      : input.lastProcessedInboundAt === null
-        ? null
-        : (() => {
-            const parsed = new Date(input.lastProcessedInboundAt);
-            return Number.isNaN(parsed.getTime()) ? null : parsed;
-          })();
+    input.lastProcessedInboundAt === undefined ||
+    input.lastProcessedInboundAt === null
+      ? now
+      : (() => {
+          const parsed = new Date(input.lastProcessedInboundAt);
+          return Number.isNaN(parsed.getTime()) ? now : parsed;
+        })();
   const [row] = await executor
     .insert(emailThreads)
     .values({
@@ -969,6 +998,10 @@ export async function promoteEmailThreadWorkflowStatus(
  * existing threads belongs in migration 0207. A webhook for an id the poll
  * already processed no-ops; a poll that sees a reply the webhook missed
  * retriages. Never move the cursor backwards when the list lags the webhook.
+ *
+ * Waiting/Done: a missed client reply older than the last outbound (or the
+ * time the thread entered Waiting) advances the cursor only — it must not
+ * bounce status.
  */
 export async function retriageEmailThreadOnInbound(
   workspaceId: string,
@@ -978,6 +1011,8 @@ export async function retriageEmailThreadOnInbound(
     messageId?: string | null;
     /** ISO / epoch of the inbound message (required for time-based compare). */
     messageAt?: string | Date | number | null;
+    /** Latest outbound/`sent` message time on the thread (poll path). */
+    lastOutboundAt?: string | Date | number | null;
     labels?: readonly string[] | null;
     source?: "event" | "poll";
   },
@@ -1014,29 +1049,28 @@ export async function retriageEmailThreadOnInbound(
       return toEmailThreadMetadata(workspaceId, existing);
     }
 
-    const shouldRetriage = shouldRetriageEmailThreadOnInbound(existing.status);
+    const mayBounceStatus =
+      shouldRetriageEmailThreadOnInbound(existing.status) &&
+      shouldBounceWaitingThreadOnInbound({
+        status: existing.status,
+        inboundAt: input.messageAt,
+        lastOutboundAt: input.lastOutboundAt,
+        waitingEnteredAt: existing.updatedAt,
+      });
 
     const patch: EmailThreadMetadataPatch = {};
-    if (shouldRetriage) {
+    if (mayBounceStatus) {
       // Clear Updated so the thread lands cleanly in Triage, not the Updated group.
       patch.status = "triage";
       patch.inboxUpdatedAt = null;
     }
     if (isNewInbound) {
       patch.lastProcessedInboundMessageId = messageId;
-      const atMs =
-        input.messageAt instanceof Date
-          ? input.messageAt.getTime()
-          : typeof input.messageAt === "number"
-            ? input.messageAt
-            : typeof input.messageAt === "string"
-              ? Date.parse(input.messageAt)
-              : Number.NaN;
-      if (Number.isFinite(atMs)) {
+      const atMs = parseEmailInboundCursorTime(input.messageAt);
+      if (atMs != null) {
         patch.lastProcessedInboundAt = new Date(atMs).toISOString();
-      } else if (!storedInboundAt) {
-        patch.lastProcessedInboundAt = new Date().toISOString();
       }
+      // No timestamp → leave cursor time alone (do not invent `now`).
     }
     if (Object.keys(patch).length === 0) {
       return toEmailThreadMetadata(workspaceId, existing);

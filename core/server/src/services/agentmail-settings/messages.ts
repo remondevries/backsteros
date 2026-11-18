@@ -173,124 +173,146 @@ export async function listAgentMailMessages(
 
   // Defense in depth (OS-188): list ingest retriages when a newer inbound
   // (by timestamp) appears. Outbound/`sent` list rows never bounce status.
-  const inboundByThread = new Map<
-    string,
-    {
-      inboxId: string;
-      threadId: string | null;
-      messageId: string;
-      at: number;
-      labels: string[];
-    }
-  >();
-  for (const message of apiMessages) {
-    if (isAgentMailOutboundMessage(message.labels)) continue;
-    const messageId = message.messageId?.trim() || "";
-    if (!messageId) continue;
-    const threadKey = emailThreadsService.resolveEmailThreadKey({
-      threadId: message.threadId,
-      messageId,
-    });
-    const lookup = emailThreadsService.emailThreadStatusLookupKey(
-      message.inboxId,
-      threadKey,
-    );
-    const at = Date.parse(message.timestamp) || 0;
-    const prev = inboundByThread.get(lookup);
-    if (!prev || at >= prev.at) {
-      inboundByThread.set(lookup, {
-        inboxId: message.inboxId,
-        threadId: message.threadId ?? null,
+  // Mac/forwarding local-core must never decide retriage — leader/cloud alone.
+  const { shouldForwardMutationsToLeader } = await import(
+    "../core-replication/leader-mutations.js"
+  );
+  if (!shouldForwardMutationsToLeader()) {
+    const inboundByThread = new Map<
+      string,
+      {
+        inboxId: string;
+        threadId: string | null;
+        messageId: string;
+        at: number;
+        labels: string[];
+      }
+    >();
+    const outboundAtByThread = new Map<string, number>();
+    for (const message of apiMessages) {
+      const messageId = message.messageId?.trim() || "";
+      if (!messageId) continue;
+      const threadKey = emailThreadsService.resolveEmailThreadKey({
+        threadId: message.threadId,
         messageId,
-        at,
-        labels: [...(message.labels ?? [])],
       });
+      const lookup = emailThreadsService.emailThreadStatusLookupKey(
+        message.inboxId,
+        threadKey,
+      );
+      const at = Date.parse(message.timestamp) || 0;
+      if (isAgentMailOutboundMessage(message.labels)) {
+        if (at > 0) {
+          const prevOut = outboundAtByThread.get(lookup) ?? 0;
+          if (at >= prevOut) outboundAtByThread.set(lookup, at);
+        }
+        continue;
+      }
+      const prev = inboundByThread.get(lookup);
+      if (!prev || at >= prev.at) {
+        inboundByThread.set(lookup, {
+          inboxId: message.inboxId,
+          threadId: message.threadId ?? null,
+          messageId,
+          at,
+          labels: [...(message.labels ?? [])],
+        });
+      }
     }
-  }
-  for (const inbound of inboundByThread.values()) {
-    const threadKey = emailThreadsService.resolveEmailThreadKey({
-      threadId: inbound.threadId,
-      messageId: inbound.messageId,
-    });
-    const existingThread = threadKey
-      ? await emailThreadsService.getEmailThreadByInboxKey(
+    for (const inbound of inboundByThread.values()) {
+      const threadKey = emailThreadsService.resolveEmailThreadKey({
+        threadId: inbound.threadId,
+        messageId: inbound.messageId,
+      });
+      const lookup = emailThreadsService.emailThreadStatusLookupKey(
+        inbound.inboxId,
+        threadKey,
+      );
+      const existingThread = threadKey
+        ? await emailThreadsService.getEmailThreadByInboxKey(
+            workspaceId,
+            inbound.inboxId,
+            threadKey,
+          )
+        : null;
+      // Unknown timestamp → null (never invent `now`).
+      const messageAt = inbound.at > 0 ? inbound.at : null;
+      const lastOutboundAt = outboundAtByThread.get(lookup) ?? null;
+      const isNewInbound =
+        inbound.messageId.length > 0 &&
+        isNewerInboundMessage({
+          storedId: existingThread?.lastProcessedInboundMessageId ?? null,
+          storedAt: existingThread?.lastProcessedInboundAt ?? null,
+          candidateId: inbound.messageId,
+          candidateAt: messageAt,
+        });
+
+      try {
+        await emailThreadsService.retriageEmailThreadOnInbound(
           workspaceId,
           inbound.inboxId,
-          threadKey,
-        )
-      : null;
-    const messageAt = inbound.at > 0 ? inbound.at : new Date().toISOString();
-    const isNewInbound =
-      inbound.messageId.length > 0 &&
-      isNewerInboundMessage({
-        storedId: existingThread?.lastProcessedInboundMessageId ?? null,
-        storedAt: existingThread?.lastProcessedInboundAt ?? null,
-        candidateId: inbound.messageId,
-        candidateAt: messageAt,
-      });
-
-    try {
-      await emailThreadsService.retriageEmailThreadOnInbound(
-        workspaceId,
-        inbound.inboxId,
-        {
-          threadId: inbound.threadId,
-          messageId: inbound.messageId,
-          messageAt,
-          labels: inbound.labels,
-          source: "poll",
-        },
-      );
-    } catch (error) {
-      console.warn(
-        "[agentmail] list inbound retriage failed",
-        inbound.inboxId,
-        inbound.messageId,
-        error instanceof Error ? error.message : error,
-      );
-    }
-    // OS-187: only sync linked tickets for a genuinely new inbound. Re-polls
-    // must not re-fetch AgentMail threads or bounce ticket status.
-    if (!isNewInbound) continue;
-    const listRow = apiMessages.find(
-      (row) =>
-        row.messageId === inbound.messageId && row.inboxId === inbound.inboxId,
-    );
-    void import("../ticket-email-sync.js")
-      .then(({ syncLinkedTicketsForEmailMessage }) =>
-        syncLinkedTicketsForEmailMessage({
-          workspaceId,
-          inboxId: inbound.inboxId,
-          messageId: inbound.messageId,
-          threadId: inbound.threadId,
-          direction: "inbound",
-          messageAt,
-          message: listRow
-            ? {
-                messageId: listRow.messageId,
-                threadId: listRow.threadId || inbound.threadId || "",
-                from: listRow.from,
-                subject: listRow.subject,
-                preview: listRow.preview,
-                text: null,
-                timestamp:
-                  typeof messageAt === "number"
-                    ? new Date(messageAt).toISOString()
-                    : String(messageAt),
-                direction: "inbound",
-                labels: listRow.labels,
-              }
-            : null,
-        }),
-      )
-      .catch((error) => {
+          {
+            threadId: inbound.threadId,
+            messageId: inbound.messageId,
+            messageAt,
+            lastOutboundAt,
+            labels: inbound.labels,
+            source: "poll",
+          },
+        );
+      } catch (error) {
         console.warn(
-          "[agentmail] list ticket email timeline sync failed",
+          "[agentmail] list inbound retriage failed",
           inbound.inboxId,
           inbound.messageId,
           error instanceof Error ? error.message : error,
         );
-      });
+      }
+      // OS-187: only sync linked tickets for a genuinely new inbound. Re-polls
+      // must not re-fetch AgentMail threads or bounce ticket status.
+      if (!isNewInbound) continue;
+      const listRow = apiMessages.find(
+        (row) =>
+          row.messageId === inbound.messageId && row.inboxId === inbound.inboxId,
+      );
+      void import("../ticket-email-sync.js")
+        .then(({ syncLinkedTicketsForEmailMessage }) =>
+          syncLinkedTicketsForEmailMessage({
+            workspaceId,
+            inboxId: inbound.inboxId,
+            messageId: inbound.messageId,
+            threadId: inbound.threadId,
+            direction: "inbound",
+            messageAt,
+            message: listRow
+              ? {
+                  messageId: listRow.messageId,
+                  threadId: listRow.threadId || inbound.threadId || "",
+                  from: listRow.from,
+                  subject: listRow.subject,
+                  preview: listRow.preview,
+                  text: null,
+                  timestamp:
+                    typeof messageAt === "number"
+                      ? new Date(messageAt).toISOString()
+                      : messageAt == null
+                        ? listRow.timestamp
+                        : String(messageAt),
+                  direction: "inbound",
+                  labels: listRow.labels,
+                }
+              : null,
+          }),
+        )
+        .catch((error) => {
+          console.warn(
+            "[agentmail] list ticket email timeline sync failed",
+            inbound.inboxId,
+            inbound.messageId,
+            error instanceof Error ? error.message : error,
+          );
+        });
+    }
   }
 
   const metaMap = await emailThreadsService.listEmailThreadListMetaMap(

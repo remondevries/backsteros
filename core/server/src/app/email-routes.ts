@@ -342,17 +342,41 @@ export function registerEmailRoutes(app: Hono) {
       result.inboxId &&
       (result.threadId || result.messageId)
     ) {
-      void emailThreadsService
-        .retriageEmailThreadOnInbound(result.workspaceId, result.inboxId, {
-          threadId: result.threadId,
-          messageId: result.messageId,
-          messageAt: result.timestamp ?? new Date().toISOString(),
-          labels: result.labels,
-          source: "event",
-        })
-        .catch(() => {
-          // Best-effort; retriageEmailThreadOnInbound already logs.
-        });
+      const workspaceId = result.workspaceId;
+      const inboxId = result.inboxId;
+      const threadId = result.threadId;
+      const messageId = result.messageId;
+      const labels = result.labels;
+      void (async () => {
+        // Never invent `now` when the payload omits a timestamp — fetch or
+        // treat as unknown so Waiting cannot bounce on a synthetic clock.
+        let messageAt: string | null = result.timestamp?.trim() || null;
+        if (!messageAt && messageId) {
+          try {
+            const detail = await agentmailSettingsService.getAgentMailMessage(
+              workspaceId,
+              inboxId,
+              messageId,
+            );
+            messageAt = detail.timestamp?.trim() || null;
+          } catch {
+            messageAt = null;
+          }
+        }
+        await emailThreadsService.retriageEmailThreadOnInbound(
+          workspaceId,
+          inboxId,
+          {
+            threadId,
+            messageId,
+            messageAt,
+            labels,
+            source: "event",
+          },
+        );
+      })().catch(() => {
+        // Best-effort; retriageEmailThreadOnInbound already logs.
+      });
     }
     return c.body(null, 204);
   });

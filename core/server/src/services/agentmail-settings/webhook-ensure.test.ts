@@ -1,15 +1,18 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { describe, it } from "node:test";
+import { afterEach, describe, it, mock } from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { AgentMailApiError } from "../../lib/agentmail-client.js";
+import { AgentMailApiError, AgentMailClient } from "../../lib/agentmail-client.js";
 import {
+  agentMailWebhookEnsureDeps,
   classifyAgentMailWebhookEnsure,
+  ensureAgentMailWebhook,
   isAgentMailDoorWebhookUrl,
   isAgentMailWebhookNotFoundError,
   pickAdoptableAgentMailWebhook,
+  shouldAttemptAgentMailWebhookAdopt,
 } from "./settings.js";
 
 const DOOR =
@@ -154,6 +157,141 @@ describe("AgentMail webhook ensure (OS-188)", () => {
       ),
       null,
     );
+  });
+
+  it("attempts adopt on every recreate, including stored url mismatch", () => {
+    const mismatch = classifyAgentMailWebhookEnsure({
+      targetUrl: DOOR,
+      storedUrl: STAGING,
+      desiredInboxIds: ["inbox_a"],
+      remote: { enabled: true, url: STAGING, inboxIds: ["inbox_a"] },
+    });
+    assert.equal(mismatch.action, "recreate");
+    assert.equal(shouldAttemptAgentMailWebhookAdopt(mismatch), true);
+    assert.equal(
+      shouldAttemptAgentMailWebhookAdopt({
+        action: "noop",
+        reason: "ok",
+      }),
+      false,
+    );
+  });
+
+  it("adopts door webhook on stored url mismatch (mocked client flow)", async () => {
+    const upserts: Array<{
+      webhookId: string | null;
+      webhookUrl: string | null;
+    }> = [];
+    let createCalls = 0;
+
+    mock.method(agentMailWebhookEnsureDeps, "agentsPublicWebhookUrl", () => DOOR);
+    mock.method(agentMailWebhookEnsureDeps, "getSecretRow", async () => ({
+      agentmailApiKey: "am_test",
+      agentmailInboxId: "inbox_a",
+      agentmailInboxIds: ["inbox_a", "inbox_b"],
+      agentmailInboxContacts: {},
+      agentmailReplyGreetingTemplate: null,
+      agentmailReplyGreetingTemplateEn: null,
+      agentmailReplyGreetingTemplateNl: null,
+      agentmailReplySignOffTemplate: null,
+      agentmailReplySignOffTemplateEn: null,
+      agentmailReplySignOffTemplateNl: null,
+      agentmailReplySignOffName: null,
+      agentmailWebhookId: "ep_stale_staging",
+      agentmailWebhookSecret: "whsec_stale",
+      agentmailWebhookUrl: STAGING,
+      emailGrokWebhookUrl: null,
+      emailGrokWebhookKey: null,
+    }));
+    mock.method(
+      agentMailWebhookEnsureDeps,
+      "upsertSecrets",
+      async (
+        _workspaceId: string,
+        _apiKey: string | null,
+        _inboxIds: string[],
+        options?: {
+          webhook?: {
+            webhookId: string | null;
+            webhookSecret: string | null;
+            webhookUrl: string | null;
+          };
+        },
+      ) => {
+        upserts.push({
+          webhookId: options?.webhook?.webhookId ?? null,
+          webhookUrl: options?.webhook?.webhookUrl ?? null,
+        });
+      },
+    );
+
+    const fakeClient = {
+      async getWebhook(webhookId: string) {
+        if (webhookId === "ep_stale_staging") {
+          return {
+            webhookId,
+            enabled: true,
+            url: STAGING,
+            inboxIds: ["inbox_a"],
+            secret: "whsec_stale",
+            eventTypes: ["message.received"],
+          };
+        }
+        return {
+          webhookId: "ep_3MH1oiuNtrFCY",
+          enabled: true,
+          url: DOOR,
+          inboxIds: ["inbox_a", "inbox_b"],
+          secret: "whsec_door",
+          eventTypes: ["message.received"],
+        };
+      },
+      async listWebhooks() {
+        return [
+          {
+            webhookId: "ep_3MH1oiuNtrFCY",
+            enabled: true,
+            url: DOOR,
+            inboxIds: ["inbox_a", "inbox_b"],
+            secret: "whsec_door",
+            eventTypes: ["message.received"],
+          },
+        ];
+      },
+      async createWebhook() {
+        createCalls += 1;
+        throw new Error("must not create when adopting");
+      },
+      async updateWebhook() {
+        return {
+          webhookId: "ep_3MH1oiuNtrFCY",
+          enabled: true,
+          url: DOOR,
+          inboxIds: ["inbox_a", "inbox_b"],
+          secret: "whsec_door",
+          eventTypes: ["message.received"],
+        };
+      },
+      async deleteWebhook() {
+        throw new Error("must not delete when adopting");
+      },
+    };
+    mock.method(
+      agentMailWebhookEnsureDeps,
+      "createClient",
+      () => fakeClient as unknown as AgentMailClient,
+    );
+
+    await ensureAgentMailWebhook("ws_test", "am_test", ["inbox_a", "inbox_b"]);
+
+    assert.equal(createCalls, 0);
+    assert.equal(upserts.length, 1);
+    assert.equal(upserts[0]?.webhookId, "ep_3MH1oiuNtrFCY");
+    assert.equal(upserts[0]?.webhookUrl, DOOR);
+  });
+
+  afterEach(() => {
+    mock.restoreAll();
   });
 
   it("creates the replacement webhook before deleting the old one", () => {

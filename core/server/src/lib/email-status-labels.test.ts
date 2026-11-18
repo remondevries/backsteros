@@ -9,6 +9,7 @@ import {
   isAgentMailOutboundMessage,
   isNewerInboundMessage,
   isNewerInboundMessageId,
+  shouldBounceWaitingThreadOnInbound,
   migrateLegacyEmailStatus,
   shouldRetriageEmailThreadOnInbound,
 } from "./email-status-labels.js";
@@ -197,6 +198,75 @@ describe("isNewerInboundMessageId", () => {
     assert.equal(isNewerInboundMessageId(null, "msg_1"), true);
     assert.equal(isNewerInboundMessageId("msg_1", "msg_1"), false);
     assert.equal(isNewerInboundMessageId("msg_1", "msg_2"), true);
+  });
+});
+
+describe("shouldBounceWaitingThreadOnInbound", () => {
+  const tClient = "2026-11-16T10:00:00.000Z";
+  const tSent = "2026-11-17T12:00:00.000Z";
+  const tNewReply = "2026-11-18T09:46:00.000Z";
+
+  it("does not bounce Waiting on a missed reply older than last sent", () => {
+    assert.equal(
+      shouldBounceWaitingThreadOnInbound({
+        status: "waiting",
+        inboundAt: tClient,
+        lastOutboundAt: tSent,
+      }),
+      false,
+    );
+  });
+
+  it("bounces Waiting when inbound is newer than last sent", () => {
+    assert.equal(
+      shouldBounceWaitingThreadOnInbound({
+        status: "waiting",
+        inboundAt: tNewReply,
+        lastOutboundAt: tSent,
+      }),
+      true,
+    );
+  });
+
+  it("uses waitingEnteredAt when lastOutboundAt is unknown", () => {
+    assert.equal(
+      shouldBounceWaitingThreadOnInbound({
+        status: "waiting",
+        inboundAt: tClient,
+        waitingEnteredAt: tSent,
+      }),
+      false,
+    );
+    assert.equal(
+      shouldBounceWaitingThreadOnInbound({
+        status: "completed",
+        inboundAt: tNewReply,
+        waitingEnteredAt: tSent,
+      }),
+      true,
+    );
+  });
+
+  it("does not bounce Waiting when inbound time is unknown", () => {
+    assert.equal(
+      shouldBounceWaitingThreadOnInbound({
+        status: "waiting",
+        inboundAt: null,
+        lastOutboundAt: tSent,
+      }),
+      false,
+    );
+  });
+
+  it("does not apply the outbound floor to non-Waiting statuses", () => {
+    assert.equal(
+      shouldBounceWaitingThreadOnInbound({
+        status: "ready_to_start",
+        inboundAt: tClient,
+        lastOutboundAt: tSent,
+      }),
+      true,
+    );
   });
 });
 

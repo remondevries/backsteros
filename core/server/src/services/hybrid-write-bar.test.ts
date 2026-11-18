@@ -124,8 +124,26 @@ describe("hybrid write bar", () => {
       "list ingest must retriage on newer inbound ids only",
     );
     assert.ok(
+      messages.includes("shouldForwardMutationsToLeader") &&
+        messages.includes("if (!shouldForwardMutationsToLeader())"),
+      "Mac/forwarding local-core must skip poll retriage (leader-only)",
+    );
+    assert.ok(
       messages.includes("syncLinkedTicketsForEmailMessage"),
       "list ingest must sync linked tickets when webhook is down (OS-187)",
+    );
+    assert.ok(
+      email.includes("shouldBounceWaitingThreadOnInbound"),
+      "Waiting must not bounce on inbound older than last outbound",
+    );
+    assert.ok(
+      emailRoutes.includes("getAgentMailMessage"),
+      "webhook without payload timestamp must fetch the message",
+    );
+    assert.equal(
+      emailRoutes.includes("new Date().toISOString()"),
+      false,
+      "webhook retriage must not fall back to now for messageAt",
     );
 
     const agentmail = readSrc("agentmail-settings.ts");

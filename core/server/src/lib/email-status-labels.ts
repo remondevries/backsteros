@@ -161,6 +161,39 @@ export function isNewerInboundMessage(input: {
 }
 
 /**
+ * Waiting/Done must not bounce on a missed client reply that is older than
+ * Remon's last sent message (or the time the thread entered Waiting).
+ * Unknown inbound time → do not bounce.
+ */
+export function shouldBounceWaitingThreadOnInbound(input: {
+  status?: string | null;
+  inboundAt?: string | Date | number | null;
+  /** Latest outbound/`sent` message time on the thread, when known. */
+  lastOutboundAt?: string | Date | number | null;
+  /** Fallback floor: when the thread entered Waiting/Done (e.g. updatedAt). */
+  waitingEnteredAt?: string | Date | number | null;
+}): boolean {
+  const status = migrateLegacyEmailStatus((input.status ?? "").trim() || "triage");
+  if (status !== "waiting" && status !== "completed") {
+    return true;
+  }
+  const inboundAt = parseInboundCursorTime(input.inboundAt);
+  if (inboundAt == null) return false;
+  const floor =
+    parseInboundCursorTime(input.lastOutboundAt) ??
+    parseInboundCursorTime(input.waitingEnteredAt);
+  if (floor == null) return true;
+  return inboundAt > floor;
+}
+
+/** Parse inbound/outbound cursor times for forward-only writes (OS-188). */
+export function parseEmailInboundCursorTime(
+  value: string | Date | number | null | undefined,
+): number | null {
+  return parseInboundCursorTime(value);
+}
+
+/**
  * @deprecated Prefer {@link isNewerInboundMessage} (timestamp-aware).
  * Id-only fallback: different id counts as newer (no timestamp guard).
  */

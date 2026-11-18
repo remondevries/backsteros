@@ -723,6 +723,17 @@ export type AgentMailWebhookEnsureDecision =
   | { action: "recreate"; reason: string };
 
 /**
+ * On any recreate decision, try adopting a healthy door webhook first so a
+ * stored-url mismatch (staging in DB, door hook already live) cannot create a
+ * duplicate next to ep_3MH1oiuNtrFCY.
+ */
+export function shouldAttemptAgentMailWebhookAdopt(
+  decision: AgentMailWebhookEnsureDecision,
+): boolean {
+  return decision.action === "recreate";
+}
+
+/**
  * Decide whether the stored/remote AgentMail webhook is healthy or stale.
  * Non-door URLs and enabled:false remotes always recreate with the full inbox list.
  */
@@ -823,14 +834,22 @@ async function clearStoredWebhook(
   });
 }
 
-async function ensureAgentMailWebhook(
+/** Injectable seams for ensure webhook tests (mocked AgentMail client flow). */
+export const agentMailWebhookEnsureDeps = {
+  createClient: (apiKey: string) => new AgentMailClient({ apiKey }),
+  getSecretRow,
+  upsertSecrets: upsertAgentMailSecrets,
+  agentsPublicWebhookUrl,
+};
+
+export async function ensureAgentMailWebhook(
   workspaceId: string,
   apiKey: string | null,
   inboxIds: string[],
   options?: { previousApiKey?: string | null },
 ): Promise<void> {
-  const targetUrl = agentsPublicWebhookUrl();
-  const secretRow = await getSecretRow(workspaceId);
+  const targetUrl = agentMailWebhookEnsureDeps.agentsPublicWebhookUrl();
+  const secretRow = await agentMailWebhookEnsureDeps.getSecretRow(workspaceId);
   const existingId = secretRow?.agentmailWebhookId?.trim() || null;
   const existingUrl = secretRow?.agentmailWebhookUrl?.trim() || null;
   const existingSecret = secretRow?.agentmailWebhookSecret?.trim() || null;
@@ -843,9 +862,9 @@ async function ensureAgentMailWebhook(
   if (!apiKey) {
     if (existingId && deleteKey) {
       try {
-        await new AgentMailClient({ apiKey: deleteKey }).deleteWebhook(
-          existingId,
-        );
+        await agentMailWebhookEnsureDeps
+          .createClient(deleteKey)
+          .deleteWebhook(existingId);
       } catch {
         // Best-effort remote cleanup.
       }
@@ -871,7 +890,7 @@ async function ensureAgentMailWebhook(
     return;
   }
 
-  const client = new AgentMailClient({ apiKey });
+  const client = agentMailWebhookEnsureDeps.createClient(apiKey);
 
   try {
     let remote: {
@@ -941,14 +960,9 @@ async function ensureAgentMailWebhook(
     }
 
     // Before creating a duplicate: adopt an existing healthy door webhook
-    // (e.g. ops-created ep_* that cloud DB does not yet store).
-    const shouldTryAdopt =
-      decision.action === "recreate" &&
-      (decision.reason === "no stored webhook url" ||
-        decision.reason === "remote webhook missing or unreadable" ||
-        !existingId ||
-        !existingSecret);
-    if (shouldTryAdopt) {
+    // (e.g. ops-created ep_* that cloud DB does not yet store, or stored URL
+    // still points at staging while AgentMail already has the door hook).
+    if (shouldAttemptAgentMailWebhookAdopt(decision)) {
       try {
         const listed = await client.listWebhooks();
         const adoptable = pickAdoptableAgentMailWebhook(listed, targetUrl);
@@ -958,13 +972,18 @@ async function ensureAgentMailWebhook(
             adopted = await client.getWebhook(adoptable.webhookId);
           }
           if (adopted.secret?.trim() && adopted.enabled) {
-            await upsertAgentMailSecrets(workspaceId, apiKey, inboxIds, {
-              webhook: {
-                webhookId: adopted.webhookId,
-                webhookSecret: adopted.secret,
-                webhookUrl: adopted.url,
+            await agentMailWebhookEnsureDeps.upsertSecrets(
+              workspaceId,
+              apiKey,
+              inboxIds,
+              {
+                webhook: {
+                  webhookId: adopted.webhookId,
+                  webhookSecret: adopted.secret,
+                  webhookUrl: adopted.url,
+                },
               },
-            });
+            );
             console.info(
               "[agentmail] ensureWebhook adopted existing door webhook:",
               adopted.webhookId,
@@ -1037,7 +1056,7 @@ async function ensureAgentMailWebhook(
       inboxIds,
       clientId: WEBHOOK_CLIENT_ID,
     });
-    await upsertAgentMailSecrets(workspaceId, apiKey, inboxIds, {
+    await agentMailWebhookEnsureDeps.upsertSecrets(workspaceId, apiKey, inboxIds, {
       webhook: {
         webhookId: created.webhookId,
         webhookSecret: created.secret,

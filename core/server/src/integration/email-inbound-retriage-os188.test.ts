@@ -18,6 +18,9 @@ test("OS-188: time-based inbound cursor — poll/webhook races, empty cursor, li
   const lagId = id("email");
   const sentId = id("email");
   const seededWaitingId = id("email");
+  const olderThanSentId = id("email");
+  const insertSeedId = id("email");
+  const forwardCursorId = id("email");
 
   context.after(async () => {
     await db
@@ -41,6 +44,8 @@ test("OS-188: time-based inbound cursor — poll/webhook races, empty cursor, li
   });
 
   const tOld = new Date("2026-11-10T10:00:00.000Z");
+  const tClient = new Date("2026-11-16T10:00:00.000Z");
+  const tSent = new Date("2026-11-17T12:00:00.000Z");
   const tReply = new Date("2026-11-18T09:46:00.000Z");
   const tWebhook = new Date("2026-11-18T09:50:00.000Z");
   const tLag = new Date("2026-11-18T09:40:00.000Z");
@@ -55,6 +60,8 @@ test("OS-188: time-based inbound cursor — poll/webhook races, empty cursor, li
       status: "waiting",
       lastProcessedInboundMessageId: null,
       lastProcessedInboundAt: null,
+      // Entered Waiting before the real reply so the outbound floor allows bounce.
+      updatedAt: tOld,
     },
     {
       id: raceId,
@@ -96,6 +103,28 @@ test("OS-188: time-based inbound cursor — poll/webhook races, empty cursor, li
       lastProcessedInboundMessageId: null,
       // Migration-style seed: older inbound must not bounce Waiting.
       lastProcessedInboundAt: tReply,
+      updatedAt: tOld,
+    },
+    {
+      id: olderThanSentId,
+      workspaceId,
+      inboxId: "inbox_os188_older",
+      threadKey: "thread_os188_older",
+      number: 1886,
+      status: "waiting",
+      lastProcessedInboundMessageId: null,
+      lastProcessedInboundAt: tOld,
+      updatedAt: tSent,
+    },
+    {
+      id: forwardCursorId,
+      workspaceId,
+      inboxId: "inbox_os188_fwd",
+      threadKey: "thread_os188_fwd",
+      number: 1887,
+      status: "waiting",
+      lastProcessedInboundMessageId: "msg_cloud_new",
+      lastProcessedInboundAt: tWebhook,
     },
   ]);
 
@@ -220,4 +249,103 @@ test("OS-188: time-based inbound cursor — poll/webhook races, empty cursor, li
     },
   );
   assert.equal(newSeeded?.status, "triage");
+
+  // Missed client reply older than Remon's last sent must not bounce Waiting;
+  // cursor may still advance.
+  const olderThanSent = await emailThreadsService.retriageEmailThreadOnInbound(
+    workspaceId,
+    "inbox_os188_older",
+    {
+      threadId: "thread_os188_older",
+      messageId: "msg_missed_client",
+      messageAt: tClient.toISOString(),
+      lastOutboundAt: tSent.toISOString(),
+      source: "poll",
+    },
+  );
+  assert.equal(olderThanSent?.status, "waiting");
+  const afterOlder = await emailThreadsService.getEmailThreadById(
+    workspaceId,
+    olderThanSentId,
+  );
+  assert.equal(afterOlder?.status, "waiting");
+  assert.equal(afterOlder?.lastProcessedInboundMessageId, "msg_missed_client");
+  assert.equal(
+    afterOlder?.lastProcessedInboundAt?.toISOString() ?? null,
+    tClient.toISOString(),
+  );
+
+  // Insert seeds last_processed_inbound_at so older client mail is not "new".
+  const beforeInsert = Date.now();
+  const inserted = await emailThreadsService.updateEmailThreadMetadata(
+    workspaceId,
+    "inbox_os188_insert",
+    "thread_os188_insert",
+    { status: "waiting" },
+    db,
+    insertSeedId,
+    1888,
+  );
+  assert.ok(inserted);
+  const insertRow = await emailThreadsService.getEmailThreadById(
+    workspaceId,
+    insertSeedId,
+  );
+  assert.ok(insertRow?.lastProcessedInboundAt);
+  assert.ok(
+    (insertRow!.lastProcessedInboundAt!.getTime() ?? 0) >= beforeInsert - 5_000,
+  );
+  const olderAfterInsert = await emailThreadsService.retriageEmailThreadOnInbound(
+    workspaceId,
+    "inbox_os188_insert",
+    {
+      threadId: "thread_os188_insert",
+      messageId: "msg_pre_insert",
+      messageAt: tOld.toISOString(),
+      source: "poll",
+    },
+  );
+  assert.equal(olderAfterInsert?.status, "waiting");
+
+  // Leader rejects backward cursor writes from a stale Mac replica.
+  const backward = await emailThreadsService.updateEmailThreadMetadata(
+    workspaceId,
+    "inbox_os188_fwd",
+    "thread_os188_fwd",
+    {
+      lastProcessedInboundMessageId: "msg_stale_mac",
+      lastProcessedInboundAt: tLag.toISOString(),
+    },
+  );
+  assert.ok(backward);
+  const afterBackward = await emailThreadsService.getEmailThreadById(
+    workspaceId,
+    forwardCursorId,
+  );
+  assert.equal(afterBackward?.lastProcessedInboundMessageId, "msg_cloud_new");
+  assert.equal(
+    afterBackward?.lastProcessedInboundAt?.toISOString() ?? null,
+    tWebhook.toISOString(),
+  );
+
+  // Forward cursor still accepted.
+  const tForward = new Date("2026-11-18T10:00:00.000Z");
+  await emailThreadsService.updateEmailThreadMetadata(
+    workspaceId,
+    "inbox_os188_fwd",
+    "thread_os188_fwd",
+    {
+      lastProcessedInboundMessageId: "msg_even_newer",
+      lastProcessedInboundAt: tForward.toISOString(),
+    },
+  );
+  const afterForward = await emailThreadsService.getEmailThreadById(
+    workspaceId,
+    forwardCursorId,
+  );
+  assert.equal(afterForward?.lastProcessedInboundMessageId, "msg_even_newer");
+  assert.equal(
+    afterForward?.lastProcessedInboundAt?.toISOString() ?? null,
+    tForward.toISOString(),
+  );
 });
