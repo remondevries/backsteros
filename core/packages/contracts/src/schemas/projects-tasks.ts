@@ -1027,6 +1027,21 @@ export function taskPatchKeepsWaitingFollowUp(input: {
   );
 }
 
+/** Portal / staff visibility for ticket comments and timeline entries (OS-187). */
+export const COMMENT_VISIBILITIES = ["client_visible", "internal"] as const;
+export const commentVisibilitySchema = z.enum(COMMENT_VISIBILITIES);
+export type CommentVisibility = z.infer<typeof commentVisibilitySchema>;
+
+/** Author side on ticket timeline entries (OS-187). */
+export const COMMENT_AUTHOR_SIDES = ["client", "team"] as const;
+export const commentAuthorSideSchema = z.enum(COMMENT_AUTHOR_SIDES);
+export type CommentAuthorSide = z.infer<typeof commentAuthorSideSchema>;
+
+/** Email direction when a comment is a linked-mail timeline entry (OS-187). */
+export const COMMENT_EMAIL_DIRECTIONS = ["inbound", "outbound"] as const;
+export const commentEmailDirectionSchema = z.enum(COMMENT_EMAIL_DIRECTIONS);
+export type CommentEmailDirection = z.infer<typeof commentEmailDirectionSchema>;
+
 export const taskCommentSchema = z.object({
   id: z.string(),
   taskId: z.string(),
@@ -1037,6 +1052,23 @@ export const taskCommentSchema = z.object({
   /** Display name: user profile name when available, else email local-part. */
   authorName: z.string(),
   body: z.string(),
+  /**
+   * `client_visible` shows in the client portal; `internal` is staff/agents only.
+   * Comment/ticket writes never send mail or notify the client.
+   */
+  visibility: commentVisibilitySchema,
+  /** client contact vs Remon/team when known. */
+  authorSide: commentAuthorSideSchema.nullable(),
+  /** AgentMail message id when this row mirrors a linked email. */
+  emailMessageId: z.string().nullable(),
+  emailDirection: commentEmailDirectionSchema.nullable(),
+  emailSender: z.string().nullable(),
+  /** Timeline instant (email timestamp for sync/import). */
+  occurredAt: z.string().datetime(),
+  /** Set when backfilled from historical mail. */
+  importedAt: z.string().datetime().nullable(),
+  importedByContactId: z.string().nullable(),
+  importedByActor: z.enum(["user", "agent"]).nullable(),
   /** Set when a root comment thread is resolved. */
   resolvedAt: z.string().datetime().nullable(),
   createdAt: z.string().datetime(),
@@ -1071,6 +1103,10 @@ export const createTaskCommentSchema = z.object({
    * Ignored for session/user auth.
    */
   authorContactId: z.string().nullable().optional(),
+  /** Defaults to `client_visible`. Internal notes never appear in the portal. */
+  visibility: commentVisibilitySchema.optional(),
+  /** Optional author side; inferred from authorContactId / activityActor when omitted. */
+  authorSide: commentAuthorSideSchema.nullable().optional(),
   /**
    * Upload images and append `![alt](url)` to the comment body (OS-90).
    */
@@ -1082,6 +1118,8 @@ export const updateTaskCommentSchema = z
     body: z.string().min(1).max(20_000).optional(),
     /** Pass an ISO timestamp to resolve, or null to unresolve. Only for root comments. */
     resolvedAt: z.string().datetime().nullable().optional(),
+    visibility: commentVisibilitySchema.optional(),
+    authorSide: commentAuthorSideSchema.nullable().optional(),
     /**
      * Upload images and append `![alt](url)` to the comment body (OS-90).
      */

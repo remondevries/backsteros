@@ -27,6 +27,28 @@ export function taskActivityToTaskComment(
   if (activity.deletedAt) return null;
   const body = typeof activity.body === "string" ? activity.body : "";
   if (!body.trim()) return null;
+  const data =
+    activity.data && typeof activity.data === "object" && !Array.isArray(activity.data)
+      ? (activity.data as Record<string, unknown>)
+      : {};
+  const visibility =
+    data.visibility === "internal" ? "internal" : "client_visible";
+  const authorSide =
+    data.authorSide === "client" || data.authorSide === "team"
+      ? data.authorSide
+      : null;
+  const emailDirection =
+    data.emailDirection === "inbound" || data.emailDirection === "outbound"
+      ? data.emailDirection
+      : null;
+  const importedByActor =
+    data.importedByActor === "user" || data.importedByActor === "agent"
+      ? data.importedByActor
+      : null;
+  const occurredAt =
+    typeof data.occurredAt === "string" && data.occurredAt.length > 0
+      ? data.occurredAt
+      : activity.createdAt;
   return {
     id: activity.id,
     taskId: activity.taskId,
@@ -36,6 +58,19 @@ export function taskActivityToTaskComment(
     authorEmail: activity.actorEmail,
     authorName: activity.actorName,
     body,
+    visibility,
+    authorSide,
+    emailMessageId:
+      typeof data.emailMessageId === "string" ? data.emailMessageId : null,
+    emailDirection,
+    emailSender: typeof data.emailSender === "string" ? data.emailSender : null,
+    occurredAt,
+    importedAt: typeof data.importedAt === "string" ? data.importedAt : null,
+    importedByContactId:
+      typeof data.importedByContactId === "string"
+        ? data.importedByContactId
+        : null,
+    importedByActor,
     resolvedAt: activity.resolvedAt ?? null,
     createdAt: activity.createdAt,
     updatedAt: activity.updatedAt ?? activity.createdAt,

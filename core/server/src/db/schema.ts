@@ -1505,6 +1505,34 @@ export const taskComments = pgTable(
     /** Denormalized for display without joining users. */
     authorEmail: text("author_email"),
     body: text("body").notNull(),
+    /**
+     * Portal visibility (OS-187). `client_visible` appears in the client portal;
+     * `internal` is staff/agents only. Writes never send mail or notify the client.
+     */
+    visibility: text("visibility").notNull().default("client_visible"),
+    /** Who wrote this entry: client contact vs Remon/team (OS-187). */
+    authorSide: text("author_side"),
+    /** AgentMail message id — unique per workspace when set (email timeline). */
+    emailMessageId: text("email_message_id"),
+    /** inbound | outbound when sourced from email. */
+    emailDirection: text("email_direction"),
+    /** Raw From header / sender string for email timeline entries. */
+    emailSender: text("email_sender"),
+    /**
+     * Timeline instant (email sent/received time for sync/import; otherwise
+     * matches createdAt).
+     */
+    occurredAt: timestamp("occurred_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    /** Set when this row was backfilled from historical mail. */
+    importedAt: timestamp("imported_at", { withTimezone: true }),
+    importedByContactId: text("imported_by_contact_id").references(
+      () => contacts.id,
+      { onDelete: "set null" },
+    ),
+    /** user | agent — who triggered the import. */
+    importedByActor: text("imported_by_actor"),
     /** When set on a root comment, the thread is resolved. */
     resolvedAt: timestamp("resolved_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
@@ -1520,10 +1548,15 @@ export const taskComments = pgTable(
     index("task_comments_task_id_idx").on(table.taskId),
     index("task_comments_workspace_id_idx").on(table.workspaceId),
     index("task_comments_created_at_idx").on(table.createdAt),
+    index("task_comments_occurred_at_idx").on(table.occurredAt),
     index("task_comments_deleted_at_idx").on(table.deletedAt),
     index("task_comments_parent_comment_id_idx").on(table.parentCommentId),
     index("task_comments_resolved_at_idx").on(table.resolvedAt),
     index("task_comments_author_contact_id_idx").on(table.authorContactId),
+    index("task_comments_visibility_idx").on(table.visibility),
+    uniqueIndex("task_comments_workspace_email_message_uidx")
+      .on(table.workspaceId, table.emailMessageId)
+      .where(sql`${table.emailMessageId} is not null and ${table.deletedAt} is null`),
     foreignKey({
       columns: [table.parentCommentId],
       foreignColumns: [table.id],

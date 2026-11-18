@@ -10,6 +10,7 @@ import { emailRoutes } from "./email.js";
 import { integrationsRoutes } from "./integrations.js";
 import { meetingsHabitsRoutes } from "./meetings-habits.js";
 import { agentsChatRoutes } from "./agents-chat.js";
+import { ticketsRoutes } from "./tickets.js";
 
 const c = initContract();
 
@@ -26,6 +27,7 @@ export const apiContract: AppRouter = c.router(
     ...integrationsRoutes,
     ...meetingsHabitsRoutes,
     ...agentsChatRoutes,
+    ...ticketsRoutes,
   },
   {
     pathPrefix: "",
@@ -42,3 +44,4 @@ export { emailRoutes } from "./email.js";
 export { integrationsRoutes } from "./integrations.js";
 export { meetingsHabitsRoutes } from "./meetings-habits.js";
 export { agentsChatRoutes } from "./agents-chat.js";
+export { ticketsRoutes } from "./tickets.js";
