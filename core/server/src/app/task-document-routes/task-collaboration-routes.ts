@@ -1,4 +1,7 @@
-import { resolveCommentListVisibility } from "../../lib/comment-visibility-auth.js";
+import {
+  isPortalCommentVisibilityKey,
+  resolveCommentListVisibility,
+} from "../../lib/comment-visibility-auth.js";
 import {
   attachImagesToCommentBody,
   buildTaskActivityRestPayload,
@@ -102,6 +105,8 @@ export function registerTaskCollaborationRoutes(app: Hono) {
         limit: query.limit,
         cursor: query.cursor,
         visibility: resolvedVisibility.visibility,
+        // OS-195: portal keys never see system activity events.
+        excludeSystemEvents: isPortalCommentVisibilityKey(auth),
       });
       if (!result) {
         return c.json(
@@ -163,6 +168,11 @@ export function registerTaskCollaborationRoutes(app: Hono) {
     const taskIdRaw = c.req.param("id");
     const taskId = await routeTaskId(auth.workspaceId, taskIdRaw);
     if (!taskId) return c.json(notFound("Task"), 404);
+    // Legacy endpoint is system-events only — portal keys get an empty list
+    // (OS-195); they use GET /activities for client-visible comments.
+    if (isPortalCommentVisibilityKey(auth)) {
+      return c.json({ activities: [] });
+    }
     const rows = await taskActivityService.listTaskActivities(
       auth.workspaceId,
       taskId,

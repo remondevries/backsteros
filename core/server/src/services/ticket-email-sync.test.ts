@@ -9,6 +9,7 @@ import {
   isSharedPublicEmailDomain,
   needsTimelineBodyUpgrade,
   resolveTicketEmailDirection,
+  shouldMoveStatusForMessage,
   TICKET_INBOUND_STATUS,
   type TicketEmailMessage,
 } from "./ticket-email-sync.js";
@@ -244,5 +245,83 @@ describe("OS-187 ticket email sync behaviour", () => {
       currentStatus: "waiting",
     });
     assert.equal(next, undefined);
+  });
+
+  it("OS-195: backfill/link status gate matches live retriage rules", () => {
+    const client = message({
+      messageId: "client-1",
+      from: "client@pa-mu.test",
+      timestamp: "2026-11-10T09:00:00.000Z",
+      headers: { "Auto-Submitted": "no" },
+    });
+    const ooo = message({
+      messageId: "ooo-1",
+      from: "client@pa-mu.test",
+      timestamp: "2026-11-12T09:00:00.000Z",
+      headers: {
+        "Auto-Submitted": "auto-replied",
+        "X-Autoreply": "yes",
+        Precedence: "bulk",
+      },
+    });
+    const outboundAt = "2026-11-11T10:00:00.000Z";
+
+    assert.equal(
+      shouldMoveStatusForMessage({
+        created: true,
+        direction: "inbound",
+        message: client,
+      }),
+      true,
+    );
+    assert.equal(
+      shouldMoveStatusForMessage({
+        created: true,
+        direction: "outbound",
+        message: client,
+      }),
+      false,
+    );
+    assert.equal(
+      shouldMoveStatusForMessage({
+        created: false,
+        direction: "inbound",
+        message: client,
+      }),
+      false,
+    );
+    assert.equal(
+      shouldMoveStatusForMessage({
+        created: true,
+        direction: "inbound",
+        message: ooo,
+      }),
+      false,
+      "out-of-office must not move status",
+    );
+    assert.equal(
+      shouldMoveStatusForMessage({
+        created: true,
+        direction: "inbound",
+        message: client,
+        lastOutboundAt: outboundAt,
+      }),
+      false,
+      "older client reply after our outbound must not move",
+    );
+    assert.equal(
+      shouldMoveStatusForMessage({
+        created: true,
+        direction: "inbound",
+        message: message({
+          messageId: "client-2",
+          from: "client@pa-mu.test",
+          timestamp: "2026-11-12T12:00:00.000Z",
+        }),
+        lastOutboundAt: outboundAt,
+      }),
+      true,
+      "newer client reply after our outbound still moves",
+    );
   });
 });

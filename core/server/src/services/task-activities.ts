@@ -323,9 +323,16 @@ export type ListActivitiesFilter = {
   /**
    * Comment visibility (OS-187). Same rule as GET /comments:
    * `all` → no filter; `client_visible` / `internal` → filter comment rows
-   * via `data.visibility` (system events always included).
+   * via `data.visibility` (system events included unless
+   * {@link excludeSystemEvents} is set).
    */
   visibility?: "client_visible" | "internal" | "all";
+  /**
+   * OS-195: portal API keys must not see system activity events (status
+   * changes, assignments, timers, etc.) — only client-visible comments.
+   * Owner/agent keys leave this unset.
+   */
+  excludeSystemEvents?: boolean;
 };
 
 function encodeActivitiesCursor(createdAt: Date, id: string): string {
@@ -414,6 +421,7 @@ export async function listActivities(
     .filter(Boolean);
   const cursor = decodeActivitiesCursor(filter.cursor);
   const visibility = filter.visibility ?? "all";
+  const excludeSystemEvents = filter.excludeSystemEvents === true;
 
   const conditions = [
     eq(taskActivities.workspaceId, workspaceId),
@@ -427,15 +435,21 @@ export async function listActivities(
       : []),
     ...(types.length > 0 ? [inArray(taskActivities.type, types)] : []),
     ...(filter.includeDeleted ? [] : [isNull(taskActivities.deletedAt)]),
-    // Portal / visibility filter: hide internal comment bodies from restricted keys.
-    ...(visibility === "all"
-      ? []
-      : [
-          or(
-            sql`${taskActivities.type} <> 'comment'`,
-            sql`coalesce(${taskActivities.data}->>'visibility', 'client_visible') = ${visibility}`,
-          )!,
-        ]),
+    // Portal (OS-195): only client-visible comments — never system events.
+    ...(excludeSystemEvents
+      ? [
+          eq(taskActivities.type, "comment"),
+          sql`coalesce(${taskActivities.data}->>'visibility', 'client_visible') = 'client_visible'`,
+        ]
+      : // Staff visibility filter: hide internal comment bodies; keep system events.
+        visibility === "all"
+        ? []
+        : [
+            or(
+              sql`${taskActivities.type} <> 'comment'`,
+              sql`coalesce(${taskActivities.data}->>'visibility', 'client_visible') = ${visibility}`,
+            )!,
+          ]),
   ];
 
   if (cursor) {

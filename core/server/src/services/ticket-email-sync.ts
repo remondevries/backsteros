@@ -444,14 +444,34 @@ async function resolveEmailAuthor(input: {
   return { authorContactId, authorEmail, authorSide };
 }
 
-function shouldMoveStatusForMessage(input: {
+/**
+ * OS-195 / OS-187: only a newly ingested genuine client reply may move ticket
+ * status. Skip outbound/own mail, automated replies, and client mail that is
+ * not newer than our last outbound (same floor as live retriage).
+ */
+export function shouldMoveStatusForMessage(input: {
   created: boolean;
   direction: "inbound" | "outbound";
   message: TicketEmailMessage;
+  /** Latest outbound/`sent` message time on the thread (when known). */
+  lastOutboundAt?: string | Date | number | null;
 }): boolean {
   if (!input.created) return false;
   if (input.direction !== "inbound") return false;
   if (isAutomatedMailSkipStatus(input.message)) return false;
+  const inboundAt = Date.parse(input.message.timestamp);
+  if (Number.isNaN(inboundAt)) return false;
+  if (input.lastOutboundAt != null && input.lastOutboundAt !== "") {
+    const outboundAt =
+      typeof input.lastOutboundAt === "number"
+        ? input.lastOutboundAt
+        : input.lastOutboundAt instanceof Date
+          ? input.lastOutboundAt.getTime()
+          : Date.parse(String(input.lastOutboundAt));
+    if (!Number.isNaN(outboundAt) && inboundAt <= outboundAt) {
+      return false;
+    }
+  }
   return true;
 }
 
@@ -521,12 +541,19 @@ export async function syncTicketLinkedEmails(input: {
   let created = 0;
   let skipped = 0;
   const entries = [];
-  /** Chronologically latest newly-created message in this run (status gate). */
-  let newestCreated: {
+  /**
+   * Chronologically newest message across the linked thread(s) (created or
+   * already present). Status moves only when that newest row is a genuine
+   * client reply — not when an older inbound is newly linked after our outbound.
+   */
+  let newestOverall: {
     direction: "inbound" | "outbound";
     timestamp: string;
     message: TicketEmailMessage;
+    created: boolean;
   } | null = null;
+  /** Latest outbound on the thread (including already-synced rows). */
+  let lastOutboundAt: string | null = null;
   let currentStatus = task.status;
 
   for (const thread of threadRows) {
@@ -555,6 +582,15 @@ export async function syncTicketLinkedEmails(input: {
         identity,
         message.labels,
       );
+      if (direction === "outbound") {
+        if (
+          !lastOutboundAt ||
+          new Date(message.timestamp).getTime() >
+            new Date(lastOutboundAt).getTime()
+        ) {
+          lastOutboundAt = message.timestamp;
+        }
+      }
       const author = await resolveEmailAuthor({
         workspaceId: input.workspaceId,
         message,
@@ -588,34 +624,37 @@ export async function syncTicketLinkedEmails(input: {
         ),
       });
       if (!result) continue;
-      if (result.created) {
+      const wasCreated = result.created;
+      if (wasCreated) {
         created += 1;
         entries.push(toTaskComment(result.row));
-        if (
-          !newestCreated ||
-          new Date(message.timestamp).getTime() >
-            new Date(newestCreated.timestamp).getTime()
-        ) {
-          newestCreated = {
-            direction,
-            timestamp: message.timestamp,
-            message,
-          };
-        }
       } else {
         skipped += 1;
+      }
+      if (
+        !newestOverall ||
+        new Date(message.timestamp).getTime() >
+          new Date(newestOverall.timestamp).getTime()
+      ) {
+        newestOverall = {
+          direction,
+          timestamp: message.timestamp,
+          message,
+          created: wasCreated,
+        };
       }
     }
   }
 
-  // Only triage when the newest newly-created message is a real inbound
-  // (not outbound, not auto-reply/bounce, not placeholder replacement).
+  // Only triage when the newest thread message is a real inbound client reply
+  // (not outbound, not auto-reply/bounce, not older than our last outbound).
   if (
-    newestCreated &&
+    newestOverall &&
     shouldMoveStatusForMessage({
-      created: true,
-      direction: newestCreated.direction,
-      message: newestCreated.message,
+      created: newestOverall.created,
+      direction: newestOverall.direction,
+      message: newestOverall.message,
+      lastOutboundAt,
     })
   ) {
     const nextStatus = await applyTicketStatusFromEmailDirection({
