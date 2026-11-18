@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { describe, it } from "node:test";
+import { afterEach, describe, it } from "node:test";
 
 import {
   AGENT_CHAT_WEBHOOK_EVENT,
@@ -8,8 +8,30 @@ import {
 } from "../lib/agent-chat-webhook.js";
 import { deliverAgentChatWebhook } from "./agent-chat.js";
 
+const PREV = {
+  role: process.env.CORE_REPLICATION_ROLE,
+  peer: process.env.CORE_REPLICATION_PEER_URL,
+  secret: process.env.CORE_REPLICATION_SECRET,
+};
+
+function apply(key: string, value: string | undefined) {
+  if (value === undefined) delete process.env[key];
+  else process.env[key] = value;
+}
+
+afterEach(() => {
+  apply("CORE_REPLICATION_ROLE", PREV.role);
+  apply("CORE_REPLICATION_PEER_URL", PREV.peer);
+  apply("CORE_REPLICATION_SECRET", PREV.secret);
+});
+
 describe("OS-150 agent chat webhook delivery", () => {
   it("POSTs thread id, message, context, and secret header", async () => {
+    // Simulate cloud-core delivery (local .env may be ROLE=local).
+    apply("CORE_REPLICATION_ROLE", "cloud");
+    apply("CORE_REPLICATION_PEER_URL", "http://127.0.0.1:3999");
+    apply("CORE_REPLICATION_SECRET", "test-secret");
+
     const secret = "whsec_chat_loop";
     let posted: {
       url: string;
@@ -95,7 +117,55 @@ describe("OS-150 agent chat webhook delivery", () => {
     assert.equal(posted.body.includes(secret), false);
   });
 
+  it("refuses local-core delivery with a cloud replyUrl (OS-192)", async () => {
+    apply("CORE_REPLICATION_ROLE", "local");
+    apply("CORE_REPLICATION_PEER_URL", "http://127.0.0.1:3999");
+    apply("CORE_REPLICATION_SECRET", "test-secret");
+
+    let posted = false;
+    const result = await deliverAgentChatWebhook(
+      {
+        event: AGENT_CHAT_WEBHOOK_EVENT,
+        workspaceId: "ws_1",
+        agentId: "ag_fabianne",
+        agentName: "Fabianne",
+        threadId: "bo_JGm1He39I-zcbyEkLa",
+        replyUrl:
+          "https://agent.backsteros.com/api/v1/chat/threads/bo_JGm1He39I-zcbyEkLa/messages",
+        message: {
+          id: "msg_1",
+          role: "user",
+          text: "hello",
+          createdAt: "2026-11-18T11:09:00.000Z",
+        },
+        context: [],
+        deliveryId: "deliv-local",
+        timestamp: "2026-11-18T11:09:00.000Z",
+      },
+      {
+        id: "ag_fabianne",
+        webhookUrl: "https://hooks.example/fabianne",
+        webhookSecretCiphertext: null,
+      },
+      {
+        skipCloudForward: true,
+        fetchImpl: async () => {
+          posted = true;
+          return new Response("ok", { status: 200 });
+        },
+      },
+    );
+
+    assert.equal(result.ok, false);
+    assert.match(result.error ?? "", /OS-192/);
+    assert.equal(posted, false);
+  });
+
   it("reports failure when the webhook returns non-2xx", async () => {
+    apply("CORE_REPLICATION_ROLE", "cloud");
+    apply("CORE_REPLICATION_PEER_URL", "http://127.0.0.1:3999");
+    apply("CORE_REPLICATION_SECRET", "test-secret");
+
     const result = await deliverAgentChatWebhook(
       {
         event: AGENT_CHAT_WEBHOOK_EVENT,

@@ -74,6 +74,7 @@ import {
   buildAgentChatWebhookHeaders,
   buildAgentIdentityReportRequest,
   decryptAgentChatWebhookSecret,
+  shouldRefuseLocalAgentChatWebhookWithCloudReplyUrl,
 } from "../lib/agent-chat-webhook.js";
 import { resolveChatLinkPreviews } from "../lib/chat-link-preview.js";
 import {
@@ -1248,6 +1249,16 @@ export async function deliverAgentChatWebhook(
   },
   deps: DeliverDeps = {},
 ): Promise<{ ok: boolean; error: string | null }> {
+  // OS-192: local-core must not hand agents a cloud replyUrl for threads that
+  // only exist locally (not replicated). Refuse before forward or POST.
+  if (shouldRefuseLocalAgentChatWebhookWithCloudReplyUrl(payload.replyUrl)) {
+    return {
+      ok: false,
+      error:
+        "Local-core refuses agent chat webhooks with a cloud (agents-door) replyUrl — chat_threads are not replicated (OS-192)",
+    };
+  }
+
   if (
     !deps.skipCloudForward &&
     shouldForwardAgentChatWebhookToCloud()

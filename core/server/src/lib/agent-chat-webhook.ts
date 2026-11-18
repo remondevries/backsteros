@@ -9,7 +9,10 @@ import {
   encryptWebhookSecret,
   validateAutoReviewWebhookUrl,
 } from "./auto-review-webhook.js";
-import { resolveAgentsPublicBase } from "./agents-public-url.js";
+import {
+  isAgentsDoorHostname,
+  resolveAgentsPublicBase,
+} from "./agents-public-url.js";
 
 /** Human message in an existing shell chat thread. */
 export const AGENT_CHAT_WEBHOOK_EVENT = "agent.chat.message" as const;
@@ -300,6 +303,39 @@ export type AgentOutboundWebhookPayload =
 export function buildAgentChatReplyUrl(threadId: string): string {
   const base = resolveAgentsPublicBase();
   return `${base}/api/v1/chat/threads/${encodeURIComponent(threadId)}/messages`;
+}
+
+/** True when `replyUrl` points at the public agents HTTPS door. */
+export function isAgentsDoorChatReplyUrl(replyUrl: string): boolean {
+  try {
+    const url = new URL(replyUrl);
+    return isAgentsDoorHostname(url.hostname);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Local-core must not deliver (or forward) agent chat webhooks whose
+ * `replyUrl` is the public agents door. `chat_threads` are not replicated, so
+ * the agent would POST replies to cloud for a thread cloud does not have
+ * (OS-192 / Fabianne 404).
+ *
+ * Mirrors `getCoreReplicationConfig`: peer+secret with unset ROLE counts as
+ * local. Cloud-core and standalone (no ROLE / no peer) are not refused.
+ */
+export function shouldRefuseLocalAgentChatWebhookWithCloudReplyUrl(
+  replyUrl: string,
+  env: NodeJS.ProcessEnv = process.env,
+): boolean {
+  if (!isAgentsDoorChatReplyUrl(replyUrl)) return false;
+  const role = env.CORE_REPLICATION_ROLE?.trim().toLowerCase();
+  if (role === "cloud") return false;
+  if (role === "local") return true;
+  const peerUrl = env.CORE_REPLICATION_PEER_URL?.trim();
+  const secret = env.CORE_REPLICATION_SECRET?.trim();
+  // Unset ROLE + peer → local (same as getCoreReplicationConfig).
+  return Boolean(peerUrl && secret);
 }
 
 export function buildAgentChatWebhookHeaders(input: {

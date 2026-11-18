@@ -1,5 +1,6 @@
 import type { Context, Hono } from "hono";
 import { getConnInfo } from "@hono/node-server/conninfo";
+import { and, eq } from "drizzle-orm";
 
 import { extractBearerToken, verifyReplicationSecret } from "./auth.js";
 import { verifyAvatarReplicationAuth } from "./avatar-replication.js";
@@ -71,6 +72,8 @@ import {
   AGENT_WEBHOOK_TEST_EVENT,
   type AgentOutboundWebhookPayload,
 } from "../../lib/agent-chat-webhook.js";
+import { db } from "../../db/index.js";
+import { chatThreads } from "../../db/schema.js";
 import { deliverAgentChatWebhook } from "../agent-chat.js";
 import { getAgentRowForWebhook } from "../agents.js";
 
@@ -1098,6 +1101,30 @@ export function registerCoreReplicationRoutes(app: Hono) {
               : !agent.enabled
                 ? "Agent is disabled"
                 : "Agent webhook URL is not configured",
+          },
+          200,
+        );
+      }
+
+      // OS-192: chat_threads are not replicated. Refuse to wake the agent with
+      // a cloud replyUrl for a thread that only exists on local-core.
+      const threadId = payload.threadId.trim();
+      const [thread] = await db
+        .select({ id: chatThreads.id })
+        .from(chatThreads)
+        .where(
+          and(
+            eq(chatThreads.workspaceId, workspaceId),
+            eq(chatThreads.id, threadId),
+          ),
+        )
+        .limit(1);
+      if (!thread) {
+        return c.json(
+          {
+            ok: false,
+            error:
+              "Chat thread not found on cloud-core; refusing agent webhook for a local-only thread (OS-192)",
           },
           200,
         );
