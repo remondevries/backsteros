@@ -98,15 +98,18 @@ Stores for each document/letter:
 
 - `id`, `path`, `title`, `project_id`
 - `storage_key`, `byte_size`, `content_type`, `checksum`
-- `snippet` (for list views + Meilisearch seed)
+- `snippet` (for list views + search seed)
 - `content_version`, `updated_at`
 
-## Meilisearch
+## Search — Postgres FTS / ILIKE
+
+Live search runs in PostgreSQL behind **`GET /api/v1/search`** (no Meilisearch or other search sidecar).
 
 ### Role
 
-- Fast typo-tolerant search across 1500+ markdown files and PDF extracted text
-- Agents call **`GET /api/v1/search`** — API proxies Meilisearch (do not expose Meilisearch publicly)
+- Document body/title/path/snippet search via server-only `document_search_index` (GIN `search_tsv`)
+- Task and other entity search via SQL / ILIKE as implemented on those routes
+- Agents and apps call the REST API only — never a separate search host
 
 ### Index pipeline
 
@@ -114,30 +117,18 @@ On document save (human or agent):
 
 1. Write body to local vault (or object storage)
 2. Update Postgres metadata + snippet
-3. Async job: index `{ id, title, path, snippet, body_excerpt, project_id, type }`
+3. Upsert `document_search_index` (`search_body` + `search_tsv`) for FTS
 
-For PDFs: extract text (pdf-parse, Apache Tika, or cloud parser) → index text; store binary in the vault (or B2/R2 when remote).
+For PDFs: extract text when available → store binary in the vault (or B2/R2 when remote); searchable text follows the same Postgres index path when wired.
 
-### Index fields (proposed)
-
-```text
-id, type (document|letter|journal|knowledge),
-title, path, project_id,
-content_snippet, updated_at
-```
-
-Hybrid semantic search optional in Meilisearch v1.12+.
-
-### Runner-up: Typesense
-
-Use if index fits entirely in RAM and sub-5ms queries are critical. Meilisearch preferred for larger corpora on modest hardware.
+See **Postgres document search index (OS-80)** below for GIN details, etag retrieve rules, and the 80k-char FTS truncation.
 
 ## Search vs sync
 
 | Mechanism | Purpose |
 | --- | --- |
 | **PowerSync** | User’s working set (tasks, indexes) offline |
-| **Meilisearch** | Global search across full corpus |
+| **Postgres FTS / ILIKE** (`GET /api/v1/search`) | Global search across the corpus on the server |
 | **Lazy GET content** | Open single file from storage |
 
 Do not sync entire corpus to device for search — server search + local index tier B is enough.
@@ -158,8 +149,7 @@ replaces Spaces for markdown + PDFs on the core computer (optional remote B2/R2 
 | Item | ~Monthly |
 | --- | --- |
 | Local vault / disk | $0 |
-| Docker Postgres (metadata) | $0 |
-| Meilisearch (optional local) | $0 |
+| Docker Postgres (metadata + FTS index) | $0 |
 | Local computer | Already have |
 
 ## AI agent read workflow

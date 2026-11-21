@@ -483,7 +483,7 @@ GET   /api/v1/tasks/OS-51?include=comments   # last 20 comments + images[] inlin
 
 Task file attachments (any common type: PDF, image, email `.eml`, office docs, …) require `tasks:write` / `tasks:read` and **local-core** for blob put/get (cloud-core returns `503 pdf_requires_local_core`). Metadata lists work from either role.
 
-Every write runs the **unified write pipeline** (storage → Postgres → sync event → Meilisearch → realtime).
+Every write runs the **unified write pipeline** (storage → Postgres → sync event → Postgres search index / FTS when content changed → realtime).
 
 #### One-call task recipes (OS-64)
 
@@ -873,7 +873,7 @@ A successful delivery records activity `auto_review_requested`
 | `settings:read` / `settings:write` | Integration settings (Access/desktop only — never on agent keys) |
 | `chat:read` / `chat:write` | Chatwoot inboxes, conversations, messages, templates |
 | `email:read` / `email:send` | AgentMail list/read + compose/send + `POST /email/start` |
-| `search:query` | Meilisearch proxy |
+| `search:query` | Postgres FTS / ILIKE search (`GET /api/v1/search`) |
 | `avatars:*` | Avatar upload/download |
 | `carddav` / `tv.today_counts` | Exclusive single-scope doors |
 | `applications` | Applications-key marker — mixes with data scopes (not settings); no payment approval |

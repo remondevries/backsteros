@@ -11,7 +11,7 @@ Target hardware: **iPhone 16**, **MacBook M1**. Goal: snappy UI, low memory.
 | Tauri not Electron | ~50–150 MB shell vs 300+ MB |
 | Vite client, no Node sidecar | No 200–500 MB Next server in desktop app |
 | Expo native UI | Not full Next.js in WebView |
-| Meilisearch on server | Search not scanning 1500 files on phone |
+| Postgres FTS / ILIKE on server (`GET /api/v1/search`) | Search not scanning 1500 files on phone |
 
 ## Non-negotiable performance rules
 
@@ -98,7 +98,7 @@ Sync to mobile/desktop:
 ## Monitoring (later)
 
 - Client: optional debug overlay for local DB size
-- Server: object storage growth, Meilisearch index size, Postgres row counts
+- Server: object storage growth, `document_search_index` size, Postgres row counts
 
 ## Phase 1 performance bar
 

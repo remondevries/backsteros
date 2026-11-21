@@ -62,7 +62,7 @@ Generalize to all clients, not mobile-only.
 
 1. Export SQLite → Postgres schema mapping
 2. Copy Spaces bucket objects (or repoint to B2/R2)
-3. Reindex Meilisearch from markdown/PDF text
+3. Rebuild Postgres `document_search_index` (FTS) from markdown/PDF text
 4. Issue new API keys; retire Circle deploy when cutover complete
 
 ## Circle strengths to preserve

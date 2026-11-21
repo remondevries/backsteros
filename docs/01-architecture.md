@@ -19,13 +19,13 @@
          │  • REST for portals & AI agents        │
          │  • Sync upload validation              │
          │  • Live document SSE/WebSocket         │
-         │  • Search proxy → Meilisearch          │
-         └──────────┬───────────────┬─────────────┘
-                    │               │
-    ┌───────────────▼───┐   ┌───────▼────────┐   ┌──────────────┐
-    │ PowerSync Service │   │ PostgreSQL 17   │   │ Meilisearch  │
-    │ partial sync rules│   │ metadata, sync  │   │ full-text    │
-    └─────────┬─────────┘   └────────┬────────┘   └──────────────┘
+         │  • Search → Postgres FTS / ILIKE       │
+         └──────────┬─────────────────────────────┘
+                    │
+    ┌───────────────▼───┐   ┌────────────────────┐
+    │ PowerSync Service │   │ PostgreSQL 17       │
+    │ partial sync rules│   │ metadata, sync, FTS │
+    └─────────┬─────────┘   └────────┬───────────┘
               │                      │
               └──────────┬───────────┘
                          │
@@ -73,7 +73,7 @@ Day-to-day UI is desktop + mobile against local-core. v1 Next code is archived a
 
 - Business rules (validation, permissions, conflict policy)
 - Postgres connections
-- Meilisearch indexing
+- Search indexing (`document_search_index` / FTS)
 - Object storage credentials
 - Sync event ordering
 
@@ -84,9 +84,8 @@ Clients hold: UI state, local SQLite cache (via PowerSync), optional small conte
 | Component | Host |
 | --- | --- |
 | `core/server` + PowerSync | Local computer (Docker Compose + `pnpm` processes) |
-| PostgreSQL | Docker Postgres (`localhost:5433`) |
+| PostgreSQL | Docker Postgres (`localhost:5433`) — metadata, sync, and search (FTS / ILIKE) |
 | Object / file storage | Local vault path (`BACKSTEROS_VAULT_PATH` / Settings → Storage) |
-| Meilisearch | Optional local sidecar (when search is enabled) |
 
 Cloud hosts (Neon, droplet Kamal deploys) are **out of scope** for active v2 work.
 
@@ -104,7 +103,7 @@ Every mutation — human sync push, agent REST PATCH, portal batch — must:
 1. Update object storage (if body changed)
 2. Update Postgres metadata + `version`
 3. Append sync event (cursor +1)
-4. Index Meilisearch (async ok)
+4. Upsert Postgres search index (`document_search_index` / FTS) when content changed
 5. Emit realtime event for subscribers
 
 See [04-api-and-sync.md](04-api-and-sync.md).

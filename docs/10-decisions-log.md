@@ -77,7 +77,8 @@ Architecture decisions from planning sessions. Status: **Accepted** unless noted
 **Status:** Accepted  
 **Context:** 1500+ markdown files, agent search, typo tolerance.  
 **Decision:** Meilisearch behind API proxy.  
-**Alternatives rejected:** Postgres FTS only (weaker UX), client-side scan (too heavy).
+**Alternatives rejected:** Postgres FTS only (weaker UX), client-side scan (too heavy).  
+**Superseded:** live search is Postgres FTS.
 
 ---
 

@@ -15,7 +15,7 @@
 
 - [docs/00-vision.md](00-vision.md): Goals, users, non-goals, success criteria
 - [docs/01-architecture.md](01-architecture.md): System diagram, repos, auth, write pipeline
-- [docs/02-tech-stack.md](02-tech-stack.md): Tool choices — Expo, Tauri, Postgres, PowerSync, Meilisearch, Hono
+- [docs/02-tech-stack.md](02-tech-stack.md): Tool choices — Expo, Tauri, Postgres, PowerSync, Postgres FTS search, Hono
 - [docs/03-data-model.md](03-data-model.md): Sync tiers A/B/C/D, entities, version fields
 - [docs/04-api-and-sync.md](04-api-and-sync.md): REST v1, sync bootstrap/pull/push, live documents, agent API (dual-hydrate **deprecated** — see 16)
 - [docs/16-linear-shaped-sync.md](16-linear-shaped-sync.md): Target Linear-style sync — cloud leader, product shells on cloud PowerSync, optional Mac replica, R2 files (ADR-035)
@@ -59,4 +59,4 @@
 - Never bulk-sync Tier C/D content to clients
 - Business logic in `core/server/` only
 - No shared visual UI between mobile and desktop
-- All writes: storage → Postgres version → sync event → Meilisearch → realtime
+- All writes: storage → Postgres version → sync event → Postgres search index (FTS) → realtime

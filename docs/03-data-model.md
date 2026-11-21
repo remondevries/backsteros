@@ -4,9 +4,8 @@
 
 | Store | Holds | Does not hold |
 | --- | --- | --- |
-| **PostgreSQL** | Tasks, projects, contacts, letter/document **metadata**, users, API keys, sync events, search snippets | PDF bytes, full markdown bodies (at scale) |
+| **PostgreSQL** | Tasks, projects, contacts, letter/document **metadata**, users, API keys, sync events, search snippets, **`document_search_index`** (FTS / GIN) | PDF bytes, full markdown bodies (at scale) |
 | **Object storage (B2/R2)** | Markdown file bodies, PDF binaries, large attachments | Queryable relational data |
-| **Meilisearch** | Search index (title, path, snippet, extracted PDF text) | Source of truth |
 | **Client SQLite (PowerSync)** | Cached metadata per sync rules + outbox queue | Full vault, all PDFs |
 
 ## Sync tiers

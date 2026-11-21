@@ -12,7 +12,7 @@ Greenfield choices — not constrained by Circle’s current stack. See [10-deci
 | Markdown editor | **CodeMirror 6** | — |
 | Server metadata DB | **PostgreSQL 17** | — |
 | Blob storage | **Backblaze B2** or **Cloudflare R2** | DO Spaces |
-| Search | **Meilisearch** | Typesense |
+| Search | **Postgres FTS / ILIKE** (`document_search_index`, `GET /api/v1/search`) | Meilisearch (ADR-008; not live) |
 | Offline sync | **PowerSync** | Custom sync on Postgres |
 | API service | **Hono + ts-rest + OpenAPI** | Supabase PostgREST + Edge Functions |
 | Realtime (open docs) | **SSE/WebSocket in API** | Supabase Realtime |
@@ -54,11 +54,11 @@ Frozen code: `~/code/archive/backsteros-legacy/` (`backsteros-app/`, `backsteros
 
 Postgres stores `storage_key`, `size`, `checksum`, `snippet` — never PDF bytes.
 
-## Search — Meilisearch
+## Search — Postgres FTS / ILIKE
 
-- Knowledge-base search; typo tolerance; hybrid semantic + keyword
-- Self-host (MIT) or cloud
-- Agents use API `GET /api/v1/search` — not direct Meilisearch exposure
+- Live search runs in PostgreSQL behind **`GET /api/v1/search`** (and related list/search routes)
+- Documents: `document_search_index` with GIN `search_tsv` (FTS); tasks and other entities use SQL / ILIKE as implemented
+- No Meilisearch (or other search sidecar) in the live stack — see ADR-008 note in [10-decisions-log.md](10-decisions-log.md)
 
 ## Sync — PowerSync
 
@@ -76,7 +76,7 @@ Postgres stores `storage_key`, `size`, `checksum`, `snippet` — never PDF bytes
 
 ## Alternative “fewer vendors” stack
 
-**Supabase** (Postgres + Auth + Storage + Realtime) + **PowerSync** + **Meilisearch** sidecar.
+**Supabase** (Postgres + Auth + Storage + Realtime) + **PowerSync** (search stays in Postgres FTS / ILIKE, same as the live stack).
 
 Use if you want less custom infra; tradeoff is less bespoke OpenAPI and more Supabase-shaped agent contracts.
 
