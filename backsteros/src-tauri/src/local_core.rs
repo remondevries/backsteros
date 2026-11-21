@@ -783,6 +783,44 @@ fn owner_key_from_access_file(text: &str) -> Option<String> {
     None
 }
 
+fn local_shell_token_from_env_file(text: &str) -> Option<String> {
+    for raw in text.lines() {
+        let line = raw.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let Some((key, value)) = line.split_once('=') else {
+            continue;
+        };
+        if key.trim() != "LOCAL_SHELL_TOKEN" {
+            continue;
+        }
+        let value = value.trim().trim_matches('"').trim_matches('\'');
+        if !value.is_empty() {
+            return Some(value.to_string());
+        }
+    }
+    None
+}
+
+/// Local-core shell bearer from `~/.config/backsteros/local-core.env`.
+/// Packaged desktop must not rely on a Vite-baked `VITE_LOCAL_SHELL_TOKEN`.
+/// Does not log the secret.
+#[tauri::command]
+pub fn local_shell_token() -> Result<String, String> {
+    let path = resolve_local_core_env_file().ok_or_else(|| {
+        "LOCAL_SHELL_TOKEN missing: create ~/.config/backsteros/local-core.env".to_string()
+    })?;
+    let text = fs::read_to_string(&path)
+        .map_err(|err| format!("could not read {}: {err}", path.display()))?;
+    local_shell_token_from_env_file(&text).ok_or_else(|| {
+        format!(
+            "LOCAL_SHELL_TOKEN missing in {} (required for Settings → API on local-core)",
+            path.display()
+        )
+    })
+}
+
 /// Owner credential for cloud-core.
 /// Prefers `~/.config/backsteros/cli.env`, then `backsterdev-access.key`.
 /// Does not log the secret.
@@ -826,6 +864,16 @@ mod tests {
     use super::*;
     use std::io::Read;
     use std::process::Command;
+
+    #[test]
+    fn local_shell_token_from_env_file_reads_assignment() {
+        let text = "# comment\nFOO=bar\nLOCAL_SHELL_TOKEN=\"abc123\"\n";
+        assert_eq!(
+            local_shell_token_from_env_file(text).as_deref(),
+            Some("abc123")
+        );
+        assert_eq!(local_shell_token_from_env_file("OTHER=1\n"), None);
+    }
 
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     enum PnpmLaunch {

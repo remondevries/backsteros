@@ -733,7 +733,10 @@ function SettingsApiTab({
           if (linked.length > 0) notifyShellAgentRosterChanged();
           void loadKeys();
           return true;
-        } catch {
+        } catch (error) {
+          setErrorMessage(
+            error instanceof Error ? error.message : "Could not delete API key",
+          );
           return false;
         }
       }}

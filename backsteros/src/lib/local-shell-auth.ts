@@ -72,7 +72,7 @@ export function resolveLocalShellBearerToken(input: {
   return input.testRuntime ? DEFAULT_LOCAL_SHELL_TOKEN : null;
 }
 
-/** Configured local-shell bearer; no production default (test runners only). */
+/** Configured local-shell bearer from Vite/process; no production default. */
 export function localShellBearerToken(): string | null {
   try {
     const fromEnv = import.meta.env?.VITE_LOCAL_SHELL_TOKEN?.trim();
@@ -88,6 +88,22 @@ export function localShellBearerToken(): string | null {
     configured: fromProcess,
     testRuntime: isTestRuntime(),
   });
+}
+
+/**
+ * LOCAL_SHELL_TOKEN from `~/.config/backsteros/local-core.env` via Tauri.
+ * Packaged builds often omit `VITE_LOCAL_SHELL_TOKEN`; never invent `"local"`.
+ */
+export async function loadLocalShellTokenFromHost(): Promise<string | null> {
+  if (!isTauriRuntime()) return null;
+  try {
+    const { invoke } = await import("@tauri-apps/api/core");
+    const token = (await invoke<string>("local_shell_token")).trim();
+    return token || null;
+  } catch (error) {
+    console.warn("[desktop] local-shell token unavailable", error);
+    return null;
+  }
 }
 
 /**
@@ -116,9 +132,10 @@ export async function loadDesktopOwnerToken(): Promise<string | null> {
 /**
  * Bearer for the product `apiUrl`.
  *
- * Local-core (`:8788`) uses the configured local-shell token
- * (`VITE_LOCAL_SHELL_TOKEN`) — loopback is the ACL, and Infisical owner keys
- * may be cloud-only or revoked on the replica.
+ * Local-core (`:8788`) prefers the local-shell token (Vite env, then Tauri
+ * read of `local-core.env`). Owner Access is a fallback so Settings still
+ * loads when the shell token is missing — key admin on hybrid local-core
+ * accepts owner Access keys as of OS-181 follow-up.
  * Cloud / gateway URLs still require an owner Access key.
  */
 export async function loadDesktopProductToken(
@@ -128,9 +145,11 @@ export async function loadDesktopProductToken(
     apiUrl ?? getDesktopPublicEnvironment().apiUrl
   ).replace(/\/$/, "");
   if (isLocalDevApiUrl(url)) {
-    // No VITE_LOCAL_SHELL_TOKEN → fall back to the owner Access key rather
-    // than guessing "local".
-    return localShellBearerToken() ?? loadDesktopOwnerToken();
+    return (
+      localShellBearerToken() ??
+      (await loadLocalShellTokenFromHost()) ??
+      loadDesktopOwnerToken()
+    );
   }
   return loadDesktopOwnerToken();
 }

@@ -14,6 +14,17 @@ describe("rejectNonOwnerShellForCloudForward (OS-181)", () => {
     );
   });
 
+  it("allows owner Access keys (no contact)", () => {
+    assert.equal(
+      rejectNonOwnerShellForCloudForward({
+        kind: "api_key",
+        userId: "owner-1",
+        contactId: null,
+      }),
+      null,
+    );
+  });
+
   it("rejects agent (contact) API keys", () => {
     const denied = rejectNonOwnerShellForCloudForward({
       kind: "api_key",
@@ -25,14 +36,14 @@ describe("rejectNonOwnerShellForCloudForward (OS-181)", () => {
     assert.match(denied.body.error, /Agent keys cannot/);
   });
 
-  it("rejects app API keys and other non-shell actors (non-owner)", () => {
-    const appKey = rejectNonOwnerShellForCloudForward({
+  it("rejects non-shell actors without an owner Access identity", () => {
+    const noUser = rejectNonOwnerShellForCloudForward({
       kind: "api_key",
-      userId: "someone",
+      userId: null,
       contactId: null,
     });
-    assert.ok(appKey);
-    assert.match(appKey.body.error, /owner shell/);
+    assert.ok(noUser);
+    assert.match(noUser.body.error, /owner shell|Access key/);
 
     const clerkUser = rejectNonOwnerShellForCloudForward({
       kind: "user",

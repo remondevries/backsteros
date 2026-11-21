@@ -106,8 +106,9 @@ export function registerApiKeyRoutes(app: Hono) {
   }
 
   /**
-   * OS-181: on hybrid local-core, mutate keys on cloud. Agent/app keys cannot
-   * drive the forward. Dynamic Island pair stays on its own local route.
+   * OS-181: on hybrid local-core, mutate keys on cloud. Agent persona keys
+   * cannot drive the forward; owner local-shell and owner Access keys can.
+   * Dynamic Island pair stays on its own local route.
    */
   async function forwardMutationOrFail(input: {
     auth: AuthContext;
