@@ -113,6 +113,11 @@
   white-space: pre-wrap;
 }
 
+/* Inline markdown that already uses <br> hard breaks — do not also pre-wrap. */
+.content-markdown-preview-inline {
+  white-space: normal;
+}
+
 .content-markdown-preview-image {
   display: block;
   max-width: 100%;
@@ -191,10 +196,17 @@
   user-select: none;
 }
 
-/* Empty rows from `\n\n` runs — keep edit/preview height in sync. */
+/* Empty rows from `\n\n` runs — exactly one CodeMirror empty line. */
 .content-markdown-preview-blank-line {
+  display: block;
+  box-sizing: border-box;
   margin: 0;
   padding: 0;
+  height: 1.75em;
+  max-height: 1.75em;
+  line-height: 1.75em;
+  overflow: hidden;
+  white-space: nowrap;
 }
 
 .content-markdown-preview-body--rendered > :first-child {

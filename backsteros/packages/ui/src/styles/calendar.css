@@ -1607,7 +1607,9 @@ html.is-calendar-month-event-dragging .fc-event-dragging:not(.calendar-month-eve
   top: 0;
   bottom: 0;
   left: 0;
-  z-index: 25;
+  /* Above `.content-view-mode-toggle` (30) so Month/Week/Day/List cannot
+   * paint over a fullscreen agenda event. */
+  z-index: 40;
   width: 28rem;
   max-width: min(28rem, 92vw);
   /* Same divider as `.content-chrome-header` / contact panel — on the right vs calendar. */
@@ -1717,7 +1719,8 @@ html.is-calendar-month-event-dragging .fc-event-dragging:not(.calendar-month-eve
   position: absolute;
   top: 0;
   bottom: 0;
-  z-index: 25;
+  /* Match meeting fullscreen overlay — above calendar view-mode dock (30). */
+  z-index: 40;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -1898,6 +1901,12 @@ html.is-calendar-month-event-dragging .fc-event-dragging:not(.calendar-month-eve
   left: auto;
 }
 
+/* Fullscreen agenda event/task owns the viewport — calendar view chrome stays with the grid. */
+.calendar-page:has(.calendar-meeting-detail-overlay--page) .calendar-view-mode-dock,
+.calendar-page:has(.calendar-task-detail-overlay--page) .calendar-view-mode-dock {
+  display: none;
+}
+
 .meeting-detail-view {
   display: flex;
   flex-direction: column;
@@ -1907,6 +1916,7 @@ html.is-calendar-month-event-dragging .fc-event-dragging:not(.calendar-month-eve
 
 .meeting-detail-view--panel {
   position: relative;
+  display: flex;
   flex: 1;
   max-width: none;
   width: 100%;
@@ -1914,6 +1924,7 @@ html.is-calendar-month-event-dragging .fc-event-dragging:not(.calendar-month-eve
   padding: 0;
   gap: 0;
   box-sizing: border-box;
+  overflow: hidden;
   --meeting-panel-inset: 1rem;
   --meeting-panel-inset-left: 1.25rem;
 }
@@ -2058,12 +2069,11 @@ html.is-calendar-month-event-dragging .fc-event-dragging:not(.calendar-month-eve
   gap: 12px;
 }
 
-/* Shared notes editor chrome — narrow panel and expanded page. */
-.meeting-detail-view__content--page
-  .meeting-detail-view__editor-shell
-  .content-markdown-view-layout {
-  padding-bottom: 52px;
-}
+/*
+ * Panel layout: content padding-bottom clears the floating Preview/Edit
+ * dock over the editor. Page (fullscreen) layout docks Preview/Edit on the
+ * properties rail instead — no main-column bottom pad (see rules below).
+ */
 
 /* content--page supplies horizontal inset — avoid double column padding. */
 .meeting-detail-view__content--page .content-markdown-editor-column,
@@ -2080,6 +2090,14 @@ html.is-calendar-month-event-dragging .fc-event-dragging:not(.calendar-month-eve
 .meeting-detail-view__content--page
   .content-markdown-preview-column.content-markdown-preview-column--no-top {
   padding-bottom: 0;
+}
+
+/* Preview fills the same shell as edit so the surface reaches the bottom. */
+.meeting-detail-view__editor-shell .content-markdown-view-layout__preview,
+.meeting-detail-view__editor-shell .content-markdown-preview-column {
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
 }
 
 /* Pin expand/collapse + panel toggle to the overlay bottom (matches properties-rail dock). */
@@ -2802,8 +2820,15 @@ html.is-calendar-month-event-dragging .fc-event-dragging:not(.calendar-month-eve
   padding-bottom: 52px;
 }
 
+/* Fullscreen agenda event: run the summary/notes column to the viewport bottom.
+ * Preview/Edit lives on the properties rail; collapse chrome is absolute. */
 .meeting-detail-page__body .meeting-detail-view__content--page {
-  padding-bottom: 52px;
+  padding-bottom: 0;
+}
+
+.meeting-detail-page__body .document-codemirror .cm-content {
+  /* Drop fill-height dock pad (3.5rem) — no floating toggle over this column. */
+  padding-bottom: 0 !important;
 }
 
 .meeting-detail-view__tabs {
@@ -2816,13 +2841,22 @@ html.is-calendar-month-event-dragging .fc-event-dragging:not(.calendar-month-eve
   flex: 1;
   min-height: 0;
   flex-direction: column;
+  overflow: hidden;
 }
 
 .meeting-detail-view__editor-shell .content-markdown-view-layout {
   flex: 1;
-  min-height: 160px;
+  min-height: 0;
   box-sizing: border-box;
   width: 100%;
+  overflow: hidden;
+}
+
+.meeting-detail-view__editor-shell .content-markdown-editor-column,
+.meeting-detail-view__editor-shell .document-codemirror,
+.meeting-detail-view__editor-shell .document-codemirror .cm-editor {
+  min-height: 0;
+  height: 100%;
 }
 
 /* Calendar task click popover (Google Calendar–style) */

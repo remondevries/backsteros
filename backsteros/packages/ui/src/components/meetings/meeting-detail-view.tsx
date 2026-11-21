@@ -166,6 +166,10 @@ function MeetingContentTabEditor({
         ariaLabel={ariaLabel}
         emptyMessage={`No ${emptyLabel} yet.`}
         emptyClassName="content-markdown-empty-hint"
+        // Agenda event panel is a fixed-height shell — fill it and scroll
+        // inside CodeMirror instead of sizing to content (which left a gap
+        // under short summaries and let edit mode scroll into empty padding).
+        scrollWithContent={false}
         toggle={
           dockToggle ? null : (
             <FloatingPillToggleDock>{viewModeToggle}</FloatingPillToggleDock>

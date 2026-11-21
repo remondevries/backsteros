@@ -457,9 +457,12 @@ function withSoftLineHardBreaks(content: string): string {
 }
 
 function BlankParagraph() {
+  // Keep a non-breaking space so WebKit does not collapse an empty <p> to 0
+  // height (edit mode still shows the empty CodeMirror line). CSS clamps the
+  // box to one 1.75 line so a bare <br> cannot grow to ~2 lines.
   return (
     <p className="content-markdown-preview-blank-line" aria-hidden="true">
-      <br />
+      {"\u00a0"}
     </p>
   );
 }
@@ -468,8 +471,11 @@ function BlankParagraph() {
 const inlineMarkdownComponents: Components = {
   ...markdownPreviewComponents,
   p({ children }) {
+    // Use normal white-space: soft newlines are already turned into <br> via
+    // withSoftLineHardBreaks. `pre-wrap` would also keep the raw `\n` after
+    // each <br>, doubling the gap vs CodeMirror edit mode.
     return (
-      <span className="content-markdown-preview-prewrap">{children}</span>
+      <span className="content-markdown-preview-inline">{children}</span>
     );
   },
 };

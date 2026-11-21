@@ -1,7 +1,7 @@
 {
   "name": "@backsteros/desktop",
   "private": true,
-  "version": "0.2.273",
+  "version": "0.2.274",
   "type": "module",
   "scripts": {
     "predev": "node scripts/copy-pdf-worker.mjs && node scripts/copy-powersync-assets.mjs",
