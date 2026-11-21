@@ -781,6 +781,28 @@ export const apiKeyRequestLogs = pgTable(
 );
 
 /**
+ * Idempotency-Key response cache (24h TTL). Not replicated — each core owns
+ * its own create retries. Opportunistic prune on write.
+ */
+export const idempotencyKeys = pgTable(
+  "idempotency_keys",
+  {
+    scope: text("scope").notNull(),
+    key: text("key").notNull(),
+    status: integer("status").notNull(),
+    body: jsonb("body").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.scope, table.key] }),
+    index("idempotency_keys_expires_at_idx").on(table.expiresAt),
+  ],
+);
+
+/**
  * Per-table cursors for local-core ↔ cloud-core replication.
  * Pull and push watermarks are independent so advancing the peer tip on pull
  * cannot skip local rows that still need to be pushed (Linear-shaped: no shared

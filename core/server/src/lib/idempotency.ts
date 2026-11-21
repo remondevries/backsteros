@@ -1,8 +1,14 @@
 /**
- * In-memory Idempotency-Key cache for POST create routes (OS-64).
+ * Idempotency-Key cache for POST create routes (OS-64).
  * Keyed by API key id + client key; entries expire after 24h.
  * Concurrent retries with the same key await the in-flight request.
+ * Durable store: Postgres `idempotency_keys` (+ in-memory L1 for same process).
  */
+
+import { and, eq, lt } from "drizzle-orm";
+
+import { db } from "../db/index.js";
+import { idempotencyKeys } from "../db/schema.js";
 
 const TTL_MS = 24 * 60 * 60 * 1000;
 const MAX_KEY_LENGTH = 256;
@@ -21,7 +27,7 @@ function cacheKey(scope: string, key: string): string {
   return `${scope}\0${key}`;
 }
 
-function purgeExpired(now = Date.now()): void {
+function purgeExpiredMemory(now = Date.now()): void {
   for (const [k, entry] of cache) {
     if (entry.expiresAt <= now) cache.delete(k);
   }
@@ -37,42 +43,128 @@ export function readIdempotencyKey(
   return trimmed;
 }
 
-export function getIdempotentResponse(
-  scope: string,
-  key: string,
-): IdempotentResponse | null {
-  purgeExpired();
-  const entry = cache.get(cacheKey(scope, key));
-  if (!entry) return null;
-  if (entry.expiresAt <= Date.now()) {
-    cache.delete(cacheKey(scope, key));
-    return null;
+function isMissingRelationError(error: unknown): boolean {
+  let current: unknown = error;
+  for (let i = 0; i < 4 && current; i++) {
+    if (
+      current &&
+      typeof current === "object" &&
+      "code" in current &&
+      (current as { code?: string }).code === "42P01"
+    ) {
+      return true;
+    }
+    current =
+      current && typeof current === "object" && "cause" in current
+        ? (current as { cause?: unknown }).cause
+        : undefined;
   }
-  return { status: entry.status, body: entry.body };
+  return false;
 }
 
-export function setIdempotentResponse(
+async function pruneExpiredRows(): Promise<void> {
+  // Opportunistic ~10% of writes — keep the table small without a cron.
+  if (Math.random() > 0.1) return;
+  try {
+    await db
+      .delete(idempotencyKeys)
+      .where(lt(idempotencyKeys.expiresAt, new Date()));
+  } catch (error) {
+    if (!isMissingRelationError(error)) throw error;
+  }
+}
+
+export async function getIdempotentResponse(
+  scope: string,
+  key: string,
+): Promise<IdempotentResponse | null> {
+  purgeExpiredMemory();
+  const mem = cache.get(cacheKey(scope, key));
+  if (mem) {
+    if (mem.expiresAt <= Date.now()) {
+      cache.delete(cacheKey(scope, key));
+    } else {
+      return { status: mem.status, body: mem.body };
+    }
+  }
+
+  try {
+    const [row] = await db
+      .select({
+        status: idempotencyKeys.status,
+        body: idempotencyKeys.body,
+        expiresAt: idempotencyKeys.expiresAt,
+      })
+      .from(idempotencyKeys)
+      .where(
+        and(eq(idempotencyKeys.scope, scope), eq(idempotencyKeys.key, key)),
+      )
+      .limit(1);
+
+    if (!row) return null;
+    if (row.expiresAt.getTime() <= Date.now()) {
+      await db
+        .delete(idempotencyKeys)
+        .where(
+          and(eq(idempotencyKeys.scope, scope), eq(idempotencyKeys.key, key)),
+        );
+      return null;
+    }
+
+    const response = { status: row.status, body: row.body };
+    cache.set(cacheKey(scope, key), {
+      ...response,
+      expiresAt: row.expiresAt.getTime(),
+    });
+    return response;
+  } catch (error) {
+    // Pre-migration: keep process-local cache only.
+    if (isMissingRelationError(error)) return null;
+    throw error;
+  }
+}
+
+export async function setIdempotentResponse(
   scope: string,
   key: string,
   response: IdempotentResponse,
-): void {
-  purgeExpired();
+): Promise<void> {
+  const expiresAt = new Date(Date.now() + TTL_MS);
+  purgeExpiredMemory();
   cache.set(cacheKey(scope, key), {
     ...response,
-    expiresAt: Date.now() + TTL_MS,
+    expiresAt: expiresAt.getTime(),
   });
+
+  try {
+    await db
+      .insert(idempotencyKeys)
+      .values({
+        scope,
+        key,
+        status: response.status,
+        body: response.body as object,
+        expiresAt,
+      })
+      .onConflictDoNothing({
+        target: [idempotencyKeys.scope, idempotencyKeys.key],
+      });
+    await pruneExpiredRows();
+  } catch (error) {
+    if (!isMissingRelationError(error)) throw error;
+  }
 }
 
 /**
  * Run `fn` once per (scope, key). Retries while the first call is in flight
- * receive the same result; completed results are cached for 24h.
+ * receive the same result; completed results are cached for 24h (Postgres + mem).
  */
 export async function withIdempotency(
   scope: string,
   key: string,
   fn: () => Promise<IdempotentResponse>,
 ): Promise<IdempotentResponse> {
-  const cached = getIdempotentResponse(scope, key);
+  const cached = await getIdempotentResponse(scope, key);
   if (cached) return cached;
 
   const existing = inflight.get(cacheKey(scope, key));
@@ -80,8 +172,12 @@ export async function withIdempotency(
 
   const promise = (async () => {
     try {
+      // Re-check DB in case another process won the race.
+      const again = await getIdempotentResponse(scope, key);
+      if (again) return again;
+
       const result = await fn();
-      setIdempotentResponse(scope, key, result);
+      await setIdempotentResponse(scope, key, result);
       return result;
     } finally {
       inflight.delete(cacheKey(scope, key));
@@ -92,8 +188,23 @@ export async function withIdempotency(
   return promise;
 }
 
-/** Test helper — clear cache between cases. */
+/** Test helper — clear memory cache between cases (does not truncate Postgres). */
 export function clearIdempotencyCacheForTests(): void {
   cache.clear();
   inflight.clear();
 }
+
+/** Test helper — delete a scope/key row from Postgres. */
+export async function deleteIdempotencyRowForTests(
+  scope: string,
+  key: string,
+): Promise<void> {
+  await db
+    .delete(idempotencyKeys)
+    .where(
+      and(eq(idempotencyKeys.scope, scope), eq(idempotencyKeys.key, key)),
+    );
+}
+
+/** Exported for tests that assert TTL semantics. */
+export const IDEMPOTENCY_TTL_MS = TTL_MS;
