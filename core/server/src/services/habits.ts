@@ -149,7 +149,7 @@ export async function resolveHabitProjectReadonly(
     );
     if (project) return habit;
   }
-  const projects = await taskProjectService.listProjects(
+  const { rows: projects } = await taskProjectService.listProjects(
     workspaceId,
     {},
     executor,
@@ -163,7 +163,7 @@ export async function ensureHealthProject(
   workspaceId: string,
   executor: DbExecutor = db,
 ) {
-  const projects = await taskProjectService.listProjects(
+  const { rows: projects } = await taskProjectService.listProjects(
     workspaceId,
     {},
     executor,

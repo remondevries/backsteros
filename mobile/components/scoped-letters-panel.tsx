@@ -11,6 +11,7 @@ import {
 
 import { letterDetailHref } from "../lib/detail-href";
 import { useMobileCoreApiUrl } from "../lib/api-url-context";
+import { fetchAllPaginatedCollection } from "../lib/fetch-paginated-collection";
 import { formatLetterDisplayId } from "../lib/letter-display-id";
 import {
   findFlatGroupedRowIndex,
@@ -95,27 +96,29 @@ export function ScopedLettersPanel({ scope, emptyText }: Props) {
       mapLocal: (synced) => synced,
       fetchRest: async () => {
         try {
-          const body = await client.requestJson<{ letters: Letter[] }>(
+          const queryKey =
+            scope.kind === "project"
+              ? "projectId"
+              : scope.kind === "contact"
+                ? "contactId"
+                : "organizationId";
+          const letters = await fetchAllPaginatedCollection<Letter>(
+            client.requestJson.bind(client),
             "/api/v1/letters",
+            "letters",
+            undefined,
+            { [queryKey]: scope.id },
           );
-          return (body.letters ?? [])
-            .filter((letter) => {
-              if (scope.kind === "project")
-                return letter.projectId === scope.id;
-              if (scope.kind === "contact")
-                return letter.contactId === scope.id;
-              return letter.organizationId === scope.id;
-            })
-            .map((letter) => ({
-              id: letter.id,
-              title: letter.title,
-              number: letter.number,
-              status: letter.status,
-              sort_order: letter.sortOrder,
-              contact_id: letter.contactId,
-              organization_id: letter.organizationId,
-              project_id: letter.projectId,
-            }));
+          return letters.map((letter) => ({
+            id: letter.id,
+            title: letter.title,
+            number: letter.number,
+            status: letter.status,
+            sort_order: letter.sortOrder,
+            contact_id: letter.contactId,
+            organization_id: letter.organizationId,
+            project_id: letter.projectId,
+          }));
         } catch (reason) {
           return mapNetworkError(reason);
         }

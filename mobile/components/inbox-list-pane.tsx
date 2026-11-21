@@ -27,6 +27,7 @@ import { normalizePathname } from "../lib/use-escape-back-navigation";
 import { useMobilePowerSync } from "../lib/powersync-context";
 import { resolveSyncedOrRestRows } from "../lib/resolve-synced-or-rest-rows";
 import { fillMissingDueDatesFromApi } from "../lib/fill-missing-due-dates";
+import { fetchAllPaginatedCollection } from "../lib/fetch-paginated-collection";
 import { INBOX_TASKS_WHERE_SQL } from "../lib/inbox-tasks-sql";
 import { TASK_LIST_SELECT } from "../lib/task-list-query";
 import { colors } from "../lib/theme";
@@ -198,17 +199,23 @@ export function InboxListPane({
     try {
       // Full task list (not /inbox) so we can fill stale local due_date before
       // membership filtering — desktop mergeLocalAndApi parity.
-      const [tasksBody, projectsBody, contactsBody] = await Promise.all([
+      const [tasksBody, projects, contacts] = await Promise.all([
         client.requestJson<{ tasks: Task[] }>("/api/v1/tasks"),
-        client.requestJson<{ projects: Project[] }>("/api/v1/projects"),
-        client
-          .requestJson<{ contacts: Contact[] }>("/api/v1/contacts")
-          .catch(() => ({ contacts: [] as Contact[] })),
+        fetchAllPaginatedCollection<Project>(
+          client.requestJson.bind(client),
+          "/api/v1/projects",
+          "projects",
+        ),
+        fetchAllPaginatedCollection<Contact>(
+          client.requestJson.bind(client),
+          "/api/v1/contacts",
+          "contacts",
+        ).catch(() => [] as Contact[]),
       ]);
       const projectsById = new Map(
-        (projectsBody.projects ?? []).map((project) => [project.id, project]),
+        projects.map((project) => [project.id, project]),
       );
-      const contactsById = contactsByIdFromList(contactsBody.contacts ?? []);
+      const contactsById = contactsByIdFromList(contacts);
       const mapped: InboxSyncedRow[] = (tasksBody.tasks ?? []).map((task) => ({
         ...mapApiTaskToRow(task, projectsById, contactsById),
         number: task.number,

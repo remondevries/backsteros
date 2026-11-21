@@ -326,14 +326,50 @@ export async function testBacksterosConnection(input?: {
   }
 }
 
+async function fetchAllPaginatedRows<T>(
+  path: string,
+  legacyKey: string,
+  signal?: AbortSignal,
+  extraQuery?: Record<string, string>,
+): Promise<T[]> {
+  const out: T[] = [];
+  let cursor: string | undefined;
+  for (let page = 0; page < 100; page++) {
+    const params = new URLSearchParams({
+      paginated: "true",
+      limit: "200",
+      ...extraQuery,
+    });
+    if (cursor) params.set("cursor", cursor);
+    const sep = path.includes("?") ? "&" : "?";
+    const payload = await backsterosFetchJson<{
+      items?: readonly T[];
+      nextCursor?: string | null;
+      [key: string]: unknown;
+    }>(`${path}${sep}${params.toString()}`, optionalSignalInit(signal));
+    if (Array.isArray(payload.items)) {
+      out.push(...payload.items);
+      cursor = payload.nextCursor ?? undefined;
+      if (!cursor) break;
+      continue;
+    }
+    const legacy = payload[legacyKey];
+    if (Array.isArray(legacy)) out.push(...(legacy as T[]));
+    break;
+  }
+  return out;
+}
+
 export async function fetchBacksterosCodebaseProjects(
   signal?: AbortSignal,
 ): Promise<readonly BacksterosCodebaseProject[]> {
-  const payload = await backsterosFetchJson<BacksterosProjectsResponse>(
-    "/api/v1/projects?type=codebase",
-    optionalSignalInit(signal),
+  const projects = await fetchAllPaginatedRows<BacksterosCodebaseProject>(
+    "/api/v1/projects",
+    "projects",
+    signal,
+    { type: "codebase" },
   );
-  return (payload.projects ?? [])
+  return projects
     .filter((project) => project.type === "codebase")
     .map((project) => ({
       ...project,
@@ -999,11 +1035,11 @@ export async function openBacksterosAgentPresenceEvents(signal: AbortSignal): Pr
 export async function fetchBacksterosContacts(
   signal?: AbortSignal,
 ): Promise<readonly BacksterosContact[]> {
-  const payload = await backsterosFetchJson<{ contacts?: readonly BacksterosContact[] }>(
+  return fetchAllPaginatedRows<BacksterosContact>(
     "/api/v1/contacts",
-    optionalSignalInit(signal),
+    "contacts",
+    signal,
   );
-  return payload.contacts ?? [];
 }
 
 export async function fetchBacksterosContact(
@@ -1089,10 +1125,11 @@ export async function uploadBacksterosTaskImage(
 export async function fetchBacksterosOrganizations(
   signal?: AbortSignal,
 ): Promise<readonly BacksterosOrganization[]> {
-  const payload = await backsterosFetchJson<{
-    organizations?: readonly BacksterosOrganization[];
-  }>("/api/v1/organizations", optionalSignalInit(signal));
-  return payload.organizations ?? [];
+  return fetchAllPaginatedRows<BacksterosOrganization>(
+    "/api/v1/organizations",
+    "organizations",
+    signal,
+  );
 }
 
 export async function registerBacksterosFileTaskCallback(requestId: string): Promise<{

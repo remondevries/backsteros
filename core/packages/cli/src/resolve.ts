@@ -68,16 +68,35 @@ export async function listTaskItems(
   return out;
 }
 
+const MAX_PROJECT_LIST_PAGES = 100;
+
 export async function listAllProjects(client: CliClient): Promise<ProjectRef[]> {
-  const res = await client.contract.listProjects({ query: {} });
-  if (res.status !== 200) {
-    throw new Error(`listProjects failed with status ${res.status}`);
+  const out: ProjectRef[] = [];
+  let cursor: string | undefined;
+  for (let page = 0; page < MAX_PROJECT_LIST_PAGES; page++) {
+    const res = await client.contract.listProjects({
+      query: {
+        limit: 200,
+        paginated: true,
+        ...(cursor ? { cursor } : {}),
+      },
+    });
+    if (res.status !== 200) {
+      throw new Error(`listProjects failed with status ${res.status}`);
+    }
+    const body = res.body as {
+      items?: Project[];
+      projects?: Project[];
+      nextCursor?: string | null;
+    };
+    const rows = body.items ?? body.projects ?? [];
+    for (const p of rows) {
+      out.push({ id: p.id, key: p.key, name: p.name });
+    }
+    cursor = body.items ? body.nextCursor ?? undefined : undefined;
+    if (!cursor) break;
   }
-  return res.body.projects.map((p: Project) => ({
-    id: p.id,
-    key: p.key,
-    name: p.name,
-  }));
+  return out;
 }
 
 export async function resolveProjectId(

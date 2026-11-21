@@ -85,9 +85,12 @@ export async function matchCloudflareZones(
     zones.map((zone) => [zone.name.trim().toLowerCase(), zone] as const),
   );
 
-  const domainProjects = await taskProjectService.listProjects(workspaceId, {
-    type: "domeinname",
-  });
+  const { rows: domainProjects } = await taskProjectService.listProjects(
+    workspaceId,
+    {
+      type: "domeinname",
+    },
+  );
   const projectsByName = new Map(
     domainProjects.map(
       (project) => [project.name.trim().toLowerCase(), project] as const,

@@ -11,6 +11,7 @@ import {
 
 import { isPadDevice } from "../lib/device";
 import { groupItemsByAlphaLetter } from "../lib/alpha-group";
+import { fetchAllPaginatedCollection } from "../lib/fetch-paginated-collection";
 import {
   findFlatGroupedRowIndex,
   flattenGroupedSections,
@@ -136,20 +137,22 @@ export function SocialListPane({
         })
         .filter((row): row is SocialContactListRow => row != null),
     fetchRest: async () => {
-      const [contactsBody, orgsBody] = await Promise.all([
-        client.requestJson<{ contacts: Contact[] }>("/api/v1/contacts"),
-        client
-          .requestJson<{
-            organizations: { id: string; name: string }[];
-          }>("/api/v1/organizations")
-          .catch(() => ({
-            organizations: [] as { id: string; name: string }[],
-          })),
+      const [contacts, organizations] = await Promise.all([
+        fetchAllPaginatedCollection<Contact>(
+          client.requestJson.bind(client),
+          "/api/v1/contacts",
+          "contacts",
+        ),
+        fetchAllPaginatedCollection<{ id: string; name: string }>(
+          client.requestJson.bind(client),
+          "/api/v1/organizations",
+          "organizations",
+        ).catch(() => [] as { id: string; name: string }[]),
       ]);
       const orgNameById = new Map(
-        (orgsBody.organizations ?? []).map((org) => [org.id, org.name]),
+        organizations.map((org) => [org.id, org.name]),
       );
-      return (contactsBody.contacts ?? [])
+      return contacts
         .map((contact) => {
           const socialAccounts = normalizeContactSocialAccounts(
             contact.socialAccounts,

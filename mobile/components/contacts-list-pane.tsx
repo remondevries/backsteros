@@ -16,6 +16,7 @@ import {
   flattenGroupedSections,
   type FlatGroupedRow,
 } from "../lib/lists/flatten-grouped-sections";
+import { fetchAllPaginatedCollection } from "../lib/fetch-paginated-collection";
 import { matchesListSearch } from "../lib/list-search";
 import { colors } from "../lib/theme";
 import { ui } from "../lib/ui";
@@ -119,20 +120,22 @@ export function ContactsListPane({
         avatar_storage_key: row.avatar_storage_key,
       })),
     fetchRest: async () => {
-      const [contactsBody, orgsBody] = await Promise.all([
-        client.requestJson<{ contacts: Contact[] }>("/api/v1/contacts"),
-        client
-          .requestJson<{
-            organizations: { id: string; name: string }[];
-          }>("/api/v1/organizations")
-          .catch(() => ({
-            organizations: [] as { id: string; name: string }[],
-          })),
+      const [contacts, organizations] = await Promise.all([
+        fetchAllPaginatedCollection<Contact>(
+          client.requestJson.bind(client),
+          "/api/v1/contacts",
+          "contacts",
+        ),
+        fetchAllPaginatedCollection<{ id: string; name: string }>(
+          client.requestJson.bind(client),
+          "/api/v1/organizations",
+          "organizations",
+        ).catch(() => [] as { id: string; name: string }[]),
       ]);
       const orgNameById = new Map(
-        (orgsBody.organizations ?? []).map((org) => [org.id, org.name]),
+        organizations.map((org) => [org.id, org.name]),
       );
-      return (contactsBody.contacts ?? []).map((contact) => ({
+      return contacts.map((contact) => ({
         id: contact.id,
         name: contact.name?.trim() || "Untitled",
         organization_name: contact.organizationId

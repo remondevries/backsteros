@@ -237,18 +237,39 @@ export function peekBacksterosControlProjectIdByKey(projectKey: string): string 
 }
 
 async function listBacksterosControlProjects(): Promise<ReadonlyArray<BacksterosControlProject>> {
-  const payload = await backsterosFetchJson<{
-    projects?: ReadonlyArray<{
-      id: string;
-      key?: string | null;
-      name: string;
-      localWorkingDirectory?: string | null;
-      developmentLocation?: string | null;
-      productionLocation?: string | null;
-      localLocation?: string | null;
-    }>;
-  }>("/api/v1/projects?type=codebase");
-  const projects = (payload.projects ?? []).map(mapProjectRow);
+  type ProjectRow = {
+    id: string;
+    key?: string | null;
+    name: string;
+    localWorkingDirectory?: string | null;
+    developmentLocation?: string | null;
+    productionLocation?: string | null;
+    localLocation?: string | null;
+  };
+  const rows: ProjectRow[] = [];
+  let cursor: string | undefined;
+  for (let page = 0; page < 100; page++) {
+    const params = new URLSearchParams({
+      type: "codebase",
+      paginated: "true",
+      limit: "200",
+    });
+    if (cursor) params.set("cursor", cursor);
+    const payload = await backsterosFetchJson<{
+      items?: ReadonlyArray<ProjectRow>;
+      projects?: ReadonlyArray<ProjectRow>;
+      nextCursor?: string | null;
+    }>(`/api/v1/projects?${params.toString()}`);
+    if (payload.items) {
+      rows.push(...payload.items);
+      cursor = payload.nextCursor ?? undefined;
+      if (!cursor) break;
+      continue;
+    }
+    rows.push(...(payload.projects ?? []));
+    break;
+  }
+  const projects = rows.map(mapProjectRow);
   for (const project of projects) {
     if (project.key) rememberBacksterosControlProjectKey(project.key, project.id);
   }

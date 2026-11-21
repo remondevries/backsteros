@@ -50,8 +50,10 @@ import {
   projects,
 } from "../../db/schema.js";
 import {
+  clampLegacyListLimit,
   decodeUpdatedAtCursor,
   encodeUpdatedAtCursor,
+  LIST_MAX_LIMIT,
   type ParsedProjectsListQuery,
 } from "../../lib/list-query.js";
 import { newId } from "../../lib/crypto.js";
@@ -473,6 +475,11 @@ export async function listProjects(
     status?: string;
     type?: string;
     updatedSince?: Date;
+    /**
+     * When set, hard-cap like tasks (max {@link LIST_MAX_LIMIT}).
+     * Omit for unbounded (CardDAV / sync / internal walkers).
+     */
+    limit?: number;
   } = {},
   executor: DbExecutor = db,
 ) {
@@ -486,11 +493,23 @@ export async function listProjects(
   if (filters.area) conditions.push(eq(projects.area, filters.area));
   if (filters.status) conditions.push(eq(projects.status, filters.status));
   if (filters.type) conditions.push(eq(projects.type, filters.type));
-  return executor
+  const ordered = executor
     .select()
     .from(projects)
     .where(and(...conditions))
     .orderBy(projects.sortOrder, desc(projects.updatedAt));
+  if (filters.limit == null) {
+    const rows = await ordered;
+    return { rows, hasMore: false, limit: rows.length };
+  }
+  const limit = clampLegacyListLimit(filters.limit);
+  const rows = await ordered.limit(limit + 1);
+  const hasMore = rows.length > limit;
+  return {
+    rows: hasMore ? rows.slice(0, limit) : rows,
+    hasMore,
+    limit,
+  };
 }
 
 export async function listProjectsPaginated(

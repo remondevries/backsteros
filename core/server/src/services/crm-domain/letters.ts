@@ -3,6 +3,7 @@ import { and, asc, desc, eq, gte, inArray, isNull, sql, type SQL } from "drizzle
 import { letterAttachments, letters } from "../../db/schema.js";
 import { db } from "../../db/index.js";
 import {
+  clampLegacyListLimit,
   decodeUpdatedAtCursor,
   encodeUpdatedAtCursor,
   type ParsedLettersListQuery,
@@ -47,7 +48,7 @@ type LetterInput = {
   sortOrder?: number;
 };
 
-export function listLetters(
+export async function listLetters(
   workspaceId: string,
   filters: {
     projectId?: string;
@@ -56,6 +57,8 @@ export function listLetters(
     status?: string;
     triage?: boolean;
     updatedSince?: Date;
+    /** When set, hard-cap like tasks. Omit for unbounded (internal). */
+    limit?: number;
   } = {},
 ) {
   const conditions = [eq(letters.workspaceId, workspaceId)];
@@ -69,11 +72,23 @@ export function listLetters(
   if (filters.contactId) conditions.push(eq(letters.contactId, filters.contactId));
   if (filters.status) conditions.push(eq(letters.status, filters.status));
   if (filters.triage) conditions.push(eq(letters.status, "triage"));
-  return db
+  const ordered = db
     .select()
     .from(letters)
     .where(and(...conditions))
     .orderBy(asc(letters.sortOrder), desc(letters.receivedDate), desc(letters.updatedAt));
+  if (filters.limit == null) {
+    const rows = await ordered;
+    return { rows, hasMore: false, limit: rows.length };
+  }
+  const limit = clampLegacyListLimit(filters.limit);
+  const rows = await ordered.limit(limit + 1);
+  const hasMore = rows.length > limit;
+  return {
+    rows: hasMore ? rows.slice(0, limit) : rows,
+    hasMore,
+    limit,
+  };
 }
 
 export async function listLettersPaginated(

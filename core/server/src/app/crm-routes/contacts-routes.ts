@@ -19,6 +19,7 @@ import {
   getAuth,
   ignoredLegacyListKeys,
   isRestLeaderFirstWrite,
+  LEGACY_LIST_HARD_CAP,
   listQueryErrorBody,
   loadCrmActivityRow,
   loadCrmGroupMemberRow,
@@ -108,11 +109,22 @@ export function registerContactRoutes(app: Hono) {
           `Ignored without paginated=true: ${ignored.join(", ")}. Add paginated=true for { items, nextCursor }.`,
         );
       }
-      const rows = await circleService.listContacts(auth.workspaceId, {
+      const page = await circleService.listContacts(auth.workspaceId, {
         organizationId: parsed.organizationId,
         q: parsed.q,
+        limit: LEGACY_LIST_HARD_CAP,
       });
-      return c.json({ contacts: rows.map(toPublicContact) });
+      if (page.hasMore) {
+        c.header(
+          "X-BacksterOS-Hint",
+          `Legacy contact list capped at ${page.limit}. has_more=true - use paginated=true for cursor pages.`,
+        );
+      }
+      return c.json({
+        contacts: page.rows.map(toPublicContact),
+        has_more: page.hasMore,
+        limit: page.limit,
+      });
     }
 
     const result = await circleService.listContactsPaginated(

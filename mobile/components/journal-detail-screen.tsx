@@ -20,6 +20,7 @@ import {
 import { ensureJournalDocumentViaApi } from "../lib/document-create";
 import { isPadDevice } from "../lib/device";
 import { taskDetailHref } from "../lib/detail-href";
+import { fetchAllPaginatedCollection } from "../lib/fetch-paginated-collection";
 import { fillMissingDueDatesFromApi } from "../lib/fill-missing-due-dates";
 import { recordHabitDay } from "../lib/habits/api";
 import { formatJournalEntryTitle } from "../lib/journal";
@@ -289,17 +290,23 @@ export function JournalDetailScreen({ dateSlug }: Props) {
   const reloadRestTasks = useCallback(async (opts?: { userPull?: boolean }) => {
     const userPull = beginReload(opts);
     try {
-      const [tasksBody, projectsBody, contactsBody] = await Promise.all([
+      const [tasksBody, projects, contacts] = await Promise.all([
         client.requestJson<{ tasks: Task[] }>("/api/v1/tasks"),
-        client.requestJson<{ projects: Project[] }>("/api/v1/projects"),
-        client
-          .requestJson<{ contacts: Contact[] }>("/api/v1/contacts")
-          .catch(() => ({ contacts: [] as Contact[] })),
+        fetchAllPaginatedCollection<Project>(
+          client.requestJson.bind(client),
+          "/api/v1/projects",
+          "projects",
+        ),
+        fetchAllPaginatedCollection<Contact>(
+          client.requestJson.bind(client),
+          "/api/v1/contacts",
+          "contacts",
+        ).catch(() => [] as Contact[]),
       ]);
       const projectsById = new Map(
-        (projectsBody.projects ?? []).map((project) => [project.id, project]),
+        projects.map((project) => [project.id, project]),
       );
-      const contactsById = contactsByIdFromList(contactsBody.contacts ?? []);
+      const contactsById = contactsByIdFromList(contacts);
       setRestTaskRows(
         (tasksBody.tasks ?? []).map((task) => ({
           ...mapApiTaskToRow(task, projectsById, contactsById),

@@ -33,6 +33,7 @@ import {
   TASKS_LIST_BOARD_STORAGE_KEY,
   useListBoardView,
 } from "../../../lib/list-board-view";
+import { fetchAllPaginatedCollection } from "../../../lib/fetch-paginated-collection";
 import {
   contactsByIdFromList,
   mapApiTaskToRow,
@@ -193,18 +194,24 @@ export default function TasksScreen() {
     const userPull = beginReload(opts);
     setRestError(null);
     try {
-      const [tasksBody, projectsBody, contactsBody] = await Promise.all([
+      const [tasksBody, projects, contacts] = await Promise.all([
         client.requestJson<{ tasks: Task[] }>("/api/v1/tasks"),
-        client.requestJson<{ projects: Project[] }>("/api/v1/projects"),
-        client
-          .requestJson<{ contacts: Contact[] }>("/api/v1/contacts")
-          .catch(() => ({ contacts: [] as Contact[] })),
+        fetchAllPaginatedCollection<Project>(
+          client.requestJson.bind(client),
+          "/api/v1/projects",
+          "projects",
+        ),
+        fetchAllPaginatedCollection<Contact>(
+          client.requestJson.bind(client),
+          "/api/v1/contacts",
+          "contacts",
+        ).catch(() => [] as Contact[]),
         refreshHabitRollover(),
       ]);
       const projectsById = new Map(
-        (projectsBody.projects ?? []).map((project) => [project.id, project]),
+        projects.map((project) => [project.id, project]),
       );
-      const contactsById = contactsByIdFromList(contactsBody.contacts ?? []);
+      const contactsById = contactsByIdFromList(contacts);
       setRestRows(
         (tasksBody.tasks ?? [])
           .filter((task) => !task.habitId)

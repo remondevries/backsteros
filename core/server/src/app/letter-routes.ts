@@ -29,6 +29,7 @@ import {
   isAvatarSignedEntityType,
   isOwnerShellAuth,
   isRestLeaderFirstWrite,
+  LEGACY_LIST_HARD_CAP,
   letterSchema,
   listQueryErrorBody,
   newId,
@@ -102,14 +103,24 @@ export function registerLetterRoutes(app: Hono) {
           `Ignored without paginated=true: ${ignored.join(", ")}. Add paginated=true for { items, nextCursor }.`,
         );
       }
+      const page = await circleService.listLetters(auth.workspaceId, {
+        projectId: parsed.projectId,
+        organizationId: parsed.organizationId,
+        contactId: parsed.contactId,
+        status: parsed.status,
+        triage: parsed.triage === true,
+        limit: LEGACY_LIST_HARD_CAP,
+      });
+      if (page.hasMore) {
+        c.header(
+          "X-BacksterOS-Hint",
+          `Legacy letter list capped at ${page.limit}. has_more=true - use paginated=true for cursor pages.`,
+        );
+      }
       return c.json({
-        letters: await circleService.listLetters(auth.workspaceId, {
-          projectId: parsed.projectId,
-          organizationId: parsed.organizationId,
-          contactId: parsed.contactId,
-          status: parsed.status,
-          triage: parsed.triage === true,
-        }),
+        letters: page.rows,
+        has_more: page.hasMore,
+        limit: page.limit,
       });
     }
 
@@ -120,7 +131,21 @@ export function registerLetterRoutes(app: Hono) {
   app.get("/api/v1/letters/inbox", async (c) => {
     const auth = getAuth(c);
     if (!can(auth, "letters:read")) return c.json(forbidden(), 403);
-    return c.json({ letters: await circleService.listLetters(auth.workspaceId, { triage: true }) });
+    const page = await circleService.listLetters(auth.workspaceId, {
+      triage: true,
+      limit: LEGACY_LIST_HARD_CAP,
+    });
+    if (page.hasMore) {
+      c.header(
+        "X-BacksterOS-Hint",
+        `Legacy letter inbox capped at ${page.limit}. has_more=true - use GET /letters?paginated=true&status=triage.`,
+      );
+    }
+    return c.json({
+      letters: page.rows,
+      has_more: page.hasMore,
+      limit: page.limit,
+    });
   });
   app.get("/api/v1/letters/:id", async (c) => {
     const auth = getAuth(c);

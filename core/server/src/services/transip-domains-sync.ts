@@ -83,7 +83,7 @@ export { buildDomainProjectSummary };
 
 type ProjectRow = Awaited<
   ReturnType<typeof taskProjectService.listProjects>
->[number];
+>["rows"][number];
 
 /** Group Catalog Domains by lowercase name (duplicates can exist). */
 function groupDomainProjectsByName(
@@ -249,7 +249,7 @@ export async function syncTransipDomains(
   });
   const remote = await client.listDomains();
 
-  const allProjects = await taskProjectService.listProjects(workspaceId);
+  const { rows: allProjects } = await taskProjectService.listProjects(workspaceId);
   // Only match Catalog Domains. Codebase (and other) projects often share the
   // same hostname as their title — never reuse those rows for TransIP sync.
   // Heal every Domains row with that name (duplicates from earlier syncs).
@@ -513,7 +513,7 @@ export async function updateTransipDomainTags(
   });
   const nextTags = await client.updateDomainTags(domainName, tags);
   const nameKey = domainName.trim().toLowerCase();
-  const allProjects = await taskProjectService.listProjects(workspaceId);
+  const { rows: allProjects } = await taskProjectService.listProjects(workspaceId);
   const matches = allProjects.filter(
     (project) =>
       project.type === "domeinname" &&

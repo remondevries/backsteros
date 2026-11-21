@@ -36,18 +36,10 @@ export function ContactDetailRoute({ contactId: id }: Props) {
     mapLocal: (synced) => synced.map((row) => ({ name: row.name })),
     fetchRest: async () => {
       if (!id) return [];
-      try {
-        const contact = await client.requestJson<Contact>(
-          `/api/v1/contacts/${encodeURIComponent(id)}`,
-        );
-        return [{ name: contact.name ?? null }];
-      } catch {
-        const body = await client.requestJson<{ contacts: Contact[] }>(
-          "/api/v1/contacts",
-        );
-        const match = (body.contacts ?? []).find((contact) => contact.id === id);
-        return match ? [{ name: match.name ?? null }] : [];
-      }
+      const contact = await client.requestJson<Contact>(
+        `/api/v1/contacts/${encodeURIComponent(id)}`,
+      );
+      return [{ name: contact.name ?? null }];
     },
   });
 

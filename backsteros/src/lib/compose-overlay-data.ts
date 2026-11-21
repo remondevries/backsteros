@@ -78,15 +78,26 @@ async function createTaskWithAssigneeFallback(
 export async function loadComposeOverlayContext(
   client: BacksterosApiClient,
 ): Promise<ComposeOverlayContext> {
-  const [projectsBody, contactsBody, documentsBody] = await Promise.all([
-    client.requestJson<{ projects: ApiProject[] }>("/api/v1/projects"),
-    client.requestJson<{ contacts: ApiContact[] }>("/api/v1/contacts"),
+  const { fetchAllPaginatedCollection } = await import(
+    "./fetch-paginated-collection"
+  );
+  const [projects, contacts, documentsBody] = await Promise.all([
+    fetchAllPaginatedCollection<ApiProject>(
+      client.requestJson.bind(client),
+      "/api/v1/projects",
+      "projects",
+    ),
+    fetchAllPaginatedCollection<ApiContact>(
+      client.requestJson.bind(client),
+      "/api/v1/contacts",
+      "contacts",
+    ),
     client.requestJson<{ documents: ApiDocument[] }>("/api/v1/documents"),
   ]);
 
   return buildComposeOverlayContext({
-    projects: projectsBody.projects,
-    contacts: contactsBody.contacts,
+    projects,
+    contacts,
     documents: documentsBody.documents.map((document) => ({
       path: document.path ?? "",
       title: document.title,

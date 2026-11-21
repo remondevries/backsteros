@@ -10,6 +10,7 @@ import {
 } from "react-native";
 
 import { isPadDevice } from "../lib/device";
+import { fetchAllPaginatedCollection } from "../lib/fetch-paginated-collection";
 import { formatLetterDisplayId } from "../lib/letter-display-id";
 import {
   findFlatGroupedRowIndex,
@@ -110,10 +111,12 @@ export function LettersListPane({
     sql: LETTERS_SQL,
     mapLocal: (rows) => rows,
     fetchRest: async () => {
-      const body = await client.requestJson<{ letters: Letter[] }>(
+      const letters = await fetchAllPaginatedCollection<Letter>(
+        client.requestJson.bind(client),
         "/api/v1/letters",
+        "letters",
       );
-      return (body.letters ?? []).map((letter) => ({
+      return letters.map((letter) => ({
         id: letter.id,
         title: letter.title,
         number: letter.number,

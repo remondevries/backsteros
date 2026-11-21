@@ -7,18 +7,23 @@ import { getLetterById, listLetters } from "./letters.js";
 export async function getOrganizationRelations(workspaceId: string, id: string) {
   const organization = await getOrganizationById(workspaceId, id);
   if (!organization) return null;
-  const [contactRows, projectRows, letterRows] = await Promise.all([
+  const [contactPage, projectRows, letterPage] = await Promise.all([
     listContacts(workspaceId, { organizationId: id }),
     db.select().from(projects).where(and(eq(projects.workspaceId, workspaceId), eq(projects.organizationId, id), isNull(projects.deletedAt))),
     listLetters(workspaceId, { organizationId: id }),
   ]);
-  return { organization, contacts: contactRows, projects: projectRows, letters: letterRows };
+  return {
+    organization,
+    contacts: contactPage.rows,
+    projects: projectRows,
+    letters: letterPage.rows,
+  };
 }
 
 export async function getContactRelations(workspaceId: string, id: string) {
   const contact = await getContactById(workspaceId, id);
   if (!contact) return null;
-  const [organization, taskRows, letterRows] = await Promise.all([
+  const [organization, taskRows, letterPage] = await Promise.all([
     contact.organizationId ? getOrganizationById(workspaceId, contact.organizationId) : null,
     db.select().from(tasks).where(and(
       eq(tasks.workspaceId, workspaceId),
@@ -31,7 +36,7 @@ export async function getContactRelations(workspaceId: string, id: string) {
     )),
     listLetters(workspaceId, { contactId: id }),
   ]);
-  return { contact, organization, tasks: taskRows, letters: letterRows };
+  return { contact, organization, tasks: taskRows, letters: letterPage.rows };
 }
 
 export async function getProjectRelations(workspaceId: string, id: string) {
@@ -41,13 +46,19 @@ export async function getProjectRelations(workspaceId: string, id: string) {
     .where(and(eq(projects.workspaceId, workspaceId), eq(projects.id, id), isNull(projects.deletedAt)))
     .limit(1);
   if (!project) return null;
-  const [organization, taskRows, documentRows, letterRows] = await Promise.all([
+  const [organization, taskRows, documentRows, letterPage] = await Promise.all([
     project.organizationId ? getOrganizationById(workspaceId, project.organizationId) : null,
     db.select().from(tasks).where(and(eq(tasks.workspaceId, workspaceId), eq(tasks.projectId, id), isNull(tasks.deletedAt))),
     db.select().from(documents).where(and(eq(documents.workspaceId, workspaceId), eq(documents.projectId, id), isNull(documents.deletedAt))),
     listLetters(workspaceId, { projectId: id }),
   ]);
-  return { project, organization, tasks: taskRows, documents: documentRows, letters: letterRows };
+  return {
+    project,
+    organization,
+    tasks: taskRows,
+    documents: documentRows,
+    letters: letterPage.rows,
+  };
 }
 
 export async function getTaskRelations(workspaceId: string, id: string) {

@@ -13,14 +13,19 @@ export const crmPortalRoutes: AppRouter = c.router({
     query: s.listOrganizationsQuerySchema,
     responses: {
       200: z.union([
-        z.object({ organizations: z.array(s.organizationSchema) }),
+        z.object({
+          organizations: z.array(s.organizationSchema),
+          has_more: z.boolean().optional(),
+          limit: z.number().int().positive().optional(),
+        }),
         s.listPaginatedResponseSchema(s.organizationSchema),
       ]),
       400: badRequestSchema,
       401: errorSchema,
       403: errorSchema,
     },
-    summary: "List organizations",
+    summary:
+      "List organizations (legacy hard-capped at 200 with has_more; paginated=true for cursor pages)",
   },
   getOrganization: {
     method: "GET",
@@ -91,14 +96,19 @@ export const crmPortalRoutes: AppRouter = c.router({
     query: s.listContactsQuerySchema,
     responses: {
       200: z.union([
-        z.object({ contacts: z.array(s.contactSchema) }),
+        z.object({
+          contacts: z.array(s.contactSchema),
+          has_more: z.boolean().optional(),
+          limit: z.number().int().positive().optional(),
+        }),
         s.listPaginatedResponseSchema(s.contactSchema),
       ]),
       400: badRequestSchema,
       401: errorSchema,
       403: errorSchema,
     },
-    summary: "List contacts",
+    summary:
+      "List contacts (legacy hard-capped at 200 with has_more; paginated=true for cursor pages)",
   },
   lookupContact: {
     method: "GET",
@@ -529,24 +539,33 @@ export const crmPortalRoutes: AppRouter = c.router({
     query: s.listLettersQuerySchema,
     responses: {
       200: z.union([
-        z.object({ letters: z.array(s.letterSchema) }),
+        z.object({
+          letters: z.array(s.letterSchema),
+          has_more: z.boolean().optional(),
+          limit: z.number().int().positive().optional(),
+        }),
         s.listPaginatedResponseSchema(s.letterSchema),
       ]),
       400: badRequestSchema,
       401: errorSchema,
       403: errorSchema,
     },
-    summary: "List letters",
+    summary:
+      "List letters (legacy hard-capped at 200 with has_more; paginated=true for cursor pages)",
   },
   listLetterInbox: {
     method: "GET",
     path: "/api/v1/letters/inbox",
     responses: {
-      200: z.object({ letters: z.array(s.letterSchema) }),
+      200: z.object({
+        letters: z.array(s.letterSchema),
+        has_more: z.boolean().optional(),
+        limit: z.number().int().positive().optional(),
+      }),
       401: errorSchema,
       403: errorSchema,
     },
-    summary: "List letter inbox",
+    summary: "List letter inbox (legacy hard-capped at 200 with has_more)",
   },
   getLetter: {
     method: "GET",

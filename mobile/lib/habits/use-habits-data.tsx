@@ -9,6 +9,7 @@ import {
   type ReactNode,
 } from "react";
 
+import { fetchAllPaginatedCollection } from "../fetch-paginated-collection";
 import { getTodayJournalDateSlug } from "../journal";
 import { useMobilePowerSync } from "../powersync-context";
 import { useMobileApiClient } from "../use-mobile-api-client";
@@ -176,13 +177,13 @@ function useHabitsDataState(): HabitsData {
     sql: PROJECTS_SQL,
     mapLocal: (rows) => rows,
     fetchRest: async () => {
-      const response = await client.requestJson<{ projects: Array<{
+      const projects = await fetchAllPaginatedCollection<{
         id: string;
         name: string;
         icon: string | null;
         type: string | null;
-      }> }>("/api/v1/projects");
-      return response.projects.map((project) => ({
+      }>(client.requestJson.bind(client), "/api/v1/projects", "projects");
+      return projects.map((project) => ({
         id: project.id,
         name: project.name,
         icon: project.icon,

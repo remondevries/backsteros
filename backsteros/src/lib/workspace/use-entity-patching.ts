@@ -601,12 +601,15 @@ export function useWorkspaceEntityPatching({
   const softRefreshApiProjects = useCallback(async () => {
     if (!authenticated || shouldSkipRestEntityWrite(powerSync)) return;
     try {
-      const projectsBody = await client.requestJson<{ projects: ApiProject[] }>(
+      const { fetchAllPaginatedCollection } = await import(
+        "../fetch-paginated-collection"
+      );
+      const projects = await fetchAllPaginatedCollection<ApiProject>(
+        client.requestJson.bind(client),
         "/api/v1/projects",
+        "projects",
       );
-      setApiProjects((current) =>
-        preservePendingApiRows(current, projectsBody.projects),
-      );
+      setApiProjects((current) => preservePendingApiRows(current, projects));
     } catch {
       // PowerSync remains the primary source.
     }

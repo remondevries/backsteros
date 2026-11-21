@@ -3,6 +3,7 @@ import { useCallback, useMemo, useState } from "react";
 
 import { useSyncedAreas } from "./areas-data";
 import { useMobileCoreApiUrl } from "./api-url-context";
+import { fetchAllPaginatedCollection } from "./fetch-paginated-collection";
 import {
   type NestedAreaRef,
 } from "./group-projects-by-area";
@@ -110,14 +111,18 @@ export function useProjectAreaListScreen({
       const userPull = beginReload(opts);
       setRestError(null);
       try {
-        const [projectsBody, tasksBody] = await Promise.all([
-          client.requestJson<{ projects: Project[] }>("/api/v1/projects"),
+        const [projects, tasksBody] = await Promise.all([
+          fetchAllPaginatedCollection<Project>(
+            client.requestJson.bind(client),
+            "/api/v1/projects",
+            "projects",
+          ),
           client
             .requestJson<{ tasks: Task[] }>("/api/v1/tasks")
             .catch(() => ({ tasks: [] as Task[] })),
         ]);
         setRestRows(
-          (projectsBody.projects ?? [])
+          projects
             .map((project) => mapRestProjectRow(project, projectTypeFilter))
             .filter((row): row is ProjectListRow => row != null),
         );

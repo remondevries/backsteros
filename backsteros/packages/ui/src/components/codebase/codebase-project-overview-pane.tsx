@@ -1926,10 +1926,29 @@ export function CodebaseProjectOverviewPane({
 
   const loadOrganizations = useCallback(
     async (api: CodebaseRequestJson, signal: AbortSignal) => {
-      const result = await api<{
-        organizations: ApiOrganization[];
-      }>("/api/v1/organizations", { signal });
-      return result.organizations;
+      const out: ApiOrganization[] = [];
+      let cursor: string | undefined;
+      for (let page = 0; page < 100; page++) {
+        const params = new URLSearchParams({
+          paginated: "true",
+          limit: "200",
+        });
+        if (cursor) params.set("cursor", cursor);
+        const result = await api<{
+          items?: ApiOrganization[];
+          organizations?: ApiOrganization[];
+          nextCursor?: string | null;
+        }>(`/api/v1/organizations?${params.toString()}`, { signal });
+        if (result.items) {
+          out.push(...result.items);
+          cursor = result.nextCursor ?? undefined;
+          if (!cursor) break;
+          continue;
+        }
+        out.push(...(result.organizations ?? []));
+        break;
+      }
+      return out;
     },
     [],
   );

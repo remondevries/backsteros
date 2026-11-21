@@ -231,7 +231,7 @@ export async function hydrateOrganizationLogosFromBrandfetch(
   total: number;
   reasons: Record<string, number>;
 }> {
-  const orgs = await circleService.listOrganizations(workspaceId);
+  const { rows: orgs } = await circleService.listOrganizations(workspaceId);
   const concurrency = Math.max(1, Math.min(options?.concurrency ?? 3, 6));
   let stored = 0;
   let skipped = 0;

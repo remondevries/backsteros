@@ -8,6 +8,7 @@ import {
   toSnakeFields,
   type MobileSoftDeletePowerSync,
 } from "./entity-mutations";
+import { fetchAllPaginatedCollection } from "./fetch-paginated-collection";
 import type { ProjectArea } from "./project-areas";
 import { randomUuidCompact } from "./random-uuid";
 
@@ -49,10 +50,12 @@ async function clearAreaFromProjects(
 ): Promise<void> {
   let projectIds = await projectIdsForArea(powerSync.database, areaId);
   if (projectIds.length === 0 && !powerSync.ready) {
-    const body = await client.requestJson<{ projects: Project[] }>(
+    const projects = await fetchAllPaginatedCollection<Project>(
+      client.requestJson.bind(client),
       "/api/v1/projects",
+      "projects",
     );
-    projectIds = (body.projects ?? [])
+    projectIds = projects
       .filter((project) => project.areaId === areaId)
       .map((project) => project.id);
   }

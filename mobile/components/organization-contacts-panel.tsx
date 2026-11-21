@@ -7,6 +7,7 @@ import { ActivityIndicator, Pressable, Text, View } from "react-native";
 import { EntityListAvatar } from "./entity-list-avatar";
 import { contactDetailHref } from "../lib/detail-href";
 import { useMobileCoreApiUrl } from "../lib/api-url-context";
+import { fetchAllPaginatedCollection } from "../lib/fetch-paginated-collection";
 import { colors } from "../lib/theme";
 import { ui } from "../lib/ui";
 import { useEntityAvatarSrcMap } from "../lib/use-entity-avatar-src";
@@ -57,18 +58,20 @@ export function OrganizationContactsPanel({ organizationId }: Props) {
       mapLocal: (synced) => synced,
       fetchRest: async () => {
         try {
-          const body = await client.requestJson<{ contacts: Contact[] }>(
+          const contacts = await fetchAllPaginatedCollection<Contact>(
+            client.requestJson.bind(client),
             "/api/v1/contacts",
+            "contacts",
+            undefined,
+            { organizationId },
           );
-          return (body.contacts ?? [])
-            .filter((contact) => contact.organizationId === organizationId)
-            .map((contact) => ({
-              id: contact.id,
-              name: contact.name,
-              email: contact.email,
-              title: contact.title,
-              avatar_storage_key: contact.avatarStorageKey,
-            }));
+          return contacts.map((contact) => ({
+            id: contact.id,
+            name: contact.name,
+            email: contact.email,
+            title: contact.title,
+            avatar_storage_key: contact.avatarStorageKey,
+          }));
         } catch (reason) {
           return mapNetworkError(reason);
         }

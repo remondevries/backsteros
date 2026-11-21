@@ -12,6 +12,7 @@ import {
 import { projectDetailHref } from "../lib/detail-href";
 import type { ListBoardView } from "../lib/list-board-view";
 import { useMobileCoreApiUrl } from "../lib/api-url-context";
+import { fetchAllPaginatedCollection } from "../lib/fetch-paginated-collection";
 import {
   findFlatGroupedRowIndex,
   flattenGroupedSections,
@@ -99,17 +100,19 @@ export function OrganizationProjectsPanel({
       mapLocal: (synced) => synced,
       fetchRest: async () => {
         try {
-          const body = await client.requestJson<{ projects: Project[] }>(
-            `/api/v1/projects?organizationId=${encodeURIComponent(organizationId)}`,
+          const projects = await fetchAllPaginatedCollection<Project>(
+            client.requestJson.bind(client),
+            "/api/v1/projects",
+            "projects",
+            undefined,
+            { organizationId },
           );
-          return (body.projects ?? [])
-            .filter((project) => project.organizationId === organizationId)
-            .map((project) => ({
-              id: project.id,
-              name: project.name,
-              status: project.status,
-              sort_order: project.sortOrder,
-            }));
+          return projects.map((project) => ({
+            id: project.id,
+            name: project.name,
+            status: project.status,
+            sort_order: project.sortOrder,
+          }));
         } catch (reason) {
           return mapNetworkError(reason);
         }

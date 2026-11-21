@@ -5,6 +5,7 @@ import { ActivityIndicator, Text, View } from "react-native";
 
 import { taskDetailHref } from "../lib/detail-href";
 import { useMobileCoreApiUrl } from "../lib/api-url-context";
+import { fetchAllPaginatedCollection } from "../lib/fetch-paginated-collection";
 import {
   TASKS_LIST_BOARD_STORAGE_KEY,
   useListBoardView,
@@ -67,24 +68,25 @@ export function ProjectTasksPanel({ projectId }: Props) {
       mapLocal: (synced) => synced.map((row) => withDisplayId(row)),
       fetchRest: async () => {
         try {
-          const [tasksBody, projectsBody, contactsBody] = await Promise.all([
+          const [tasksBody, projects, contacts] = await Promise.all([
             client.requestJson<{ tasks: Task[] }>(
               `/api/v1/tasks?projectId=${encodeURIComponent(projectId)}`,
             ),
-            client.requestJson<{ projects: Project[] }>("/api/v1/projects"),
-            client
-              .requestJson<{ contacts: Contact[] }>("/api/v1/contacts")
-              .catch(() => ({ contacts: [] as Contact[] })),
+            fetchAllPaginatedCollection<Project>(
+              client.requestJson.bind(client),
+              "/api/v1/projects",
+              "projects",
+            ),
+            fetchAllPaginatedCollection<Contact>(
+              client.requestJson.bind(client),
+              "/api/v1/contacts",
+              "contacts",
+            ).catch(() => [] as Contact[]),
           ]);
           const projectsById = new Map(
-            (projectsBody.projects ?? []).map((project) => [
-              project.id,
-              project,
-            ]),
+            projects.map((project) => [project.id, project]),
           );
-          const contactsById = contactsByIdFromList(
-            contactsBody.contacts ?? [],
-          );
+          const contactsById = contactsByIdFromList(contacts);
           return (tasksBody.tasks ?? [])
             .filter((task) => !task.habitId && task.projectId === projectId)
             .map((task) =>

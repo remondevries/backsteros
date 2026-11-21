@@ -12,6 +12,7 @@ import {
   ignoredLegacyListKeys,
   isAgentPersonaAuth,
   isRestLeaderFirstWrite,
+  LEGACY_LIST_HARD_CAP,
   listQueryErrorBody,
   newId,
   notFound,
@@ -82,13 +83,24 @@ export function registerProjectCoreRoutes(app: Hono) {
           `Ignored without paginated=true: ${ignored.join(", ")}. Add paginated=true for { items, nextCursor }.`,
         );
       }
-      const rows = await taskProjectService.listProjects(auth.workspaceId, {
+      const page = await taskProjectService.listProjects(auth.workspaceId, {
         organizationId: parsed.organizationId,
         area: parsed.area,
         status: parsed.status,
         type: parsed.type,
+        limit: LEGACY_LIST_HARD_CAP,
       });
-      return c.json({ projects: rows.map(toProject) });
+      if (page.hasMore) {
+        c.header(
+          "X-BacksterOS-Hint",
+          `Legacy project list capped at ${page.limit}. has_more=true - use paginated=true for cursor pages.`,
+        );
+      }
+      return c.json({
+        projects: page.rows.map(toProject),
+        has_more: page.hasMore,
+        limit: page.limit,
+      });
     }
 
     const result = await taskProjectService.listProjectsPaginated(

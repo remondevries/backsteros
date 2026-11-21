@@ -21,7 +21,24 @@ import {
 
 export const LIST_DEFAULT_LIMIT = 50;
 export const LIST_MAX_LIMIT = 200;
+/** Hard cap for legacy (non-paginated) collection GETs — parity with tasks (OS-162). */
+export const LEGACY_LIST_HARD_CAP = LIST_MAX_LIMIT;
 export const LIST_CURSOR_TTL_MS = 10 * 60 * 1000;
+
+/** Clamp a requested legacy page size to 1…{@link LEGACY_LIST_HARD_CAP}. */
+export function clampLegacyListLimit(requested?: number): number {
+  return Math.min(
+    Math.max(
+      1,
+      Math.trunc(
+        requested != null && Number.isFinite(requested)
+          ? requested
+          : LEGACY_LIST_HARD_CAP,
+      ),
+    ),
+    LEGACY_LIST_HARD_CAP,
+  );
+}
 /** Default when GET /documents omits `limit` (OS-59). */
 export const DOCUMENTS_DEFAULT_LIMIT = 100;
 export const GLOBAL_SEARCH_DEFAULT_LIMIT = 20;

@@ -135,7 +135,7 @@ export async function ensureAllProjectVaultWorkspaces(
     return 0;
   }
 
-  const rows = await taskProjectService.listProjects(workspaceId);
+  const { rows } = await taskProjectService.listProjects(workspaceId);
   let count = 0;
   for (const row of rows) {
     try {

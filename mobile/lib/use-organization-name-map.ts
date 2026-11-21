@@ -1,6 +1,7 @@
 import type { Organization } from "@backsteros/contracts";
 import { useMemo } from "react";
 
+import { fetchAllPaginatedCollection } from "./fetch-paginated-collection";
 import { useMobileApiClient } from "./use-mobile-api-client";
 import { useSyncedOrRest } from "./use-synced-or-rest";
 
@@ -32,10 +33,12 @@ export function useOrganizations(): {
         name: row.name?.trim() || "Untitled",
       })),
     fetchRest: async () => {
-      const body = await client.requestJson<{ organizations: Organization[] }>(
+      const organizations = await fetchAllPaginatedCollection<Organization>(
+        client.requestJson.bind(client),
         "/api/v1/organizations",
+        "organizations",
       );
-      return (body.organizations ?? []).map((organization) => ({
+      return organizations.map((organization) => ({
         id: organization.id,
         name: organization.name?.trim() || "Untitled",
       }));

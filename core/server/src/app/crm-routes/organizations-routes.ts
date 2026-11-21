@@ -14,6 +14,7 @@ import {
   getAuth,
   ignoredLegacyListKeys,
   isRestLeaderFirstWrite,
+  LEGACY_LIST_HARD_CAP,
   listQueryErrorBody,
   loadCrmActivityRow,
   newId,
@@ -56,10 +57,20 @@ export function registerOrganizationRoutes(app: Hono) {
           `Ignored without paginated=true: ${ignored.join(", ")}. Add paginated=true for { items, nextCursor }.`,
         );
       }
+      const page = await circleService.listOrganizations(auth.workspaceId, {
+        q: parsed.q,
+        limit: LEGACY_LIST_HARD_CAP,
+      });
+      if (page.hasMore) {
+        c.header(
+          "X-BacksterOS-Hint",
+          `Legacy organization list capped at ${page.limit}. has_more=true - use paginated=true for cursor pages.`,
+        );
+      }
       return c.json({
-        organizations: await circleService.listOrganizations(auth.workspaceId, {
-          q: parsed.q,
-        }),
+        organizations: page.rows,
+        has_more: page.hasMore,
+        limit: page.limit,
       });
     }
 

@@ -1,11 +1,10 @@
 import type {
   CreateProjectInput,
-  Project,
   UpdateProjectInput,
 } from "@backsteros/contracts";
 import type { CliClient, CliConfig } from "../config.js";
 import { emitResult } from "../output.js";
-import { resolveProjectId } from "../resolve.js";
+import { listAllProjects, resolveProjectId } from "../resolve.js";
 
 function optionalInt(value: string | boolean | undefined): number | undefined {
   if (typeof value !== "string" || value.trim() === "") return undefined;
@@ -59,14 +58,12 @@ export async function runProjectCommand(
 ): Promise<void> {
   switch (action) {
     case "list": {
-      const res = await client.contract.listProjects({ query: {} });
-      if (res.status !== 200) throw new Error(`list failed (${res.status})`);
-      const projects = res.body.projects;
+      const projects = await listAllProjects(client);
       emitResult(
         config.json,
         { projects },
         projects
-          .map((p: Project) => `${p.key}\t${p.status}\t${p.name}\t${p.id}`)
+          .map((p) => `${p.key}\t${p.name}\t${p.id}`)
           .join("\n") || "(no projects)",
       );
       return;

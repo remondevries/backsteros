@@ -36,13 +36,10 @@ export function OrganizationDetailRoute({ organizationId: id }: Props) {
     mapLocal: (synced) => synced.map((row) => ({ name: row.name })),
     fetchRest: async () => {
       if (!id) return [];
-      const body = await client.requestJson<{ organizations: Organization[] }>(
-        "/api/v1/organizations",
+      const organization = await client.requestJson<Organization>(
+        `/api/v1/organizations/${encodeURIComponent(id)}`,
       );
-      const match = (body.organizations ?? []).find(
-        (organization) => organization.id === id,
-      );
-      return match ? [{ name: match.name ?? null }] : [];
+      return [{ name: organization.name ?? null }];
     },
   });
 

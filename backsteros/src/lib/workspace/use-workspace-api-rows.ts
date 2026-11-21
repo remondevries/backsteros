@@ -12,6 +12,7 @@ import type {
 } from "@backsteros/contracts";
 import { ApiClientError, type BacksterosApiClient } from "@backsteros/api-client";
 
+import { fetchAllPaginatedCollection } from "../fetch-paginated-collection";
 import { createRequestAbortSignal } from "../request-timeout";
 import {
   preferNewerByUpdatedAt,
@@ -251,24 +252,32 @@ export function useWorkspaceApiRows({
             { signal },
           ),
           client.requestJson<{ areas: ApiArea[] }>("/api/v1/areas", { signal }),
-          client.requestJson<{ organizations: ApiOrganization[] }>(
+          fetchAllPaginatedCollection<ApiOrganization>(
+            client.requestJson.bind(client),
             "/api/v1/organizations",
-            { signal },
+            "organizations",
+            signal,
           ),
-          client.requestJson<{ contacts: ApiContact[] }>("/api/v1/contacts", {
+          fetchAllPaginatedCollection<ApiContact>(
+            client.requestJson.bind(client),
+            "/api/v1/contacts",
+            "contacts",
             signal,
-          }),
-          client.requestJson<{ letters: ApiLetter[] }>("/api/v1/letters", {
+          ),
+          fetchAllPaginatedCollection<ApiLetter>(
+            client.requestJson.bind(client),
+            "/api/v1/letters",
+            "letters",
             signal,
-          }),
+          ),
         ]);
         if (cancelled) return;
         setApiDocuments(documentsBody.documents);
         setApiAreas(areasBody.areas);
-        setApiOrganizations(orgsBody.organizations);
-        setApiContacts(contactsBody.contacts);
+        setApiOrganizations(orgsBody);
+        setApiContacts(contactsBody);
         setApiLetters((current) =>
-          preservePendingApiRows(current, lettersBody.letters),
+          preservePendingApiRows(current, lettersBody),
         );
       } catch {
         if (cancelled) return;
@@ -322,14 +331,17 @@ export function useWorkspaceApiRows({
           client.requestJson<{ tasks: ApiTask[] }>("/api/v1/tasks/inbox", {
             signal,
           }),
-          client.requestJson<{ projects: ApiProject[] }>("/api/v1/projects", {
+          fetchAllPaginatedCollection<ApiProject>(
+            client.requestJson.bind(client),
+            "/api/v1/projects",
+            "projects",
             signal,
-          }),
+          ),
         ]);
         if (cancelled) return;
         setApiTasks(tasksBody.tasks);
         setApiInboxTasks(inboxTasksBody.tasks);
-        setApiProjects(projectsBody.projects);
+        setApiProjects(projectsBody);
       } catch {
         if (cancelled) return;
         markWave1Hydrated();

@@ -69,6 +69,15 @@ Base: `http://127.0.0.1:8788/api/v1` (or Tailscale MagicDNS to the local compute
 
 Auth: `Authorization: Bearer sk_live_…`
 
+**Per-API-key rate limits:** core and the agents door apply a fixed-window RPM
+cap to `kind=api_key` traffic (default **300**/minute). Exceeded requests return
+**429** with `Retry-After` and `{ "error": "Rate limit exceeded", "code": "rate_limited" }`.
+Env: `API_KEY_RATE_LIMIT_ENABLED` / `API_KEY_RATE_LIMIT_RPM` (core + door);
+`AGENTS_RATE_LIMIT_ENABLED` / `AGENTS_RATE_LIMIT_RPM` override on the door only.
+**Exempt:** `local_shell` (desktop owner UI), PowerSync JWT uploads, core-replication
+internal routes, `/health`, `/api/v1/health`, OpenAPI. In-process workers never hit
+HTTP limits.
+
 ### Read / search (agents)
 
 ```http
@@ -341,6 +350,18 @@ for existing clients. Opt in to `{ items, nextCursor }` with **`paginated=true`*
 | `cursor` | Opaque keyset on `(updatedAt desc, id)`; TTL 10 minutes |
 | `updatedSince` | Incremental change feed (ISO instant) |
 
+#### Legacy hard-cap (projects / contacts / organizations / letters / tasks)
+
+Without `paginated=true`, these list routes still return the legacy array key
+(`projects`, `contacts`, `organizations`, `letters`, `tasks`) but are **hard-capped
+at 200** (same as `LIST_MAX_LIMIT`). When more rows exist the body also includes
+`has_more: true` and `limit: 200`, and `X-BacksterOS-Hint` points callers at
+`paginated=true` for cursor pages. Prefer **`paginated=true`** (and walk
+`nextCursor`) whenever you need a complete set — first-party desktop, mobile,
+CLI, and BacksterDEV helpers already do.
+
+`GET /letters/inbox` uses the same hard-cap + `has_more` shape.
+
 `GET /documents` always applies **`limit=100`** when omitted (hint header).
 `GET /global-search` rejects unknown `mode` and sets a hint when `limit` is clamped to 100.
 
@@ -453,7 +474,7 @@ filtered by org.
 ```http
 PATCH /api/v1/documents/{id}/content
 POST  /api/v1/tasks
-      Idempotency-Key: <optional unique key>   # 24h cache; retries return same task
+      Idempotency-Key: <optional unique key>   # 24h Postgres cache; retries return same task
 POST  /api/v1/tasks/batch
       { "ids": ["OS-51", "OS-52"], "patch": { "status": "in_review" } }
       → { tasks, results[] }  # unknown refs → results[].ok=false (no upsert)

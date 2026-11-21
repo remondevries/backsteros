@@ -41,12 +41,12 @@ export async function bootstrapSync(workspaceId: string) {
   const fetchCap = page + 1;
 
   const [
-    projectRowsRaw,
+    projectPage,
     taskRowsRaw,
     documentRowsRaw,
-    organizationRowsRaw,
-    contactRowsRaw,
-    letterRowsRaw,
+    organizationPage,
+    contactPage,
+    letterPage,
     settings,
   ] = await Promise.all([
     taskProjectService.listProjects(workspaceId),
@@ -66,6 +66,10 @@ export async function bootstrapSync(workspaceId: string) {
     : documentRowsRaw;
 
   // Soft-cap CRM collections the same way (list* may still be unbounded today).
+  const projectRowsRaw = projectPage.rows;
+  const organizationRowsRaw = organizationPage.rows;
+  const contactRowsRaw = contactPage.rows;
+  const letterRowsRaw = letterPage.rows;
   const projectRows = projectRowsRaw.slice(0, page);
   const organizationRows = organizationRowsRaw.slice(0, page);
   const contactRows = contactRowsRaw.slice(0, page);

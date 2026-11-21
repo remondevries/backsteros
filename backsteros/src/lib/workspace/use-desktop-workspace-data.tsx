@@ -1441,11 +1441,16 @@ function useDesktopWorkspaceDataImpl(): {
     [patchViaPowerSyncOrApi],
   );
   const reloadProjects = useCallback(async () => {
-    const body = await client.requestJson<{ projects: ApiProject[] }>(
-      "/api/v1/projects",
+    const { fetchAllPaginatedCollection } = await import(
+      "../fetch-paginated-collection"
     );
-    setApiProjects(body.projects);
-    return body.projects;
+    const projects = await fetchAllPaginatedCollection<ApiProject>(
+      client.requestJson.bind(client),
+      "/api/v1/projects",
+      "projects",
+    );
+    setApiProjects(projects);
+    return projects;
   }, [client, setApiProjects]);
   const patchLetter = useCallback(
     async (id: string, values: Record<string, unknown>) => {

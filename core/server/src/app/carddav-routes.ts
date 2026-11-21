@@ -179,7 +179,7 @@ function davHeaders() {
 async function loadContactSources(
   workspaceId: string,
 ): Promise<ContactVCardSource[]> {
-  const rows = await circleService.listContacts(workspaceId);
+  const { rows } = await circleService.listContacts(workspaceId);
   const orgIds = [
     ...new Set(
       rows
@@ -311,7 +311,7 @@ async function organizationPhoto(
 function loadOrganizationSources(
   workspaceId: string,
 ): Promise<OrganizationVCardSource[]> {
-  return circleService.listOrganizations(workspaceId).then((rows) =>
+  return circleService.listOrganizations(workspaceId).then(({ rows }) =>
     rows.map((row) => ({
       id: row.id,
       name: row.name,

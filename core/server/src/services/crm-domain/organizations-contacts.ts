@@ -10,6 +10,7 @@ import { normalizePhoneDigits } from "../../lib/phone-e164.js";
 import { areas, contacts, organizations } from "../../db/schema.js";
 import { db } from "../../db/index.js";
 import {
+  clampLegacyListLimit,
   decodeUpdatedAtCursor,
   encodeUpdatedAtCursor,
   type ParsedContactsListQuery,
@@ -133,9 +134,9 @@ type AreaInput = {
   sortOrder?: number;
 };
 
-export function listOrganizations(
+export async function listOrganizations(
   workspaceId: string,
-  filters: { q?: string; updatedSince?: Date } = {},
+  filters: { q?: string; updatedSince?: Date; limit?: number } = {},
 ) {
   const conditions = [
     eq(organizations.workspaceId, workspaceId),
@@ -161,11 +162,23 @@ export function listOrganizations(
       )!,
     );
   }
-  return db
+  const ordered = db
     .select()
     .from(organizations)
     .where(and(...conditions))
     .orderBy(organizations.sortOrder, organizations.name);
+  if (filters.limit == null) {
+    const rows = await ordered;
+    return { rows, hasMore: false, limit: rows.length };
+  }
+  const limit = clampLegacyListLimit(filters.limit);
+  const rows = await ordered.limit(limit + 1);
+  const hasMore = rows.length > limit;
+  return {
+    rows: hasMore ? rows.slice(0, limit) : rows,
+    hasMore,
+    limit,
+  };
 }
 
 export async function listOrganizationsPaginated(
@@ -327,9 +340,15 @@ export async function deleteOrganization(
   return row ?? null;
 }
 
-export function listContacts(
+export async function listContacts(
   workspaceId: string,
-  filters: { organizationId?: string; q?: string; updatedSince?: Date } = {},
+  filters: {
+    organizationId?: string;
+    q?: string;
+    updatedSince?: Date;
+    /** When set, hard-cap like tasks. Omit for unbounded (CardDAV / internal). */
+    limit?: number;
+  } = {},
 ) {
   const conditions = [
     eq(contacts.workspaceId, workspaceId),
@@ -355,7 +374,23 @@ export function listContacts(
       )!,
     );
   }
-  return db.select().from(contacts).where(and(...conditions)).orderBy(contacts.sortOrder, contacts.name);
+  const ordered = db
+    .select()
+    .from(contacts)
+    .where(and(...conditions))
+    .orderBy(contacts.sortOrder, contacts.name);
+  if (filters.limit == null) {
+    const rows = await ordered;
+    return { rows, hasMore: false, limit: rows.length };
+  }
+  const limit = clampLegacyListLimit(filters.limit);
+  const rows = await ordered.limit(limit + 1);
+  const hasMore = rows.length > limit;
+  return {
+    rows: hasMore ? rows.slice(0, limit) : rows,
+    hasMore,
+    limit,
+  };
 }
 
 export async function listContactsPaginated(

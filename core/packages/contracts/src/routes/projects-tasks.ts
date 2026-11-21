@@ -48,7 +48,11 @@ export const projectsTasksRoutes: AppRouter = c.router({
     query: s.listProjectsQuerySchema,
     responses: {
       200: z.union([
-        z.object({ projects: z.array(projectSchema) }),
+        z.object({
+          projects: z.array(projectSchema),
+          has_more: z.boolean().optional(),
+          limit: z.number().int().positive().optional(),
+        }),
         s.listPaginatedResponseSchema(projectSchema),
       ]),
       400: badRequestSchema,
@@ -56,7 +60,7 @@ export const projectsTasksRoutes: AppRouter = c.router({
       403: errorSchema,
     },
     summary:
-      "List projects (legacy `{ projects }`; paginated `{ items, nextCursor }` with paginated=true)",
+      "List projects (legacy `{ projects, has_more?, limit? }` hard-capped at 200; paginated `{ items, nextCursor }` with paginated=true)",
   },
   getProject: {
     method: "GET",

@@ -11,6 +11,7 @@ import {
 
 import { groupItemsByAlphaLetter } from "../lib/alpha-group";
 import { isPadDevice } from "../lib/device";
+import { fetchAllPaginatedCollection } from "../lib/fetch-paginated-collection";
 import {
   findFlatGroupedRowIndex,
   flattenGroupedSections,
@@ -108,10 +109,12 @@ export function OrganizationsListPane({
         avatar_storage_key: row.avatar_storage_key,
       })),
     fetchRest: async () => {
-      const body = await client.requestJson<{ organizations: Organization[] }>(
+      const organizations = await fetchAllPaginatedCollection<Organization>(
+        client.requestJson.bind(client),
         "/api/v1/organizations",
+        "organizations",
       );
-      return (body.organizations ?? []).map((organization) => ({
+      return organizations.map((organization) => ({
         id: organization.id,
         name: organization.name?.trim() || "Untitled",
         avatar_storage_key: organization.avatarStorageKey,

@@ -330,7 +330,7 @@ async function resolveBookingAttendeeContactIds(
   );
   if (byPortalEmail) return [byPortalEmail.id];
 
-  const rows = await listContacts(workspaceId, { q: bookerEmail });
+  const { rows } = await listContacts(workspaceId, { q: bookerEmail });
   const match = findContactByEmailAddress(
     rows.map((row) => ({
       id: row.id,

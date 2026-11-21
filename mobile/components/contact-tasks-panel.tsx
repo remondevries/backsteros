@@ -13,6 +13,7 @@ import {
 
 import { taskDetailHref } from "../lib/detail-href";
 import { useMobileCoreApiUrl } from "../lib/api-url-context";
+import { fetchAllPaginatedCollection } from "../lib/fetch-paginated-collection";
 import {
   contactsByIdFromList,
   mapApiTaskToRow,
@@ -98,7 +99,7 @@ export function ContactTasksPanel({ contactId }: Props) {
       mapLocal: (synced) => synced.map((row) => withDisplayId(row)),
       fetchRest: async () => {
         try {
-          const [byContact, byAssignee, byRelated, projectsBody, contactsBody] =
+          const [byContact, byAssignee, byRelated, projects, contacts] =
             await Promise.all([
               client.requestJson<{ tasks: Task[] }>(
                 `/api/v1/tasks?contactId=${encodeURIComponent(contactId)}`,
@@ -109,20 +110,21 @@ export function ContactTasksPanel({ contactId }: Props) {
               client.requestJson<{ tasks: Task[] }>(
                 `/api/v1/tasks?relatedContactId=${encodeURIComponent(contactId)}`,
               ),
-              client.requestJson<{ projects: Project[] }>("/api/v1/projects"),
-              client
-                .requestJson<{ contacts: Contact[] }>("/api/v1/contacts")
-                .catch(() => ({ contacts: [] as Contact[] })),
+              fetchAllPaginatedCollection<Project>(
+                client.requestJson.bind(client),
+                "/api/v1/projects",
+                "projects",
+              ),
+              fetchAllPaginatedCollection<Contact>(
+                client.requestJson.bind(client),
+                "/api/v1/contacts",
+                "contacts",
+              ).catch(() => [] as Contact[]),
             ]);
           const projectsById = new Map(
-            (projectsBody.projects ?? []).map((project) => [
-              project.id,
-              project,
-            ]),
+            projects.map((project) => [project.id, project]),
           );
-          const contactsById = contactsByIdFromList(
-            contactsBody.contacts ?? [],
-          );
+          const contactsById = contactsByIdFromList(contacts);
           const byId = new Map<string, Task>();
           for (const task of [
             ...(byContact.tasks ?? []),
