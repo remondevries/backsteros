@@ -4,6 +4,11 @@ import { secureHeaders } from "hono/secure-headers";
 
 import { isRouteAllowed } from "./allowlist.js";
 import type { AgentsBuild } from "./build-info.js";
+import {
+  consumeAgentsRateLimit,
+  hashBearerForRateLimit,
+  readAgentsRateLimitConfig,
+} from "./lib/rate-limit.js";
 
 const HOP_BY_HOP_HEADERS = new Set([
   "connection",
@@ -75,6 +80,21 @@ export function createApp(options: AgentsAppOptions) {
           code: "forbidden" as const,
         },
         403,
+      );
+    }
+
+    const rate = consumeAgentsRateLimit(
+      hashBearerForRateLimit(c.req.header("authorization")),
+      readAgentsRateLimitConfig(),
+    );
+    c.header("X-RateLimit-Limit", String(rate.limit));
+    c.header("X-RateLimit-Remaining", String(rate.remaining));
+    c.header("X-RateLimit-Reset", String(Math.ceil(rate.resetAtMs / 1000)));
+    if (!rate.ok) {
+      c.header("Retry-After", String(rate.retryAfterSec));
+      return c.json(
+        { error: "Rate limit exceeded", code: "rate_limited" as const },
+        429,
       );
     }
 

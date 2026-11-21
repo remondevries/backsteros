@@ -12,6 +12,7 @@ import { registerEmailRoutes } from "./email-routes.js";
 import { registerChatRoutes } from "./chat-routes.js";
 import { registerSocialRoutes } from "./social-routes.js";
 import { withAuth } from "./route-shared.js";
+import { apiKeyRateLimit } from "../middleware/api-key-rate-limit.js";
 import { registerFinanceRoutes } from "./finance-routes.js";
 import { registerAgentAiRoutes } from "./agent-ai-routes.js";
 import { registerApiKeyRoutes } from "./api-key-routes.js";
@@ -29,6 +30,8 @@ export function registerApiRoutes(app: Hono) {
     await next();
   });
   app.use("/api/v1/*", withAuth);
+  // Per-API-key RPM (local_shell / PowerSync exempt). Env: API_KEY_RATE_LIMIT_*.
+  app.use("/api/v1/*", apiKeyRateLimit);
   // OS-146: agent persona keys never read/write integration settings.
   app.use("/api/v1/settings/*", async (c, next) => {
     if (isAgentPersonaAuth(getAuth(c))) {

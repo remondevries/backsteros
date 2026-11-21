@@ -6,6 +6,9 @@ import test from "node:test";
 import { serve } from "@hono/node-server";
 
 import { createApp } from "./app.js";
+import {
+  resetAgentsRateLimitForTests,
+} from "./lib/rate-limit.js";
 
 function listen(
   server: ReturnType<typeof createServer>,
@@ -24,6 +27,8 @@ function listen(
 }
 
 test("proxies upstream status and JSON through secureHeaders", async () => {
+  resetAgentsRateLimitForTests();
+  process.env.AGENTS_RATE_LIMIT_ENABLED = "0";
   const server = createServer((req, res) => {
     assert.equal(req.url, "/api/v1/tasks");
     res.writeHead(401, { "content-type": "application/json" });
@@ -44,10 +49,50 @@ test("proxies upstream status and JSON through secureHeaders", async () => {
     });
   } finally {
     server.close();
+    delete process.env.AGENTS_RATE_LIMIT_ENABLED;
+  }
+});
+
+test("agents door returns 429 with Retry-After when rate limited", async () => {
+  resetAgentsRateLimitForTests();
+  process.env.AGENTS_RATE_LIMIT_ENABLED = "1";
+  process.env.AGENTS_RATE_LIMIT_RPM = "2";
+  const server = createServer((_req, res) => {
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify({ ok: true }));
+  });
+  const port = await listen(server);
+  const app = createApp({ upstreamUrl: `http://127.0.0.1:${port}` });
+  const headers = { authorization: "Bearer sk_live_rate_limit_test" };
+  try {
+    assert.equal(
+      (await app.request("http://agents.test/api/v1/tasks", { headers })).status,
+      200,
+    );
+    assert.equal(
+      (await app.request("http://agents.test/api/v1/tasks", { headers })).status,
+      200,
+    );
+    const blocked = await app.request("http://agents.test/api/v1/tasks", {
+      headers,
+    });
+    assert.equal(blocked.status, 429);
+    assert.ok(blocked.headers.get("Retry-After"));
+    assert.deepEqual(await blocked.json(), {
+      error: "Rate limit exceeded",
+      code: "rate_limited",
+    });
+  } finally {
+    server.close();
+    delete process.env.AGENTS_RATE_LIMIT_ENABLED;
+    delete process.env.AGENTS_RATE_LIMIT_RPM;
+    resetAgentsRateLimitForTests();
   }
 });
 
 test("node-server proxy does not crash on immutable fetch headers", async () => {
+  resetAgentsRateLimitForTests();
+  process.env.AGENTS_RATE_LIMIT_ENABLED = "0";
   const upstream = createServer((_req, res) => {
     res.writeHead(401, { "content-type": "application/json" });
     res.end(JSON.stringify({ error: "Unauthorized", code: "unauthorized" }));
@@ -75,5 +120,6 @@ test("node-server proxy does not crash on immutable fetch headers", async () => 
   } finally {
     proxyServer.close();
     upstream.close();
+    delete process.env.AGENTS_RATE_LIMIT_ENABLED;
   }
 });
