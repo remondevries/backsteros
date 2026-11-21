@@ -103,7 +103,14 @@ test("agent drag: hysteresis keeps a placed row from snapping back at the mid", 
   );
 });
 
-test("classifyApiKeyType maps exclusive Applications, TV, and CardDAV scopes", () => {
+test("classifyApiKeyType maps Applications marker, TV, and CardDAV scopes", () => {
+  assert.equal(
+    classifyApiKeyType({
+      scopes: ["tasks:read", APPLICATION_API_KEY_SCOPE],
+      contactId: null,
+    }),
+    "applications",
+  );
   assert.equal(
     classifyApiKeyType({
       scopes: [APPLICATION_API_KEY_SCOPE],

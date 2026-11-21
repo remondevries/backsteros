@@ -875,7 +875,9 @@ A successful delivery records activity `auto_review_requested`
 | `email:read` / `email:send` | AgentMail list/read + compose/send + `POST /email/start` |
 | `search:query` | Meilisearch proxy |
 | `avatars:*` | Avatar upload/download |
-| `carddav` / `tv.today_counts` / `applications` | Exclusive single-scope doors |
+| `carddav` / `tv.today_counts` | Exclusive single-scope doors |
+| `applications` | Applications-key marker — mixes with data scopes (not settings); no payment approval |
+| `portal` | Client-portal marker — mixes with Access scopes |
 
 Agent persona keys may hold any non-door scope **except** `settings:read` and
 `settings:write`. See `agents/README.md` for per-channel start-conversation

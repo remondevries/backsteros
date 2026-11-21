@@ -1,12 +1,17 @@
 "use client";
 
-import { useCallback, useEffect, useRef } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  type ChangeEvent,
+} from "react";
 
 import { useContentViewModeShortcut } from "../../content/use-content-view-mode-shortcut.js";
 import { shouldHandleGlobalShortcut } from "../../shortcuts/shortcut-guards.js";
 import { SegmentedPillToggle } from "../list-nav/list-board-view-shell.js";
 import { useEntityHeaderActionsContextOptional } from "../entity-actions/entity-header-actions-context.js";
-import { TrashIcon } from "@primer/octicons-react";
+import { PaperclipIcon, TrashIcon } from "@primer/octicons-react";
 
 export type EmailDraftBodyMode = "edit" | "preview";
 
@@ -15,9 +20,12 @@ export type EmailDraftActionsProps = {
   /** Edit mode primary action — replaces Send. */
   onSaveDraft?: () => void;
   onDelete?: () => void;
+  /** Pick files to attach to the Messages draft (shown next to trash). */
+  onAttachFiles?: (files: File[]) => void | Promise<void>;
   sending?: boolean;
   savingDraft?: boolean;
   deleting?: boolean;
+  attaching?: boolean;
   disabled?: boolean;
   bodyMode?: EmailDraftBodyMode;
   onBodyModeChange?: (mode: EmailDraftBodyMode) => void;
@@ -56,9 +64,11 @@ export function EmailDraftActions({
   onSend,
   onSaveDraft,
   onDelete,
+  onAttachFiles,
   sending = false,
   savingDraft = false,
   deleting = false,
+  attaching = false,
   disabled = false,
   bodyMode = "preview",
   onBodyModeChange,
@@ -71,13 +81,17 @@ export function EmailDraftActions({
   const showSave = isEditMode && onSaveDraft != null;
   const showSend = !isEditMode && onSend != null;
   const showDelete = onDelete != null;
+  const showAttach = onAttachFiles != null;
   const showPrimaryActions =
-    !modeOnly && (showSave || showSend || showDelete);
-  const busy = disabled || sending || deleting || savingBody || savingDraft;
+    !modeOnly && (showSave || showSend || showDelete || showAttach);
+  const busy =
+    disabled || sending || deleting || savingBody || savingDraft || attaching;
   const sendDisabled = busy || onSend == null;
   const saveDisabled = busy || onSaveDraft == null;
   const deleteDisabled = busy;
+  const attachDisabled = busy || onAttachFiles == null;
   const entityActions = useEntityHeaderActionsContextOptional();
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const onSendRef = useRef(onSend);
   onSendRef.current = onSend;
@@ -129,6 +143,22 @@ export function EmailDraftActions({
     }
     deleteHandler();
   }, []);
+
+  const openAttachPicker = useCallback(() => {
+    if (attachDisabled) return;
+    fileInputRef.current?.click();
+  }, [attachDisabled]);
+
+  const handleAttachChange = useCallback(
+    (event: ChangeEvent<HTMLInputElement>) => {
+      const list = event.target.files;
+      const files = list ? Array.from(list) : [];
+      event.target.value = "";
+      if (files.length === 0 || !onAttachFiles) return;
+      void onAttachFiles(files);
+    },
+    [onAttachFiles],
+  );
 
   useEmailDraftBodyModeShortcuts({
     mode: bodyMode,
@@ -197,6 +227,32 @@ export function EmailDraftActions({
       ) : null}
       {showPrimaryActions ? (
         <div className="email-draft-actions__send-group">
+          {showAttach ? (
+            <>
+              <input
+                ref={fileInputRef}
+                type="file"
+                className="email-draft-attach-input"
+                multiple
+                tabIndex={-1}
+                aria-hidden="true"
+                onChange={handleAttachChange}
+              />
+              <button
+                type="button"
+                className="email-draft-attach-btn"
+                aria-label="Attach file"
+                title={
+                  attaching ? "Attaching…" : "Attach file to this draft"
+                }
+                onClick={openAttachPicker}
+                disabled={attachDisabled}
+                aria-disabled={attachDisabled}
+              >
+                <PaperclipIcon size={14} />
+              </button>
+            </>
+          ) : null}
           {showDelete ? (
             <button
               type="button"

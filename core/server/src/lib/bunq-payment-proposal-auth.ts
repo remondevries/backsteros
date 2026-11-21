@@ -3,6 +3,8 @@
  * Safe for unit tests without DATABASE_URL.
  */
 
+import { isApplicationsApiKeyScopes } from "@backsteros/contracts";
+
 import type { AuthContext } from "../middleware/auth.js";
 import {
   resolveBunqPaymentApproverTotpSecret,
@@ -14,6 +16,18 @@ export function isAgentPersonaAuth(
   auth: AuthContext | undefined | null,
 ): boolean {
   return Boolean(auth && auth.kind === "api_key" && auth.contactId != null);
+}
+
+/** Applications keys may use finance data but never approve payments. */
+export function isApplicationsApiKeyAuth(
+  auth: AuthContext | undefined | null,
+): boolean {
+  return Boolean(
+    auth &&
+      auth.kind === "api_key" &&
+      auth.contactId == null &&
+      isApplicationsApiKeyScopes(auth.scopes),
+  );
 }
 
 function forbidden(message: string): Error {
@@ -90,6 +104,9 @@ export function assertRemonPaymentApprover(
 ): string {
   if (isAgentPersonaAuth(auth)) {
     throw forbidden("Ralph cannot approve bunq payment proposals");
+  }
+  if (isApplicationsApiKeyAuth(auth)) {
+    throw forbidden("Applications keys cannot approve bunq payment proposals");
   }
   const userId = auth.userId?.trim();
   if (!userId || userId !== workspaceOwnerUserId) {

@@ -935,6 +935,87 @@ export function registerEmailRoutes(app: Hono) {
       }
     },
   );
+  app.post(
+    "/api/v1/email/inboxes/:inboxId/drafts/:draftId/attachments",
+    async (c) => {
+      const auth = getAuth(c);
+      if (!can(auth, "email:send")) return c.json(forbidden(), 403);
+      const inboxId = decodeURIComponent(c.req.param("inboxId"));
+      const draftId = decodeURIComponent(c.req.param("draftId"));
+      const bytes = new Uint8Array(await c.req.arrayBuffer());
+      if (
+        bytes.byteLength === 0 ||
+        bytes.byteLength > agentmailSettingsService.MAX_EMAIL_DRAFT_ATTACHMENT_BYTES
+      ) {
+        return c.json(
+          {
+            error: `Attachment must be between 1 byte and ${agentmailSettingsService.MAX_EMAIL_DRAFT_ATTACHMENT_BYTES} bytes`,
+            code: "bad_request",
+          },
+          400,
+        );
+      }
+      const filename = (c.req.header("X-Filename") ?? "").trim();
+      if (!filename) {
+        return c.json(
+          { error: "X-Filename is required", code: "bad_request" },
+          400,
+        );
+      }
+      try {
+        return c.json(
+          await agentmailSettingsService.addAgentMailDraftAttachment(
+            auth.workspaceId,
+            inboxId,
+            draftId,
+            {
+              bytes,
+              filename,
+              contentType: c.req.header("Content-Type"),
+            },
+          ),
+        );
+      } catch (error) {
+        if (error instanceof AgentMailApiError && error.status === 404) {
+          return c.json({ error: error.message, code: "not_found" }, 404);
+        }
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Could not attach file to draft";
+        return c.json({ error: message, code: "bad_request" }, 400);
+      }
+    },
+  );
+  app.delete(
+    "/api/v1/email/inboxes/:inboxId/drafts/:draftId/attachments/:attachmentId",
+    async (c) => {
+      const auth = getAuth(c);
+      if (!can(auth, "email:send")) return c.json(forbidden(), 403);
+      const inboxId = decodeURIComponent(c.req.param("inboxId"));
+      const draftId = decodeURIComponent(c.req.param("draftId"));
+      const attachmentId = decodeURIComponent(c.req.param("attachmentId"));
+      try {
+        return c.json(
+          await agentmailSettingsService.removeAgentMailDraftAttachment(
+            auth.workspaceId,
+            inboxId,
+            draftId,
+            attachmentId,
+          ),
+        );
+      } catch (error) {
+        if (error instanceof AgentMailApiError && error.status === 404) {
+          return c.json({ error: error.message, code: "not_found" }, 404);
+        }
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Could not remove draft attachment";
+        return c.json({ error: message, code: "bad_request" }, 400);
+      }
+    },
+  );
   app.get("/api/v1/email/threads/by-display-id/:displayId", async (c) => {
     const auth = getAuth(c);
     if (!can(auth, "email:read") && !can(auth, "email:send")) {

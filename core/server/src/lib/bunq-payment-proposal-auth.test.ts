@@ -88,6 +88,21 @@ test("assertRemonPaymentApprover refuses agent persona keys", () => {
   );
 });
 
+test("assertRemonPaymentApprover refuses Applications keys even when allowlisted", () => {
+  assert.throws(
+    () =>
+      assertRemonPaymentApprover(
+        auth({
+          scopes: ["finance:write", "tasks:read", "applications"],
+        }),
+        OWNER,
+        stepUp(),
+        env(),
+      ),
+    /Applications keys cannot approve/,
+  );
+});
+
 test("assertRemonPaymentApprover refuses missing step-up secret", () => {
   assert.throws(
     () =>

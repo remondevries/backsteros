@@ -138,6 +138,7 @@ test("email draft card: mock send, discard, owner-only, one-shot 409", async (co
     };
   };
   defaultChatEmailDraftDeps.loadAttachments = async () => [];
+  defaultChatEmailDraftDeps.attachFilesToMessagesDraft = async () => {};
   defaultChatEmailDraftDeps.createMessagesDraft = async () => {
     createCalls += 1;
     return {

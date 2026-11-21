@@ -160,6 +160,7 @@ export function EmailThreadDetail({
     sendError,
     sending,
     deleting,
+    attaching,
     conceptSaving,
     conceptBodySaving,
     conceptBodyDraft,
@@ -179,6 +180,8 @@ export function EmailThreadDetail({
     setReplySubjectText,
     saveConceptDraftBody,
     saveConceptReply,
+    attachFilesToActiveDraft,
+    removeDraftAttachment,
     sendDraft,
     deleteDraft,
   } = drafts;
@@ -808,6 +811,13 @@ export function EmailThreadDetail({
         }
         void saveConceptReply(conceptBodyDraft);
       }}
+      onAttachFiles={
+        conceptDraftId
+          ? (files) => {
+              void attachFilesToActiveDraft(files);
+            }
+          : undefined
+      }
       onDelete={
         conceptDraftId
           ? () => {
@@ -821,6 +831,7 @@ export function EmailThreadDetail({
       sending={sending}
       savingDraft={conceptSaving}
       deleting={deleting}
+      attaching={attaching}
       disabled={conceptDraftActionsDisabled}
       bodyMode={conceptBodyMode}
       onBodyModeChange={(mode) => {
@@ -847,6 +858,24 @@ export function EmailThreadDetail({
       replyGreeting={message.conceptDraft?.greeting}
       replySignOff={message.conceptDraft?.signOff}
       replySignOffAvatarSrc={mailboxSignOffAvatarSrc(resolvedReplyInboxId)}
+      attachments={message.conceptDraft?.attachments ?? null}
+      onRemoveAttachment={
+        conceptDraftId
+          ? (attachmentId) => {
+              void removeDraftAttachment(
+                draftInboxId,
+                conceptDraftId,
+                attachmentId,
+              );
+            }
+          : undefined
+      }
+      attachmentsDisabled={
+        conceptDraftActionsDisabled ||
+        attaching ||
+        conceptSaving ||
+        draftStageWorking
+      }
       toContact={{
         ...threadContactPicker,
         onContactChange: (next) => {

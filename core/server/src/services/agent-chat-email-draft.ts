@@ -28,12 +28,14 @@ import {
   listAgentMailInboxes,
 } from "./agentmail-settings/settings.js";
 import {
+  addAgentMailDraftAttachment,
   deleteAgentMailDraft,
   upsertEmailComposeDraft,
 } from "./agentmail-settings/drafts.js";
 import { sendAgentMailDraft } from "./agentmail-settings/send-lifecycle.js";
 import { startEmailThread } from "./agentmail-settings/send-lifecycle.js";
 import type { StartEmailThreadDeps } from "./agentmail-settings/send-lifecycle.js";
+import { getChatThreadAttachmentBytes } from "./chat-attachments.js";
 
 function badRequest(message: string): Error {
   return Object.assign(new Error(message), {
@@ -81,6 +83,17 @@ export type ChatEmailDraftDeps = {
     threadId: string,
     attachmentIds: readonly string[],
   ) => Promise<ChatThreadMessageEmailDraft["attachments"]>;
+  /**
+   * Copy chat-thread attachment bytes onto the native Messages draft so Send
+   * transmits them (UI metadata alone is not enough).
+   */
+  attachFilesToMessagesDraft: (input: {
+    workspaceId: string;
+    threadId: string;
+    inboxId: string;
+    draftId: string;
+    attachmentIds: readonly string[];
+  }) => Promise<void>;
   /** Create a native Messages draft storing body-only (wrap:false). */
   createMessagesDraft: (input: {
     workspaceId: string;
@@ -282,6 +295,38 @@ async function defaultLoadAttachments(
   });
 }
 
+async function defaultAttachFilesToMessagesDraft(input: {
+  workspaceId: string;
+  threadId: string;
+  inboxId: string;
+  draftId: string;
+  attachmentIds: readonly string[];
+}): Promise<void> {
+  const unique = [
+    ...new Set(input.attachmentIds.map((id) => id.trim()).filter(Boolean)),
+  ];
+  for (const attachmentId of unique) {
+    const loaded = await getChatThreadAttachmentBytes(
+      input.workspaceId,
+      input.threadId,
+      attachmentId,
+    );
+    if (!loaded) {
+      throw badRequest(`Email draft attachment not found: ${attachmentId}`);
+    }
+    await addAgentMailDraftAttachment(
+      input.workspaceId,
+      input.inboxId,
+      input.draftId,
+      {
+        bytes: loaded.bytes,
+        filename: loaded.row.originalFilename,
+        contentType: loaded.row.contentType,
+      },
+    );
+  }
+}
+
 export async function defaultCreateMessagesDraft(input: {
   workspaceId: string;
   inboxId: string;
@@ -450,6 +495,7 @@ export const defaultChatEmailDraftDeps: ChatEmailDraftDeps = {
   resolveDefaultInboxId: defaultResolveDefaultInboxId,
   resolveRecipient: defaultResolveEmailDraftRecipient,
   loadAttachments: defaultLoadAttachments,
+  attachFilesToMessagesDraft: defaultAttachFilesToMessagesDraft,
   createMessagesDraft: defaultCreateMessagesDraft,
   updateMessagesDraft: defaultUpdateMessagesDraft,
   deleteMessagesDraft: defaultDeleteMessagesDraft,
@@ -532,6 +578,16 @@ export async function resolveChatThreadEmailDraft(
     body: input.body,
     recipientFirstName: firstName,
   });
+
+  if (attachmentIds.length > 0) {
+    await deps.attachFilesToMessagesDraft({
+      workspaceId,
+      threadId,
+      inboxId: inbox.inboxId,
+      draftId: messagesDraft.draftId,
+      attachmentIds,
+    });
+  }
 
   const preview = await deps.buildPreview({
     workspaceId,

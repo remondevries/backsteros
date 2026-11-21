@@ -83,8 +83,10 @@ export const API_KEY_SCOPES = [
    */
   "tv.today_counts",
   /**
-   * Applications door only — mint alone on a key for app integrations
-   * (Settings → API keys → Applications).
+   * Applications marker (Settings → API keys → Applications).
+   * Mixes with data scopes on Applications keys. Not an exclusive door —
+   * apps need tasks/projects/etc. Never on Access keys (use Access tab).
+   * Does not grant agent admin (`settings:*`) or payment approval.
    */
   "applications",
   /**
@@ -98,11 +100,10 @@ export const API_KEY_SCOPES = [
   "portal",
 ] as const;
 
-/** Exclusive single-scope doors — never mixed into Access/Agent owner scopes. */
+/** Exclusive single-scope doors — never mixed into Access/Agent/Applications. */
 export const EXCLUSIVE_API_KEY_DOOR_SCOPES = [
   "carddav",
   "tv.today_counts",
-  "applications",
 ] as const satisfies ReadonlyArray<(typeof API_KEY_SCOPES)[number]>;
 
 const EXCLUSIVE_API_KEY_DOOR_SCOPE_SET = new Set<string>(
@@ -119,22 +120,36 @@ const EXCLUSIVE_API_KEY_DOOR_SCOPE_SET = new Set<string>(
 export const PORTAL_API_KEY_MARKER_SCOPE = "portal" as const satisfies
   (typeof API_KEY_SCOPES)[number];
 
+/**
+ * Marker for Applications keys — classifies the key and keeps it off Access.
+ * Always present on kind `applications` creates.
+ */
+export const APPLICATIONS_API_KEY_MARKER_SCOPE = "applications" as const satisfies
+  (typeof API_KEY_SCOPES)[number];
+
 export function isPortalRestrictedApiKeyScopes(
   scopes: readonly string[] | null | undefined,
 ): boolean {
   return (scopes ?? []).includes(PORTAL_API_KEY_MARKER_SCOPE);
 }
 
+export function isApplicationsApiKeyScopes(
+  scopes: readonly string[] | null | undefined,
+): boolean {
+  return (scopes ?? []).includes(APPLICATIONS_API_KEY_MARKER_SCOPE);
+}
+
 /**
  * Non-door scopes an Access key may hold. Create persists the requested
  * subset exactly (OS-182); full owner access means sending every scope in
  * this list, not an implicit widen on the server.
- * Excludes exclusive doors and the portal marker (optional add-on).
+ * Excludes exclusive doors and marker scopes (portal / applications).
  */
 export const AGENT_API_KEY_SCOPES = API_KEY_SCOPES.filter(
   (scope) =>
     !EXCLUSIVE_API_KEY_DOOR_SCOPE_SET.has(scope) &&
-    scope !== PORTAL_API_KEY_MARKER_SCOPE,
+    scope !== PORTAL_API_KEY_MARKER_SCOPE &&
+    scope !== APPLICATIONS_API_KEY_MARKER_SCOPE,
 );
 
 const AGENT_API_KEY_SCOPE_SET = new Set<string>(AGENT_API_KEY_SCOPES);
@@ -149,6 +164,20 @@ export const AGENT_KEY_SCOPES = AGENT_API_KEY_SCOPES.filter(
 );
 
 const AGENT_KEY_SCOPE_SET = new Set<string>(AGENT_KEY_SCOPES);
+
+/**
+ * Data scopes Applications keys may hold. Same surface as Access for
+ * tasks/projects/CRM/email/etc., but never settings (agent admin / key minting)
+ * and never exclusive doors. Payment approval is refused separately in core.
+ */
+export const APPLICATIONS_API_KEY_SCOPES = AGENT_API_KEY_SCOPES.filter(
+  (scope) => scope !== "settings:write" && scope !== "settings:read",
+);
+
+const APPLICATIONS_API_KEY_SCOPE_SET = new Set<string>([
+  ...APPLICATIONS_API_KEY_SCOPES,
+  APPLICATIONS_API_KEY_MARKER_SCOPE,
+]);
 
 /** Explicit purpose on create — never inferred from missing contact. */
 export const API_KEY_CREATE_KINDS = [
@@ -229,10 +258,10 @@ export function apiKeyCreateKindFromIdentity(input: {
 }): ApiKeyCreateKind {
   if (isExclusiveDoorApiKeyScopes(input.scopes)) {
     const only = input.scopes[0];
-    if (only === "applications") return "applications";
     if (only === "tv.today_counts") return "tv";
     if (only === "carddav") return "carddav";
   }
+  if (isApplicationsApiKey(input)) return "applications";
   if (input.contactId) return "agent";
   return "access";
 }
@@ -246,6 +275,19 @@ export function isExclusiveDoorApiKeyScopes(
 }
 
 /**
+ * Applications key: no contact, carries the `applications` marker
+ * (optionally with data scopes). Legacy marker-only rows still classify here.
+ */
+export function isApplicationsApiKey(input: {
+  contactId: string | null | undefined;
+  scopes: readonly string[];
+}): boolean {
+  return (
+    input.contactId == null && isApplicationsApiKeyScopes(input.scopes)
+  );
+}
+
+/**
  * Existing-row heuristic for Access keys (UI classify / update heal).
  * Creation must use `kind: "access"`, not this helper.
  */
@@ -254,7 +296,9 @@ export function isAccessApiKey(input: {
   scopes: readonly string[];
 }): boolean {
   return (
-    input.contactId == null && !isExclusiveDoorApiKeyScopes(input.scopes)
+    input.contactId == null &&
+    !isExclusiveDoorApiKeyScopes(input.scopes) &&
+    !isApplicationsApiKey(input)
   );
 }
 
@@ -278,9 +322,9 @@ const ACCESS_KEY_ALLOWED_SCOPE_SET = new Set<string>([
 
 /**
  * Persist Access scopes exactly as requested (deduped, order preserved).
- * Rejects door scopes and anything outside AGENT_API_KEY_SCOPES (+ optional
- * `portal` marker). Empty after validation → ACCESS_SCOPES_REQUIRED (never
- * widen to all).
+ * Rejects exclusive doors, the Applications marker, and anything outside
+ * AGENT_API_KEY_SCOPES (+ optional `portal` marker). Empty after validation →
+ * ACCESS_SCOPES_REQUIRED (never widen to all).
  */
 export function sanitizeAccessKeyScopes(
   scopes: readonly string[],
@@ -298,6 +342,41 @@ export function sanitizeAccessKeyScopes(
     seen.add(scope);
     out.push(scope as (typeof API_KEY_SCOPES)[number]);
   }
+  return out;
+}
+
+/**
+ * Applications scopes: data scopes + required `applications` marker.
+ * Rejects settings:*, exclusive doors, and portal. Empty / marker-only input
+ * widens to the full Applications data set + marker (UI create default).
+ */
+export function sanitizeApplicationsKeyScopes(
+  scopes: readonly string[],
+): Array<(typeof API_KEY_SCOPES)[number]> {
+  const requested = scopes.map((scope) => scope.trim()).filter(Boolean);
+  const withoutMarker = requested.filter(
+    (scope) => scope !== APPLICATIONS_API_KEY_MARKER_SCOPE,
+  );
+  if (withoutMarker.length === 0) {
+    return [
+      ...APPLICATIONS_API_KEY_SCOPES,
+      APPLICATIONS_API_KEY_MARKER_SCOPE,
+    ];
+  }
+  const invalid = withoutMarker.filter(
+    (scope) => !APPLICATIONS_API_KEY_SCOPE_SET.has(scope),
+  );
+  if (invalid.length > 0) {
+    throw new Error("APPLICATIONS_SCOPES_INVALID");
+  }
+  const seen = new Set<string>();
+  const out: Array<(typeof API_KEY_SCOPES)[number]> = [];
+  for (const scope of withoutMarker) {
+    if (seen.has(scope)) continue;
+    seen.add(scope);
+    out.push(scope as (typeof API_KEY_SCOPES)[number]);
+  }
+  out.push(APPLICATIONS_API_KEY_MARKER_SCOPE);
   return out;
 }
 
@@ -328,8 +407,13 @@ export function resolveCreateApiKeyFields(input: {
       }
       return { contactId: input.contactId, scopes: [...scopes] };
     }
-    case "applications":
-      return { contactId: null, scopes: ["applications"] };
+    case "applications": {
+      const scopes = sanitizeApplicationsKeyScopes(input.scopes);
+      if (scopes.length === 0) {
+        throw new Error("APPLICATIONS_SCOPES_REQUIRED");
+      }
+      return { contactId: null, scopes: [...scopes] };
+    }
     case "tv":
       return { contactId: null, scopes: ["tv.today_counts"] };
     case "carddav":

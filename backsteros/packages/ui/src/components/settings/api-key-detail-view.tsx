@@ -9,6 +9,7 @@ import {
   AGENT_API_KEY_SCOPES,
   AGENT_KEY_SCOPES,
   APPLICATION_API_KEY_SCOPE,
+  APPLICATIONS_API_KEY_SCOPES,
   CARDDAV_API_KEY_SCOPE,
   TV_API_KEY_SCOPE,
   classifyApiKeyType,
@@ -77,7 +78,7 @@ export function ApiKeyDetailView({
       : keyType === "agent"
         ? AGENT_KEY_SCOPES
         : keyType === "applications"
-          ? ([APPLICATION_API_KEY_SCOPE] as const)
+          ? ([...APPLICATIONS_API_KEY_SCOPES, APPLICATION_API_KEY_SCOPE] as const)
           : keyType === "tv"
             ? ([TV_API_KEY_SCOPE] as const)
             : keyType === "carddav"

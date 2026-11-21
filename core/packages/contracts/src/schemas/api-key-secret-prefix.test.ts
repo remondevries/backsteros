@@ -26,13 +26,20 @@ test("owner format accepts access + legacy only", () => {
   assert.equal(isApiKeySecretFormat("sk_agent_x"), true);
 });
 
-test("apiKeyCreateKindFromIdentity maps door and contact rows", () => {
+test("apiKeyCreateKindFromIdentity maps door, applications, and contact rows", () => {
   assert.equal(
     apiKeyCreateKindFromIdentity({
       contactId: null,
       scopes: ["tv.today_counts"],
     }),
     "tv",
+  );
+  assert.equal(
+    apiKeyCreateKindFromIdentity({
+      contactId: null,
+      scopes: ["tasks:read", "applications"],
+    }),
+    "applications",
   );
   assert.equal(
     apiKeyCreateKindFromIdentity({

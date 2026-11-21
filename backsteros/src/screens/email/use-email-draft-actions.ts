@@ -138,10 +138,12 @@ export function useEmailDraftActions({
     useState<EmailDraftBodyMode>(() => (isCompose ? "edit" : "preview"));
   const [conceptBodySaving, setConceptBodySaving] = useState(false);
   const [draftStageWorking, setDraftStageWorking] = useState(false);
+  const [attaching, setAttaching] = useState(false);
   const conceptSavingRef = useRef(false);
   const conceptBodySavingRef = useRef(false);
   const sendingRef = useRef(false);
   const deletingRef = useRef(false);
+  const attachingRef = useRef(false);
   const [composeInboxId, setComposeInboxId] = useState(
     () => composeSession.inboxId ?? "",
   );
@@ -463,6 +465,7 @@ export function useEmailDraftActions({
               greeting: updated.greeting ?? null,
               signOff: updated.signOff ?? null,
               preview: updated.preview,
+              attachments: updated.attachments,
               updatedAt: updated.updatedAt,
             },
           });
@@ -580,6 +583,7 @@ export function useEmailDraftActions({
                   greeting: draftDetail.greeting ?? null,
                   signOff: draftDetail.signOff ?? null,
                   preview: draftDetail.preview,
+                  attachments: draftDetail.attachments,
                   updatedAt: draftDetail.updatedAt,
                 },
               });
@@ -637,15 +641,125 @@ export function useEmailDraftActions({
     [composeSubject],
   );
 
+  const applyDraftAttachmentUpdate = useCallback(
+    (updated: AgentMailDraftDetail) => {
+      if (composeDraft?.draftId === updated.draftId || isCompose) {
+        setComposeDraft(updated);
+      }
+      if (draft?.draftId === updated.draftId) {
+        setDraft(updated);
+      }
+      if (message?.conceptDraft?.draftId === updated.draftId) {
+        setMessage((current) =>
+          current
+            ? {
+                ...current,
+                conceptDraftId: updated.draftId,
+                conceptDraft: {
+                  draftId: updated.draftId,
+                  inboxId: updated.inboxId || current.conceptDraft?.inboxId || "",
+                  subject: updated.subject,
+                  from: updated.from ?? null,
+                  to: updated.to ?? [],
+                  cc: updated.cc ?? [],
+                  text: updated.text,
+                  body: resolveEditableEmailDraftBody(updated),
+                  greeting: updated.greeting ?? null,
+                  signOff: updated.signOff ?? null,
+                  preview: updated.preview,
+                  attachments: updated.attachments,
+                  updatedAt: updated.updatedAt,
+                },
+              }
+            : null,
+        );
+      }
+    },
+    [composeDraft?.draftId, draft?.draftId, isCompose, message?.conceptDraft?.draftId, setDraft, setMessage],
+  );
+
+  const attachDraftFiles = useCallback(
+    async (
+      draftInboxId: string,
+      targetDraftId: string,
+      files: readonly File[],
+    ) => {
+      if (attachingRef.current || files.length === 0) return;
+      attachingRef.current = true;
+      setAttaching(true);
+      setConceptError(null);
+      try {
+        let latest: AgentMailDraftDetail | null = null;
+        for (const file of files) {
+          latest = await client.requestJson<AgentMailDraftDetail>(
+            `/api/v1/email/inboxes/${encodeURIComponent(draftInboxId)}/drafts/${encodeURIComponent(targetDraftId)}/attachments`,
+            {
+              method: "POST",
+              body: file,
+              headers: {
+                "Content-Type": file.type || "application/octet-stream",
+                "X-Filename": file.name || "attachment.bin",
+              },
+            },
+          );
+        }
+        if (latest) {
+          applyDraftAttachmentUpdate(latest);
+        }
+      } catch (caught) {
+        setConceptError(
+          emailRequestErrorMessage(caught, "Could not attach file to draft."),
+        );
+        console.warn("[email] draft attach failed:", caught);
+      } finally {
+        attachingRef.current = false;
+        setAttaching(false);
+      }
+    },
+    [applyDraftAttachmentUpdate, client],
+  );
+
+  const removeDraftAttachment = useCallback(
+    async (
+      draftInboxId: string,
+      targetDraftId: string,
+      attachmentId: string,
+    ) => {
+      if (attachingRef.current) return;
+      attachingRef.current = true;
+      setAttaching(true);
+      setConceptError(null);
+      try {
+        const updated = await client.requestJson<AgentMailDraftDetail>(
+          `/api/v1/email/inboxes/${encodeURIComponent(draftInboxId)}/drafts/${encodeURIComponent(targetDraftId)}/attachments/${encodeURIComponent(attachmentId)}`,
+          { method: "DELETE" },
+        );
+        applyDraftAttachmentUpdate(updated);
+      } catch (caught) {
+        setConceptError(
+          emailRequestErrorMessage(
+            caught,
+            "Could not remove draft attachment.",
+          ),
+        );
+        console.warn("[email] draft attachment remove failed:", caught);
+      } finally {
+        attachingRef.current = false;
+        setAttaching(false);
+      }
+    },
+    [applyDraftAttachmentUpdate, client],
+  );
+
   const saveComposeDraft = useCallback(
-    async (body: string) => {
-      if (!composeInboxId || conceptSavingRef.current) return;
+    async (body: string): Promise<AgentMailDraftDetail | null> => {
+      if (!composeInboxId || conceptSavingRef.current) return null;
       if (!composeTo.trim()) {
         setConceptError("Enter a recipient before drafting.");
-        return;
+        return null;
       }
       const agentBody = extractAgentReplyBody(body) || body.trim();
-      if (!agentBody.trim()) return;
+      if (!agentBody.trim()) return null;
       setConceptBodyDraft(agentBody);
       conceptSavingRef.current = true;
       setConceptSaving(true);
@@ -680,7 +794,7 @@ export function useEmailDraftActions({
           });
           applyLoadedComposeDraft(updated, agentBody);
           requestMailboxReload();
-          return;
+          return updated;
         }
 
         const result = await client.requestJson<{
@@ -712,11 +826,13 @@ export function useEmailDraftActions({
         );
         applyLoadedComposeDraft(loaded, agentBody);
         requestMailboxReload();
+        return loaded;
       } catch (caught) {
         setConceptError(
           emailRequestErrorMessage(caught, "Could not save compose draft."),
         );
         console.warn("[email] compose-draft failed:", caught);
+        return null;
       } finally {
         conceptSavingRef.current = false;
         setConceptSaving(false);
@@ -736,6 +852,62 @@ export function useEmailDraftActions({
       composeSubject,
       composeTo,
       draftHeaderPayload,
+    ],
+  );
+
+  /** Ensure a Messages draft exists, then attach files (creates draft if needed). */
+  const attachFilesToActiveDraft = useCallback(
+    async (files: readonly File[]) => {
+      if (files.length === 0) return;
+      let targetInboxId =
+        composeDraft?.inboxId?.trim() ||
+        draft?.inboxId?.trim() ||
+        message?.conceptDraft?.inboxId?.trim() ||
+        composeInboxId ||
+        inboxId ||
+        "";
+      let targetDraftId =
+        composeDraft?.draftId?.trim() ||
+        draft?.draftId?.trim() ||
+        message?.conceptDraft?.draftId?.trim() ||
+        message?.conceptDraftId?.trim() ||
+        "";
+
+      if (!targetDraftId && isCompose) {
+        if (!composeTo.trim() || !conceptBodyDraft.trim()) {
+          setConceptError(
+            "Add a recipient and message body before attaching files.",
+          );
+          return;
+        }
+        const saved = await saveComposeDraft(conceptBodyDraft);
+        if (!saved) return;
+        targetInboxId = saved.inboxId || targetInboxId;
+        targetDraftId = saved.draftId;
+      }
+
+      if (!targetInboxId || !targetDraftId) {
+        setConceptError("Save the draft before attaching files.");
+        return;
+      }
+
+      await attachDraftFiles(targetInboxId, targetDraftId, files);
+    },
+    [
+      attachDraftFiles,
+      composeDraft?.draftId,
+      composeDraft?.inboxId,
+      composeInboxId,
+      composeTo,
+      conceptBodyDraft,
+      draft?.draftId,
+      draft?.inboxId,
+      inboxId,
+      isCompose,
+      message?.conceptDraft?.draftId,
+      message?.conceptDraft?.inboxId,
+      message?.conceptDraftId,
+      saveComposeDraft,
     ],
   );
 
@@ -1126,6 +1298,7 @@ export function useEmailDraftActions({
     sendError,
     sending,
     deleting,
+    attaching,
     conceptBodyDraft,
     setConceptBodyDraft,
     conceptBodyMode,
@@ -1159,6 +1332,8 @@ export function useEmailDraftActions({
     handleConceptBodyModeChange,
     saveConceptReply,
     saveComposeDraft,
+    attachFilesToActiveDraft,
+    removeDraftAttachment,
     sendDraft,
     deleteDraft,
   };

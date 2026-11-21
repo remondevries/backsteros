@@ -261,4 +261,39 @@ export const emailRoutes: AppRouter = c.router({
     },
     summary: "Update an AgentMail draft body (e.g. edit concept reply)",
   },
+  addAgentMailDraftAttachment: {
+    method: "POST",
+    path: "/api/v1/email/inboxes/:inboxId/drafts/:draftId/attachments",
+    pathParams: z.object({
+      inboxId: z.string().min(1),
+      draftId: z.string().min(1),
+    }),
+    /** Raw file body; filename via `X-Filename`, type via `Content-Type`. */
+    body: c.type<ArrayBuffer | Blob>(),
+    responses: {
+      200: s.agentMailDraftDetailSchema,
+      400: badRequestSchema,
+      401: errorSchema,
+      403: errorSchema,
+      404: errorSchema,
+    },
+    summary: "Attach a file to an AgentMail draft (sent with the draft)",
+  },
+  removeAgentMailDraftAttachment: {
+    method: "DELETE",
+    path: "/api/v1/email/inboxes/:inboxId/drafts/:draftId/attachments/:attachmentId",
+    pathParams: z.object({
+      inboxId: z.string().min(1),
+      draftId: z.string().min(1),
+      attachmentId: z.string().min(1),
+    }),
+    responses: {
+      200: s.agentMailDraftDetailSchema,
+      400: badRequestSchema,
+      401: errorSchema,
+      403: errorSchema,
+      404: errorSchema,
+    },
+    summary: "Remove a file attachment from an AgentMail draft",
+  },
 });

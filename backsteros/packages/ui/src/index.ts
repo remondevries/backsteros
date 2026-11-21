@@ -607,6 +607,7 @@ export {
 } from "./components/email/email-draft-sign-off-shell.js";
 export {
   EmailComposeChrome,
+  type EmailComposeAttachment,
   type EmailComposeChromeProps,
 } from "./components/email/email-compose-chrome.js";
 export {
@@ -2283,12 +2284,14 @@ export {
 export {
   AGENT_API_KEY_SCOPES,
   AGENT_KEY_SCOPES,
+  APPLICATIONS_API_KEY_SCOPES,
   API_KEY_SECRET_DISPLAY_LENGTH,
   APPLICATION_API_KEY_SCOPE,
   ApiKeysSettingsSectionView,
   CARDDAV_API_KEY_SCOPE,
   TV_API_KEY_SCOPE,
   classifyApiKeyType,
+  isApplicationsApiKey,
   expiryPresetToIso,
   formatMaskedApiKey,
   isApiKeyTypeTab,

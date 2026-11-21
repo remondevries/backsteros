@@ -134,6 +134,15 @@ const emailRecipientListSchema = z
   ])
   .optional();
 
+export const agentMailMessageAttachmentSchema = z.object({
+  attachmentId: z.string(),
+  size: z.number().int().nonnegative().optional(),
+  filename: z.string().nullable().optional(),
+  contentType: z.string().nullable().optional(),
+  contentDisposition: z.string().nullable().optional(),
+  contentId: z.string().nullable().optional(),
+});
+
 export const agentMailConceptDraftSchema = z.object({
   draftId: z.string(),
   inboxId: z.string(),
@@ -149,6 +158,8 @@ export const agentMailConceptDraftSchema = z.object({
   greeting: z.string().nullable(),
   signOff: z.string().nullable(),
   preview: z.string().nullable(),
+  /** User-facing file attachments (sign-off avatar excluded). */
+  attachments: z.array(agentMailMessageAttachmentSchema).optional(),
   updatedAt: z.string(),
 });
 
@@ -286,15 +297,6 @@ export const emailThreadCommentsResponseSchema = z.object({
   comments: z.array(emailThreadCommentSchema),
 });
 
-export const agentMailMessageAttachmentSchema = z.object({
-  attachmentId: z.string(),
-  size: z.number().int().nonnegative().optional(),
-  filename: z.string().nullable().optional(),
-  contentType: z.string().nullable().optional(),
-  contentDisposition: z.string().nullable().optional(),
-  contentId: z.string().nullable().optional(),
-});
-
 export const agentMailMessageDetailSchema = agentMailMessageSchema
   .omit({ kind: true, draftId: true, inReplyToMessageId: true })
   .extend({
@@ -351,6 +353,8 @@ export const agentMailDraftDetailSchema = z.object({
   to: z.array(z.string()),
   cc: z.array(z.string()).optional(),
   bcc: z.array(z.string()).optional(),
+  /** User-facing file attachments (sign-off avatar excluded). */
+  attachments: z.array(agentMailMessageAttachmentSchema).optional(),
   updatedAt: z.string(),
   createdAt: z.string(),
 });

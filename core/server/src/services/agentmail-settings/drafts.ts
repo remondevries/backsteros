@@ -62,11 +62,29 @@ import {
   shouldAssignDraftConceptStatus,
 } from "../../lib/agentmail-email-list.js";
 import { EMAIL_CONCEPT_STATUS } from "../../lib/email-status-labels.js";
+import {
+  isSignOffAvatarAttachment,
+  MAX_EMAIL_DRAFT_ATTACHMENT_BYTES,
+  userFacingDraftAttachments,
+} from "./draft-attachments.js";
+
+export {
+  MAX_EMAIL_DRAFT_ATTACHMENT_BYTES,
+  userFacingDraftAttachments,
+} from "./draft-attachments.js";
+
 type SignOffAvatarInlineAttachment = {
   filename: string;
   content_type: string;
   content_disposition: "inline";
   content_id: string;
+  content: string;
+};
+
+type DraftFileAttachmentPayload = {
+  filename: string;
+  content_type: string;
+  content_disposition: "attachment";
   content: string;
 };
 
@@ -280,6 +298,7 @@ export async function mapConceptDraftForApi(input: {
         preserveSubject: true,
         recipientFirstName,
       });
+  const attachments = userFacingDraftAttachments(input.draft.attachments);
   return {
     draftId: input.draft.draftId,
     inboxId: input.draft.inboxId,
@@ -293,6 +312,7 @@ export async function mapConceptDraftForApi(input: {
     greeting: assembled.greeting,
     signOff: assembled.signOff,
     preview: input.draft.preview,
+    ...(attachments.length > 0 ? { attachments } : {}),
     updatedAt: input.draft.updatedAt,
   };
 }
@@ -332,6 +352,9 @@ async function mapDraftDetailForApi(input: {
     to: input.draft.to,
     cc: input.draft.cc ?? [],
     bcc: input.draft.bcc ?? [],
+    ...(mapped.attachments && mapped.attachments.length > 0
+      ? { attachments: mapped.attachments }
+      : {}),
     updatedAt: input.draft.updatedAt,
     createdAt: input.draft.createdAt,
   };
@@ -1457,4 +1480,158 @@ export async function updateAgentMailDraft(
     contextText,
     recipientFirstName: nextRecipientFirstName,
   });
+}
+
+function sanitizeDraftAttachmentFilename(filename: string): string {
+  const trimmed = filename.trim().replace(/[/\\]/g, "_");
+  return trimmed.slice(0, 260) || "attachment";
+}
+
+async function reloadDraftDetailForApi(
+  workspaceId: string,
+  client: AgentMailClient,
+  draft: AgentMailDraftDetail,
+  fallbackInboxId: string,
+): Promise<ApiAgentMailDraftDetail> {
+  const templates = await agentMailDraftLifecycleDeps.getTemplates(
+    workspaceId,
+    draft.inboxId || fallbackInboxId,
+  );
+  const replyContext = await resolveReplyContextForDraft(
+    client,
+    draft,
+    fallbackInboxId,
+  );
+  const inboxEmail = await resolveInboxEmail(
+    client,
+    draft.inboxId || fallbackInboxId,
+  );
+  const recipientFirstName = await resolveDraftRecipientFirstName(
+    workspaceId,
+    replyContext.replyFrom,
+    draft.to,
+  );
+  return mapDraftDetailForApi({
+    draft,
+    replyFrom: replyContext.replyFrom || draft.to[0] || "",
+    templates,
+    inboxEmail,
+    workspaceId,
+    contextText: replyContext.contextText,
+    recipientFirstName,
+  });
+}
+
+/**
+ * Attach a user file to a Messages draft via AgentMail `add_attachments`.
+ * Bytes are base64-encoded for the AgentMail PATCH (≤ ~4.5 MB raw).
+ */
+export async function addAgentMailDraftAttachment(
+  workspaceId: string,
+  inboxId: string,
+  draftId: string,
+  input: {
+    bytes: Uint8Array;
+    filename: string;
+    contentType?: string | null;
+  },
+): Promise<ApiAgentMailDraftDetail> {
+  const bytes = input.bytes;
+  if (bytes.byteLength === 0 || bytes.byteLength > MAX_EMAIL_DRAFT_ATTACHMENT_BYTES) {
+    throw new AgentMailApiError(
+      400,
+      "",
+      `Attachment must be between 1 byte and ${MAX_EMAIL_DRAFT_ATTACHMENT_BYTES} bytes`,
+    );
+  }
+  const filename = sanitizeDraftAttachmentFilename(input.filename);
+  const contentType =
+    input.contentType?.trim() || "application/octet-stream";
+
+  const { apiKey, inboxIds } =
+    await agentMailDraftLifecycleDeps.getCredentials(workspaceId);
+  if (!apiKey) {
+    throw new AgentMailApiError(400, "", "AgentMail API key is not configured");
+  }
+
+  const client = new AgentMailClient({ apiKey });
+  const draft = await resolveDraftAcrossInboxes(
+    client,
+    inboxIds,
+    draftId,
+    inboxId,
+  );
+
+  const payload: DraftFileAttachmentPayload = {
+    filename,
+    content_type: contentType,
+    content_disposition: "attachment",
+    content: Buffer.from(bytes).toString("base64"),
+  };
+
+  const updated = await client.updateDraft(draft.inboxId, draft.draftId, {
+    add_attachments: [payload],
+  });
+
+  return reloadDraftDetailForApi(
+    workspaceId,
+    client,
+    updated,
+    draft.inboxId || inboxId,
+  );
+}
+
+/**
+ * Remove a user file attachment from a Messages draft.
+ * Refuses to remove the sign-off avatar (managed by shell assembly).
+ */
+export async function removeAgentMailDraftAttachment(
+  workspaceId: string,
+  inboxId: string,
+  draftId: string,
+  attachmentId: string,
+): Promise<ApiAgentMailDraftDetail> {
+  const targetId = attachmentId.trim();
+  if (!targetId) {
+    throw new AgentMailApiError(400, "", "Attachment id is required");
+  }
+
+  const { apiKey, inboxIds } =
+    await agentMailDraftLifecycleDeps.getCredentials(workspaceId);
+  if (!apiKey) {
+    throw new AgentMailApiError(400, "", "AgentMail API key is not configured");
+  }
+
+  const client = new AgentMailClient({ apiKey });
+  const draft = await resolveDraftAcrossInboxes(
+    client,
+    inboxIds,
+    draftId,
+    inboxId,
+  );
+
+  const match = (draft.attachments ?? []).find(
+    (attachment) => attachment.attachmentId === targetId,
+  );
+  if (!match) {
+    throw new AgentMailApiError(404, "", "Draft attachment not found");
+  }
+  if (isSignOffAvatarAttachment(match)) {
+    throw new AgentMailApiError(
+      400,
+      "",
+      "Sign-off avatar attachments cannot be removed manually",
+    );
+  }
+
+  const updated = await client.updateDraft(draft.inboxId, draft.draftId, {
+    remove_attachments: [targetId],
+  });
+
+  return reloadDraftDetailForApi(
+    workspaceId,
+    client,
+    updated,
+    draft.inboxId || inboxId,
+  );
 }

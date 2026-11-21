@@ -36,6 +36,13 @@ import { EmailComposeBodyStage } from "./email-compose-body-stage.js";
 import { EmailDraftSignOffShell } from "./email-draft-sign-off-shell.js";
 import { buildEmailMailboxDropdownOptions } from "../dropdowns/dropdown-options.js";
 
+export type EmailComposeAttachment = {
+  attachmentId: string;
+  filename?: string | null;
+  size?: number | null;
+  contentType?: string | null;
+};
+
 export type EmailComposeChromeProps = {
   mailboxes: EmailMailbox[];
   inboxId: string;
@@ -69,6 +76,10 @@ export type EmailComposeChromeProps = {
   toContact?: EmailThreadFromContactPicker | null;
   emptyBodyLabel?: string;
   actions?: ReactNode;
+  /** Files already on the Messages draft (shown under the letter). */
+  attachments?: EmailComposeAttachment[] | null;
+  onRemoveAttachment?: (attachmentId: string) => void | Promise<void>;
+  attachmentsDisabled?: boolean;
   fieldsDisabled?: boolean;
   /** Agent is drafting — show working animation in the body. */
   agentWorking?: boolean;
@@ -82,6 +93,13 @@ export type EmailComposeChromeProps = {
    */
   autoFocusReady?: boolean;
 };
+
+function formatAttachmentSize(size: number | null | undefined): string | null {
+  if (size == null || !Number.isFinite(size) || size < 0) return null;
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(size < 10_240 ? 1 : 0)} KB`;
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+}
 
 function EmailDraftBodyShell({ children }: { children: string }) {
   return <p className="email-draft-body-compose__shell">{children}</p>;
@@ -132,6 +150,9 @@ export function EmailComposeChrome({
   toContact = null,
   emptyBodyLabel = "Message the agent to draft the message body.",
   actions = null,
+  attachments = null,
+  onRemoveAttachment,
+  attachmentsDisabled = false,
   fieldsDisabled = false,
   agentWorking = false,
   composer = null,
@@ -744,6 +765,43 @@ export function EmailComposeChrome({
         <div className="email-compose-agent email-compose-agent--inline">
           {composer}
         </div>
+      ) : null}
+      {attachments && attachments.length > 0 ? (
+        <ul className="email-draft-attachments" aria-label="Draft attachments">
+          {attachments.map((attachment) => {
+            const name = attachment.filename?.trim() || "attachment";
+            const sizeLabel = formatAttachmentSize(attachment.size);
+            return (
+              <li
+                key={attachment.attachmentId}
+                className="email-draft-attachments__item"
+              >
+                <span className="email-draft-attachments__name" title={name}>
+                  {name}
+                </span>
+                {sizeLabel ? (
+                  <span className="email-draft-attachments__size">
+                    {sizeLabel}
+                  </span>
+                ) : null}
+                {onRemoveAttachment ? (
+                  <button
+                    type="button"
+                    className="email-draft-attachments__remove"
+                    aria-label={`Remove ${name}`}
+                    title="Remove attachment"
+                    disabled={attachmentsDisabled || interactionLocked}
+                    onClick={() => {
+                      void onRemoveAttachment(attachment.attachmentId);
+                    }}
+                  >
+                    <XIcon size={12} />
+                  </button>
+                ) : null}
+              </li>
+            );
+          })}
+        </ul>
       ) : null}
       {actions ? (
         <div className="email-thread-message__actions">{actions}</div>

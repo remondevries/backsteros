@@ -267,7 +267,15 @@ function mapApiKeyServiceError(error: unknown): ApiKeyAdminCloudHandlerResult {
   }
   if (error.message === "ACCESS_SCOPES_INVALID") {
     return badRequest(
-      "Access keys cannot include door-only scopes (applications, tv, carddav)",
+      "Access keys cannot include Applications marker or door-only scopes (tv, carddav)",
+    );
+  }
+  if (error.message === "APPLICATIONS_SCOPES_REQUIRED") {
+    return badRequest("Applications keys require at least one data scope");
+  }
+  if (error.message === "APPLICATIONS_SCOPES_INVALID") {
+    return badRequest(
+      "Applications keys cannot include settings, portal, or door-only scopes (tv, carddav)",
     );
   }
   if (

@@ -34,6 +34,7 @@ export function EmailComposeView({
     sendError,
     sending,
     deleting,
+    attaching,
     conceptSaving,
     conceptBodySaving,
     conceptBodyDraft,
@@ -54,6 +55,8 @@ export function EmailComposeView({
     composeDraft,
     composeLoading,
     saveComposeDraft,
+    attachFilesToActiveDraft,
+    removeDraftAttachment,
     sendDraft,
     deleteDraft,
   } = drafts;
@@ -109,6 +112,21 @@ export function EmailComposeView({
                 agentWorking={false}
                 emptyBodyLabel="Write the message body…"
                 composer={null}
+                attachments={composeDraft?.attachments ?? null}
+                onRemoveAttachment={
+                  composeDraft
+                    ? (attachmentId) => {
+                        void removeDraftAttachment(
+                          composeDraft.inboxId,
+                          composeDraft.draftId,
+                          attachmentId,
+                        );
+                      }
+                    : undefined
+                }
+                attachmentsDisabled={
+                  conceptDraftActionsDisabled || attaching || conceptSaving
+                }
                 actions={
                   <EmailDraftActions
                     onSend={
@@ -124,6 +142,9 @@ export function EmailComposeView({
                     onSaveDraft={() => {
                       void saveComposeDraft(conceptBodyDraft);
                     }}
+                    onAttachFiles={(files) => {
+                      void attachFilesToActiveDraft(files);
+                    }}
                     onDelete={
                       composeDraft
                         ? () => {
@@ -137,6 +158,7 @@ export function EmailComposeView({
                     sending={sending}
                     savingDraft={conceptSaving}
                     deleting={deleting}
+                    attaching={attaching}
                     disabled={conceptDraftActionsDisabled}
                     bodyMode={conceptBodyMode}
                     onBodyModeChange={(mode) => {

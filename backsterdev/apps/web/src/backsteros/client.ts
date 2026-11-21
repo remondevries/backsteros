@@ -68,7 +68,7 @@ function formatBacksterosAuthFailure(input: {
       /insufficient scope/i.test(error) ||
       /forbidden/i.test(error));
   if (looksInsufficientScope) {
-    return "This BacksterOS key is valid but lacks Access scopes (projects/tasks). Use an Access key (sk_access_…), not an Applications key (sk_applications_…), in Settings → Integrations.";
+    return "This BacksterOS key is valid but lacks projects/tasks scopes. Use an Access key (sk_access_…) or an Applications key that includes those scopes in Settings → Integrations.";
   }
   if (input.status === 401 || input.status === 403) {
     return "BacksterOS rejected the API key. Add or update an Access key in Settings → Integrations.";

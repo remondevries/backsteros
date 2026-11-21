@@ -47,10 +47,12 @@ import { SettingsContentHeader } from "./settings-content-header.js";
 export {
   AGENT_API_KEY_SCOPES,
   AGENT_KEY_SCOPES,
+  APPLICATIONS_API_KEY_SCOPES,
   APPLICATION_API_KEY_SCOPE,
   CARDDAV_API_KEY_SCOPE,
   TV_API_KEY_SCOPE,
   classifyApiKeyType,
+  isApplicationsApiKey,
   isApiKeyTypeTab,
   type ApiKeyTypeTab,
 } from "./api-key-type.js";

@@ -92,3 +92,15 @@ test("door kinds are exclusive single scopes", () => {
     { contactId: null, scopes: ["tv.today_counts"] },
   );
 });
+
+test("applications kind widens to data scopes + marker", () => {
+  const result = resolveCreateApiKeyFields({
+    kind: "applications",
+    contactId: "ignored",
+    scopes: ["applications"],
+  });
+  assert.equal(result.contactId, null);
+  assert.ok(result.scopes.includes("tasks:read"));
+  assert.ok(result.scopes.includes("applications"));
+  assert.equal(result.scopes.includes("settings:write" as never), false);
+});

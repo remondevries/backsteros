@@ -33,6 +33,10 @@ export {
   upsertEmailComposeDraft,
   deleteAgentMailDraft,
   updateAgentMailDraft,
+  addAgentMailDraftAttachment,
+  removeAgentMailDraftAttachment,
+  MAX_EMAIL_DRAFT_ATTACHMENT_BYTES,
+  userFacingDraftAttachments,
 } from "./agentmail-settings/drafts.js";
 export {
   listAgentMailMessages,

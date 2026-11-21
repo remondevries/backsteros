@@ -332,6 +332,7 @@ function DesktopCommunicationEmailThreadView({
     sendError,
     sending,
     deleting,
+    attaching,
     conceptSaving,
     conceptBodySaving,
     conceptBodyDraft,
@@ -352,6 +353,8 @@ function DesktopCommunicationEmailThreadView({
     setReplySubjectText,
     saveConceptDraftBody,
     saveConceptReply,
+    attachFilesToActiveDraft,
+    removeDraftAttachment,
     sendDraft,
     deleteDraft,
   } = drafts;
@@ -1232,6 +1235,13 @@ function DesktopCommunicationEmailThreadView({
         }
         void saveConceptReply(conceptBodyDraft);
       }}
+      onAttachFiles={
+        conceptDraftId
+          ? (files) => {
+              void attachFilesToActiveDraft(files);
+            }
+          : undefined
+      }
       onDelete={
         conceptDraftId
           ? () => {
@@ -1245,6 +1255,7 @@ function DesktopCommunicationEmailThreadView({
       sending={sending}
       savingDraft={conceptSaving}
       deleting={deleting}
+      attaching={attaching}
       disabled={conceptDraftActionsDisabled}
       bodyMode={conceptBodyMode}
       onBodyModeChange={(mode) => {
@@ -1272,6 +1283,21 @@ function DesktopCommunicationEmailThreadView({
       replyGreeting={message.conceptDraft?.greeting}
       replySignOff={message.conceptDraft?.signOff}
       replySignOffAvatarSrc={mailboxSignOffAvatarSrc(resolvedReplyInboxId)}
+      attachments={message.conceptDraft?.attachments ?? null}
+      onRemoveAttachment={
+        conceptDraftId
+          ? (attachmentId) => {
+              void removeDraftAttachment(
+                draftInboxId,
+                conceptDraftId,
+                attachmentId,
+              );
+            }
+          : undefined
+      }
+      attachmentsDisabled={
+        conceptDraftActionsDisabled || attaching || conceptSaving
+      }
       toContact={{
         contactId,
         contactName:

@@ -356,8 +356,22 @@ export function registerApiKeyRoutes(app: Hono) {
           return c.json(
             badRequest(
               error.message === "ACCESS_SCOPES_INVALID"
-                ? "Access keys cannot include door-only scopes (applications, tv, carddav)"
+                ? "Access keys cannot include Applications marker or door-only scopes (tv, carddav)"
                 : "Access keys require at least one non-door scope",
+            ),
+            400,
+          );
+        }
+        if (
+          error instanceof Error &&
+          (error.message === "APPLICATIONS_SCOPES_REQUIRED" ||
+            error.message === "APPLICATIONS_SCOPES_INVALID")
+        ) {
+          return c.json(
+            badRequest(
+              error.message === "APPLICATIONS_SCOPES_INVALID"
+                ? "Applications keys cannot include settings, portal, or door-only scopes (tv, carddav)"
+                : "Applications keys require at least one data scope",
             ),
             400,
           );
