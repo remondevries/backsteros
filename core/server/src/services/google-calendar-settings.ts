@@ -1255,9 +1255,9 @@ async function resolveGoogleCalendarWriteTarget(
 }
 
 /**
- * Create a Google Calendar event for a Backster meeting (or re-push schedule
- * when already linked). Stores `external_calendar_events` and sets
- * `meetings.external_calendar_event_id`.
+ * Create a Google Calendar event for an unlinked Backster meeting and link it.
+ * When already linked, returns the existing link without writing schedule
+ * (Google is schedule SoR — use Google / sync pull to change times).
  */
 export async function syncMeetingToGoogleCalendar(
   workspaceId: string,
@@ -1281,18 +1281,7 @@ export async function syncMeetingToGoogleCalendar(
 
   const existingLink = meeting.externalCalendarEventId?.trim() || null;
   if (existingLink) {
-    if (!meeting.startAt) {
-      throw new Error(
-        "Meeting needs a start time before syncing to Google Calendar.",
-      );
-    }
-    await pushLinkedMeetingScheduleToGoogle(workspaceId, {
-      title: meeting.title,
-      startAt: meeting.startAt,
-      endAt: meeting.endAt,
-      location: meeting.location ?? null,
-      externalCalendarEventId: existingLink,
-    });
+    // Already linked — Google owns schedule; do not re-push from the meeting.
     const [external] = await db
       .select({ htmlLink: externalCalendarEvents.htmlLink })
       .from(externalCalendarEvents)

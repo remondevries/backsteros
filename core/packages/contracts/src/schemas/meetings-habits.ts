@@ -274,17 +274,56 @@ export type CreateMeetingInput = z.infer<typeof createMeetingSchema>;
 
 export type UpdateMeetingInput = z.infer<typeof updateMeetingSchema>;
 
-/** Result of pushing a Backster meeting onto Google Calendar (create or re-push). */
+/**
+ * Result of putting a Backster-only meeting onto Google Calendar.
+ * When already linked, schedule is not re-pushed — Google owns times/title/location.
+ */
 export const syncMeetingToGoogleCalendarResultSchema = z.object({
   meeting: meetingSchema,
   externalCalendarEventId: z.string().min(1),
-  /** True when the meeting was already linked — schedule was re-pushed. */
+  /** True when the meeting was already linked (no Google write). */
   alreadySynced: z.boolean(),
   htmlLink: z.string().nullable().optional(),
 });
 
 export type SyncMeetingToGoogleCalendarResult = z.infer<
   typeof syncMeetingToGoogleCalendarResultSchema
+>;
+
+/**
+ * Backster-owned enrichment for a Google (etc.) agenda block.
+ * Schedule fields are omitted — they always come from the external event.
+ */
+export const ensureMeetingForExternalCalendarEventSchema = z.object({
+  /** Client-generated id for optimistic creates. */
+  id: z.string().min(1).max(64).optional(),
+  /** Disambiguate raw Google event ids when the workspace has multiple calendars. */
+  calendarId: z.string().trim().min(1).max(1024).optional(),
+  summary: z.string().max(100000).nullable().optional(),
+  notes: z.string().max(100000).nullable().optional(),
+  transcription: z.string().max(100000).nullable().optional(),
+  status: taskStatusSchema.optional(),
+  projectId: z.string().nullable().optional(),
+  organizationId: z.string().nullable().optional(),
+  attendeeContactIds: z.array(z.string()).optional(),
+  format: z.enum(["video_call", "in_person", "phone_call"]).optional(),
+  locationOrganizationId: z.string().nullable().optional(),
+  trackedMinutes: z.number().int().nonnegative().nullable().optional(),
+  trackedDurationSeconds: z.number().int().nonnegative().nullable().optional(),
+});
+
+export const ensureMeetingForExternalCalendarEventResultSchema = z.object({
+  meeting: meetingSchema,
+  /** False when a meeting was already linked to this Google event. */
+  created: z.boolean(),
+});
+
+export type EnsureMeetingForExternalCalendarEventInput = z.infer<
+  typeof ensureMeetingForExternalCalendarEventSchema
+>;
+
+export type EnsureMeetingForExternalCalendarEventResult = z.infer<
+  typeof ensureMeetingForExternalCalendarEventResultSchema
 >;
 
 /**

@@ -51,6 +51,7 @@ export {
   financialRecurringInputSchema,
   listActivitiesQuerySchema,
   listDocumentsQuerySchema,
+  ensureMeetingForExternalCalendarEventSchema,
   listExternalCalendarEventsQuerySchema,
   listFinancialTransactionsQuerySchema,
   listTaskAgentPresenceQuerySchema,

@@ -577,6 +577,22 @@ export const integrationsRoutes: AppRouter = c.router({
     summary:
       "Delete a synced external calendar event (removes it from Google when linked)",
   },
+  ensureMeetingForExternalCalendarEvent: {
+    method: "POST",
+    path: "/api/v1/external-calendar-events/:id/ensure-meeting",
+    pathParams: s.idParamsSchema,
+    body: s.ensureMeetingForExternalCalendarEventSchema,
+    responses: {
+      200: s.ensureMeetingForExternalCalendarEventResultSchema,
+      400: badRequestSchema,
+      401: errorSchema,
+      403: errorSchema,
+      404: errorSchema,
+      422: errorSchema,
+    },
+    summary:
+      "Get or lazily create the Backster meeting shell for a Google agenda block (idempotent)",
+  },
   getGithubSettings: {
     method: "GET",
     path: "/api/v1/settings/github",

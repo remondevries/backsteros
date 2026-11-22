@@ -255,6 +255,8 @@ test("OS-116: PATCH links raw id and null unlinks", async () => {
     });
     assert.equal(linked.status, 200, JSON.stringify(linked.body));
     assert.equal(linked.body?.externalCalendarEventId, ctx.otherHashedId);
+    // Linking seeds schedule/title from the Google event.
+    assert.equal(linked.body?.title, "Other synced event");
 
     const unlinked = await json(
       app,
@@ -276,6 +278,64 @@ test("OS-116: PATCH links raw id and null unlinks", async () => {
       .where(eq(meetings.id, meetingId))
       .limit(1);
     assert.equal(row?.externalCalendarEventId, null);
+  } finally {
+    await cleanup(ctx.workspaceId, ctx.userId);
+  }
+});
+
+test("ensure-meeting: creates shell from Google event and is idempotent", async () => {
+  const app = createApp();
+  const ctx = await seed();
+  try {
+    const first = await json(
+      app,
+      `/api/v1/external-calendar-events/${ctx.hashedId}/ensure-meeting`,
+      ctx.secret,
+      {
+        method: "POST",
+        body: JSON.stringify({ notes: "Bring snacks" }),
+      },
+    );
+    assert.equal(first.status, 200, JSON.stringify(first.body));
+    assert.equal(first.body?.created, true);
+    const meeting = first.body?.meeting as Record<string, unknown> | undefined;
+    assert.equal(meeting?.externalCalendarEventId, ctx.hashedId);
+    assert.equal(meeting?.title, "Neighbours over for drinks");
+    assert.equal(meeting?.notes, "Bring snacks");
+    assert.equal(meeting?.startAt, "2026-10-17T18:00:00.000Z");
+
+    const second = await json(
+      app,
+      `/api/v1/external-calendar-events/${ctx.hashedId}/ensure-meeting`,
+      ctx.secret,
+      {
+        method: "POST",
+        body: JSON.stringify({}),
+      },
+    );
+    assert.equal(second.status, 200, JSON.stringify(second.body));
+    assert.equal(second.body?.created, false);
+    const again = second.body?.meeting as Record<string, unknown> | undefined;
+    assert.equal(again?.id, meeting?.id);
+    assert.equal(again?.notes, "Bring snacks");
+
+    const patched = await json(
+      app,
+      `/api/v1/meetings/${String(meeting?.id)}`,
+      ctx.secret,
+      {
+        method: "PATCH",
+        body: JSON.stringify({
+          title: "Client override should be ignored",
+          startAt: "2026-10-17T19:00:00.000Z",
+          notes: "Updated notes",
+        }),
+      },
+    );
+    assert.equal(patched.status, 200, JSON.stringify(patched.body));
+    assert.equal(patched.body?.title, "Neighbours over for drinks");
+    assert.equal(patched.body?.startAt, "2026-10-17T18:00:00.000Z");
+    assert.equal(patched.body?.notes, "Updated notes");
   } finally {
     await cleanup(ctx.workspaceId, ctx.userId);
   }

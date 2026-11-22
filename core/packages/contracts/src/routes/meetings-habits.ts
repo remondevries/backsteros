@@ -142,7 +142,7 @@ export const meetingsHabitsRoutes: AppRouter = c.router({
       404: errorSchema,
     },
     summary:
-      "Create (or re-push) a Google Calendar event for a Backster meeting and link it",
+      "Create a Google Calendar event for an unlinked Backster meeting and link it (no-op when already linked)",
   },
   deleteMeeting: {
     method: "DELETE",

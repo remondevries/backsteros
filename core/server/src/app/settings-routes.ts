@@ -28,10 +28,13 @@ import {
   googleCalendarSettingsService,
   isRestLeaderFirstWrite,
   listCursorModels,
+  ensureMeetingForExternalCalendarEventSchema,
   listExternalCalendarEventsQuerySchema,
   mapboxGeocodeQuerySchema,
   mapboxSettingsService,
   mapboxStaticMapQuerySchema,
+  meetingExternalCalendarHttpError,
+  meetingService,
   moneybirdSettingsService,
   bunqSandboxFundSchema,
   notFound,
@@ -41,6 +44,8 @@ import {
   recordMeetingDerivedCrmActivityRestSyncEvents,
   recordMeetingRestSyncEvent,
   recordWorkspaceSettingRestSyncEvent,
+  isForeignKeyViolation,
+  buildMeetingRestPayload,
   sanitizeWorkspaceSettings,
   testCursorConnection,
   transipSettingsService,
@@ -746,6 +751,105 @@ export function registerSettingsRoutes(app: Hono) {
       return c.json({ error: message, code: "bad_request" }, 400);
     }
   });
+  app.post(
+    "/api/v1/external-calendar-events/:id/ensure-meeting",
+    zValidator("json", ensureMeetingForExternalCalendarEventSchema),
+    async (c) => {
+      const auth = getAuth(c);
+      if (!can(auth, "tasks:write") && !can(auth, "settings:write")) {
+        return c.json(forbidden(), 403);
+      }
+      try {
+        const body = c.req.valid("json");
+        const result = await meetingService.ensureMeetingForExternalCalendarEvent(
+          auth.workspaceId,
+          c.req.param("id"),
+          body,
+        );
+        const enriched =
+          body.summary !== undefined ||
+          body.notes !== undefined ||
+          body.transcription !== undefined ||
+          body.status !== undefined ||
+          body.projectId !== undefined ||
+          body.organizationId !== undefined ||
+          body.attendeeContactIds !== undefined ||
+          body.format !== undefined ||
+          body.locationOrganizationId !== undefined ||
+          body.trackedMinutes !== undefined ||
+          body.trackedDurationSeconds !== undefined;
+        if (result.created || enriched) {
+          if (isRestLeaderFirstWrite()) {
+            await commitRestEntityWrite({
+              workspaceId: auth.workspaceId,
+              entity: "meeting",
+              entityId: result.row.id,
+              operation: "upsert",
+              payload: buildMeetingRestPayload(result.row.id, {
+                ...(result.created
+                  ? {
+                      title: result.meeting.title,
+                      startAt: result.meeting.startAt,
+                      endAt: result.meeting.endAt,
+                      location: result.meeting.location,
+                      format: result.meeting.format,
+                      status: result.meeting.status,
+                    }
+                  : {}),
+                externalCalendarEventId:
+                  result.row.externalCalendarEventId ?? undefined,
+                summary: body.summary,
+                notes: body.notes,
+                transcription: body.transcription,
+                status: body.status ?? result.meeting.status,
+                projectId: body.projectId,
+                organizationId: body.organizationId,
+                attendeeContactIds: body.attendeeContactIds,
+                format: body.format ?? result.meeting.format,
+                locationOrganizationId: body.locationOrganizationId,
+                trackedMinutes: body.trackedMinutes,
+                trackedDurationSeconds: body.trackedDurationSeconds,
+              }),
+            });
+          } else {
+            await recordMeetingRestSyncEvent(
+              auth.workspaceId,
+              result.row,
+              "upsert",
+            );
+            await recordMeetingDerivedCrmActivityRestSyncEvents(
+              auth.workspaceId,
+              result.row.id,
+            );
+          }
+          publishMeetingLive(auth, result.row.id, {
+            projectId: result.row.projectId ?? null,
+            operation: "upsert",
+          });
+        }
+        return c.json({
+          meeting: result.meeting,
+          created: result.created,
+        });
+      } catch (error) {
+        const linkError = meetingExternalCalendarHttpError(error);
+        if (linkError) return c.json(linkError.body, linkError.status);
+        if (isForeignKeyViolation(error)) {
+          return c.json(
+            {
+              error: {
+                code: "unknown_external_calendar_event",
+                message:
+                  "No synced Google Calendar event matches this id. Sync Google Calendar first.",
+              },
+            },
+            422,
+          );
+        }
+        throw error;
+      }
+    },
+  );
   app.get("/api/v1/settings/transip", async (c) => {
     const auth = getAuth(c);
     if (!can(auth, "settings:read")) return c.json(forbidden(), 403);

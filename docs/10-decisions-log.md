@@ -595,13 +595,14 @@ Boot graph, gaps, risks, and the first implementation slice: [17-desktop-without
 4. Thin Google Calendar HTTP client in `core/server` (no `googleapis` dependency). Sync on demand (Settings + calendar page open) over a rolling window; tokens never go to PowerSync / client SQLite.
 5. Desktop loads events via REST (`GET /api/v1/external-calendar-events`) and merges into the FullCalendar feed. PowerSync publication deferred.
 6. **Push notifications (added):** `events.watch` → public HTTPS webhook (`GOOGLE_CALENDAR_WEBHOOK_BASE_URL`, e.g. `https://api.local.backsteros.com/api/v1/webhooks/google-calendar`). On `exists`, core re-syncs the rolling window. Channels renew when under 24h remain. Manual Sync / calendar-open remain as backup (Google push is not 100% reliable).
-7. **Convert to Event (ships with OS-104):** optional 1:1 link `meetings.external_calendar_event_id`. Title/start/end/location sync both ways (Google patch on meeting update; pull updates the linked meeting). Linked meetings show as editable agenda chips; the Google block is hidden while linked. Backster still owns project/attendees/notes. Meeting title/schedule patches dual-write REST so Google push runs on the core that owns `external_calendar_events` (not PowerSync-published).
-8. **Sync with Google Calendar (meeting → Google):** from the meeting ⋯ menu, create a Google event for an unlinked Backster meeting (`POST /api/v1/meetings/:id/sync-google-calendar`), store `external_calendar_events`, and set the link. Uses the first selected calendar (else primary). Re-selecting the action on an already-linked meeting re-pushes schedule.
-9. **Out of scope for v1:** CalDAV/ICS providers, RSVP bridging, auto-convert every remote event to a meeting, portal free/busy.
+7. **Google is schedule SoR (overlay model):** optional 1:1 link `meetings.external_calendar_event_id`. Title/start/end/location always come from the Google event (denormalized onto the meeting on sync/ensure). Meeting patches do **not** push schedule back to Google. Backster owns enrichment only: notes, project, attendees, status, transcription, etc.
+8. **Lazy ensure (no Convert button):** `POST /api/v1/external-calendar-events/:id/ensure-meeting` gets or creates the meeting shell on first enrich. Clients should call this when the user sets a Backster-owned field — not for every Google event by default.
+9. **Backster-first → Google (optional):** `POST /api/v1/meetings/:id/sync-google-calendar` still creates a Google event for an *unlinked* Backster meeting and sets the link. Already-linked meetings are a no-op (no schedule re-push).
+10. **Out of scope:** CalDAV/ICS providers, RSVP bridging, auto-create a meeting for every remote event, portal free/busy, bidirectional schedule dual-write.
 
 **Later:** ICS/CalDAV; portal free/busy; attendee-email suggestions.
 
-**Alternatives rejected (for v1):** ICS-first; CalDAV-first; treating remote events as `meetings`; client-side Google OAuth only in Tauri without core token storage.
+**Alternatives rejected:** ICS-first; CalDAV-first; treating every remote event as a `meeting`; client-side Google OAuth only in Tauri without core token storage; bidirectional title/schedule dual-write (removed after overlay model).
 
 ---
 

@@ -15,6 +15,7 @@ import {
 
 import type {
   CreateMeetingInput,
+  EnsureMeetingForExternalCalendarEventInput,
   Meeting,
   UpdateMeetingInput,
 } from "@backsteros/contracts";
@@ -28,6 +29,7 @@ import {
   entityCounters,
   externalCalendarEvents,
   meetings,
+  type DbExternalCalendarEvent,
   type DbMeeting,
 } from "../db/schema.js";
 import { newId } from "../lib/crypto.js";
@@ -42,11 +44,7 @@ import {
   softDeleteMeetingCrmActivities,
   syncMeetingCrmActivities,
 } from "./crm-activities.js";
-import {
-  GOOGLE_CALENDAR_PROVIDER,
-  mirrorLinkedMeetingScheduleLocally,
-  pushLinkedMeetingScheduleToGoogle,
-} from "./google-calendar-settings.js";
+import { GOOGLE_CALENDAR_PROVIDER } from "./google-calendar-settings.js";
 
 type DbExecutor = Pick<typeof db, "select" | "insert" | "update">;
 
@@ -333,6 +331,40 @@ export async function getMeetingById(
   return row ? toMeeting(row) : null;
 }
 
+async function loadExternalCalendarEventRow(
+  workspaceId: string,
+  eventId: string,
+  executor: DbExecutor = db,
+): Promise<DbExternalCalendarEvent | null> {
+  const [row] = await executor
+    .select()
+    .from(externalCalendarEvents)
+    .where(
+      and(
+        eq(externalCalendarEvents.workspaceId, workspaceId),
+        eq(externalCalendarEvents.id, eventId),
+        isNull(externalCalendarEvents.deletedAt),
+      ),
+    )
+    .limit(1);
+  return row ?? null;
+}
+
+/** Denormalized Google schedule fields copied onto a linked meeting shell. */
+function scheduleFromExternalEvent(event: DbExternalCalendarEvent): {
+  title: string;
+  location: string | null;
+  startAt: Date | null;
+  endAt: Date | null;
+} {
+  return {
+    title: (event.title?.trim() || "Meeting").slice(0, 500),
+    location: event.location ?? null,
+    startAt: event.startAt ?? null,
+    endAt: event.endAt ?? null,
+  };
+}
+
 export async function createMeetingRow(
   workspaceId: string,
   input: CreateMeetingInput,
@@ -340,26 +372,6 @@ export async function createMeetingRow(
   executor: DbExecutor = db,
   number?: number,
 ): Promise<DbMeeting> {
-  const startAt =
-    input.startAt === undefined || input.startAt === null
-      ? null
-      : new Date(input.startAt);
-  const endAt =
-    input.endAt === undefined || input.endAt === null
-      ? null
-      : new Date(input.endAt);
-  if (startAt && Number.isNaN(startAt.getTime())) {
-    throw new Error("INVALID_MEETING_DATES");
-  }
-  if (endAt && Number.isNaN(endAt.getTime())) {
-    throw new Error("INVALID_MEETING_DATES");
-  }
-  if (startAt && endAt && endAt <= startAt) {
-    throw new Error("MEETING_END_BEFORE_START");
-  }
-  if (!startAt && endAt) {
-    throw new Error("INVALID_MEETING_DATES");
-  }
   const externalCalendarEventId = await resolveExternalCalendarEventLink(
     workspaceId,
     input.externalCalendarEventId,
@@ -374,6 +386,46 @@ export async function createMeetingRow(
       executor,
     );
   }
+
+  // Linked meetings take title/schedule/location from Google (ADR-037 overlay).
+  let title = (input.title?.trim() || "New meeting").slice(0, 500);
+  let location = input.location ?? null;
+  let startAt: Date | null =
+    input.startAt === undefined || input.startAt === null
+      ? null
+      : new Date(input.startAt);
+  let endAt: Date | null =
+    input.endAt === undefined || input.endAt === null
+      ? null
+      : new Date(input.endAt);
+
+  if (externalCalendarEventId) {
+    const external = await loadExternalCalendarEventRow(
+      workspaceId,
+      externalCalendarEventId,
+      executor,
+    );
+    if (!external) throw new Error("UNKNOWN_EXTERNAL_CALENDAR_EVENT");
+    const schedule = scheduleFromExternalEvent(external);
+    title = schedule.title;
+    location = schedule.location;
+    startAt = schedule.startAt;
+    endAt = schedule.endAt;
+  }
+
+  if (startAt && Number.isNaN(startAt.getTime())) {
+    throw new Error("INVALID_MEETING_DATES");
+  }
+  if (endAt && Number.isNaN(endAt.getTime())) {
+    throw new Error("INVALID_MEETING_DATES");
+  }
+  if (startAt && endAt && endAt <= startAt) {
+    throw new Error("MEETING_END_BEFORE_START");
+  }
+  if (!startAt && endAt) {
+    throw new Error("INVALID_MEETING_DATES");
+  }
+
   const assignedNumber = number ?? (await nextMeetingNumber(workspaceId, executor));
   const [row] = await executor
     .insert(meetings)
@@ -381,7 +433,7 @@ export async function createMeetingRow(
       id,
       workspaceId,
       number: assignedNumber,
-      title: (input.title?.trim() || "New meeting").slice(0, 500),
+      title,
       summary: input.summary ?? null,
       notes: input.notes ?? null,
       transcription: input.transcription ?? null,
@@ -390,7 +442,7 @@ export async function createMeetingRow(
       organizationId: input.organizationId ?? null,
       attendeeContactIds: input.attendeeContactIds ?? [],
       format: input.format ?? "video_call",
-      location: input.location ?? null,
+      location,
       locationOrganizationId: input.locationOrganizationId ?? null,
       trackedMinutes: input.trackedMinutes ?? null,
       trackedDurationSeconds: input.trackedDurationSeconds ?? null,
@@ -550,31 +602,6 @@ export async function updateMeeting(
   const existing = await getMeetingRow(workspaceId, id, executor);
   if (!existing) return null;
 
-  const startAt =
-    input.startAt === undefined
-      ? existing.startAt
-      : input.startAt === null
-        ? null
-        : new Date(input.startAt);
-  const endAt =
-    input.endAt === undefined
-      ? existing.endAt
-      : input.endAt === null
-        ? null
-        : new Date(input.endAt);
-  if (startAt && Number.isNaN(startAt.getTime())) {
-    throw new Error("INVALID_MEETING_DATES");
-  }
-  if (endAt && Number.isNaN(endAt.getTime())) {
-    throw new Error("INVALID_MEETING_DATES");
-  }
-  if (startAt && endAt && endAt <= startAt) {
-    throw new Error("MEETING_END_BEFORE_START");
-  }
-  if (!startAt && endAt) {
-    throw new Error("INVALID_MEETING_DATES");
-  }
-
   const externalCalendarEventId = await resolveExternalCalendarEventLink(
     workspaceId,
     input.externalCalendarEventId,
@@ -588,6 +615,65 @@ export async function updateMeeting(
       id,
       executor,
     );
+  }
+
+  const nextLinkId =
+    externalCalendarEventId === undefined
+      ? existing.externalCalendarEventId
+      : externalCalendarEventId;
+  const linked = Boolean(nextLinkId?.trim());
+
+  // Google owns title/start/end/location while linked. Seed from the event when
+  // attaching; ignore client schedule patches otherwise.
+  let title = existing.title;
+  let location = existing.location ?? null;
+  let startAt = existing.startAt;
+  let endAt = existing.endAt;
+
+  if (linked && nextLinkId) {
+    const external = await loadExternalCalendarEventRow(
+      workspaceId,
+      nextLinkId,
+      executor,
+    );
+    if (!external) throw new Error("UNKNOWN_EXTERNAL_CALENDAR_EVENT");
+    const schedule = scheduleFromExternalEvent(external);
+    title = schedule.title;
+    location = schedule.location;
+    startAt = schedule.startAt;
+    endAt = schedule.endAt;
+  } else {
+    if (input.title != null) {
+      title = input.title.trim().slice(0, 500);
+    }
+    if (input.location !== undefined) {
+      location = input.location;
+    }
+    startAt =
+      input.startAt === undefined
+        ? existing.startAt
+        : input.startAt === null
+          ? null
+          : new Date(input.startAt);
+    endAt =
+      input.endAt === undefined
+        ? existing.endAt
+        : input.endAt === null
+          ? null
+          : new Date(input.endAt);
+  }
+
+  if (startAt && Number.isNaN(startAt.getTime())) {
+    throw new Error("INVALID_MEETING_DATES");
+  }
+  if (endAt && Number.isNaN(endAt.getTime())) {
+    throw new Error("INVALID_MEETING_DATES");
+  }
+  if (startAt && endAt && endAt <= startAt) {
+    throw new Error("MEETING_END_BEFORE_START");
+  }
+  if (!startAt && endAt) {
+    throw new Error("INVALID_MEETING_DATES");
   }
 
   let inboxUpdatedAt: Date | null | undefined = undefined;
@@ -606,7 +692,7 @@ export async function updateMeeting(
   const [row] = await executor
     .update(meetings)
     .set({
-      ...(input.title != null ? { title: input.title.trim().slice(0, 500) } : {}),
+      title,
       ...(input.summary !== undefined ? { summary: input.summary } : {}),
       ...(input.notes !== undefined ? { notes: input.notes } : {}),
       ...(input.transcription !== undefined
@@ -621,7 +707,7 @@ export async function updateMeeting(
         ? { attendeeContactIds: input.attendeeContactIds }
         : {}),
       ...(input.format !== undefined ? { format: input.format } : {}),
-      ...(input.location !== undefined ? { location: input.location } : {}),
+      location,
       ...(input.locationOrganizationId !== undefined
         ? { locationOrganizationId: input.locationOrganizationId }
         : {}),
@@ -655,37 +741,130 @@ export async function updateMeeting(
     organizationId: row.organizationId,
   }, executor);
 
-  if (meetingGoogleScheduleFieldsTouched(input)) {
-    await syncLinkedMeetingGoogleSchedule(workspaceId, row);
-  }
-
   return toMeeting(row);
 }
 
-/** Title / start / end / location — fields mirrored onto a linked Google event. */
+/**
+ * Get or lazily create the Backster meeting shell for a synced Google event.
+ * Idempotent on `external_calendar_events.id` — no convert button required.
+ */
+export async function ensureMeetingForExternalCalendarEvent(
+  workspaceId: string,
+  externalEventIdOrRaw: string,
+  input: EnsureMeetingForExternalCalendarEventInput = {},
+  executor: DbExecutor = db,
+): Promise<{ meeting: Meeting; created: boolean; row: DbMeeting }> {
+  const resolvedId = await resolveExternalCalendarEventLink(
+    workspaceId,
+    externalEventIdOrRaw,
+    input.calendarId,
+    executor,
+  );
+  if (!resolvedId) {
+    throw new Error("UNKNOWN_EXTERNAL_CALENDAR_EVENT");
+  }
+
+  const [existing] = await executor
+    .select()
+    .from(meetings)
+    .where(
+      and(
+        eq(meetings.workspaceId, workspaceId),
+        eq(meetings.externalCalendarEventId, resolvedId),
+        isNull(meetings.deletedAt),
+      ),
+    )
+    .limit(1);
+
+  if (existing) {
+    const hasEnrichment =
+      input.summary !== undefined ||
+      input.notes !== undefined ||
+      input.transcription !== undefined ||
+      input.status !== undefined ||
+      input.projectId !== undefined ||
+      input.organizationId !== undefined ||
+      input.attendeeContactIds !== undefined ||
+      input.format !== undefined ||
+      input.locationOrganizationId !== undefined ||
+      input.trackedMinutes !== undefined ||
+      input.trackedDurationSeconds !== undefined;
+
+    if (!hasEnrichment) {
+      return { meeting: toMeeting(existing), created: false, row: existing };
+    }
+
+    const updated = await updateMeeting(
+      workspaceId,
+      existing.id,
+      {
+        summary: input.summary,
+        notes: input.notes,
+        transcription: input.transcription,
+        status: input.status,
+        projectId: input.projectId,
+        organizationId: input.organizationId,
+        attendeeContactIds: input.attendeeContactIds,
+        format: input.format,
+        locationOrganizationId: input.locationOrganizationId,
+        trackedMinutes: input.trackedMinutes,
+        trackedDurationSeconds: input.trackedDurationSeconds,
+      },
+      executor,
+    );
+    const row =
+      (updated
+        ? await getMeetingRow(workspaceId, existing.id, executor)
+        : existing) ?? existing;
+    return {
+      meeting: updated ?? toMeeting(row),
+      created: false,
+      row,
+    };
+  }
+
+  const created = await createMeetingRow(
+    workspaceId,
+    {
+      id: input.id,
+      externalCalendarEventId: resolvedId,
+      summary: input.summary,
+      notes: input.notes,
+      transcription: input.transcription,
+      status: input.status,
+      projectId: input.projectId,
+      organizationId: input.organizationId,
+      attendeeContactIds: input.attendeeContactIds,
+      format: input.format,
+      locationOrganizationId: input.locationOrganizationId,
+      trackedMinutes: input.trackedMinutes,
+      trackedDurationSeconds: input.trackedDurationSeconds,
+    },
+    input.id?.trim() || newId(),
+    executor,
+  );
+  return { meeting: toMeeting(created), created: true, row: created };
+}
+
+/**
+ * @deprecated Google owns schedule for linked meetings — never push meeting → Google.
+ * Kept as a no-op so older callers do not dual-write.
+ */
 export function meetingGoogleScheduleFieldsTouched(
-  input: Pick<
+  _input: Pick<
     UpdateMeetingInput,
     "title" | "startAt" | "endAt" | "location"
   >,
 ): boolean {
-  return (
-    input.title !== undefined ||
-    input.startAt !== undefined ||
-    input.endAt !== undefined ||
-    input.location !== undefined
-  );
+  return false;
 }
 
 /**
- * Mirror + push linked Google schedule for a meeting row on this core.
- * Safe no-op when unlinked or when `external_calendar_events` is missing here
- * (PowerSync does not publish that table — REST dual-write must hit the core
- * that owns the Google sync rows).
+ * @deprecated No-op — Google Calendar is schedule SoR; pull updates meetings.
  */
 export async function syncLinkedMeetingGoogleSchedule(
-  workspaceId: string,
-  meeting: Pick<
+  _workspaceId: string,
+  _meeting: Pick<
     DbMeeting,
     | "title"
     | "startAt"
@@ -694,36 +873,13 @@ export async function syncLinkedMeetingGoogleSchedule(
     | "externalCalendarEventId"
   >,
 ): Promise<void> {
-  const linkId = meeting.externalCalendarEventId?.trim();
-  if (!linkId || !meeting.startAt) return;
-  const linked = {
-    title: meeting.title,
-    startAt: meeting.startAt,
-    endAt: meeting.endAt,
-    location: meeting.location ?? null,
-    externalCalendarEventId: linkId,
-  };
-  // Mirror locally before returning so clients never wait on Google.
-  try {
-    await mirrorLinkedMeetingScheduleLocally(workspaceId, linked);
-  } catch (error) {
-    console.warn(
-      "[google-calendar] local mirror linked meeting failed:",
-      error instanceof Error ? error.message : error,
-    );
-  }
-  void pushLinkedMeetingScheduleToGoogle(workspaceId, linked).catch((error) => {
-    console.warn(
-      "[google-calendar] push linked meeting failed:",
-      error instanceof Error ? error.message : error,
-    );
-  });
+  return;
 }
 
-/** Fire-and-forget wrapper for REST paths that should not block the response. */
+/** @deprecated No-op — see {@link syncLinkedMeetingGoogleSchedule}. */
 export function queueLinkedMeetingGoogleScheduleSync(
-  workspaceId: string,
-  meeting: Pick<
+  _workspaceId: string,
+  _meeting: Pick<
     DbMeeting,
     | "title"
     | "startAt"
@@ -732,7 +888,7 @@ export function queueLinkedMeetingGoogleScheduleSync(
     | "externalCalendarEventId"
   >,
 ): void {
-  void syncLinkedMeetingGoogleSchedule(workspaceId, meeting);
+  return;
 }
 
 export async function recordAttendeePortalEmail(

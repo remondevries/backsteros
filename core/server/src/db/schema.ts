@@ -1384,9 +1384,10 @@ export const meetings = pgTable(
     /** Manual / timer tracked duration (whole seconds). */
     trackedDurationSeconds: integer("tracked_duration_seconds"),
     /**
-     * Optional link to a read-only Google (etc.) agenda block — ADR-037.
-     * Schedule (title/start/end) stays owned by the external event; this meeting
-     * holds Backster notes / project / attendees.
+     * Optional link to a Google (etc.) agenda block — ADR-037.
+     * Schedule (title/start/end/location) is owned by the external event and
+     * denormalized here on sync/ensure. This meeting holds Backster enrichment
+     * (notes / project / attendees) and is created lazily on first enrich.
      */
     externalCalendarEventId: text("external_calendar_event_id").references(
       () => externalCalendarEvents.id,

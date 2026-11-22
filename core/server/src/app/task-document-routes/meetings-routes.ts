@@ -218,17 +218,6 @@ export function registerMeetingsRoutes(app: Hono) {
             auth.workspaceId,
             meetingId,
           );
-          // Leader apply may run on a core without `external_calendar_events`
-          // (REST-only). Push from this core after the write lands locally.
-          if (
-            dbRow &&
-            meetingService.meetingGoogleScheduleFieldsTouched(patch)
-          ) {
-            meetingService.queueLinkedMeetingGoogleScheduleSync(
-              auth.workspaceId,
-              dbRow,
-            );
-          }
           const row = dbRow ? meetingService.toMeeting(dbRow) : null;
           if (row) {
             publishMeetingLive(auth, row.id, {
