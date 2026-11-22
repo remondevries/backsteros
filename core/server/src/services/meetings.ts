@@ -102,6 +102,17 @@ export function meetingExternalCalendarHttpError(error: unknown): {
           },
         },
       };
+    case "ENRICHMENT_REQUIRED":
+      return {
+        status: 400,
+        body: {
+          error: {
+            code: "ENRICHMENT_REQUIRED",
+            message:
+              "Set a Backster field (notes, project, attendees, …) before creating a meeting shell.",
+          },
+        },
+      };
     default:
       return null;
   }
@@ -776,20 +787,20 @@ export async function ensureMeetingForExternalCalendarEvent(
     )
     .limit(1);
 
-  if (existing) {
-    const hasEnrichment =
-      input.summary !== undefined ||
-      input.notes !== undefined ||
-      input.transcription !== undefined ||
-      input.status !== undefined ||
-      input.projectId !== undefined ||
-      input.organizationId !== undefined ||
-      input.attendeeContactIds !== undefined ||
-      input.format !== undefined ||
-      input.locationOrganizationId !== undefined ||
-      input.trackedMinutes !== undefined ||
-      input.trackedDurationSeconds !== undefined;
+  const hasEnrichment =
+    input.summary !== undefined ||
+    input.notes !== undefined ||
+    input.transcription !== undefined ||
+    input.status !== undefined ||
+    input.projectId !== undefined ||
+    input.organizationId !== undefined ||
+    input.attendeeContactIds !== undefined ||
+    input.format !== undefined ||
+    input.locationOrganizationId !== undefined ||
+    input.trackedMinutes !== undefined ||
+    input.trackedDurationSeconds !== undefined;
 
+  if (existing) {
     if (!hasEnrichment) {
       return { meeting: toMeeting(existing), created: false, row: existing };
     }
@@ -821,6 +832,11 @@ export async function ensureMeetingForExternalCalendarEvent(
       created: false,
       row,
     };
+  }
+
+  // Lazy create only when the caller is actually enriching (no empty shells).
+  if (!hasEnrichment) {
+    throw new Error("ENRICHMENT_REQUIRED");
   }
 
   const created = await createMeetingRow(
