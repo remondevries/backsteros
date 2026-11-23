@@ -3,7 +3,7 @@
 # areas, letters (metadata), avatars (index), mentions, workspace_settings,
 # bank_accounts, financial_categories, financial_goals, financial_recurrings,
 # cashflow_planner_entries, habits, meetings, task_comments, task_activities
-# (unified stream: system events + comments),
+# (unified stream: system events + comments), time_entries (tracked-time ledger),
 # contact_relationships, crm_relationship_labels, crm_groups, crm_group_members, crm_activities.
 # Never Tier C/D (PDF bytes, full markdown bodies, financial_transactions) —
 # see docs/03-data-model.md.
