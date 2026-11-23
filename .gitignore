@@ -12,6 +12,7 @@ agents/build-info.json
 dist/
 node_modules/
 tmp/
+.tmp-agent/
 .dev-server-logs/
 
 # Apple codesign / notarization exports — never commit.
