@@ -12,14 +12,21 @@ import type {
   ListExternalCalendarEventsQuery,
   UpdateGoogleCalendarSettingsInput,
 } from "@backsteros/contracts";
+import { parseBareEmailAddress } from "@backsteros/contracts";
 
 import { db } from "../db/index.js";
 import {
+  contacts,
   externalCalendarEvents,
   meetings,
   workspaceIntegrationSecrets,
 } from "../db/schema.js";
 import { newId } from "../lib/crypto.js";
+import {
+  attendeesFromRaw,
+  mergeGoogleAttendees,
+  primaryEmailForContact,
+} from "../lib/google-calendar-attendees.js";
 import {
   buildGoogleAuthorizeUrl,
   exchangeGoogleAuthorizationCode,
@@ -29,6 +36,8 @@ import {
   refreshGoogleAccessToken,
   type GoogleCalendarEvent,
 } from "../lib/google-calendar-client.js";
+
+export { mergeGoogleAttendees } from "../lib/google-calendar-attendees.js";
 import {
   googleCalendarWebhookUrl,
   resolveGoogleCalendarWebhookBaseUrl,
@@ -1140,6 +1149,136 @@ export async function mirrorLinkedMeetingScheduleLocally(
 }
 
 /**
+ * Resolve Backster contact ids to bare emails (primary / first labeled address).
+ * Contacts without an email are skipped.
+ */
+export async function resolveAttendeeEmailsForGoogle(
+  workspaceId: string,
+  attendeeContactIds: readonly string[],
+): Promise<string[]> {
+  const ids = [
+    ...new Set(
+      attendeeContactIds
+        .map((id) => id.trim())
+        .filter((id) => id.length > 0),
+    ),
+  ];
+  if (ids.length === 0) return [];
+  const rows = await db
+    .select({
+      id: contacts.id,
+      email: contacts.email,
+      emails: contacts.emails,
+    })
+    .from(contacts)
+    .where(
+      and(
+        eq(contacts.workspaceId, workspaceId),
+        inArray(contacts.id, ids),
+        isNull(contacts.deletedAt),
+      ),
+    );
+  const byId = new Map(rows.map((row) => [row.id, row] as const));
+  const emails: string[] = [];
+  const seen = new Set<string>();
+  for (const id of ids) {
+    const row = byId.get(id);
+    if (!row) continue;
+    const email = primaryEmailForContact(row);
+    if (!email || seen.has(email)) continue;
+    seen.add(email);
+    emails.push(email);
+  }
+  return emails;
+}
+
+export type SyncMeetingAttendeesToGoogleInput = {
+  externalCalendarEventId: string;
+  attendeeContactIds: readonly string[];
+  /** Contact ids on the meeting before this write — used to preserve Google-only guests. */
+  previousAttendeeContactIds?: readonly string[];
+};
+
+/**
+ * Push Backster meeting attendees onto the linked Google event without emailing them
+ * (`sendUpdates=none`). Best-effort: missing Google link / OAuth / emails are no-ops.
+ */
+export async function syncMeetingAttendeesToGoogleCalendar(
+  workspaceId: string,
+  input: SyncMeetingAttendeesToGoogleInput,
+): Promise<{ synced: boolean; attendeeCount: number }> {
+  const linkId = input.externalCalendarEventId.trim();
+  if (!linkId) return { synced: false, attendeeCount: 0 };
+
+  const [external] = await db
+    .select()
+    .from(externalCalendarEvents)
+    .where(
+      and(
+        eq(externalCalendarEvents.id, linkId),
+        eq(externalCalendarEvents.workspaceId, workspaceId),
+        isNull(externalCalendarEvents.deletedAt),
+      ),
+    )
+    .limit(1);
+  const calendarId = external?.calendarId?.trim() || "";
+  const eventId = external?.externalId?.trim() || "";
+  if (!calendarId || !eventId) return { synced: false, attendeeCount: 0 };
+
+  const [nextEmails, previousEmails] = await Promise.all([
+    resolveAttendeeEmailsForGoogle(workspaceId, input.attendeeContactIds),
+    resolveAttendeeEmailsForGoogle(
+      workspaceId,
+      input.previousAttendeeContactIds ?? [],
+    ),
+  ]);
+
+  const existing = attendeesFromRaw(external.raw);
+  const attendees = mergeGoogleAttendees({
+    existing,
+    previousBacksterEmails: previousEmails,
+    nextBacksterEmails: nextEmails,
+  });
+
+  // Avoid a no-op Google write when nothing guest-related changed.
+  const before = existing
+    .map((attendee) => parseBareEmailAddress(attendee.email ?? ""))
+    .filter((email) => email.includes("@"))
+    .sort();
+  const after = attendees
+    .map((attendee) => parseBareEmailAddress(attendee.email ?? ""))
+    .filter((email) => email.includes("@"))
+    .sort();
+  if (
+    before.length === after.length &&
+    before.every((email, index) => email === after[index])
+  ) {
+    return { synced: false, attendeeCount: after.length };
+  }
+
+  const accessToken = await getGoogleCalendarAccessToken(workspaceId);
+  const client = new GoogleCalendarClient(accessToken);
+  const patched = await client.patchEvent({
+    calendarId,
+    eventId,
+    attendees,
+    sendUpdates: "none",
+  });
+
+  await db
+    .update(externalCalendarEvents)
+    .set({
+      etag: patched.etag?.trim() || null,
+      htmlLink: patched.htmlLink?.trim() || external.htmlLink,
+      raw: patched,
+      updatedAt: new Date(),
+    })
+    .where(eq(externalCalendarEvents.id, external.id));
+
+  return { synced: true, attendeeCount: attendees.length };
+}
+
+/**
  * Push title / start / end / location from a linked Backster meeting to Google.
  * Prefer {@link mirrorLinkedMeetingScheduleLocally} first so the UI stays snappy;
  * this call updates etag/raw after Google accepts.
@@ -1313,6 +1452,14 @@ export async function syncMeetingToGoogleCalendar(
 
   const { client, calendarId } =
     await resolveGoogleCalendarWriteTarget(workspaceId);
+  const attendeeEmails = await resolveAttendeeEmailsForGoogle(
+    workspaceId,
+    Array.isArray(meeting.attendeeContactIds)
+      ? meeting.attendeeContactIds.filter(
+          (id): id is string => typeof id === "string",
+        )
+      : [],
+  );
   const created = await client.createEvent({
     calendarId,
     summary: meeting.title.trim() || "Meeting",
@@ -1320,6 +1467,12 @@ export async function syncMeetingToGoogleCalendar(
     location: meeting.location ?? null,
     start: { dateTime: meeting.startAt.toISOString() },
     end: { dateTime: endAt.toISOString() },
+    ...(attendeeEmails.length > 0
+      ? {
+          attendees: attendeeEmails.map((email) => ({ email })),
+          sendUpdates: "none" as const,
+        }
+      : {}),
   });
   const externalId = created.id?.trim();
   if (!externalId) {

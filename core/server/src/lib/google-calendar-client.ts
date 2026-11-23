@@ -57,6 +57,18 @@ export type GoogleCalendarEventDate = {
   timeZone?: string;
 };
 
+export type GoogleCalendarAttendee = {
+  email?: string;
+  displayName?: string;
+  responseStatus?: string;
+  self?: boolean;
+  organizer?: boolean;
+  optional?: boolean;
+};
+
+/** Controls whether Google emails invitees about the change. Prefer `none` for silent sync. */
+export type GoogleCalendarSendUpdates = "all" | "externalOnly" | "none";
+
 export type GoogleCalendarEvent = {
   id?: string;
   status?: string;
@@ -68,6 +80,7 @@ export type GoogleCalendarEvent = {
   location?: string;
   creator?: { email?: string };
   organizer?: { email?: string };
+  attendees?: GoogleCalendarAttendee[];
   start?: GoogleCalendarEventDate;
   end?: GoogleCalendarEventDate;
   iCalUID?: string;
@@ -76,6 +89,20 @@ export type GoogleCalendarEvent = {
   visibility?: string;
   recurringEventId?: string;
 };
+
+function eventWriteUrl(
+  calendarId: string,
+  eventId: string | null,
+  sendUpdates?: GoogleCalendarSendUpdates,
+): string {
+  const cal = encodeURIComponent(calendarId);
+  const base = eventId
+    ? `${GOOGLE_CALENDAR_API_BASE}/calendars/${cal}/events/${encodeURIComponent(eventId)}`
+    : `${GOOGLE_CALENDAR_API_BASE}/calendars/${cal}/events`;
+  if (!sendUpdates) return base;
+  const params = new URLSearchParams({ sendUpdates });
+  return `${base}?${params.toString()}`;
+}
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
@@ -230,6 +257,7 @@ export class GoogleCalendarClient {
         nextPageToken?: string;
       }>("/users/me/calendarList", {
         maxResults: "250",
+        showHidden: "true",
         pageToken,
       });
       for (const item of page.items ?? []) {
@@ -338,8 +366,10 @@ export class GoogleCalendarClient {
     location?: string | null;
     start: GoogleCalendarEventDate;
     end: GoogleCalendarEventDate;
+    attendees?: GoogleCalendarAttendee[];
+    /** Defaults to omitting the param (Google’s default notify behavior). Use `none` to stay silent. */
+    sendUpdates?: GoogleCalendarSendUpdates;
   }): Promise<GoogleCalendarEvent> {
-    const calendarId = encodeURIComponent(input.calendarId);
     const body: Record<string, unknown> = {
       summary: input.summary,
       start: input.start,
@@ -351,8 +381,11 @@ export class GoogleCalendarClient {
     if (input.location !== undefined) {
       body.location = input.location;
     }
+    if (input.attendees !== undefined) {
+      body.attendees = input.attendees;
+    }
     const response = await fetch(
-      `${GOOGLE_CALENDAR_API_BASE}/calendars/${calendarId}/events`,
+      eventWriteUrl(input.calendarId, null, input.sendUpdates),
       {
         method: "POST",
         headers: {
@@ -388,16 +421,18 @@ export class GoogleCalendarClient {
     location?: string | null;
     start?: GoogleCalendarEventDate;
     end?: GoogleCalendarEventDate;
+    attendees?: GoogleCalendarAttendee[];
+    /** Defaults to omitting the param. Use `none` when syncing guests without emailing them. */
+    sendUpdates?: GoogleCalendarSendUpdates;
   }): Promise<GoogleCalendarEvent> {
-    const calendarId = encodeURIComponent(input.calendarId);
-    const eventId = encodeURIComponent(input.eventId);
     const body: Record<string, unknown> = {};
     if (input.summary !== undefined) body.summary = input.summary;
     if (input.location !== undefined) body.location = input.location;
     if (input.start !== undefined) body.start = input.start;
     if (input.end !== undefined) body.end = input.end;
+    if (input.attendees !== undefined) body.attendees = input.attendees;
     const response = await fetch(
-      `${GOOGLE_CALENDAR_API_BASE}/calendars/${calendarId}/events/${eventId}`,
+      eventWriteUrl(input.calendarId, input.eventId, input.sendUpdates),
       {
         method: "PATCH",
         headers: {

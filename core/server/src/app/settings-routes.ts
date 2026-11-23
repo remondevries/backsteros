@@ -780,35 +780,56 @@ export function registerSettingsRoutes(app: Hono) {
           body.trackedDurationSeconds !== undefined;
         if (result.created || enriched) {
           if (isRestLeaderFirstWrite()) {
+            // Always ship the current meeting shell fields. A partial upsert
+            // (attendees-only) must not wipe title/schedule owned by Google.
             await commitRestEntityWrite({
               workspaceId: auth.workspaceId,
               entity: "meeting",
               entityId: result.row.id,
               operation: "upsert",
               payload: buildMeetingRestPayload(result.row.id, {
-                ...(result.created
-                  ? {
-                      title: result.meeting.title,
-                      startAt: result.meeting.startAt,
-                      endAt: result.meeting.endAt,
-                      location: result.meeting.location,
-                      format: result.meeting.format,
-                      status: result.meeting.status,
-                    }
-                  : {}),
+                title: result.meeting.title,
+                startAt: result.meeting.startAt,
+                endAt: result.meeting.endAt,
+                location: result.meeting.location,
+                format: body.format ?? result.meeting.format,
+                status: body.status ?? result.meeting.status,
                 externalCalendarEventId:
                   result.row.externalCalendarEventId ?? undefined,
-                summary: body.summary,
-                notes: body.notes,
-                transcription: body.transcription,
-                status: body.status ?? result.meeting.status,
-                projectId: body.projectId,
-                organizationId: body.organizationId,
-                attendeeContactIds: body.attendeeContactIds,
-                format: body.format ?? result.meeting.format,
-                locationOrganizationId: body.locationOrganizationId,
-                trackedMinutes: body.trackedMinutes,
-                trackedDurationSeconds: body.trackedDurationSeconds,
+                summary:
+                  body.summary !== undefined
+                    ? body.summary
+                    : result.meeting.summary,
+                notes:
+                  body.notes !== undefined ? body.notes : result.meeting.notes,
+                transcription:
+                  body.transcription !== undefined
+                    ? body.transcription
+                    : result.meeting.transcription,
+                projectId:
+                  body.projectId !== undefined
+                    ? body.projectId
+                    : result.meeting.projectId,
+                organizationId:
+                  body.organizationId !== undefined
+                    ? body.organizationId
+                    : result.meeting.organizationId,
+                attendeeContactIds:
+                  body.attendeeContactIds !== undefined
+                    ? body.attendeeContactIds
+                    : result.meeting.attendeeContactIds,
+                locationOrganizationId:
+                  body.locationOrganizationId !== undefined
+                    ? body.locationOrganizationId
+                    : result.meeting.locationOrganizationId,
+                trackedMinutes:
+                  body.trackedMinutes !== undefined
+                    ? body.trackedMinutes
+                    : result.meeting.trackedMinutes,
+                trackedDurationSeconds:
+                  body.trackedDurationSeconds !== undefined
+                    ? body.trackedDurationSeconds
+                    : result.meeting.trackedDurationSeconds,
               }),
             });
           } else {

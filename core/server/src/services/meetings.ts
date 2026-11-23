@@ -44,7 +44,40 @@ import {
   softDeleteMeetingCrmActivities,
   syncMeetingCrmActivities,
 } from "./crm-activities.js";
-import { GOOGLE_CALENDAR_PROVIDER } from "./google-calendar-settings.js";
+import {
+  GOOGLE_CALENDAR_PROVIDER,
+  syncMeetingAttendeesToGoogleCalendar,
+} from "./google-calendar-settings.js";
+
+function contactIdList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter(
+    (id): id is string => typeof id === "string" && id.trim().length > 0,
+  );
+}
+
+/** Best-effort Google guest sync — never fails the Backster write. */
+async function pushAttendeesToGoogleQuietly(
+  workspaceId: string,
+  meeting: Pick<DbMeeting, "externalCalendarEventId" | "attendeeContactIds">,
+  previousAttendeeContactIds: readonly string[] = [],
+): Promise<void> {
+  const linkId = meeting.externalCalendarEventId?.trim();
+  if (!linkId) return;
+  try {
+    await syncMeetingAttendeesToGoogleCalendar(workspaceId, {
+      externalCalendarEventId: linkId,
+      attendeeContactIds: contactIdList(meeting.attendeeContactIds),
+      previousAttendeeContactIds,
+    });
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "unknown Google Calendar error";
+    console.warn(
+      `[meetings] silent Google attendee sync failed for ${linkId}: ${message}`,
+    );
+  }
+}
 
 type DbExecutor = Pick<typeof db, "select" | "insert" | "update">;
 
@@ -478,6 +511,12 @@ export async function createMeetingRow(
     },
     executor,
   );
+  if (
+    created.externalCalendarEventId &&
+    contactIdList(created.attendeeContactIds).length > 0
+  ) {
+    await pushAttendeesToGoogleQuietly(workspaceId, created, []);
+  }
   return created;
 }
 
@@ -751,6 +790,14 @@ export async function updateMeeting(
       : [],
     organizationId: row.organizationId,
   }, executor);
+
+  if (input.attendeeContactIds !== undefined && row.externalCalendarEventId) {
+    await pushAttendeesToGoogleQuietly(
+      workspaceId,
+      row,
+      contactIdList(existing.attendeeContactIds),
+    );
+  }
 
   return toMeeting(row);
 }
