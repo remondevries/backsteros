@@ -43,7 +43,17 @@ import {
   MeetingPropertiesInlineChips,
   type MeetingPropertiesInlineChipsProps,
 } from "./meeting-properties-inline-chips.js";
+import { MeetingScheduleDropdown } from "./meeting-schedule-dropdown.js";
 import { MeetingFormatToggle } from "./meeting-format-toggle.js";
+import { TrackedTimeField } from "../shared/tracked-time-field.js";
+import { trackedMinutesFromMeetingSchedule } from "@backsteros/contracts";
+import { toPropertyDate } from "../entity/property-rail-options.js";
+import {
+  DROPDOWN_NO_PROJECT_VALUE,
+  resolveDropdownProjectKey,
+} from "../dropdowns/dropdown-options.js";
+import { PropertyDropdown } from "../dropdowns/property-dropdown.js";
+import { DefaultProjectIcon } from "../projects/default-project-icon.js";
 import type { MeetingFormat } from "../../meetings/meeting-format.js";
 import type { TaskStatus } from "../../tasks/task-status.js";
 
@@ -400,6 +410,9 @@ export function MeetingDetailView({
     timerSession,
   };
   const googleLink = googleCalendarHtmlLink?.trim() || null;
+  const scheduleStartAt = toPropertyDate(meeting?.startAt ?? null);
+  const scheduleEndAt = toPropertyDate(meeting?.endAt ?? null);
+  const scheduleDisabled = meeting == null;
 
   const titleEditor = (
     <OverviewNameEditor
@@ -457,6 +470,48 @@ export function MeetingDetailView({
       organizationOptions={organizationOptions}
       onCreateOrganizationFromQuery={onCreateOrganizationFromQuery}
     />
+  );
+
+  const canEditProject =
+    Boolean(onProjectChange) && (projectOptions?.length ?? 0) > 0;
+
+  const projectDropdown = canEditProject ? (
+    <PropertyDropdown
+      value={meeting?.projectKey ?? DROPDOWN_NO_PROJECT_VALUE}
+      options={projectOptions ?? []}
+      onChange={(next) => onProjectChange?.(resolveDropdownProjectKey(next))}
+      disabled={meeting == null}
+      searchPlaceholder="Change project…"
+      searchShortcutLabel="⇧P"
+      ariaLabel="Project"
+      taskPropertyDropdownId="project"
+      fallbackIcon={<DefaultProjectIcon size={14} />}
+      fallbackLabel="No project"
+      mutedFallback
+      triggerVariant="inlineChip"
+      panelAlign="start"
+    />
+  ) : (
+    <button
+      type="button"
+      className={[
+        "property-dropdown-trigger",
+        "property-dropdown-trigger--inline-chip",
+        meeting?.projectName?.trim() ? null : "is-muted",
+      ]
+        .filter(Boolean)
+        .join(" ")}
+      data-task-property-dropdown="project"
+      disabled={meeting == null}
+      onClick={() => onFieldActivate?.("project")}
+    >
+      <span className="property-dropdown-trigger__icon" aria-hidden="true">
+        <DefaultProjectIcon size={14} />
+      </span>
+      <span className="property-dropdown-trigger__label">
+        {meeting?.projectName?.trim() || "No project"}
+      </span>
+    </button>
   );
 
   const startRoomAction =
@@ -592,9 +647,41 @@ export function MeetingDetailView({
                   </div>
                 ) : null}
                 <ContentDetailTitleHeader>
+                  <div className="meeting-detail-view__schedule-above-title">
+                    <MeetingScheduleDropdown
+                      startAt={scheduleStartAt}
+                      endAt={scheduleEndAt}
+                      disabled={scheduleDisabled}
+                      onStartChange={onStartChange}
+                      onEndChange={onEndChange}
+                      triggerVariant="inlineChip"
+                    />
+                    <div className="meeting-detail-view__schedule-above-title-timer">
+                      <TrackedTimeField
+                        variant="pill"
+                        trackedDurationSeconds={
+                          meeting?.trackedDurationSeconds ?? null
+                        }
+                        trackedMinutes={meeting?.trackedMinutes ?? null}
+                        scheduleMinutes={trackedMinutesFromMeetingSchedule(
+                          scheduleStartAt,
+                          scheduleEndAt,
+                        )}
+                        disabled={scheduleDisabled}
+                        onTrackedDurationSecondsChange={
+                          onTrackedDurationSecondsChange
+                        }
+                        timerSession={timerSession}
+                      />
+                      {startRoomAction}
+                    </div>
+                  </div>
                   <p className="content-detail-display-id">{displayId}</p>
                   {titleEditor}
-                  {formatToggle}
+                  <div className="meeting-detail-view__meta-below-title">
+                    {projectDropdown}
+                    {formatToggle}
+                  </div>
                 </ContentDetailTitleHeader>
                 <div className="meeting-detail-view__content meeting-detail-view__content--page">
                   {contentTabNav}
@@ -607,7 +694,9 @@ export function MeetingDetailView({
           properties={
             <MeetingPropertiesStacked
               {...propertiesProps}
-              timerTrailing={startRoomAction}
+              showTimer={false}
+              showSchedule={false}
+              showProject={false}
               googleCalendarHtmlLink={googleLink}
             />
           }

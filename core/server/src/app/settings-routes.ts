@@ -30,6 +30,7 @@ import {
   listCursorModels,
   ensureMeetingForExternalCalendarEventSchema,
   listExternalCalendarEventsQuerySchema,
+  updateExternalCalendarEventSchema,
   mapboxGeocodeQuerySchema,
   mapboxSettingsService,
   mapboxStaticMapQuerySchema,
@@ -710,6 +711,32 @@ export function registerSettingsRoutes(app: Hono) {
     if (!event) return c.json(notFound("External calendar event"), 404);
     return c.json(event);
   });
+  app.patch(
+    "/api/v1/external-calendar-events/:id",
+    zValidator("json", updateExternalCalendarEventSchema),
+    async (c) => {
+      const auth = getAuth(c);
+      if (!can(auth, "tasks:write") && !can(auth, "settings:write")) {
+        return c.json(forbidden(), 403);
+      }
+      try {
+        const event =
+          await googleCalendarSettingsService.updateExternalCalendarEvent(
+            auth.workspaceId,
+            c.req.param("id"),
+            c.req.valid("json"),
+          );
+        if (!event) return c.json(notFound("External calendar event"), 404);
+        return c.json(event);
+      } catch (error) {
+        const message =
+          error instanceof GoogleCalendarApiError || error instanceof Error
+            ? error.message
+            : "Could not update external calendar event";
+        return c.json({ error: message, code: "bad_request" }, 400);
+      }
+    },
+  );
   app.delete("/api/v1/external-calendar-events/:id", async (c) => {
     const auth = getAuth(c);
     if (!can(auth, "tasks:write") && !can(auth, "settings:write")) {

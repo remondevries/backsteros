@@ -2056,6 +2056,51 @@ html.is-calendar-month-event-dragging .fc-event-dragging:not(.calendar-month-eve
   overflow: hidden;
 }
 
+/* Date + timer sit above the meeting title on the full-page detail. */
+.meeting-detail-view__schedule-above-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 16px;
+  width: 100%;
+  margin: 0 0 10px;
+}
+
+.meeting-detail-view__schedule-above-title .meeting-schedule-dropdown,
+.meeting-detail-view__schedule-above-title .property-dropdown {
+  min-width: 0;
+}
+
+.meeting-detail-view__schedule-above-title-timer {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+/* Project + format/location sit side by side under the meeting title. */
+.meeting-detail-view__meta-below-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  width: 100%;
+  margin: 10px 0 0;
+  min-width: 0;
+}
+
+.meeting-detail-view__meta-below-title .meeting-detail-view__format-field {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.meeting-detail-view__meta-below-title .property-dropdown,
+.meeting-detail-view__meta-below-title .meeting-schedule-dropdown {
+  min-width: 0;
+}
+
 .meeting-detail-view__content--page {
   display: flex;
   flex: 1;

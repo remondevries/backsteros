@@ -1072,6 +1072,199 @@ export async function getExternalCalendarEvent(
   return toExternalEvent(row, link?.meetingId ?? null);
 }
 
+export type UpdateExternalCalendarEventPatch = {
+  startAt?: string;
+  endAt?: string | null;
+  startDate?: string;
+  endDate?: string | null;
+  allDay?: boolean;
+  description?: string | null;
+  location?: string | null;
+};
+
+/**
+ * Patch schedule, description, and/or location on a synced external calendar event.
+ * Writes through to Google when the row is a Google event.
+ */
+export async function updateExternalCalendarEvent(
+  workspaceId: string,
+  eventId: string,
+  patch: UpdateExternalCalendarEventPatch,
+): Promise<ExternalCalendarEvent | null> {
+  const trimmedId = eventId.trim();
+  if (!trimmedId) return null;
+
+  const [external] = await db
+    .select()
+    .from(externalCalendarEvents)
+    .where(
+      and(
+        eq(externalCalendarEvents.id, trimmedId),
+        eq(externalCalendarEvents.workspaceId, workspaceId),
+        isNull(externalCalendarEvents.deletedAt),
+      ),
+    )
+    .limit(1);
+  if (!external) return null;
+
+  const nextAllDay =
+    patch.allDay !== undefined ? patch.allDay : external.allDay;
+  const descriptionTouched = patch.description !== undefined;
+  const nextDescription = !descriptionTouched
+    ? external.description
+    : patch.description == null
+      ? null
+      : patch.description.trim() || null;
+  const locationTouched = patch.location !== undefined;
+  const nextLocation = !locationTouched
+    ? external.location
+    : patch.location == null
+      ? null
+      : patch.location.trim() || null;
+
+  let start:
+    | { date?: string; dateTime?: string }
+    | undefined;
+  let end: { date?: string; dateTime?: string } | undefined;
+  const scheduleTouched =
+    patch.startAt !== undefined ||
+    patch.endAt !== undefined ||
+    patch.startDate !== undefined ||
+    patch.endDate !== undefined ||
+    patch.allDay !== undefined;
+
+  if (scheduleTouched) {
+    if (nextAllDay) {
+      const startDate =
+        patch.startDate?.trim() ||
+        external.startDate?.trim() ||
+        (patch.startAt
+          ? new Date(patch.startAt).toISOString().slice(0, 10)
+          : external.startAt?.toISOString().slice(0, 10) || "");
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate)) {
+        throw new Error("All-day events need a valid start date");
+      }
+      let endDate =
+        patch.endDate === null
+          ? null
+          : patch.endDate?.trim() ||
+            external.endDate?.trim() ||
+            null;
+      if (endDate && endDate <= startDate) {
+        const next = new Date(`${startDate}T00:00:00.000Z`);
+        next.setUTCDate(next.getUTCDate() + 1);
+        endDate = next.toISOString().slice(0, 10);
+      }
+      if (!endDate) {
+        const next = new Date(`${startDate}T00:00:00.000Z`);
+        next.setUTCDate(next.getUTCDate() + 1);
+        endDate = next.toISOString().slice(0, 10);
+      }
+      start = { date: startDate };
+      end = { date: endDate };
+    } else {
+      const startIso =
+        patch.startAt?.trim() ||
+        external.startAt?.toISOString() ||
+        "";
+      const startAt = new Date(startIso);
+      if (!startIso || Number.isNaN(startAt.getTime())) {
+        throw new Error("Timed events need a valid start time");
+      }
+      const endIso =
+        patch.endAt === null
+          ? null
+          : patch.endAt?.trim() ||
+            external.endAt?.toISOString() ||
+            null;
+      const endAt =
+        endIso && !Number.isNaN(new Date(endIso).getTime())
+          ? new Date(endIso)
+          : new Date(startAt.getTime() + 60 * 60 * 1000);
+      start = { dateTime: startAt.toISOString() };
+      end = { dateTime: endAt.toISOString() };
+    }
+  }
+
+  if (!scheduleTouched && !descriptionTouched && !locationTouched) {
+    return getExternalCalendarEvent(workspaceId, external.id);
+  }
+
+  let patchedRaw = external.raw;
+  let nextEtag = external.etag;
+  let nextHtmlLink = external.htmlLink;
+  let times = {
+    allDay: external.allDay,
+    startAt: external.startAt,
+    endAt: external.endAt,
+    startDate: external.startDate,
+    endDate: external.endDate,
+  };
+
+  if (
+    external.provider === GOOGLE_CALENDAR_PROVIDER &&
+    external.calendarId?.trim() &&
+    external.externalId?.trim()
+  ) {
+    const accessToken = await getGoogleCalendarAccessToken(workspaceId);
+    const client = new GoogleCalendarClient(accessToken);
+    const patched = await client.patchEvent({
+      calendarId: external.calendarId,
+      eventId: external.externalId,
+      ...(scheduleTouched && start && end ? { start, end } : {}),
+      ...(descriptionTouched
+        ? { description: nextDescription }
+        : {}),
+      // Empty string clears the Google location field.
+      ...(locationTouched ? { location: nextLocation ?? "" } : {}),
+      sendUpdates: "none",
+    });
+    patchedRaw = patched;
+    nextEtag = patched.etag?.trim() || null;
+    nextHtmlLink = patched.htmlLink?.trim() || external.htmlLink;
+    times = mapEventTimes(patched);
+  } else if (scheduleTouched && start && end) {
+    if (start.date) {
+      times = {
+        allDay: true,
+        startAt: new Date(`${start.date}T00:00:00.000Z`),
+        endAt: end.date ? new Date(`${end.date}T00:00:00.000Z`) : null,
+        startDate: start.date,
+        endDate: end.date ?? null,
+      };
+    } else if (start.dateTime) {
+      const startAt = new Date(start.dateTime);
+      const endAt = end.dateTime ? new Date(end.dateTime) : null;
+      times = {
+        allDay: false,
+        startAt,
+        endAt,
+        startDate: null,
+        endDate: null,
+      };
+    }
+  }
+
+  await db
+    .update(externalCalendarEvents)
+    .set({
+      description: nextDescription,
+      location: nextLocation,
+      allDay: times.allDay,
+      startAt: times.startAt,
+      endAt: times.endAt,
+      startDate: times.startDate,
+      endDate: times.endDate,
+      etag: nextEtag,
+      htmlLink: nextHtmlLink,
+      raw: patchedRaw,
+      updatedAt: new Date(),
+    })
+    .where(eq(externalCalendarEvents.id, external.id));
+
+  return getExternalCalendarEvent(workspaceId, external.id);
+}
+
 type LinkedMeetingSchedule = {
   title: string;
   startAt: Date | null;

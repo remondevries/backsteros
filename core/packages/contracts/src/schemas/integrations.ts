@@ -832,6 +832,33 @@ export const deleteExternalCalendarEventResultSchema = z.object({
   deletedMeetingIds: z.array(z.string()),
 });
 
+const ymdSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+
+/** Patch a synced Google (etc.) agenda block — schedule, description, and/or location. */
+export const updateExternalCalendarEventSchema = z
+  .object({
+    startAt: isoDateSchema.optional(),
+    endAt: isoDateSchema.nullable().optional(),
+    startDate: ymdSchema.optional(),
+    endDate: ymdSchema.nullable().optional(),
+    allDay: z.boolean().optional(),
+    /** Google event description / notes. Empty string or null clears. */
+    description: z.string().nullable().optional(),
+    /** Google event location (URL or address). Empty string or null clears. */
+    location: z.string().nullable().optional(),
+  })
+  .refine(
+    (value) =>
+      value.startAt !== undefined ||
+      value.endAt !== undefined ||
+      value.startDate !== undefined ||
+      value.endDate !== undefined ||
+      value.allDay !== undefined ||
+      value.description !== undefined ||
+      value.location !== undefined,
+    { message: "Provide at least one field to update" },
+  );
+
 /** GitHub integration (workspace PAT; optional Clerk OAuth still supported). */
 export const githubSettingsSchema = z.object({
   apiTokenConfigured: z.boolean(),
@@ -1432,6 +1459,10 @@ export type DeleteExternalCalendarEventResult = z.infer<
 
 export type ListExternalCalendarEventsQuery = z.infer<
   typeof listExternalCalendarEventsQuerySchema
+>;
+
+export type UpdateExternalCalendarEventInput = z.infer<
+  typeof updateExternalCalendarEventSchema
 >;
 
 export type UpdateMapboxSettingsInput = z.infer<

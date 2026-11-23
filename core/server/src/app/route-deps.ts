@@ -53,6 +53,7 @@ export {
   listDocumentsQuerySchema,
   ensureMeetingForExternalCalendarEventSchema,
   listExternalCalendarEventsQuerySchema,
+  updateExternalCalendarEventSchema,
   listFinancialTransactionsQuerySchema,
   listTaskAgentPresenceQuerySchema,
   locationFsCreateFolderSchema,

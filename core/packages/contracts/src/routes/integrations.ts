@@ -577,6 +577,21 @@ export const integrationsRoutes: AppRouter = c.router({
     summary:
       "Delete a synced external calendar event (removes it from Google when linked)",
   },
+  updateExternalCalendarEvent: {
+    method: "PATCH",
+    path: "/api/v1/external-calendar-events/:id",
+    pathParams: s.idParamsSchema,
+    body: s.updateExternalCalendarEventSchema,
+    responses: {
+      200: s.externalCalendarEventSchema,
+      400: badRequestSchema,
+      401: errorSchema,
+      403: errorSchema,
+      404: errorSchema,
+    },
+    summary:
+      "Update a synced external calendar event (schedule and/or description; writes through to Google)",
+  },
   ensureMeetingForExternalCalendarEvent: {
     method: "POST",
     path: "/api/v1/external-calendar-events/:id/ensure-meeting",

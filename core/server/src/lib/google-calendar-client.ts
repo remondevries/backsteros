@@ -418,6 +418,7 @@ export class GoogleCalendarClient {
     calendarId: string;
     eventId: string;
     summary?: string;
+    description?: string | null;
     location?: string | null;
     start?: GoogleCalendarEventDate;
     end?: GoogleCalendarEventDate;
@@ -427,6 +428,10 @@ export class GoogleCalendarClient {
   }): Promise<GoogleCalendarEvent> {
     const body: Record<string, unknown> = {};
     if (input.summary !== undefined) body.summary = input.summary;
+    // Empty string clears the Google description field.
+    if (input.description !== undefined) {
+      body.description = input.description ?? "";
+    }
     if (input.location !== undefined) body.location = input.location;
     if (input.start !== undefined) body.start = input.start;
     if (input.end !== undefined) body.end = input.end;

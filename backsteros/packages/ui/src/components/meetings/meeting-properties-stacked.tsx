@@ -39,6 +39,12 @@ export type MeetingPropertiesStackedProps = Omit<
   timerTrailing?: ReactNode;
   /** Google Calendar event URL when the meeting is linked. */
   googleCalendarHtmlLink?: string | null;
+  /** When false, omit the tracked-time pill (e.g. shown above the title). */
+  showTimer?: boolean;
+  /** When false, omit the Date schedule field (e.g. shown above the title). */
+  showSchedule?: boolean;
+  /** When false, omit the Project field (e.g. shown below the title). */
+  showProject?: boolean;
 };
 
 function resolveOrganizationTriggerIcon(
@@ -116,6 +122,9 @@ export function MeetingPropertiesStacked({
   timerSession = null,
   timerTrailing = null,
   googleCalendarHtmlLink = null,
+  showTimer = true,
+  showSchedule = true,
+  showProject = true,
 }: MeetingPropertiesStackedProps) {
   const {
     disabled,
@@ -148,18 +157,20 @@ export function MeetingPropertiesStacked({
       className="meeting-properties-stacked"
       aria-label="Meeting properties"
     >
-      <div className="detail-properties-panel__timer">
-        <TrackedTimeField
-          variant="pill"
-          trackedDurationSeconds={meeting?.trackedDurationSeconds ?? null}
-          trackedMinutes={meeting?.trackedMinutes ?? null}
-          scheduleMinutes={trackedMinutesFromMeetingSchedule(startAt, endAt)}
-          disabled={disabled}
-          onTrackedDurationSecondsChange={onTrackedDurationSecondsChange}
-          timerSession={timerSession}
-        />
-        {timerTrailing}
-      </div>
+      {showTimer ? (
+        <div className="detail-properties-panel__timer">
+          <TrackedTimeField
+            variant="pill"
+            trackedDurationSeconds={meeting?.trackedDurationSeconds ?? null}
+            trackedMinutes={meeting?.trackedMinutes ?? null}
+            scheduleMinutes={trackedMinutesFromMeetingSchedule(startAt, endAt)}
+            disabled={disabled}
+            onTrackedDurationSecondsChange={onTrackedDurationSecondsChange}
+            timerSession={timerSession}
+          />
+          {timerTrailing}
+        </div>
+      ) : null}
 
       <EntityPropertiesSection title="Properties">
         <PropertyFieldGroup label="Status">
@@ -184,16 +195,18 @@ export function MeetingPropertiesStacked({
           />
         </PropertyFieldGroup>
 
-        <PropertyFieldGroup label="Date">
-          <MeetingScheduleDropdown
-            startAt={startAt}
-            endAt={endAt}
-            disabled={disabled}
-            onStartChange={onStartChange}
-            onEndChange={onEndChange}
-            triggerVariant="default"
-          />
-        </PropertyFieldGroup>
+        {showSchedule ? (
+          <PropertyFieldGroup label="Date">
+            <MeetingScheduleDropdown
+              startAt={startAt}
+              endAt={endAt}
+              disabled={disabled}
+              onStartChange={onStartChange}
+              onEndChange={onEndChange}
+              triggerVariant="default"
+            />
+          </PropertyFieldGroup>
+        ) : null}
       </EntityPropertiesSection>
 
       <EntityPropertiesSection title="Organization">
@@ -332,48 +345,53 @@ export function MeetingPropertiesStacked({
           )}
         </PropertyFieldGroup>
 
-        <PropertyFieldGroup label="Project">
-          {canEditProject ? (
-            <PropertyDropdown
-              value={meeting?.projectKey ?? DROPDOWN_NO_PROJECT_VALUE}
-              options={projectOptions}
-              onChange={(next) =>
-                onProjectChange?.(resolveDropdownProjectKey(next))
-              }
-              disabled={disabled}
-              searchPlaceholder="Change project…"
-              searchShortcutLabel="⇧P"
-              ariaLabel="Project"
-              taskPropertyDropdownId="project"
-              fallbackIcon={<DefaultProjectIcon size={14} />}
-              fallbackLabel="No project"
-              mutedFallback
-              triggerVariant="default"
-              panelAlign="start"
-            />
-          ) : (
-            <button
-              type="button"
-              className={stackedTriggerClassName(
-                false,
-                !meeting?.projectName?.trim(),
-              )}
-              data-task-property-dropdown="project"
-              disabled={disabled}
-              onClick={() => onFieldActivate?.("project")}
-            >
-              <span className="property-dropdown-trigger__icon" aria-hidden="true">
-                {resolveProjectTriggerIcon(
-                  meeting?.projectKey,
-                  projectOptions,
+        {showProject ? (
+          <PropertyFieldGroup label="Project">
+            {canEditProject ? (
+              <PropertyDropdown
+                value={meeting?.projectKey ?? DROPDOWN_NO_PROJECT_VALUE}
+                options={projectOptions}
+                onChange={(next) =>
+                  onProjectChange?.(resolveDropdownProjectKey(next))
+                }
+                disabled={disabled}
+                searchPlaceholder="Change project…"
+                searchShortcutLabel="⇧P"
+                ariaLabel="Project"
+                taskPropertyDropdownId="project"
+                fallbackIcon={<DefaultProjectIcon size={14} />}
+                fallbackLabel="No project"
+                mutedFallback
+                triggerVariant="default"
+                panelAlign="start"
+              />
+            ) : (
+              <button
+                type="button"
+                className={stackedTriggerClassName(
+                  false,
+                  !meeting?.projectName?.trim(),
                 )}
-              </span>
-              <span className="property-dropdown-trigger__label">
-                {meeting?.projectName?.trim() || "No project"}
-              </span>
-            </button>
-          )}
-        </PropertyFieldGroup>
+                data-task-property-dropdown="project"
+                disabled={disabled}
+                onClick={() => onFieldActivate?.("project")}
+              >
+                <span
+                  className="property-dropdown-trigger__icon"
+                  aria-hidden="true"
+                >
+                  {resolveProjectTriggerIcon(
+                    meeting?.projectKey,
+                    projectOptions,
+                  )}
+                </span>
+                <span className="property-dropdown-trigger__label">
+                  {meeting?.projectName?.trim() || "No project"}
+                </span>
+              </button>
+            )}
+          </PropertyFieldGroup>
+        ) : null}
 
       </EntityPropertiesSection>
 
