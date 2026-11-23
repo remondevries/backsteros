@@ -1502,6 +1502,86 @@ export function registerFinanceRoutes(app: Hono) {
     },
   );
 
+  app.get("/api/v1/transactions/:id/attachments", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "finance:read")) return c.json(forbidden(), 403);
+    const result = await financeService.listTransactionAttachments(
+      auth.workspaceId,
+      c.req.param("id"),
+    );
+    if (!result.ok) {
+      return c.json(
+        {
+          error: result.error,
+          ...(result.code ? { code: result.code } : {}),
+        },
+        result.status,
+      );
+    }
+    return c.json({
+      attachments: result.attachments.map((attachment) => ({
+        id: attachment.id,
+        filename: attachment.filename,
+        contentType: attachment.contentType,
+        size: attachment.size,
+        invoiceType: attachment.invoiceType,
+        invoiceId: attachment.invoiceId,
+        kind: attachment.kind,
+      })),
+    });
+  });
+
+  app.get("/api/v1/transactions/:id/attachments/:attachmentId", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "finance:read")) return c.json(forbidden(), 403);
+    const result = await financeService.downloadTransactionAttachment(
+      auth.workspaceId,
+      c.req.param("id"),
+      c.req.param("attachmentId"),
+    );
+    if (!result.ok) {
+      return c.json(
+        {
+          error: result.error,
+          ...(result.code ? { code: result.code } : {}),
+        },
+        result.status,
+      );
+    }
+    const filename = (result.file.filename || result.attachment.filename).replaceAll(
+      '"',
+      "",
+    );
+    c.header("Content-Type", result.file.contentType);
+    c.header("Content-Disposition", `inline; filename="${filename}"`);
+    return c.body(Uint8Array.from(result.file.bytes).buffer);
+  });
+
+  app.get("/api/v1/transactions/:id/pdf", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "finance:read")) return c.json(forbidden(), 403);
+    const result = await financeService.downloadTransactionPdf(
+      auth.workspaceId,
+      c.req.param("id"),
+    );
+    if (!result.ok) {
+      return c.json(
+        {
+          error: result.error,
+          ...(result.code ? { code: result.code } : {}),
+        },
+        result.status,
+      );
+    }
+    const filename = (result.file.filename || result.attachment.filename).replaceAll(
+      '"',
+      "",
+    );
+    c.header("Content-Type", result.file.contentType);
+    c.header("Content-Disposition", `inline; filename="${filename}"`);
+    return c.body(Uint8Array.from(result.file.bytes).buffer);
+  });
+
   app.patch(
     "/api/v1/transactions/:id",
     zValidator("json", updateFinancialTransactionSchema),

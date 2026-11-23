@@ -275,6 +275,47 @@ describe("MoneybirdClient", () => {
     assert.equal(rows[0]?.totalUnpaidBase, "12.00");
   });
 
+  it("follows attachment download redirects without forwarding the bearer token", async () => {
+    const authHeaders: Array<string | null> = [];
+    const client = new MoneybirdClient({
+      apiToken: "test-token",
+      administrationId: "42",
+      fetchImpl: async (input, init) => {
+        const url = String(input);
+        const headers = new Headers(init?.headers);
+        authHeaders.push(headers.get("Authorization"));
+        if (url.endsWith("/attachments/9/download")) {
+          return new Response("moved", {
+            status: 302,
+            headers: {
+              Location: "https://storage.example/file.pdf",
+            },
+          });
+        }
+        if (url === "https://storage.example/file.pdf") {
+          return new Response(Uint8Array.from([1, 2, 3]), {
+            status: 200,
+            headers: {
+              "content-type": "application/pdf",
+              "content-disposition": 'inline; filename="bill.pdf"',
+            },
+          });
+        }
+        return new Response("not found", { status: 404 });
+      },
+    });
+    const file = await client.downloadAttachableAttachment(
+      "PurchaseInvoice",
+      "8",
+      "9",
+    );
+    assert.deepEqual([...file.bytes], [1, 2, 3]);
+    assert.equal(file.contentType, "application/pdf");
+    assert.equal(file.filename, "bill.pdf");
+    assert.equal(authHeaders[0], "Bearer test-token");
+    assert.equal(authHeaders[1], null);
+  });
+
   it("fetches a sales invoice and identity", async () => {
     const client = new MoneybirdClient({
       apiToken: "test-token",

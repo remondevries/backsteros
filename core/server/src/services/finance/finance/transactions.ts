@@ -707,6 +707,7 @@ export async function updateTransaction(
       ...(accountPatch.bankAccountId !== undefined
         ? { bankAccountId: accountPatch.bankAccountId }
         : {}),
+      ...(patch.bookedOn !== undefined ? { bookedOn: patch.bookedOn } : {}),
       ...(patch.organizationId !== undefined
         ? { organizationId: patch.organizationId }
         : {}),

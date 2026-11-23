@@ -63,3 +63,13 @@ export type {
   ListTransactionsFilters,
   FinancialTransactionSyncCreateInput,
 } from "./finance/transactions.js";
+export {
+  listTransactionAttachments,
+  downloadTransactionAttachment,
+  downloadTransactionPdf,
+} from "./transaction-attachments.js";
+export type {
+  TransactionAttachmentRef,
+  TransactionAttachmentListResult,
+  TransactionAttachmentDownloadResult,
+} from "./transaction-attachments.js";

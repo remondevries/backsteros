@@ -662,6 +662,53 @@ export const financeRoutes: AppRouter = c.router({
     },
     summary: "Get a single transaction by id (Tier C)",
   },
+  listFinancialTransactionAttachments: {
+    method: "GET",
+    path: "/api/v1/transactions/:id/attachments",
+    pathParams: s.idParamsSchema,
+    responses: {
+      200: s.financialTransactionAttachmentsResponseSchema,
+      400: badRequestSchema,
+      401: errorSchema,
+      403: errorSchema,
+      404: errorSchema,
+    },
+    summary:
+      "List Moneybird attachments linked to a transaction (via mutation payments)",
+  },
+  getFinancialTransactionAttachment: {
+    method: "GET",
+    path: "/api/v1/transactions/:id/attachments/:attachmentId",
+    pathParams: s.financialTransactionAttachmentParamsSchema,
+    responses: {
+      200: c.otherResponse({
+        contentType: "application/octet-stream",
+        body: c.type<Blob>(),
+      }),
+      400: badRequestSchema,
+      401: errorSchema,
+      403: errorSchema,
+      404: errorSchema,
+    },
+    summary: "Download one Moneybird attachment for a transaction",
+  },
+  getFinancialTransactionPdf: {
+    method: "GET",
+    path: "/api/v1/transactions/:id/pdf",
+    pathParams: s.idParamsSchema,
+    responses: {
+      200: c.otherResponse({
+        contentType: "application/pdf",
+        body: c.type<Blob>(),
+      }),
+      400: badRequestSchema,
+      401: errorSchema,
+      403: errorSchema,
+      404: errorSchema,
+    },
+    summary:
+      "Download the primary PDF for a transaction (first PDF attachment or sales invoice PDF)",
+  },
   updateFinancialTransaction: {
     method: "PATCH",
     path: "/api/v1/transactions/:id",

@@ -465,9 +465,31 @@ export const financialTransactionSchema = z.object({
   updatedAt: isoDateSchema,
 });
 
+/** Moneybird (or future) file linked to a ledger transaction. */
+export const financialTransactionAttachmentSchema = z.object({
+  id: z.string().min(1),
+  filename: z.string().min(1),
+  contentType: z.string().min(1),
+  size: z.number().int().nonnegative().nullable(),
+  invoiceType: z.string().min(1),
+  invoiceId: z.string().min(1),
+  kind: z.enum(["attachment", "sales_invoice_pdf"]),
+});
+
+export const financialTransactionAttachmentsResponseSchema = z.object({
+  attachments: z.array(financialTransactionAttachmentSchema),
+});
+
+export const financialTransactionAttachmentParamsSchema = z.object({
+  id: z.string().min(1),
+  attachmentId: z.string().min(1),
+});
+
 export const updateFinancialTransactionSchema = z.object({
   /** Move the transaction to another bank account in the same workspace. */
   bankAccountId: z.string().optional(),
+  /** Re-book the transaction onto another calendar day (`YYYY-MM-DD`). */
+  bookedOn: calendarDateSchema.optional(),
   organizationId: z.string().nullable().optional(),
   projectId: z.string().nullable().optional(),
   categoryId: z.string().nullable().optional(),
@@ -858,6 +880,10 @@ export type FinancialImportBatch = z.infer<typeof financialImportBatchSchema>;
 export type FinancialImportResult = z.infer<typeof financialImportResultSchema>;
 
 export type FinancialTransaction = z.infer<typeof financialTransactionSchema>;
+
+export type FinancialTransactionAttachment = z.infer<
+  typeof financialTransactionAttachmentSchema
+>;
 
 export type UpdateFinancialTransactionInput = z.infer<
   typeof updateFinancialTransactionSchema

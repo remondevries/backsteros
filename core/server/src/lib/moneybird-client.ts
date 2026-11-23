@@ -179,6 +179,92 @@ export type MoneybirdFinancialMutation = {
   raw: Record<string, unknown>;
 };
 
+/** A payment booking on a financial mutation (links the bank line to an invoice/document). */
+export type MoneybirdMutationPayment = {
+  id: string;
+  invoiceType: string;
+  invoiceId: string;
+};
+
+/** File metadata from a Moneybird attachable (purchase invoice, receipt, sales invoice, …). */
+export type MoneybirdAttachmentMeta = {
+  id: string;
+  filename: string | null;
+  contentType: string | null;
+  size: number | null;
+};
+
+export type MoneybirdDownloadedFile = {
+  bytes: Uint8Array;
+  contentType: string;
+  filename: string | null;
+};
+
+/**
+ * Moneybird `invoice_type` on a mutation payment → REST collection path under
+ * `/api/v2/{administration_id}/…`.
+ */
+export function moneybirdAttachableCollectionPath(
+  invoiceType: string,
+): string | null {
+  switch (invoiceType.trim()) {
+    case "SalesInvoice":
+      return "sales_invoices";
+    case "ExternalSalesInvoice":
+      return "external_sales_invoices";
+    case "PurchaseInvoice":
+      return "documents/purchase_invoices";
+    case "Receipt":
+      return "documents/receipts";
+    case "GeneralJournalDocument":
+      return "documents/general_journal_documents";
+    case "GeneralDocument":
+    case "TypelessDocument":
+    case "Document":
+      return "documents/general_documents";
+    default:
+      return null;
+  }
+}
+
+export function mapMoneybirdMutationPayments(
+  raw: unknown,
+): MoneybirdMutationPayment[] {
+  if (!Array.isArray(raw)) return [];
+  const out: MoneybirdMutationPayment[] = [];
+  for (const row of raw) {
+    if (!row || typeof row !== "object" || Array.isArray(row)) continue;
+    const record = row as Record<string, unknown>;
+    const id = asStringId(record.id);
+    const invoiceType = asOptionalString(record.invoice_type);
+    const invoiceId = asStringId(record.invoice_id);
+    if (!id || !invoiceType || !invoiceId) continue;
+    out.push({ id, invoiceType, invoiceId });
+  }
+  return out;
+}
+
+export function mapMoneybirdAttachmentMeta(
+  raw: Record<string, unknown>,
+): MoneybirdAttachmentMeta | null {
+  const id = asStringId(raw.id);
+  if (!id) return null;
+  const sizeRaw = raw.size ?? raw.byte_size;
+  const size =
+    typeof sizeRaw === "number" && Number.isFinite(sizeRaw) && sizeRaw >= 0
+      ? Math.trunc(sizeRaw)
+      : typeof sizeRaw === "string" && sizeRaw.trim()
+        ? Number(sizeRaw)
+        : null;
+  return {
+    id,
+    filename: asOptionalString(raw.filename) ?? asOptionalString(raw.name),
+    contentType:
+      asOptionalString(raw.content_type) ?? asOptionalString(raw.mime_type),
+    size: size != null && Number.isFinite(size) && size >= 0 ? size : null,
+  };
+}
+
 export class MoneybirdApiError extends Error {
   readonly status: number;
   readonly body: string;
@@ -963,6 +1049,112 @@ export class MoneybirdClient {
           Boolean(row) && typeof row === "object" && !Array.isArray(row),
       )
       .map(mapMoneybirdFinancialMutation);
+  }
+
+  /**
+   * Download endpoints return 302 to a short-lived storage URL. Follow the
+   * Location without forwarding the Moneybird bearer token.
+   */
+  private async requestRedirectDownload(
+    path: string,
+  ): Promise<MoneybirdDownloadedFile> {
+    return enqueueMoneybirdRequest(async () => {
+      const url = `${MONEYBIRD_API_BASE}${path}`;
+      const response = await this.fetchImpl(url, {
+        method: "GET",
+        redirect: "manual",
+        headers: {
+          Accept: "*/*",
+          Authorization: `Bearer ${this.apiToken}`,
+        },
+      });
+      if (response.status !== 301 && response.status !== 302) {
+        const body = await response.text();
+        throw new MoneybirdApiError(
+          response.status,
+          body,
+          `Moneybird download failed (${response.status}) for ${path}`,
+        );
+      }
+      const location = response.headers.get("Location");
+      if (!location) {
+        throw new MoneybirdApiError(
+          response.status,
+          "",
+          `Moneybird download missing Location for ${path}`,
+        );
+      }
+      const fileResponse = await this.fetchImpl(location, {
+        method: "GET",
+        headers: { Accept: "*/*" },
+      });
+      if (!fileResponse.ok) {
+        const body = await fileResponse.text();
+        throw new MoneybirdApiError(
+          fileResponse.status,
+          body,
+          `Moneybird storage download failed (${fileResponse.status})`,
+        );
+      }
+      const buffer = new Uint8Array(await fileResponse.arrayBuffer());
+      const contentType =
+        fileResponse.headers.get("content-type")?.split(";")[0]?.trim() ||
+        "application/octet-stream";
+      const disposition = fileResponse.headers.get("content-disposition");
+      const filenameMatch = disposition?.match(
+        /filename\*?=(?:UTF-8''|")?([^\";]+)"?/i,
+      );
+      const filename = filenameMatch?.[1]
+        ? decodeURIComponent(filenameMatch[1].trim())
+        : null;
+      return { bytes: buffer, contentType, filename };
+    });
+  }
+
+  async listAttachableAttachments(
+    invoiceType: string,
+    invoiceId: string,
+  ): Promise<MoneybirdAttachmentMeta[]> {
+    const administrationId = this.requireAdministrationId();
+    const collection = moneybirdAttachableCollectionPath(invoiceType);
+    if (!collection) return [];
+    const path = `/${encodeURIComponent(administrationId)}/${collection}/${encodeURIComponent(invoiceId)}.json`;
+    const raw = await this.requestJson<Record<string, unknown>>(path);
+    const attachments = Array.isArray(raw.attachments) ? raw.attachments : [];
+    const out: MoneybirdAttachmentMeta[] = [];
+    for (const row of attachments) {
+      if (!row || typeof row !== "object" || Array.isArray(row)) continue;
+      const mapped = mapMoneybirdAttachmentMeta(row as Record<string, unknown>);
+      if (mapped) out.push(mapped);
+    }
+    return out;
+  }
+
+  async downloadAttachableAttachment(
+    invoiceType: string,
+    invoiceId: string,
+    attachmentId: string,
+  ): Promise<MoneybirdDownloadedFile> {
+    const administrationId = this.requireAdministrationId();
+    const collection = moneybirdAttachableCollectionPath(invoiceType);
+    if (!collection) {
+      throw new MoneybirdApiError(
+        400,
+        "",
+        `Unsupported Moneybird attachable type: ${invoiceType}`,
+      );
+    }
+    const path = `/${encodeURIComponent(administrationId)}/${collection}/${encodeURIComponent(invoiceId)}/attachments/${encodeURIComponent(attachmentId)}/download`;
+    return this.requestRedirectDownload(path);
+  }
+
+  /** Moneybird-rendered sales invoice PDF (not an uploaded attachment). */
+  async downloadSalesInvoicePdf(
+    invoiceId: string,
+  ): Promise<MoneybirdDownloadedFile> {
+    const administrationId = this.requireAdministrationId();
+    const path = `/${encodeURIComponent(administrationId)}/sales_invoices/${encodeURIComponent(invoiceId)}/download_pdf`;
+    return this.requestRedirectDownload(path);
   }
 }
 
