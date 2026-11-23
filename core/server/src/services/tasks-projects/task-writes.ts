@@ -27,6 +27,7 @@ import type { TicketEmailSyncDeps } from "../ticket-email-sync.js";
 import { contacts, type DbTask, entityCounters, habits, tasks } from "../../db/schema.js";
 import * as taskActivityService from "../task-activities.js";
 import type { TaskWriteActor } from "../task-activities.js";
+import * as timeEntryService from "../time-entries/index.js";
 import { getProjectById } from "./projects.js";
 import {
   assertTaskLabelIds,
@@ -410,6 +411,22 @@ async function createTaskWithExecutor(
       deps: options?.linkedEmailTriageDeps,
       executor,
     });
+
+    if (
+      input.trackedDurationSeconds != null &&
+      input.trackedDurationSeconds > 0
+    ) {
+      await timeEntryService.applyEntityTrackedDuration(
+        workspaceId,
+        {
+          entityType: "task",
+          entityId: row.id,
+          nextDurationSeconds: input.trackedDurationSeconds,
+          actor,
+        },
+        executor as unknown as timeEntryService.DbExecutor,
+      );
+    }
   }
 
   bumpAgentSearchCache(workspaceId);
@@ -1012,6 +1029,29 @@ export async function updateTask(
         deps: options?.linkedEmailTriageDeps,
         executor,
       });
+    }
+
+    if (
+      input.trackedDurationSeconds !== undefined &&
+      input.trackedDurationSeconds !== (existing.trackedDurationSeconds ?? null)
+    ) {
+      await timeEntryService.applyEntityTrackedDuration(
+        workspaceId,
+        {
+          entityType: "task",
+          entityId: id,
+          nextDurationSeconds: input.trackedDurationSeconds ?? 0,
+          actor,
+          now: writeAt,
+        },
+        executor as unknown as timeEntryService.DbExecutor,
+      );
+      const refreshed = await executor
+        .select()
+        .from(tasks)
+        .where(and(eq(tasks.workspaceId, workspaceId), eq(tasks.id, id)))
+        .limit(1);
+      if (refreshed[0]) row = refreshed[0];
     }
   }
 

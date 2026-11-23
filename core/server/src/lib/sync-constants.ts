@@ -25,6 +25,7 @@ export const SYNC_ENTITIES = [
   "crm_activity",
   "task_label",
   "task_activity",
+  "time_entry",
   "email_thread",
   "email_thread_comment",
   "recurring_task",
@@ -67,6 +68,7 @@ export const POWERSYNC_DOWNLOAD_ONLY_TABLES = [
   "avatars",
   "mentions",
   "task_activities",
+  "time_entries",
 ] as const;
 
 export const POWERSYNC_OPS = ["PUT", "PATCH", "DELETE"] as const;

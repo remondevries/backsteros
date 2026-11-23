@@ -24,6 +24,7 @@ export const POWERSYNC_PUBLICATION_TABLES = [
   "meetings",
   "task_comments",
   "task_activities",
+  "time_entries",
   "contact_relationships",
   "crm_relationship_labels",
   "crm_groups",

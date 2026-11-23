@@ -49,6 +49,7 @@ export const REPLICATED_TABLES = [
   "email_thread_comments",
   "task_comments",
   "task_activities",
+  "time_entries",
   "recurring_tasks",
   "device_push_tokens",
   "entity_counters",

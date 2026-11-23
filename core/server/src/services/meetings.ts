@@ -33,6 +33,7 @@ import {
   type DbMeeting,
 } from "../db/schema.js";
 import { newId } from "../lib/crypto.js";
+import * as timeEntryService from "./time-entries/index.js";
 import { externalCalendarEventId as hashExternalCalendarEventId } from "../lib/google-calendar-client.js";
 import {
   decodeUpdatedAtCursor,
@@ -796,6 +797,21 @@ export async function updateMeeting(
       workspaceId,
       row,
       contactIdList(existing.attendeeContactIds),
+    );
+  }
+
+  if (
+    input.trackedDurationSeconds !== undefined &&
+    input.trackedDurationSeconds !== (existing.trackedDurationSeconds ?? null)
+  ) {
+    await timeEntryService.applyEntityTrackedDuration(
+      workspaceId,
+      {
+        entityType: "meeting",
+        entityId: id,
+        nextDurationSeconds: input.trackedDurationSeconds ?? 0,
+      },
+      executor as unknown as timeEntryService.DbExecutor,
     );
   }
 

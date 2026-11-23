@@ -14,6 +14,7 @@ import { registerSocialRoutes } from "./social-routes.js";
 import { withAuth } from "./route-shared.js";
 import { apiKeyRateLimit } from "../middleware/api-key-rate-limit.js";
 import { registerFinanceRoutes } from "./finance-routes.js";
+import { registerTimeEntryRoutes } from "./time-entry-routes.js";
 import { registerAgentAiRoutes } from "./agent-ai-routes.js";
 import { registerApiKeyRoutes } from "./api-key-routes.js";
 import { registerAgentMessageWebhookRoutes } from "./agent-message-webhook-routes.js";
@@ -54,6 +55,7 @@ export function registerApiRoutes(app: Hono) {
   registerAgentChatRoutes(app);
   registerSocialRoutes(app);
   registerFinanceRoutes(app);
+  registerTimeEntryRoutes(app);
   registerAgentAiRoutes(app);
   registerApiKeyRoutes(app);
 }

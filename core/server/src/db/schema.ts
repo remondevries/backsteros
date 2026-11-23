@@ -1686,6 +1686,90 @@ export const taskActivities = pgTable(
 );
 
 /**
+ * Polymorphic time ledger — source of truth for tracked duration.
+ * Open rows (`ended_at` null) are running timers; entity
+ * `tracked_duration_seconds` is a cached SUM maintained by the write service.
+ */
+export const timeEntries = pgTable(
+  "time_entries",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    /** task | meeting | document (extend later). */
+    entityType: text("entity_type").notNull(),
+    entityId: text("entity_id").notNull(),
+    actorUserId: text("actor_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    actorContactId: text("actor_contact_id").references(() => contacts.id, {
+      onDelete: "set null",
+    }),
+    startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
+    /** Null = open / running timer. */
+    endedAt: timestamp("ended_at", { withTimezone: true }),
+    /**
+     * Closed: final session length. Open: soft-checkpointed elapsed so far.
+     * Whole seconds; never negative.
+     */
+    durationSeconds: integer("duration_seconds").notNull().default(0),
+    /** timer | manual | import | migration | adjustment */
+    source: text("source").notNull().default("timer"),
+    note: text("note"),
+    projectId: text("project_id").references(() => projects.id, {
+      onDelete: "set null",
+    }),
+    organizationId: text("organization_id").references(() => organizations.id, {
+      onDelete: "set null",
+    }),
+    /**
+     * When migrated from a task timer activity pair, the `timer_started` id
+     * (idempotent backfill + session delete linkage).
+     */
+    legacyStartActivityId: text("legacy_start_activity_id"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("time_entries_workspace_entity_idx").on(
+      table.workspaceId,
+      table.entityType,
+      table.entityId,
+    ),
+    index("time_entries_workspace_started_idx").on(
+      table.workspaceId,
+      table.startedAt,
+    ),
+    index("time_entries_workspace_project_idx").on(
+      table.workspaceId,
+      table.projectId,
+    ),
+    index("time_entries_workspace_actor_contact_idx").on(
+      table.workspaceId,
+      table.actorContactId,
+    ),
+    index("time_entries_workspace_open_idx")
+      .on(table.workspaceId, table.entityType, table.entityId)
+      .where(sql`${table.endedAt} is null and ${table.deletedAt} is null`),
+    uniqueIndex("time_entries_one_open_per_entity_uidx")
+      .on(table.workspaceId, table.entityType, table.entityId)
+      .where(sql`${table.endedAt} is null and ${table.deletedAt} is null`),
+    uniqueIndex("time_entries_legacy_start_activity_uidx")
+      .on(table.workspaceId, table.legacyStartActivityId)
+      .where(sql`${table.legacyStartActivityId} is not null`),
+  ],
+);
+
+export type DbTimeEntry = typeof timeEntries.$inferSelect;
+
+/**
  * Durable auto-review webhook outbox (OS-92). Twin-replicated between cores;
  * only cloud delivers. Not published to PowerSync.
  */

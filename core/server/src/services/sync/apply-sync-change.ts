@@ -1524,6 +1524,12 @@ export async function applySyncChange(
       return row ? taskCommentSnapshot(row) : null;
     }
 
+    case "time_entry": {
+      // Server-owned ledger (download-only / twin). Client PowerSync uploads
+      // are rejected; REST writes go through time-entry routes.
+      return null;
+    }
+
     case "task_activity": {
       const existing = await taskActivityService.getTaskActivityRow(
         workspaceId,

@@ -35,6 +35,7 @@ const ENTITY_REPLICATION_TABLES: Partial<
   crm_group_member: ["crm_group_members"],
   crm_activity: ["crm_activities"],
   task_activity: ["task_activities"],
+  time_entry: ["time_entries"],
   email_thread: ["email_threads"],
   email_thread_comment: ["email_thread_comments"],
   recurring_task: ["recurring_tasks"],

@@ -453,6 +453,32 @@ const task_activities = new Table(
   { indexes: { task: ["task_id"], type: ["type"], parent: ["parent_id"] } },
 );
 
+/** Polymorphic tracked-time ledger — Tier A metadata (download-only). */
+const time_entries = new Table(
+  {
+    entity_type: column.text,
+    entity_id: column.text,
+    actor_user_id: column.text,
+    actor_contact_id: column.text,
+    started_at: column.text,
+    ended_at: column.text,
+    duration_seconds: column.integer,
+    source: column.text,
+    note: column.text,
+    project_id: column.text,
+    organization_id: column.text,
+    legacy_start_activity_id: column.text,
+    ...commonDates,
+  },
+  {
+    indexes: {
+      entity: ["entity_type", "entity_id"],
+      project: ["project_id"],
+      started: ["started_at"],
+    },
+  },
+);
+
 const contact_relationships = new Table(
   {
     from_contact_id: column.text,
@@ -556,6 +582,7 @@ export const appSchema = new Schema({
   meetings,
   task_comments,
   task_activities,
+  time_entries,
   contact_relationships,
   crm_relationship_labels,
   crm_groups,

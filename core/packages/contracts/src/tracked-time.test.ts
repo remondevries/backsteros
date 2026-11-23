@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   adoptRemoteRunningTimerClock,
   isActiveOpenRunningTimer,
+  isActiveOpenTimeEntry,
   OPEN_RUNNING_TIMER_WITHOUT_ENTRY_GRACE_MS,
 } from "./tracked-time.js";
 
@@ -78,6 +79,27 @@ test("adopt clock anchors at remote start so late adopters match", () => {
     late.baseSeconds + Math.floor((now - late.sessionStartAt) / 1000);
   assert.equal(earlyElapsed, lateElapsed);
   assert.equal(lateElapsed, 10);
+});
+
+test("open time entry liveness mirrors running-timer grace", () => {
+  assert.equal(
+    isActiveOpenTimeEntry({
+      startedAtMs: now - 2 * 60 * 60 * 1000,
+      durationSeconds: 7200,
+      updatedAtMs: now - 30_000,
+      nowMs: now,
+    }),
+    true,
+  );
+  assert.equal(
+    isActiveOpenTimeEntry({
+      startedAtMs: now - 2 * 60 * 60 * 1000,
+      durationSeconds: 7200,
+      updatedAtMs: now - 60 * 60 * 1000,
+      nowMs: now,
+    }),
+    false,
+  );
 });
 
 test("adopt clock subtracts wall time from a fresh soft checkpoint", () => {

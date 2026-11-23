@@ -74,6 +74,7 @@ const TABLE_SPECS: TableSpec[] = [
   spec("email_thread_comments", ["id"], "updated_at", { optional: true }),
   spec("task_comments", ["id"]),
   spec("task_activities", ["id"], "created_at"),
+  spec("time_entries", ["id"], "updated_at", { optional: true }),
   spec("recurring_tasks", ["id"], "updated_at", { optional: true }),
   spec("device_push_tokens", ["id"], "updated_at", { optional: true }),
   spec("entity_counters", ["workspace_id", "entity", "scope_id"]),

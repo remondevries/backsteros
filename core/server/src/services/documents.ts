@@ -32,6 +32,7 @@ import {
 } from "../lib/document-sections.js";
 import { appendOpsLog } from "../lib/ops-log-buffer.js";
 import { bumpAgentSearchCache } from "../lib/agent-search-cache.js";
+import * as timeEntryService from "./time-entries/index.js";
 import {
   buildStorageKey,
   checksumForContent,
@@ -631,7 +632,25 @@ export async function updateDocument(
     .where(and(eq(documents.workspaceId, workspaceId), eq(documents.id, id)))
     .returning();
 
-  if (row) bumpAgentSearchCache(workspaceId);
+  if (row) {
+    if (
+      trackedDurationTouched &&
+      input.trackedDurationSeconds !== undefined &&
+      input.trackedDurationSeconds !==
+        (existing.trackedDurationSeconds ?? null)
+    ) {
+      await timeEntryService.applyEntityTrackedDuration(
+        workspaceId,
+        {
+          entityType: "document",
+          entityId: id,
+          nextDurationSeconds: input.trackedDurationSeconds ?? 0,
+        },
+        executor as unknown as timeEntryService.DbExecutor,
+      );
+    }
+    bumpAgentSearchCache(workspaceId);
+  }
   return row ?? null;
 }
 

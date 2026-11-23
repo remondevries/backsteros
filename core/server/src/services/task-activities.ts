@@ -1,4 +1,4 @@
-import { isActiveOpenRunningTimer } from "@backsteros/contracts";
+import { isActiveOpenTimeEntry } from "@backsteros/contracts";
 import { and, asc, desc, eq, gte, inArray, isNull, lt, or, sql } from "drizzle-orm";
 
 import { db } from "../db/index.js";
@@ -19,6 +19,7 @@ import {
   type RecentTaskTimer,
   type RecentTaskTimerRow,
 } from "./task-recent-timers.js";
+import * as timeEntryService from "./time-entries/index.js";
 
 export {
   nextTrackedDurationAfterAutoStop,
@@ -230,7 +231,7 @@ export async function createClientTaskActivity(
     .limit(1);
   if (!task) return null;
 
-  return recordTaskActivity(
+  const row = await recordTaskActivity(
     workspaceId,
     taskId,
     type,
@@ -239,6 +240,44 @@ export async function createClientTaskActivity(
     executor,
     id,
   );
+
+  // Dual-write: keep the activity feed while the ledger is source of truth.
+  if (row && (type === "timer_started" || type === "timer_stopped")) {
+    const profile = await resolveActorProfile(workspaceId, actor, executor);
+    const ledgerActor = {
+      userId: profile.userId,
+      contactId: profile.contactId,
+    };
+    const ledgerExecutor = executor as unknown as timeEntryService.DbExecutor;
+    if (type === "timer_started") {
+      await timeEntryService.startOpenTimeEntry(
+        workspaceId,
+        {
+          entityType: "task",
+          entityId: taskId,
+          actor: ledgerActor,
+          startedAt: row.createdAt,
+          source: "timer",
+          legacyStartActivityId: row.id,
+        },
+        ledgerExecutor,
+      );
+    } else {
+      const durationSeconds = durationSecondsFromStopData(data);
+      await timeEntryService.stopOpenTimeEntry(
+        workspaceId,
+        {
+          entityType: "task",
+          entityId: taskId,
+          endedAt: row.createdAt,
+          durationSeconds: durationSeconds > 0 ? durationSeconds : undefined,
+        },
+        ledgerExecutor,
+      );
+    }
+  }
+
+  return row;
 }
 
 export async function getTaskActivityRow(
@@ -522,8 +561,9 @@ export type OpenRunningTaskTimer = {
 export const OPEN_RUNNING_TIMER_MAX_AGE_MS = 36 * 60 * 60 * 1000;
 
 /**
- * Tasks whose latest timer activity is `timer_started` (no later stop), within
- * `maxAgeMs`. Used by desktop chrome to mirror timers started in other clients.
+ * Tasks with an open `time_entries` row (ended_at null), within `maxAgeMs`.
+ * Falls back to activity-pair heuristics only when the ledger has no open row
+ * for that task yet (pre-backfill). Used by desktop chrome.
  */
 export async function listOpenRunningTaskTimers(
   workspaceId: string,
@@ -541,36 +581,33 @@ export async function listOpenRunningTaskTimers(
     trackedMinutes: number | null;
     projectKey: string | null;
     updatedAt: Date | string | null;
+    entryDurationSeconds: number | null;
   }>(sql`
     SELECT
-      a.task_id AS "taskId",
-      a.created_at AS "startedAt",
+      e.entity_id AS "taskId",
+      e.started_at AS "startedAt",
       t.title AS title,
       t.number AS number,
       t.status AS status,
       t.tracked_duration_seconds AS "trackedDurationSeconds",
       t.tracked_minutes AS "trackedMinutes",
-      t.updated_at AS "updatedAt",
+      e.updated_at AS "updatedAt",
+      e.duration_seconds AS "entryDurationSeconds",
       p.key AS "projectKey"
-    FROM task_activities a
+    FROM time_entries e
     INNER JOIN tasks t
-      ON t.id = a.task_id
+      ON t.id = e.entity_id
       AND t.workspace_id = ${workspaceId}
       AND t.deleted_at IS NULL
     LEFT JOIN projects p
       ON p.id = t.project_id
       AND p.deleted_at IS NULL
-    WHERE a.workspace_id = ${workspaceId}
-      AND a.type = 'timer_started'
-      AND a.created_at >= ${sinceIso}::timestamptz
-      AND a.created_at = (
-        SELECT MAX(c.created_at)
-        FROM task_activities c
-        WHERE c.task_id = a.task_id
-          AND c.workspace_id = ${workspaceId}
-          AND c.type IN ('timer_started', 'timer_stopped')
-      )
-    ORDER BY a.created_at DESC
+    WHERE e.workspace_id = ${workspaceId}
+      AND e.entity_type = 'task'
+      AND e.ended_at IS NULL
+      AND e.deleted_at IS NULL
+      AND e.started_at >= ${sinceIso}::timestamptz
+    ORDER BY e.started_at DESC
   `);
 
   const list = Array.isArray(rows) ? rows : (rows as { rows?: unknown }).rows;
@@ -584,6 +621,7 @@ export async function listOpenRunningTaskTimers(
     trackedMinutes: number | null;
     projectKey: string | null;
     updatedAt: Date | string | null;
+    entryDurationSeconds: number | null;
   }>;
 
   return entries.flatMap((row) => {
@@ -603,11 +641,14 @@ export async function listOpenRunningTaskTimers(
         : Number(row.trackedDurationSeconds);
     const trackedMinutes =
       row.trackedMinutes == null ? null : Number(row.trackedMinutes);
+    const entryDurationSeconds =
+      row.entryDurationSeconds == null
+        ? null
+        : Number(row.entryDurationSeconds);
     if (
-      !isActiveOpenRunningTimer({
+      !isActiveOpenTimeEntry({
         startedAtMs: startedAt.getTime(),
-        trackedDurationSeconds,
-        trackedMinutes,
+        durationSeconds: entryDurationSeconds ?? trackedDurationSeconds,
         updatedAtMs:
           updatedAt && !Number.isNaN(updatedAt.getTime())
             ? updatedAt.getTime()
@@ -633,9 +674,8 @@ export async function listOpenRunningTaskTimers(
 }
 
 /**
- * Distinct tasks with recent timer activity (start or stop), for shared chrome
- * dropdowns. Includes paused sessions; `isRunning` uses the same live check as
- * `listOpenRunningTaskTimers`.
+ * Distinct tasks with recent time_entries activity, for shared chrome dropdowns.
+ * Includes paused sessions; `isRunning` uses open-entry liveness.
  */
 export async function listRecentTaskTimers(
   workspaceId: string,
@@ -654,37 +694,50 @@ export async function listRecentTaskTimers(
   );
   const since = new Date(Date.now() - maxAgeMs);
   const sinceIso = since.toISOString();
-  const rows = await db.execute<RecentTaskTimerRow>(sql`
+  const rows = await db.execute<{
+    taskId: string;
+    lastTimerAt: Date | string;
+    latestType: string;
+    title: string;
+    number: number | null;
+    status: string | null;
+    trackedDurationSeconds: number | null;
+    trackedMinutes: number | null;
+    projectKey: string | null;
+    updatedAt: Date | string | null;
+  }>(sql`
     SELECT
-      a.task_id AS "taskId",
-      a.created_at AS "lastTimerAt",
-      a.type AS "latestType",
+      e.entity_id AS "taskId",
+      COALESCE(e.ended_at, e.started_at) AS "lastTimerAt",
+      CASE WHEN e.ended_at IS NULL THEN 'timer_started' ELSE 'timer_stopped' END AS "latestType",
       t.title AS title,
       t.number AS number,
       t.status AS status,
       t.tracked_duration_seconds AS "trackedDurationSeconds",
       t.tracked_minutes AS "trackedMinutes",
-      t.updated_at AS "updatedAt",
+      e.updated_at AS "updatedAt",
       p.key AS "projectKey"
-    FROM task_activities a
+    FROM time_entries e
     INNER JOIN tasks t
-      ON t.id = a.task_id
+      ON t.id = e.entity_id
       AND t.workspace_id = ${workspaceId}
       AND t.deleted_at IS NULL
     LEFT JOIN projects p
       ON p.id = t.project_id
       AND p.deleted_at IS NULL
-    WHERE a.workspace_id = ${workspaceId}
-      AND a.type IN ('timer_started', 'timer_stopped')
-      AND a.created_at >= ${sinceIso}::timestamptz
-      AND a.created_at = (
-        SELECT MAX(c.created_at)
-        FROM task_activities c
-        WHERE c.task_id = a.task_id
+    WHERE e.workspace_id = ${workspaceId}
+      AND e.entity_type = 'task'
+      AND e.deleted_at IS NULL
+      AND e.started_at >= ${sinceIso}::timestamptz
+      AND e.updated_at = (
+        SELECT MAX(c.updated_at)
+        FROM time_entries c
+        WHERE c.entity_id = e.entity_id
           AND c.workspace_id = ${workspaceId}
-          AND c.type IN ('timer_started', 'timer_stopped')
+          AND c.entity_type = 'task'
+          AND c.deleted_at IS NULL
       )
-    ORDER BY a.created_at ASC
+    ORDER BY COALESCE(e.ended_at, e.started_at) ASC
     LIMIT ${limit}
   `);
 
@@ -821,35 +874,19 @@ export async function deleteTaskTimerSession(
       );
   }
 
-  if (removedDurationSeconds > 0) {
-    const [task] = await executor
-      .select({
-        trackedDurationSeconds: tasks.trackedDurationSeconds,
-      })
-      .from(tasks)
-      .where(
-        and(
-          eq(tasks.id, taskId),
-          eq(tasks.workspaceId, workspaceId),
-          isNull(tasks.deletedAt),
-        ),
-      )
-      .limit(1);
-    if (task) {
-      const current = task.trackedDurationSeconds ?? 0;
-      const next = Math.max(0, current - removedDurationSeconds);
-      await executor
-        .update(tasks)
-        .set({
-          trackedDurationSeconds: next > 0 ? next : null,
-          trackedMinutes: next > 0 ? Math.round(next / 60) : null,
-          updatedAt: new Date(),
-        })
-        .where(
-          and(eq(tasks.id, taskId), eq(tasks.workspaceId, workspaceId)),
-        );
-    }
-  }
+  // Ledger is source of truth — remove the mirrored entry then recompute cache.
+  const ledgerExecutor = executor as unknown as timeEntryService.DbExecutor;
+  await timeEntryService.deleteTimeEntryByLegacyStartActivity(
+    workspaceId,
+    pair.start.id,
+    ledgerExecutor,
+  );
+  await timeEntryService.recomputeEntityTrackedDurationCache(
+    workspaceId,
+    "task",
+    taskId,
+    ledgerExecutor,
+  );
 
   return {
     taskId,
@@ -1044,6 +1081,9 @@ export async function autoStopTaskTimerOnStatus(
     executor,
   );
 
+  // createClientTaskActivity dual-writes stop + recomputes cache. Prefer the
+  // soft-checkpoint-aware merge when the ledger sum is still behind (e.g.
+  // client had already PATCHed a higher running total onto the open entry).
   const [task] = await executor
     .select({
       trackedDurationSeconds: tasks.trackedDurationSeconds,
@@ -1066,27 +1106,21 @@ export async function autoStopTaskTimerOnStatus(
     previousStoppedSecondsSum,
     sessionSeconds,
   });
-  const trackedDurationSeconds = nextSeconds > 0 ? nextSeconds : null;
-  const trackedMinutes =
-    trackedDurationSeconds != null && trackedDurationSeconds >= 60
-      ? Math.floor(trackedDurationSeconds / 60)
-      : null;
-
-  if (
-    (task.trackedDurationSeconds ?? null) !== trackedDurationSeconds
-  ) {
-    await executor
-      .update(tasks)
-      .set({
-        trackedDurationSeconds,
-        trackedMinutes,
-        updatedAt: now,
-      })
-      .where(
-        and(eq(tasks.id, taskId), eq(tasks.workspaceId, workspaceId)),
-      );
+  if (nextSeconds !== (task.trackedDurationSeconds ?? 0)) {
+    await timeEntryService.applyEntityTrackedDuration(
+      workspaceId,
+      {
+        entityType: "task",
+        entityId: taskId,
+        nextDurationSeconds: nextSeconds > 0 ? nextSeconds : 0,
+        actor: timerActorFromAssignee(assigneeId),
+        now,
+      },
+      executor as unknown as timeEntryService.DbExecutor,
+    );
   }
 
+  const trackedDurationSeconds = nextSeconds > 0 ? nextSeconds : null;
   return { stop, trackedDurationSeconds };
 }
 

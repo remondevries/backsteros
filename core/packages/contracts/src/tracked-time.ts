@@ -131,11 +131,17 @@ export function resolveTrackedMinutes(input: {
   return null;
 }
 
-/** Resolve precise tracked duration in seconds for timers and manual entry. */
+/**
+ * Resolve precise tracked duration in seconds for timers and manual entry.
+ * Prefer stored tracked seconds/minutes. Schedule fallback remains the default
+ * for legacy display; pass `allowScheduleFallback: false` for ledger math.
+ */
 export function resolveTrackedDurationSeconds(input: {
   trackedDurationSeconds?: number | null;
   trackedMinutes?: number | null;
   scheduleMinutes?: number | null;
+  /** When false, never treat calendar span as tracked time. Default true. */
+  allowScheduleFallback?: boolean;
 }): number | null {
   if (
     input.trackedDurationSeconds != null &&
@@ -144,12 +150,29 @@ export function resolveTrackedDurationSeconds(input: {
   ) {
     return Math.floor(input.trackedDurationSeconds);
   }
+  const allowSchedule = input.allowScheduleFallback !== false;
   const minutes = resolveTrackedMinutes({
     trackedMinutes: input.trackedMinutes,
-    scheduleMinutes: input.scheduleMinutes,
+    scheduleMinutes: allowSchedule ? input.scheduleMinutes : null,
   });
   if (minutes == null || minutes <= 0) return null;
   return minutes * 60;
+}
+
+/** Whether an open time_entries row is still a live running timer. */
+export function isActiveOpenTimeEntry(input: {
+  startedAtMs: number;
+  /** Soft-checkpoint heartbeat (`time_entries.updated_at`). */
+  updatedAtMs?: number | null;
+  durationSeconds?: number | null;
+  nowMs?: number;
+}): boolean {
+  return isActiveOpenRunningTimer({
+    startedAtMs: input.startedAtMs,
+    trackedDurationSeconds: input.durationSeconds,
+    updatedAtMs: input.updatedAtMs,
+    nowMs: input.nowMs,
+  });
 }
 
 /** End instant `minutes` after `start`; null when invalid. */
