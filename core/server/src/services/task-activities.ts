@@ -705,11 +705,13 @@ export async function listRecentTaskTimers(
     trackedMinutes: number | null;
     projectKey: string | null;
     updatedAt: Date | string | null;
+    openEntryId: string | null;
   }>(sql`
     SELECT
       e.entity_id AS "taskId",
       COALESCE(e.ended_at, e.started_at) AS "lastTimerAt",
       CASE WHEN e.ended_at IS NULL THEN 'timer_started' ELSE 'timer_stopped' END AS "latestType",
+      CASE WHEN e.ended_at IS NULL THEN e.id ELSE NULL END AS "openEntryId",
       t.title AS title,
       t.number AS number,
       t.status AS status,
@@ -737,7 +739,7 @@ export async function listRecentTaskTimers(
           AND c.entity_type = 'task'
           AND c.deleted_at IS NULL
       )
-    ORDER BY COALESCE(e.ended_at, e.started_at) ASC
+    ORDER BY COALESCE(e.ended_at, e.started_at) DESC
     LIMIT ${limit}
   `);
 

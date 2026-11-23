@@ -40,6 +40,7 @@ type RecentTimerApiRow = {
   trackedMinutes: number | null;
   projectKey: string | null;
   updatedAt?: string | null;
+  openEntryId?: string | null;
 };
 
 const POLL_INTERVAL_MS = 2_000;
@@ -108,6 +109,24 @@ export function useSyncRemoteRunningTimers(): void {
           isRunning: row.isRunning,
           updatedAtMs: row.updatedAt ? parseStartedAtMs(row.updatedAt) : null,
           onPersist: (seconds: number | null) => {
+            const entryId =
+              typeof row.openEntryId === "string" && row.openEntryId.trim()
+                ? row.openEntryId.trim()
+                : null;
+            if (entryId != null && seconds != null) {
+              void cloudCoreRequestJson(
+                `/api/v1/time-entries/${encodeURIComponent(entryId)}/checkpoint`,
+                {
+                  method: "POST",
+                  body: JSON.stringify({
+                    durationSeconds: Math.max(0, Math.round(seconds)),
+                  }),
+                },
+              ).catch(() => {
+                // Soft checkpoint is best-effort from chrome.
+              });
+              return;
+            }
             void cloudCoreRequestJson(
               `/api/v1/tasks/${encodeURIComponent(taskId)}`,
               {
@@ -123,6 +142,26 @@ export function useSyncRemoteRunningTimers(): void {
             sessionSeconds?: number,
           ) => {
             if (action === "started") return;
+            const entryId =
+              typeof row.openEntryId === "string" && row.openEntryId.trim()
+                ? row.openEntryId.trim()
+                : null;
+            if (entryId != null) {
+              void cloudCoreRequestJson(
+                `/api/v1/time-entries/${encodeURIComponent(entryId)}/stop`,
+                {
+                  method: "POST",
+                  body: JSON.stringify({
+                    durationSeconds: Math.max(
+                      0,
+                      Math.round(sessionSeconds ?? 0),
+                    ),
+                  }),
+                },
+              ).catch(() => {
+                // Ledger stop is best-effort; activity feed still below.
+              });
+            }
             void cloudCoreRequestJson(
               `/api/v1/tasks/${encodeURIComponent(taskId)}/activities`,
               {

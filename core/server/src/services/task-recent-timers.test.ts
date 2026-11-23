@@ -31,6 +31,27 @@ describe("toRecentTaskTimer", () => {
     assert.equal(timer.startedAt.getTime(), now - 30_000);
     assert.equal(timer.number, 12);
     assert.equal(timer.projectKey, "OS");
+    assert.equal(timer.openEntryId, null);
+  });
+
+  it("passes through openEntryId when the start is live", () => {
+    const timer = toRecentTaskTimer(
+      {
+        taskId: "task-1",
+        lastTimerAt: new Date(now - 30_000),
+        latestType: "timer_started",
+        title: "Ship dropdown",
+        number: 12,
+        status: "in_progress",
+        trackedDurationSeconds: 120,
+        trackedMinutes: 2,
+        projectKey: "OS",
+        updatedAt: new Date(now - 10_000),
+        openEntryId: "entry-1",
+      },
+      now,
+    );
+    assert.equal(timer.openEntryId, "entry-1");
   });
 
   it("marks a stopped session as paused", () => {

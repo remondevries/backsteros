@@ -1,5 +1,6 @@
 import type { Context, Hono } from "hono";
 import {
+  checkpointTimeEntrySchema,
   createTimeEntrySchema,
   listTimeEntriesQuerySchema,
   stopTimeEntrySchema,
@@ -147,6 +148,45 @@ export function registerTimeEntryRoutes(app: Hono) {
       auth.workspaceId,
       existing.id,
       parsed.data,
+    );
+    if (!row) return c.json(notFound("Time entry"), 404);
+    return c.json(timeEntryService.toTimeEntry(row));
+  });
+
+  app.post("/api/v1/time-entries/:id/checkpoint", async (c) => {
+    const auth = getAuth(c);
+    const existing = await timeEntryService.getTimeEntry(
+      auth.workspaceId,
+      c.req.param("id"),
+    );
+    if (!existing) return c.json(notFound("Time entry"), 404);
+    if (existing.endedAt != null) {
+      return c.json(
+        { error: "Time entry is not open", code: "not_open" as const },
+        400,
+      );
+    }
+    if (
+      !requireScope(
+        writeScopeForEntity(existing.entityType as TimeEntryEntityType) as never,
+      )(auth)
+    ) {
+      return c.json(forbidden(), 403);
+    }
+    const parsed = checkpointTimeEntrySchema.safeParse(
+      await c.req.json().catch(() => null),
+    );
+    if (!parsed.success) {
+      return c.json(
+        { error: "Invalid checkpoint body", code: "invalid_body" },
+        400,
+      );
+    }
+    const row = await timeEntryService.checkpointOpenFromEntityTotal(
+      auth.workspaceId,
+      existing.entityType as TimeEntryEntityType,
+      existing.entityId,
+      parsed.data.durationSeconds,
     );
     if (!row) return c.json(notFound("Time entry"), 404);
     return c.json(timeEntryService.toTimeEntry(row));

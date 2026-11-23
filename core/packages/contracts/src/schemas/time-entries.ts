@@ -117,6 +117,14 @@ export const stopTimeEntrySchema = z.object({
 });
 export type StopTimeEntryInput = z.infer<typeof stopTimeEntrySchema>;
 
+/** Soft-checkpoint an open entry using the entity's total tracked seconds. */
+export const checkpointTimeEntrySchema = z.object({
+  durationSeconds: z.number().int().nonnegative(),
+});
+export type CheckpointTimeEntryInput = z.infer<
+  typeof checkpointTimeEntrySchema
+>;
+
 export const TIME_ENTRY_SUMMARY_GROUP_BY = [
   "day",
   "project",

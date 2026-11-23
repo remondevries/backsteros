@@ -395,6 +395,7 @@ export function registerTasksRoutes(app: Hono) {
         trackedMinutes: timer.trackedMinutes,
         projectKey: timer.projectKey,
         updatedAt: timer.updatedAt?.toISOString() ?? null,
+        openEntryId: timer.openEntryId,
       })),
     });
   });

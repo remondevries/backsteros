@@ -18,6 +18,8 @@ export type RecentTaskTimer = {
   trackedMinutes: number | null;
   projectKey: string | null;
   updatedAt: Date | null;
+  /** Open `time_entries.id` when `isRunning`; null when paused. */
+  openEntryId: string | null;
 };
 
 export type RecentTaskTimerRow = {
@@ -31,6 +33,7 @@ export type RecentTaskTimerRow = {
   trackedMinutes: number | null;
   projectKey: string | null;
   updatedAt: Date | string | null;
+  openEntryId?: string | null;
 };
 
 /** Map a latest-timer activity row into a chrome recent-timer entry. */
@@ -80,5 +83,9 @@ export function toRecentTaskTimer(
     trackedMinutes,
     projectKey: row.projectKey,
     updatedAt,
+    openEntryId:
+      isRunning && typeof row.openEntryId === "string" && row.openEntryId
+        ? row.openEntryId
+        : null,
   };
 }
