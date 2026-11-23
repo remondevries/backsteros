@@ -1113,7 +1113,7 @@ export async function updateExternalCalendarEvent(
   const titleTouched = patch.title !== undefined;
   const nextTitle = !titleTouched
     ? external.title
-    : patch.title.trim() || external.title;
+    : (patch.title ?? "").trim() || external.title;
   const descriptionTouched = patch.description !== undefined;
   const nextDescription = !descriptionTouched
     ? external.description

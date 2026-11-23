@@ -72,7 +72,7 @@ export async function rememberAgentMailHiddenMessages(
 ): Promise<void> {
   if (!workspaceId.trim() || hides.length === 0) return;
 
-  const current = await getSettings(workspaceId);
+  const current = (await getSettings(workspaceId)) as Record<string, unknown>;
   const existing = asHideList(current[SETTINGS_KEY]);
   const byKey = new Map(
     existing.map((row) => [
@@ -105,7 +105,7 @@ export async function loadAgentMailHiddenLookup(workspaceId: string): Promise<{
   messageKeys: Set<string>;
   threadKeys: Set<string>;
 }> {
-  const current = await getSettings(workspaceId);
+  const current = (await getSettings(workspaceId)) as Record<string, unknown>;
   const hides = asHideList(current[SETTINGS_KEY]);
   const messageKeys = new Set<string>();
   const threadKeys = new Set<string>();

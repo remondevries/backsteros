@@ -642,7 +642,8 @@ export async function applySyncChange(
           projectId,
           parentId,
           kind: asString(change.payload.kind) as "document" | "folder" | undefined,
-          icon,
+          // Create path has no “clear”; drop null from asNullableString.
+          icon: icon ?? undefined,
           sortOrder,
           journalDate,
         },
