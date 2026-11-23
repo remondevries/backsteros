@@ -28,7 +28,19 @@ describe("spaces-paths", () => {
       resolveSpacesCategoryIdFromPath("knowledge-base/second-brain"),
       "knowledge-base",
     );
-    assert.equal(resolveSpacesCategoryIdFromPath("portal"), null);
+    // Without knownRoots, any first segment is a candidate category id.
+    assert.equal(resolveSpacesCategoryIdFromPath("portal"), "portal");
+    assert.equal(
+      resolveSpacesCategoryIdFromPath("portal", ["knowledge-base", "support"]),
+      null,
+    );
+    assert.equal(
+      resolveSpacesCategoryIdFromPath("support/portal", [
+        "knowledge-base",
+        "support",
+      ]),
+      "support",
+    );
   });
 
   it("builds expected child paths", () => {

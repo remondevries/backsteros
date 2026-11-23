@@ -154,7 +154,8 @@ Comments:
 
 Spaces:
   backsteros spaces categories
-  backsteros spaces list --category support|knowledge-base|websites
+  backsteros spaces category create --title "Research" [--path research]
+  backsteros spaces list --category <categoryPath>
   backsteros spaces create --category support --title "Portal"
   backsteros spaces get <spaceId>
   backsteros spaces tree <spaceId>

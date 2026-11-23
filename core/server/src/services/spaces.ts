@@ -10,11 +10,11 @@ import { newId } from "../lib/crypto.js";
 import * as documentService from "./documents.js";
 import {
   expectedChildSpacesPath,
-  isSpacesCategoryId,
+  isSpacesCategoryPathSlug,
   normalizeSpacesPath,
   SPACES_CATEGORY_IDS,
   SPACES_CATEGORY_KNOWLEDGE_BASE,
-  SPACES_CATEGORY_TITLES,
+  SPACES_DEFAULT_CATEGORY_IDS,
   type SpacesCategoryId,
 } from "./spaces-paths.js";
 
@@ -142,6 +142,63 @@ function toSpaceCard(row: DbDocument, rows: readonly DbDocument[]) {
   };
 }
 
+/** Root knowledge folders are Spaces categories (seeded + user-created). */
+function listCategoryRootFolders(
+  rows: readonly DbDocument[],
+): DbDocument[] {
+  return rows.filter(
+    (row) =>
+      row.kind === "folder" &&
+      (row.parentId == null || row.parentId === ""),
+  );
+}
+
+function findCategoryRoot(
+  rows: readonly DbDocument[],
+  categoryId: string,
+): DbDocument | null {
+  const normalized = normalizeSpacesPath(categoryId);
+  if (!normalized) return null;
+  const roots = listCategoryRootFolders(rows);
+  const byPath = roots.find(
+    (row) => normalizeSpacesPath(row.path) === normalized,
+  );
+  if (byPath) return byPath;
+  return roots.find((row) => row.id === categoryId) ?? null;
+}
+
+function sortCategoryRoots(roots: DbDocument[]): DbDocument[] {
+  const defaultOrder = new Map<string, number>(
+    SPACES_DEFAULT_CATEGORY_IDS.map((id, index) => [id, index]),
+  );
+  return roots.slice().sort((a, b) => {
+    const aPath = normalizeSpacesPath(a.path);
+    const bPath = normalizeSpacesPath(b.path);
+    const ai = defaultOrder.get(aPath) ?? 1_000;
+    const bi = defaultOrder.get(bPath) ?? 1_000;
+    if (ai !== bi) return ai - bi;
+    const order = (a.sortOrder ?? 0) - (b.sortOrder ?? 0);
+    if (order !== 0) return order;
+    return a.title.localeCompare(b.title);
+  });
+}
+
+function toCategoryCard(root: DbDocument, rows: readonly DbDocument[]) {
+  const path = normalizeSpacesPath(root.path);
+  return {
+    id: path,
+    documentId: root.id,
+    title: root.title,
+    path,
+    icon: root.icon,
+    spaceCount: listDirectChildFolders(rows, root.id).length,
+  };
+}
+
+/**
+ * Category for a space folder = path of its root ancestor folder
+ * (parentId null), not a hardcoded allow-list.
+ */
 function resolveCategoryForSpace(
   space: DbDocument,
   rows: readonly DbDocument[],
@@ -152,9 +209,9 @@ function resolveCategoryForSpace(
   while (current) {
     if (seen.has(current.id)) break;
     seen.add(current.id);
-    const path = normalizeSpacesPath(current.path);
-    if (isSpacesCategoryId(path)) return path;
-    if (!current.parentId) break;
+    if (!current.parentId) {
+      return normalizeSpacesPath(current.path) || null;
+    }
     current = byId.get(current.parentId) ?? null;
   }
   return null;
@@ -162,27 +219,51 @@ function resolveCategoryForSpace(
 
 export async function listSpacesCategories(workspaceId: string) {
   const rows = await listKnowledge(workspaceId);
-  return SPACES_CATEGORY_IDS.map((id) => {
-    const root = findByPath(rows, id);
-    const spaces = root ? listDirectChildFolders(rows, root.id) : [];
-    return {
-      id,
-      title: SPACES_CATEGORY_TITLES[id],
-      path: id,
-      spaceCount: spaces.length,
-    };
+  return sortCategoryRoots(listCategoryRootFolders(rows)).map((root) =>
+    toCategoryCard(root, rows),
+  );
+}
+
+export async function createSpacesCategory(
+  workspaceId: string,
+  input: { title: string; path?: string | null; icon?: string | null },
+) {
+  const title = input.title.trim();
+  if (!title) throw new Error("TITLE_REQUIRED");
+
+  const requestedPath = input.path?.trim()
+    ? normalizeSpacesPath(input.path)
+    : slugifyTitle(title);
+  if (!isSpacesCategoryPathSlug(requestedPath)) {
+    throw new Error("INVALID_CATEGORY_PATH");
+  }
+
+  const rows = await listKnowledge(workspaceId);
+  if (findByPath(rows, requestedPath)) {
+    throw new Error("DOCUMENT_PATH_EXISTS");
+  }
+
+  const row = await documentService.createDocument(workspaceId, {
+    type: "knowledge",
+    kind: "folder",
+    title,
+    path: requestedPath,
+    icon: input.icon ?? undefined,
+    content: "",
   });
+
+  const refreshed = await listKnowledge(workspaceId);
+  const created =
+    refreshed.find((entry) => entry.id === row.id) ?? row;
+  return toCategoryCard(created, refreshed);
 }
 
 export async function listSpacesInCategory(
   workspaceId: string,
   categoryId: string,
 ) {
-  if (!isSpacesCategoryId(categoryId)) {
-    throw new Error("INVALID_CATEGORY");
-  }
   const rows = await listKnowledge(workspaceId);
-  const root = findByPath(rows, categoryId);
+  const root = findCategoryRoot(rows, categoryId);
   if (!root) throw new Error("CATEGORY_NOT_FOUND");
   return listDirectChildFolders(rows, root.id).map((row) =>
     toSpaceCard(row, rows),
@@ -194,14 +275,11 @@ export async function createSpaceInCategory(
   categoryId: string,
   input: { title: string; icon?: string | null },
 ) {
-  if (!isSpacesCategoryId(categoryId)) {
-    throw new Error("INVALID_CATEGORY");
-  }
   const title = input.title.trim();
   if (!title) throw new Error("TITLE_REQUIRED");
 
   const rows = await listKnowledge(workspaceId);
-  const root = findByPath(rows, categoryId);
+  const root = findCategoryRoot(rows, categoryId);
   if (!root) throw new Error("CATEGORY_NOT_FOUND");
 
   const slug = slugifyTitle(title);
@@ -247,10 +325,7 @@ export async function updateSpace(
   if (!space) return null;
 
   if (input.categoryId) {
-    if (!isSpacesCategoryId(input.categoryId)) {
-      throw new Error("INVALID_CATEGORY");
-    }
-    const root = findByPath(rows, input.categoryId);
+    const root = findCategoryRoot(rows, input.categoryId);
     if (!root) throw new Error("CATEGORY_NOT_FOUND");
     if (space.parentId !== root.id) {
       await documentService.moveDocument(workspaceId, spaceId, root.id);
@@ -383,4 +458,9 @@ export async function createSpaceArticle(
   });
 }
 
-export { SPACES_CATEGORY_IDS, isSpacesCategoryId };
+export {
+  SPACES_CATEGORY_IDS,
+  SPACES_DEFAULT_CATEGORY_IDS,
+  isSpacesCategoryPathSlug,
+  isSpacesCategoryId,
+} from "./spaces-paths.js";

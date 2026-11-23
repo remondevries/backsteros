@@ -109,6 +109,62 @@ export function registerSpacesRoutes(app: Hono) {
     return c.json({ categories });
   });
 
+  app.post(
+    "/api/v1/spaces/categories",
+    zValidator(
+      "json",
+      z.object({
+        title: z.string().min(1),
+        path: z.string().min(1).nullable().optional(),
+        icon: z.string().nullable().optional(),
+      }),
+    ),
+    async (c) => {
+      const auth = getAuth(c);
+      if (!requireScope("documents:write")(auth)) {
+        return c.json(auth ? forbidden() : unauthorized(), auth ? 403 : 401);
+      }
+      try {
+        const category = await spacesService.createSpacesCategory(
+          auth!.workspaceId,
+          c.req.valid("json"),
+        );
+        wakeSpacesDocuments(auth!.workspaceId, category.documentId, "upsert");
+        return c.json({ category }, 201);
+      } catch (error) {
+        if (error instanceof Error && error.message === "TITLE_REQUIRED") {
+          return c.json(
+            { error: "Title is required", code: "bad_request" },
+            400,
+          );
+        }
+        if (
+          error instanceof Error &&
+          error.message === "INVALID_CATEGORY_PATH"
+        ) {
+          return c.json(
+            {
+              error:
+                "Category path must be a single kebab-case segment (e.g. research)",
+              code: "bad_request",
+            },
+            400,
+          );
+        }
+        if (error instanceof Error && error.message === "DOCUMENT_PATH_EXISTS") {
+          return c.json(
+            {
+              error: "A category with this path already exists",
+              code: "conflict",
+            },
+            409,
+          );
+        }
+        throw error;
+      }
+    },
+  );
+
   app.post("/api/v1/spaces/heal", async (c) => {
     const auth = getAuth(c);
     if (!requireScope("documents:write")(auth)) {
@@ -134,12 +190,6 @@ export function registerSpacesRoutes(app: Hono) {
       );
       return c.json({ spaces });
     } catch (error) {
-      if (error instanceof Error && error.message === "INVALID_CATEGORY") {
-        return c.json(
-          { error: "Invalid Spaces category", code: "bad_request" },
-          400,
-        );
-      }
       if (error instanceof Error && error.message === "CATEGORY_NOT_FOUND") {
         return c.json(notFound("Category"), 404);
       }
@@ -170,12 +220,6 @@ export function registerSpacesRoutes(app: Hono) {
         wakeSpacesDocuments(auth!.workspaceId, space.id, "upsert");
         return c.json({ space }, 201);
       } catch (error) {
-        if (error instanceof Error && error.message === "INVALID_CATEGORY") {
-          return c.json(
-            { error: "Invalid Spaces category", code: "bad_request" },
-            400,
-          );
-        }
         if (error instanceof Error && error.message === "CATEGORY_NOT_FOUND") {
           return c.json(notFound("Category"), 404);
         }
@@ -306,12 +350,6 @@ export function registerSpacesRoutes(app: Hono) {
         wakeSpacesDocuments(auth!.workspaceId, space.id, "upsert");
         return c.json({ space });
       } catch (error) {
-        if (error instanceof Error && error.message === "INVALID_CATEGORY") {
-          return c.json(
-            { error: "Invalid Spaces category", code: "bad_request" },
-            400,
-          );
-        }
         if (error instanceof Error && error.message === "CATEGORY_NOT_FOUND") {
           return c.json(notFound("Category"), 404);
         }

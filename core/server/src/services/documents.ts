@@ -332,7 +332,16 @@ export async function ensureSpacesHierarchy(
     } = { updatedAt: new Date() };
     let changed = false;
 
-    if (row.parentId == null) {
+    // Root folders with a single path segment are Spaces categories
+    // (seeded defaults + user-created). Do not tuck them under Second brain.
+    const rootPath = (row.path ?? "").replace(/\\/g, "/").replace(/^\/+|\/+$/g, "");
+    const isCategoryRootFolder =
+      row.kind === "folder" &&
+      row.parentId == null &&
+      Boolean(rootPath) &&
+      !rootPath.includes("/");
+
+    if (row.parentId == null && !isCategoryRootFolder) {
       patches.parentId = secondBrainId;
       changed = true;
     }

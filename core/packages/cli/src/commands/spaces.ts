@@ -23,7 +23,7 @@ export async function runSpacesCommand(
 ): Promise<void> {
   const act = requireAction(
     action,
-    "Usage: backsteros spaces <categories|list|create|get|tree|article|heal> …",
+    "Usage: backsteros spaces <categories|category|list|create|get|tree|article|heal> …",
   );
 
   switch (act) {
@@ -34,6 +34,7 @@ export async function runSpacesCommand(
           title: string;
           path: string;
           spaceCount: number;
+          documentId?: string;
         }>;
       }>("/api/v1/spaces/categories");
       emitResult(
@@ -45,12 +46,49 @@ export async function runSpacesCommand(
       );
       return;
     }
+    case "category": {
+      const sub = positionals[0];
+      if (sub !== "create") {
+        throw new Error(
+          'Usage: backsteros spaces category create --title "Research" [--path research]',
+        );
+      }
+      const title =
+        typeof values.title === "string" ? values.title : undefined;
+      if (!title) {
+        throw new Error(
+          'Usage: backsteros spaces category create --title "Research" [--path research]',
+        );
+      }
+      const body: Record<string, unknown> = { title };
+      if (typeof values.path === "string") body.path = values.path;
+      if (typeof values.icon === "string") body.icon = values.icon;
+      const res = await client.requestJson<{
+        category: {
+          id: string;
+          title: string;
+          path: string;
+          spaceCount: number;
+          documentId: string;
+        };
+      }>("/api/v1/spaces/categories", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      emitResult(
+        config.json,
+        res,
+        `created category ${res.category.path}  ${res.category.title}  (${res.category.documentId})`,
+      );
+      return;
+    }
     case "list": {
       const category =
         typeof values.category === "string" ? values.category : positionals[0];
       if (!category) {
         throw new Error(
-          "Usage: backsteros spaces list --category support|knowledge-base|websites",
+          "Usage: backsteros spaces list --category <categoryPath>",
         );
       }
       const res = await client.requestJson<{ spaces: SpaceCard[] }>(
@@ -239,7 +277,7 @@ export async function runSpacesCommand(
     }
     default:
       throw new Error(
-        `Unknown spaces action "${act}". Use categories|list|create|get|tree|article|heal.`,
+        `Unknown spaces action "${act}". Use categories|category|list|create|get|tree|article|heal.`,
       );
   }
 }
