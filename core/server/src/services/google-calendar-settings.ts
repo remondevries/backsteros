@@ -1073,6 +1073,7 @@ export async function getExternalCalendarEvent(
 }
 
 export type UpdateExternalCalendarEventPatch = {
+  title?: string;
   startAt?: string;
   endAt?: string | null;
   startDate?: string;
@@ -1083,7 +1084,7 @@ export type UpdateExternalCalendarEventPatch = {
 };
 
 /**
- * Patch schedule, description, and/or location on a synced external calendar event.
+ * Patch title, schedule, description, and/or location on a synced external calendar event.
  * Writes through to Google when the row is a Google event.
  */
 export async function updateExternalCalendarEvent(
@@ -1109,6 +1110,10 @@ export async function updateExternalCalendarEvent(
 
   const nextAllDay =
     patch.allDay !== undefined ? patch.allDay : external.allDay;
+  const titleTouched = patch.title !== undefined;
+  const nextTitle = !titleTouched
+    ? external.title
+    : patch.title.trim() || external.title;
   const descriptionTouched = patch.description !== undefined;
   const nextDescription = !descriptionTouched
     ? external.description
@@ -1186,7 +1191,12 @@ export async function updateExternalCalendarEvent(
     }
   }
 
-  if (!scheduleTouched && !descriptionTouched && !locationTouched) {
+  if (
+    !titleTouched &&
+    !scheduleTouched &&
+    !descriptionTouched &&
+    !locationTouched
+  ) {
     return getExternalCalendarEvent(workspaceId, external.id);
   }
 
@@ -1211,6 +1221,7 @@ export async function updateExternalCalendarEvent(
     const patched = await client.patchEvent({
       calendarId: external.calendarId,
       eventId: external.externalId,
+      ...(titleTouched ? { summary: nextTitle } : {}),
       ...(scheduleTouched && start && end ? { start, end } : {}),
       ...(descriptionTouched
         ? { description: nextDescription }
@@ -1248,6 +1259,7 @@ export async function updateExternalCalendarEvent(
   await db
     .update(externalCalendarEvents)
     .set({
+      title: nextTitle,
       description: nextDescription,
       location: nextLocation,
       allDay: times.allDay,

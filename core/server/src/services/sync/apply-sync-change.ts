@@ -505,7 +505,8 @@ export async function applySyncChange(
       const title = asString(change.payload.title);
       const projectId = asString(change.payload.project_id ?? change.payload.projectId);
       const parentId = asString(change.payload.parent_id ?? change.payload.parentId);
-      const icon = asString(change.payload.icon);
+      // asString drops null; icon clears must use asNullableString (same as assignee_id).
+      const icon = asNullableString(change.payload.icon);
       const sortOrder = asNumber(change.payload.sort_order ?? change.payload.sortOrder);
       const journalDate = asString(change.payload.journal_date ?? change.payload.journalDate);
 

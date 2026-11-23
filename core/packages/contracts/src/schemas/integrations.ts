@@ -834,9 +834,11 @@ export const deleteExternalCalendarEventResultSchema = z.object({
 
 const ymdSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 
-/** Patch a synced Google (etc.) agenda block — schedule, description, and/or location. */
+/** Patch a synced Google (etc.) agenda block — title, schedule, description, and/or location. */
 export const updateExternalCalendarEventSchema = z
   .object({
+    /** Google event summary / title. Empty string is rejected; use a non-empty title. */
+    title: z.string().trim().min(1).max(1024).optional(),
     startAt: isoDateSchema.optional(),
     endAt: isoDateSchema.nullable().optional(),
     startDate: ymdSchema.optional(),
@@ -849,6 +851,7 @@ export const updateExternalCalendarEventSchema = z
   })
   .refine(
     (value) =>
+      value.title !== undefined ||
       value.startAt !== undefined ||
       value.endAt !== undefined ||
       value.startDate !== undefined ||

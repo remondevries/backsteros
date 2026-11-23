@@ -38,6 +38,7 @@ import {
   shouldRetriageEmailThreadOnInbound,
 } from "../../lib/email-status-labels.js";
 import {
+  invalidateAgentMailMessageDetailCache,
   peekAgentMailMessageDetailCache,
   writeAgentMailMessageDetailCache,
 } from "../../lib/agentmail-message-detail-cache.js";
@@ -46,6 +47,11 @@ import { emailMessageLinkHref } from "../../lib/email-grok-wake.js";
 import { db } from "../../db/index.js";
 import { projects, tasks } from "../../db/schema.js";
 import { formatTaskDisplayKey } from "../../lib/task-filters.js";
+import {
+  isAgentMailMessageHidden,
+  loadAgentMailHiddenLookup,
+  rememberAgentMailHiddenMessages,
+} from "./email-message-hides.js";
 function toApiMessage(message: {
   inboxId: string;
   threadId: string;
@@ -374,10 +380,19 @@ export async function listAgentMailMessages(
     }
   }
 
-  const metaMap = await emailThreadsService.listEmailThreadListMetaMap(
-    workspaceId,
-  );
-  return listed.map((message) => {
+  const [metaMap, hiddenLookup] = await Promise.all([
+    emailThreadsService.listEmailThreadListMetaMap(workspaceId),
+    loadAgentMailHiddenLookup(workspaceId),
+  ]);
+  const visibleListed = listed.filter((message) => {
+    if (message.kind === "draft") return true;
+    return !isAgentMailMessageHidden(hiddenLookup, {
+      inboxId: message.inboxId,
+      messageId: message.messageId,
+      threadId: message.threadId,
+    });
+  });
+  return visibleListed.map((message) => {
     const threadKey =
       message.kind === "draft"
         ? resolveDraftListThreadKey({
@@ -751,6 +766,8 @@ async function removeAgentMailMessageAndLocal(
       if (!(error instanceof AgentMailApiError) || error.status !== 404) {
         throw error;
       }
+      // Orphan thread_id on the message: AgentMail still serves GET message but
+      // GET/DELETE thread (and often DELETE message) return Thread not found.
     }
   }
 
@@ -762,13 +779,61 @@ async function removeAgentMailMessageAndLocal(
     );
   }
 
+  let agentMailRemoved = false;
   try {
     await client.deleteThread(inboxId, threadId);
+    agentMailRemoved = true;
   } catch (error) {
-    // Already gone on AgentMail — still clear local metadata + drafts.
     if (!(error instanceof AgentMailApiError) || error.status !== 404) {
       throw error;
     }
+  }
+
+  // Fallback when thread delete 404s (orphan thread_id) or only some replies remain.
+  if (!agentMailRemoved) {
+    for (const threadMessageId of threadMessageIds) {
+      try {
+        await client.deleteMessage(inboxId, threadMessageId);
+        agentMailRemoved = true;
+      } catch (error) {
+        if (!(error instanceof AgentMailApiError) || error.status !== 404) {
+          throw error;
+        }
+      }
+    }
+  }
+
+  // Verify — AgentMail sometimes 404s deletes while GET message still works.
+  let stillPresent = false;
+  try {
+    await client.getMessage(inboxId, messageId);
+    stillPresent = true;
+  } catch (error) {
+    if (!(error instanceof AgentMailApiError) || error.status !== 404) {
+      throw error;
+    }
+  }
+
+  if (stillPresent) {
+    // Keep the row out of Firm/desktop lists even when AgentMail cannot delete it.
+    await rememberAgentMailHiddenMessages(
+      workspaceId,
+      threadMessageIds.map((id) => ({
+        inboxId,
+        messageId: id,
+        threadId,
+      })),
+    );
+  } else {
+    // Short-lived hide covers list lag after a real AgentMail delete.
+    await rememberAgentMailHiddenMessages(workspaceId, [
+      { inboxId, messageId, threadId },
+    ]);
+  }
+
+  invalidateAgentMailMessageDetailCache(workspaceId, inboxId, messageId);
+  for (const threadMessageId of threadMessageIds) {
+    invalidateAgentMailMessageDetailCache(workspaceId, inboxId, threadMessageId);
   }
 
   const threadKey = emailThreadsService.resolveEmailThreadKey({
@@ -841,6 +906,21 @@ export async function deleteAgentMailThreadMessage(
     }
   }
 
+  let stillPresent = false;
+  try {
+    await client.getMessage(inboxId, messageId);
+    stillPresent = true;
+  } catch (error) {
+    if (!(error instanceof AgentMailApiError) || error.status !== 404) {
+      throw error;
+    }
+  }
+
+  await rememberAgentMailHiddenMessages(workspaceId, [
+    { inboxId, messageId, threadId },
+  ]);
+  invalidateAgentMailMessageDetailCache(workspaceId, inboxId, messageId);
+
   await deleteConceptReplyDraftsForMessage(client, inboxIds, messageId);
 
   if (!threadId) {
@@ -852,10 +932,13 @@ export async function deleteAgentMailThreadMessage(
     const thread = await client.getThread(inboxId, threadId);
     remainingMessageIds = thread.messages
       .map((entry) => entry.messageId?.trim())
-      .filter((id): id is string => Boolean(id));
+      .filter((id): id is string => Boolean(id))
+      .filter((id) => id !== messageId);
   } catch (error) {
     if (error instanceof AgentMailApiError && error.status === 404) {
-      remainingMessageIds = [];
+      // Orphan thread_id: do not treat as "thread empty" while the message
+      // is still readable from AgentMail.
+      remainingMessageIds = stillPresent ? [messageId] : [];
     } else {
       throw error;
     }
