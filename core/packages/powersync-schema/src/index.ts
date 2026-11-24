@@ -479,6 +479,53 @@ const time_entries = new Table(
   },
 );
 
+/** Document activity timeline (OS-202). */
+const document_activities = new Table(
+  {
+    document_id: column.text,
+    project_id: column.text,
+    type: column.text,
+    actor_kind: column.text,
+    actor_user_id: column.text,
+    actor_contact_id: column.text,
+    actor_api_key_id: column.text,
+    actor_name: column.text,
+    occurred_at: column.text,
+    data: column.text,
+    client_event_id: column.text,
+    created_at: column.text,
+    updated_at: column.text,
+    deleted_at: column.text,
+  },
+  { indexes: { document: ["document_id"], type: ["type"] } },
+);
+
+const pdf_export_brands = new Table(
+  {
+    scope_type: column.text,
+    scope_id: column.text,
+    brand: column.text,
+    version: column.integer,
+    updated_by_user_id: column.text,
+    updated_by_contact_id: column.text,
+    ...commonDates,
+  },
+  { indexes: { scope: ["scope_type", "scope_id"] } },
+);
+
+const pdf_export_document_settings = new Table(
+  {
+    document_id: column.text,
+    project_id: column.text,
+    settings: column.text,
+    version: column.integer,
+    updated_by_user_id: column.text,
+    updated_by_contact_id: column.text,
+    ...commonDates,
+  },
+  { indexes: { document: ["document_id"] } },
+);
+
 const contact_relationships = new Table(
   {
     from_contact_id: column.text,
@@ -583,6 +630,9 @@ export const appSchema = new Schema({
   task_comments,
   task_activities,
   time_entries,
+  document_activities,
+  pdf_export_brands,
+  pdf_export_document_settings,
   contact_relationships,
   crm_relationship_labels,
   crm_groups,

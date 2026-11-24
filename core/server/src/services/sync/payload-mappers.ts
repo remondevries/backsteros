@@ -307,6 +307,8 @@ export const letterKeys = {
   direction: "direction", original_filename: "originalFilename",
   storage_key: "storageKey", content_type: "contentType", byte_size: "byteSize",
   checksum: "checksum", content_etag: "contentEtag",
+  source_document_id: "sourceDocumentId",
+  source_content_version: "sourceContentVersion",
   sort_order: "sortOrder",
 };
 

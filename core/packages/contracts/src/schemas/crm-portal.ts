@@ -622,6 +622,8 @@ export const letterInputSchema = z.object({
   checksum: z.string().max(128).nullable().optional(),
   contentEtag: z.string().max(128).nullable().optional(),
   extractedText: z.string().max(2_000_000).nullable().optional(),
+  sourceDocumentId: z.string().nullable().optional(),
+  sourceContentVersion: z.number().int().nonnegative().nullable().optional(),
   sortOrder: z.number().int().optional(),
 });
 

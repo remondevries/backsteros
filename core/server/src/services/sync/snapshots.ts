@@ -294,6 +294,8 @@ export function letterSnapshot(row: typeof letters.$inferSelect) {
     storage_key: row.storageKey, original_filename: row.originalFilename,
     content_type: row.contentType, byte_size: row.byteSize, checksum: row.checksum,
     content_etag: row.contentEtag,
+    source_document_id: row.sourceDocumentId,
+    source_content_version: row.sourceContentVersion,
     sort_order: row.sortOrder, created_at: row.createdAt.toISOString(),
     updated_at: row.updatedAt.toISOString(), deleted_at: row.deletedAt?.toISOString() ?? null,
   };

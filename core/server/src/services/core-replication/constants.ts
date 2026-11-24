@@ -34,6 +34,9 @@ export const REPLICATED_TABLES = [
   /** Site keys / public base URL for Spaces publish (after documents FK parent). */
   "space_publish_settings",
   "space_site_keys",
+  "document_activities",
+  "pdf_export_brands",
+  "pdf_export_document_settings",
   "letters",
   "letter_attachments",
   "task_attachments",

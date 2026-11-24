@@ -52,12 +52,48 @@ import {
   unauthorized,
   upsertDevicePushTokenSchema,
   verifyAvatarSignature,
+  writeActorFromAuth,
   z,
   zValidator,
 } from "./route-deps.js";
 import type {
   Hono,
 } from "./route-deps.js";
+import { recordDocumentActivity } from "../services/document-activities.js";
+
+function recordLetterPdfCreationActivity(
+  workspaceId: string,
+  auth: Parameters<typeof writeActorFromAuth>[0],
+  letter: {
+    id: string;
+    sourceDocumentId?: string | null;
+    sourceContentVersion?: number | null;
+    projectId?: string | null;
+    originalFilename?: string | null;
+    byteSize?: number | null;
+    checksum?: string | null;
+  },
+) {
+  const sourceDocumentId = letter.sourceDocumentId?.trim();
+  if (!sourceDocumentId) return;
+  void recordDocumentActivity(workspaceId, sourceDocumentId, {
+    type: "pdf_creation",
+    actor: writeActorFromAuth(auth),
+    actorKind: auth.apiKeyId ? "agent" : "user",
+    actorApiKeyId: auth.apiKeyId ?? null,
+    projectId: letter.projectId ?? null,
+    data: {
+      channel: "letter",
+      letterId: letter.id,
+      contentVersion: letter.sourceContentVersion ?? null,
+      contentHash: letter.checksum ?? null,
+      filename: letter.originalFilename ?? null,
+      byteSize: letter.byteSize ?? null,
+    },
+  }).catch(() => {
+    /* activity must not fail the write */
+  });
+}
 
 export function registerLetterRoutes(app: Hono) {
   app.get("/api/v1/letters", async (c) => {
@@ -174,11 +210,13 @@ export function registerLetterRoutes(app: Hono) {
       });
       const row = await circleService.getLetterById(auth.workspaceId, letterId);
       if (!row) return c.json({ error: "Letter create failed", code: "internal" }, 500);
+      recordLetterPdfCreationActivity(auth.workspaceId, auth, row);
       nudgePeerEntityLive(auth, "letter", row.id, "upsert");
       return c.json(row, 201);
     }
     const row = await circleService.createLetter(auth.workspaceId, body);
     await recordLetterRestSyncEvent(auth.workspaceId, row, "upsert");
+    recordLetterPdfCreationActivity(auth.workspaceId, auth, row);
     nudgePeerEntityLive(auth, "letter", row.id, "upsert");
     return c.json(row, 201);
   });

@@ -58,6 +58,12 @@ const TABLE_SPECS: TableSpec[] = [
   spec("documents", ["id"]),
   spec("space_publish_settings", ["id"], "updated_at", { optional: true }),
   spec("space_site_keys", ["id"], "updated_at", { optional: true }),
+  /** Coalesced edits bump updated_at — cursor must track merges, not insert time. */
+  spec("document_activities", ["id"], "updated_at", { optional: true }),
+  spec("pdf_export_brands", ["id"], "updated_at", { optional: true }),
+  spec("pdf_export_document_settings", ["id"], "updated_at", {
+    optional: true,
+  }),
   spec("letters", ["id"]),
   spec("letter_attachments", ["id"], "updated_at", { optional: true }),
   spec("task_attachments", ["id"], "updated_at", { optional: true }),

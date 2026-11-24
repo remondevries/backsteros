@@ -100,9 +100,25 @@ GET  /api/v1/global-search?q=backster&mode=tasks
 GET  /api/v1/organizations/IN
 GET  /api/v1/documents/{id}
 GET  /api/v1/documents/{id}/content
+GET  /api/v1/documents/{id}/activities?types=&from=&to=&limit=&cursor=
+POST /api/v1/documents/{id}/activities   → client-reported `pdf_creation` only
+GET  /api/v1/document-activities?projectId=&documentId=&types=&from=&to=&limit=&cursor=
+GET  /api/v1/projects/{id}/pdf-export-brand
+PUT  /api/v1/projects/{id}/pdf-export-brand
+GET  /api/v1/spaces/{id}/pdf-export-brand
+PUT  /api/v1/spaces/{id}/pdf-export-brand
+GET  /api/v1/documents/{id}/pdf-export-settings
+PUT  /api/v1/documents/{id}/pdf-export-settings
 GET  /api/v1/letters/{id}
 GET  /api/v1/letters/{id}/pdf          → redirect or presigned URL
 ```
+
+Document activity types: `rename`, `front_matter_change`, `text_content_change`,
+`pdf_creation`. Core writes rename / front matter / text on document mutations;
+Firm (or agents) POST `pdf_creation` for client-side PDF downloads. Letters created
+with `sourceDocumentId` also record `pdf_creation`. PDF brand is per project/space;
+all other export settings are per document (CAS via `ifMatchVersion`).
+
 
 Path params and filter ids accept the **internal id or the human key**
 (`OS-51` for a task, `OS` for a project, org/contact keys likewise).

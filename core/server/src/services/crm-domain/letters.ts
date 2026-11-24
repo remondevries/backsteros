@@ -45,6 +45,8 @@ type LetterInput = {
   checksum?: string | null;
   contentEtag?: string | null;
   extractedText?: string | null;
+  sourceDocumentId?: string | null;
+  sourceContentVersion?: number | null;
   sortOrder?: number;
 };
 

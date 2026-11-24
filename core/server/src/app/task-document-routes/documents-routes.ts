@@ -40,10 +40,32 @@ import {
   updateDocumentContentSchema,
   updateDocumentSchema,
   updateDocumentSectionSchema,
+  writeActorFromAuth,
   z,
   zValidator,
 } from "../route-deps.js";
 import type { Hono } from "../route-deps.js";
+import { recordDocumentActivity } from "../../services/document-activities.js";
+
+function recordDocumentActivitySafe(
+  workspaceId: string,
+  documentId: string,
+  type: "rename" | "front_matter_change" | "text_content_change" | "pdf_creation",
+  auth: Parameters<typeof writeActorFromAuth>[0],
+  data?: Record<string, unknown>,
+  projectId?: string | null,
+) {
+  void recordDocumentActivity(workspaceId, documentId, {
+    type,
+    actor: writeActorFromAuth(auth),
+    actorKind: auth.apiKeyId ? "agent" : "user",
+    actorApiKeyId: auth.apiKeyId ?? null,
+    data,
+    projectId: projectId ?? null,
+  }).catch(() => {
+    /* activity must not fail the write */
+  });
+}
 
 /** Documents (metadata, content, properties, sections) and journal days. */
 export function registerDocumentsRoutes(app: Hono) {
@@ -247,14 +269,17 @@ export function registerDocumentsRoutes(app: Hono) {
       try {
         const documentId = c.req.param("id");
         const patch = c.req.valid("json");
+        const existingBefore = await documentService.getDocumentById(
+          auth.workspaceId,
+          documentId,
+        );
+        if (!existingBefore) {
+          return c.json(notFound("Document"), 404);
+        }
+        const titleChanged =
+          typeof patch.title === "string" &&
+          patch.title !== existingBefore.title;
         if (isRestLeaderFirstWrite()) {
-          const existing = await documentService.getDocumentById(
-            auth.workspaceId,
-            documentId,
-          );
-          if (!existing) {
-            return c.json(notFound("Document"), 404);
-          }
           await commitRestEntityWrite({
             workspaceId: auth.workspaceId,
             entity: "document",
@@ -269,6 +294,19 @@ export function registerDocumentsRoutes(app: Hono) {
           if (!row) {
             return c.json(notFound("Document"), 404);
           }
+          if (titleChanged) {
+            recordDocumentActivitySafe(
+              auth.workspaceId,
+              documentId,
+              "rename",
+              auth,
+              {
+                previousTitle: existingBefore.title,
+                title: row.title,
+              },
+              row.projectId,
+            );
+          }
           publishDocumentLiveFromAgent(auth, row.id, {
             projectId: row.projectId,
             storageKey: row.storageKey,
@@ -282,6 +320,19 @@ export function registerDocumentsRoutes(app: Hono) {
         );
         if (!row) {
           return c.json(notFound("Document"), 404);
+        }
+        if (titleChanged) {
+          recordDocumentActivitySafe(
+            auth.workspaceId,
+            documentId,
+            "rename",
+            auth,
+            {
+              previousTitle: existingBefore.title,
+              title: row.title,
+            },
+            row.projectId,
+          );
         }
         await recordDocumentRestSyncEvent(auth.workspaceId, row, "upsert");
         publishDocumentLiveFromAgent(auth, row.id, {
@@ -423,6 +474,14 @@ export function registerDocumentsRoutes(app: Hono) {
             contentVersion: result.contentVersion,
             storageKey: row.storageKey,
           });
+          recordDocumentActivitySafe(
+            auth.workspaceId,
+            documentId,
+            "text_content_change",
+            auth,
+            { contentVersion: result.contentVersion },
+            row.projectId,
+          );
           return c.json({
             content: body.content,
             contentType: row.contentType,
@@ -446,6 +505,14 @@ export function registerDocumentsRoutes(app: Hono) {
           contentVersion: row.contentVersion,
           storageKey: row.storageKey,
         });
+        recordDocumentActivitySafe(
+          auth.workspaceId,
+          documentId,
+          "text_content_change",
+          auth,
+          { contentVersion: row.contentVersion },
+          row.projectId,
+        );
 
         return c.json({
           content: body.content,
@@ -551,6 +618,14 @@ export function registerDocumentsRoutes(app: Hono) {
             contentVersion: leaderResult.contentVersion,
             storageKey: row?.storageKey,
           });
+          recordDocumentActivitySafe(
+            auth.workspaceId,
+            documentId,
+            "front_matter_change",
+            auth,
+            { contentVersion: leaderResult.contentVersion },
+            row?.projectId ?? null,
+          );
           return c.json({
             docKey: leaderResult.docKey,
             properties: leaderResult.properties,
@@ -572,6 +647,14 @@ export function registerDocumentsRoutes(app: Hono) {
           contentVersion: result.contentVersion,
           storageKey: result.row.storageKey,
         });
+        recordDocumentActivitySafe(
+          auth.workspaceId,
+          documentId,
+          "front_matter_change",
+          auth,
+          { contentVersion: result.contentVersion },
+          result.row.projectId,
+        );
         return c.json({
           docKey: result.row.docKey,
           properties: result.properties,

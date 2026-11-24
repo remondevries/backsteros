@@ -1492,6 +1492,13 @@
       "when": 1796470000000,
       "tag": "0211_time_entries",
       "breakpoints": true
+    },
+    {
+      "idx": 213,
+      "version": "7",
+      "when": 1796480000000,
+      "tag": "0212_document_activities_pdf_export_settings",
+      "breakpoints": true
     }
   ]
 }

@@ -2193,6 +2193,11 @@ export const letters = pgTable(
     checksum: text("checksum"),
     contentEtag: text("content_etag"),
     extractedText: text("extracted_text"),
+    /** Document this letter PDF was exported from (Firm Save as letter). */
+    sourceDocumentId: text("source_document_id").references(() => documents.id, {
+      onDelete: "set null",
+    }),
+    sourceContentVersion: integer("source_content_version"),
     sortOrder: bigint("sort_order", { mode: "number" }).notNull().default(0),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
@@ -2206,6 +2211,148 @@ export const letters = pgTable(
     index("letters_organization_id_idx").on(table.organizationId),
     index("letters_contact_id_idx").on(table.contactId),
     index("letters_received_date_idx").on(table.workspaceId, table.receivedDate),
+    index("letters_source_document_id_idx").on(table.sourceDocumentId),
+  ],
+);
+
+/**
+ * Document activity timeline (OS-202).
+ * Types: rename | front_matter_change | text_content_change | pdf_creation
+ */
+export const documentActivities = pgTable(
+  "document_activities",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    documentId: text("document_id")
+      .notNull()
+      .references(() => documents.id, { onDelete: "cascade" }),
+    projectId: text("project_id").references(() => projects.id, {
+      onDelete: "set null",
+    }),
+    type: text("type").notNull(),
+    actorKind: text("actor_kind").notNull().default("user"),
+    actorUserId: text("actor_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    actorContactId: text("actor_contact_id").references(() => contacts.id, {
+      onDelete: "set null",
+    }),
+    actorApiKeyId: text("actor_api_key_id"),
+    actorName: text("actor_name"),
+    occurredAt: timestamp("occurred_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    data: jsonb("data")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default(sql`'{}'::jsonb`),
+    clientEventId: text("client_event_id"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("document_activities_document_occurred_idx").on(
+      table.documentId,
+      table.occurredAt,
+    ),
+    index("document_activities_project_occurred_idx").on(
+      table.projectId,
+      table.occurredAt,
+    ),
+    index("document_activities_workspace_type_occurred_idx").on(
+      table.workspaceId,
+      table.type,
+      table.occurredAt,
+    ),
+    index("document_activities_actor_contact_id_idx").on(table.actorContactId),
+    index("document_activities_deleted_at_idx").on(table.deletedAt),
+    index("document_activities_updated_at_id_idx").on(
+      table.updatedAt,
+      table.id,
+    ),
+  ],
+);
+
+/** Project/space PDF brand only (rdv | lemo-design). */
+export const pdfExportBrands = pgTable(
+  "pdf_export_brands",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    /** project | space */
+    scopeType: text("scope_type").notNull(),
+    scopeId: text("scope_id").notNull(),
+    brand: text("brand").notNull(),
+    version: integer("version").notNull().default(1),
+    updatedByUserId: text("updated_by_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    updatedByContactId: text("updated_by_contact_id").references(
+      () => contacts.id,
+      { onDelete: "set null" },
+    ),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("pdf_export_brands_workspace_id_idx").on(table.workspaceId),
+  ],
+);
+
+/** Per-document PDF export settings (toggles + field values). */
+export const pdfExportDocumentSettings = pgTable(
+  "pdf_export_document_settings",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    documentId: text("document_id")
+      .notNull()
+      .references(() => documents.id, { onDelete: "cascade" }),
+    projectId: text("project_id").references(() => projects.id, {
+      onDelete: "set null",
+    }),
+    settings: jsonb("settings")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default(sql`'{}'::jsonb`),
+    version: integer("version").notNull().default(1),
+    updatedByUserId: text("updated_by_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    updatedByContactId: text("updated_by_contact_id").references(
+      () => contacts.id,
+      { onDelete: "set null" },
+    ),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("pdf_export_document_settings_project_id_idx").on(table.projectId),
   ],
 );
 

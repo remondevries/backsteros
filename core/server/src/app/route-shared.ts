@@ -537,6 +537,8 @@ export const letterSchema = z.object({
   direction: z.enum(["incoming", "outgoing"]).optional(),
   originalFilename: z.string().max(255).optional(),
   extractedText: z.string().max(2_000_000).nullable().optional(),
+  sourceDocumentId: z.string().nullable().optional(),
+  sourceContentVersion: z.number().int().nonnegative().nullable().optional(),
   sortOrder: z.number().int().optional(),
 });
 
