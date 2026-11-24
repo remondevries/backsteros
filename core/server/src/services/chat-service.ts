@@ -840,6 +840,10 @@ export async function syncChatwootConversations(
         inboxName: enriched.inboxId
           ? (inboxNameById.get(enriched.inboxId) ?? null)
           : null,
+        // Chatwoot open inbox is source of truth: bring back soft-deleted
+        // rows so WhatsApp / Telegram / Instagram / Messenger / X / web all
+        // reappear after sync (same fleet desktop Communications uses).
+        reviveDeleted: true,
       },
     );
     await fillLinkedContactXUserIdFromChatwoot(
