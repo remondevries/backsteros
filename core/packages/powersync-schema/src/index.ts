@@ -500,6 +500,23 @@ const document_activities = new Table(
   { indexes: { document: ["document_id"], type: ["type"] } },
 );
 
+/** Full-text document versions for activity diffs (OS-204). */
+const document_versions = new Table(
+  {
+    document_id: column.text,
+    content_version: column.integer,
+    content: column.text,
+    actor_kind: column.text,
+    actor_user_id: column.text,
+    actor_contact_id: column.text,
+    actor_name: column.text,
+    created_at: column.text,
+    updated_at: column.text,
+    deleted_at: column.text,
+  },
+  { indexes: { document: ["document_id"], version: ["content_version"] } },
+);
+
 const pdf_export_brands = new Table(
   {
     scope_type: column.text,
@@ -631,6 +648,7 @@ export const appSchema = new Schema({
   task_activities,
   time_entries,
   document_activities,
+  document_versions,
   pdf_export_brands,
   pdf_export_document_settings,
   contact_relationships,

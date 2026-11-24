@@ -21,6 +21,7 @@ import {
 	putPdfDocumentSettings,
 	putPdfExportBrand,
 } from "../../services/pdf-export-settings.js";
+import { documentVersionRouteDeps } from "../../services/document-versions.js";
 
 /** Client-reported events only (core writes rename / front matter / text itself). */
 const recordActivitySchema = z.object({
@@ -41,6 +42,54 @@ const putDocumentSettingsSchema = z.object({
 });
 
 export function registerDocumentActivityRoutes(app: Hono) {
+	app.get("/api/v1/documents/:id/versions/:contentVersion", async (c) => {
+		const auth = getAuth(c);
+		if (!requireScope("documents:read")(auth)) {
+			return c.json(auth ? forbidden() : unauthorized(), auth ? 403 : 401);
+		}
+		const documentId = c.req.param("id");
+		const contentVersionRaw = Number(c.req.param("contentVersion"));
+		if (!Number.isFinite(contentVersionRaw) || contentVersionRaw < 1) {
+			return c.json(
+				{ error: "contentVersion must be a positive integer", field: "contentVersion" },
+				400,
+			);
+		}
+		const contentVersion = Math.trunc(contentVersionRaw);
+		const doc = await documentVersionRouteDeps.getDocumentById(
+			auth.workspaceId,
+			documentId,
+		);
+		if (!doc) return c.json(notFound("Document"), 404);
+
+		const withPrevious =
+			c.req.query("withPrevious") === "1" ||
+			c.req.query("withPrevious") === "true";
+
+		const result =
+			await documentVersionRouteDeps.getDocumentVersionWithPrevious(
+				auth.workspaceId,
+				documentId,
+				contentVersion,
+			);
+		if (!result.version) {
+			return c.json(notFound("Document version"), 404);
+		}
+
+		return c.json({
+			version: documentVersionRouteDeps.serializeDocumentVersion(
+				result.version,
+			),
+			previous: withPrevious
+				? result.previous
+					? documentVersionRouteDeps.serializeDocumentVersion(
+							result.previous,
+						)
+					: null
+				: undefined,
+		});
+	});
+
 	app.get("/api/v1/documents/:id/activities", async (c) => {
 		const auth = getAuth(c);
 		if (!requireScope("documents:read")(auth)) {

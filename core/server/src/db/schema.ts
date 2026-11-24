@@ -2282,6 +2282,54 @@ export const documentActivities = pgTable(
   ],
 );
 
+/**
+ * Full-text document versions (OS-204).
+ * One row per (document_id, content_version); Firm diffs on read.
+ */
+export const documentVersions = pgTable(
+  "document_versions",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    documentId: text("document_id")
+      .notNull()
+      .references(() => documents.id, { onDelete: "cascade" }),
+    contentVersion: integer("content_version").notNull(),
+    content: text("content").notNull(),
+    actorKind: text("actor_kind").notNull().default("system"),
+    actorUserId: text("actor_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    actorContactId: text("actor_contact_id").references(() => contacts.id, {
+      onDelete: "set null",
+    }),
+    actorName: text("actor_name"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex("document_versions_document_content_version_uidx").on(
+      table.documentId,
+      table.contentVersion,
+    ),
+    index("document_versions_document_version_idx").on(
+      table.documentId,
+      table.contentVersion,
+    ),
+    index("document_versions_workspace_id_idx").on(table.workspaceId),
+    index("document_versions_deleted_at_idx").on(table.deletedAt),
+    index("document_versions_updated_at_id_idx").on(table.updatedAt, table.id),
+  ],
+);
+
 /** Project/space PDF brand only (rdv | lemo-design). */
 export const pdfExportBrands = pgTable(
   "pdf_export_brands",

@@ -67,6 +67,18 @@ function recordDocumentActivitySafe(
   });
 }
 
+function versionActorFromAuth(
+  auth: Parameters<typeof writeActorFromAuth>[0],
+) {
+  const actor = writeActorFromAuth(auth);
+  return {
+    kind: (auth.apiKeyId ? "agent" : "user") as "agent" | "user",
+    userId: actor.userId ?? null,
+    contactId: actor.contactId ?? null,
+    name: null as string | null,
+  };
+}
+
 /** Documents (metadata, content, properties, sections) and journal days. */
 export function registerDocumentsRoutes(app: Hono) {
   app.get(
@@ -496,6 +508,7 @@ export function registerDocumentsRoutes(app: Hono) {
           auth.workspaceId,
           documentId,
           body,
+          { versionActor: versionActorFromAuth(auth) },
         );
         if (!row) {
           return c.json(notFound("Document"), 404);

@@ -44,8 +44,9 @@ streams:
       - SELECT id, task_id, parent_comment_id, author_user_id, author_contact_id, author_email, body, visibility, author_side, email_message_id, email_direction, email_sender, occurred_at, imported_at, imported_by_contact_id, imported_by_actor, resolved_at, created_at, updated_at, deleted_at FROM task_comments WHERE workspace_id = auth.parameter('workspace_id')
       - SELECT id, task_id, type, actor_user_id, actor_contact_id, actor_email, actor_name, data, body, parent_id, resolved_at, created_at, updated_at, deleted_at FROM task_activities WHERE workspace_id = auth.parameter('workspace_id')
       - SELECT id, entity_type, entity_id, actor_user_id, actor_contact_id, started_at, ended_at, duration_seconds, source, note, project_id, organization_id, legacy_start_activity_id, created_at, updated_at, deleted_at FROM time_entries WHERE workspace_id = auth.parameter('workspace_id')
-      # OS-202 document activity + PDF settings
+      # OS-202 document activity + PDF settings; OS-204 full-text versions (diffs on read)
       - SELECT id, document_id, project_id, type, actor_kind, actor_user_id, actor_contact_id, actor_api_key_id, actor_name, occurred_at, data, client_event_id, created_at, updated_at, deleted_at FROM document_activities WHERE workspace_id = auth.parameter('workspace_id')
+      - SELECT id, document_id, content_version, content, actor_kind, actor_user_id, actor_contact_id, actor_name, created_at, updated_at, deleted_at FROM document_versions WHERE workspace_id = auth.parameter('workspace_id')
       - SELECT id, scope_type, scope_id, brand, version, updated_by_user_id, updated_by_contact_id, created_at, updated_at, deleted_at FROM pdf_export_brands WHERE workspace_id = auth.parameter('workspace_id')
       - SELECT id, document_id, project_id, settings, version, updated_by_user_id, updated_by_contact_id, created_at, updated_at, deleted_at FROM pdf_export_document_settings WHERE workspace_id = auth.parameter('workspace_id')
       - SELECT id, from_contact_id, to_contact_id, type, note, created_at, updated_at, deleted_at FROM contact_relationships WHERE workspace_id = auth.parameter('workspace_id')

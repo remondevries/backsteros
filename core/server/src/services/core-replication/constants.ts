@@ -35,6 +35,7 @@ export const REPLICATED_TABLES = [
   "space_publish_settings",
   "space_site_keys",
   "document_activities",
+  "document_versions",
   "pdf_export_brands",
   "pdf_export_document_settings",
   "letters",

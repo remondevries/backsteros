@@ -66,6 +66,7 @@ import {
   documentsPlainQuerySql,
   upsertDocumentSearchIndex,
 } from "./document-search-index.js";
+import { upsertDocumentVersion } from "./document-versions.js";
 import { recordDocumentContentSyncEvent } from "./sync.js";
 import { getProjectById } from "./tasks-projects.js";
 import {
@@ -912,7 +913,17 @@ export async function updateDocumentContent(
   workspaceId: string,
   id: string,
   input: UpdateDocumentContentInput,
-  options?: { mutationId?: string; deviceId?: string },
+  options?: {
+    mutationId?: string;
+    deviceId?: string;
+    /** Optional actor stamped on the document_versions row (OS-204). */
+    versionActor?: {
+      kind?: "user" | "agent" | "system";
+      userId?: string | null;
+      contactId?: string | null;
+      name?: string | null;
+    } | null;
+  },
 ) {
   let existing = await getDocumentRow(workspaceId, id);
   if (!existing) {
@@ -1031,6 +1042,17 @@ export async function updateDocumentContent(
                     searchBody: contentForWrite,
                     contentEtag:
                       meta.contentEtag ?? documentContentEtag(contentForWrite),
+                  },
+                  tx,
+                );
+                // OS-204: store full text for this content_version (upsert on coalesce/retry).
+                await upsertDocumentVersion(
+                  {
+                    workspaceId,
+                    documentId: id,
+                    contentVersion: updated.contentVersion,
+                    content: contentForWrite,
+                    actor: options?.versionActor,
                   },
                   tx,
                 );

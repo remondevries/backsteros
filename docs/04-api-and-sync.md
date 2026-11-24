@@ -102,6 +102,7 @@ GET  /api/v1/documents/{id}
 GET  /api/v1/documents/{id}/content
 GET  /api/v1/documents/{id}/activities?types=&from=&to=&limit=&cursor=
 POST /api/v1/documents/{id}/activities   → client-reported `pdf_creation` only
+GET  /api/v1/documents/{id}/versions/{contentVersion}?withPrevious=1
 GET  /api/v1/document-activities?projectId=&documentId=&types=&from=&to=&limit=&cursor=
 GET  /api/v1/projects/{id}/pdf-export-brand
 PUT  /api/v1/projects/{id}/pdf-export-brand
@@ -118,6 +119,16 @@ Document activity types: `rename`, `front_matter_change`, `text_content_change`,
 Firm (or agents) POST `pdf_creation` for client-side PDF downloads. Letters created
 with `sourceDocumentId` also record `pdf_creation`. PDF brand is per project/space;
 all other export settings are per document (CAS via `ifMatchVersion`).
+
+**Document versions (OS-204):** every content write that bumps `content_version`
+also upserts a full-text row in `document_versions` (unique on
+`(document_id, content_version)`; coalesced/retried writes refresh the text and
+`updated_at`). Diffs are never stored — clients compute them on read.  
+`GET /api/v1/documents/{id}/versions/{contentVersion}?withPrevious=1` returns
+`{ version, previous }` where `previous` is the latest stored version with a
+lower `content_version`, or `null` when none exists (e.g. older events from
+before this table). Table twins via core-replication (`updated_at` cursor) and
+PowerSync like `document_activities`.
 
 
 Path params and filter ids accept the **internal id or the human key**

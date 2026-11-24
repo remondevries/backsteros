@@ -1499,6 +1499,13 @@
       "when": 1796480000000,
       "tag": "0212_document_activities_pdf_export_settings",
       "breakpoints": true
+    },
+    {
+      "idx": 214,
+      "version": "7",
+      "when": 1796490000000,
+      "tag": "0213_document_versions",
+      "breakpoints": true
     }
   ]
 }

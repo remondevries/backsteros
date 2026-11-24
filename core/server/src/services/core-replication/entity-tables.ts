@@ -15,9 +15,11 @@ const ENTITY_REPLICATION_TABLES: Partial<
   document: [
     "documents",
     "document_activities",
+    "document_versions",
     "pdf_export_document_settings",
   ],
   document_activity: ["document_activities"],
+  document_version: ["document_versions"],
   pdf_export_brand: ["pdf_export_brands"],
   pdf_export_document_settings: ["pdf_export_document_settings"],
   area: ["areas"],

@@ -60,6 +60,8 @@ const TABLE_SPECS: TableSpec[] = [
   spec("space_site_keys", ["id"], "updated_at", { optional: true }),
   /** Coalesced edits bump updated_at — cursor must track merges, not insert time. */
   spec("document_activities", ["id"], "updated_at", { optional: true }),
+  /** Upserts bump updated_at when coalesced writes refresh the same content_version. */
+  spec("document_versions", ["id"], "updated_at", { optional: true }),
   spec("pdf_export_brands", ["id"], "updated_at", { optional: true }),
   spec("pdf_export_document_settings", ["id"], "updated_at", {
     optional: true,
