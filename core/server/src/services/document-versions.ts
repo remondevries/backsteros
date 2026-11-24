@@ -159,6 +159,29 @@ export function serializeDocumentVersion(row: DocumentVersionRow) {
 	};
 }
 
+/** Soft-delete one stored content snapshot (keeps the live document intact). */
+export async function softDeleteDocumentVersion(
+	workspaceId: string,
+	documentId: string,
+	contentVersion: number,
+	executor: DbExecutor = db,
+): Promise<DocumentVersionRow | null> {
+	const now = new Date();
+	const [row] = await executor
+		.update(documentVersions)
+		.set({ deletedAt: now, updatedAt: now })
+		.where(
+			and(
+				eq(documentVersions.workspaceId, workspaceId),
+				eq(documentVersions.documentId, documentId),
+				eq(documentVersions.contentVersion, contentVersion),
+				isNull(documentVersions.deletedAt),
+			),
+		)
+		.returning();
+	return row ?? null;
+}
+
 /** Test / route seams. */
 export const documentVersionRouteDeps = {
 	getDocumentById: async (workspaceId: string, documentId: string) => {

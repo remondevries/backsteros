@@ -24,13 +24,16 @@ export function isDocumentActivityType(
 	);
 }
 
-/** Rapid same-type edits coalesce into one row. */
+/**
+ * Rapid same-type edits coalesce into one row.
+ * text_content_change is intentionally excluded (OS-205): each content_version
+ * bump must keep its own activity row so Firm can open a per-version diff.
+ */
 export const DOCUMENT_ACTIVITY_COALESCE_WINDOW_MS = 10 * 60 * 1000;
 
 const COALESCEABLE = new Set<DocumentActivityType>([
 	"rename",
 	"front_matter_change",
-	"text_content_change",
 ]);
 
 type DbExecutor = Pick<typeof db, "select" | "insert" | "update">;
@@ -234,4 +237,92 @@ export async function listDocumentActivities(input: {
 			? page[page.length - 1]?.occurredAt.toISOString() ?? null
 			: null;
 	return { activities: page, nextCursor: next };
+}
+
+/** Snapshot rows users can remove from the Firm activity rail. */
+export const DELETABLE_DOCUMENT_ACTIVITY_TYPES = [
+	"text_content_change",
+	"pdf_creation",
+] as const;
+
+export type DeletableDocumentActivityType =
+	(typeof DELETABLE_DOCUMENT_ACTIVITY_TYPES)[number];
+
+export function isDeletableDocumentActivityType(
+	value: unknown,
+): value is DeletableDocumentActivityType {
+	return (
+		typeof value === "string" &&
+		(DELETABLE_DOCUMENT_ACTIVITY_TYPES as readonly string[]).includes(value)
+	);
+}
+
+function contentVersionFromData(data: unknown): number | null {
+	const record = asDataRecord(data);
+	const raw = record.contentVersion;
+	if (typeof raw === "number" && Number.isFinite(raw) && raw >= 1) {
+		return Math.trunc(raw);
+	}
+	if (typeof raw === "string" && raw.trim()) {
+		const parsed = Number(raw);
+		if (Number.isFinite(parsed) && parsed >= 1) return Math.trunc(parsed);
+	}
+	return null;
+}
+
+/**
+ * Soft-delete a document activity snapshot. For text_content_change, also
+ * soft-deletes the matching document_versions row so diffs cannot reopen it.
+ */
+export async function deleteDocumentActivity(
+	workspaceId: string,
+	documentId: string,
+	activityId: string,
+	executor: DbExecutor = db,
+): Promise<DocumentActivityRow | null> {
+	const [existing] = await executor
+		.select()
+		.from(documentActivities)
+		.where(
+			and(
+				eq(documentActivities.workspaceId, workspaceId),
+				eq(documentActivities.documentId, documentId),
+				eq(documentActivities.id, activityId),
+				isNull(documentActivities.deletedAt),
+			),
+		)
+		.limit(1);
+	if (!existing || !isDeletableDocumentActivityType(existing.type)) {
+		return null;
+	}
+
+	const now = new Date();
+	const [deleted] = await executor
+		.update(documentActivities)
+		.set({ deletedAt: now, updatedAt: now })
+		.where(
+			and(
+				eq(documentActivities.id, existing.id),
+				isNull(documentActivities.deletedAt),
+			),
+		)
+		.returning();
+	if (!deleted) return null;
+
+	if (existing.type === "text_content_change") {
+		const contentVersion = contentVersionFromData(existing.data);
+		if (contentVersion != null) {
+			const { softDeleteDocumentVersion } = await import(
+				"./document-versions.js"
+			);
+			await softDeleteDocumentVersion(
+				workspaceId,
+				documentId,
+				contentVersion,
+				executor,
+			);
+		}
+	}
+
+	return deleted;
 }

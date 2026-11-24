@@ -102,6 +102,8 @@ GET  /api/v1/documents/{id}
 GET  /api/v1/documents/{id}/content
 GET  /api/v1/documents/{id}/activities?types=&from=&to=&limit=&cursor=
 POST /api/v1/documents/{id}/activities   → client-reported `pdf_creation` only
+GET  /api/v1/documents/{id}/pdfs         → PDF history with letterId / pdfPath
+POST /api/v1/documents/{id}/pdf          → store PDF bytes as linked letter + activity (local-core)
 GET  /api/v1/documents/{id}/versions/{contentVersion}?withPrevious=1
 GET  /api/v1/document-activities?projectId=&documentId=&types=&from=&to=&limit=&cursor=
 GET  /api/v1/projects/{id}/pdf-export-brand
@@ -116,9 +118,35 @@ GET  /api/v1/letters/{id}/pdf          → redirect or presigned URL
 
 Document activity types: `rename`, `front_matter_change`, `text_content_change`,
 `pdf_creation`. Core writes rename / front matter / text on document mutations;
-Firm (or agents) POST `pdf_creation` for client-side PDF downloads. Letters created
-with `sourceDocumentId` also record `pdf_creation`. PDF brand is per project/space;
-all other export settings are per document (CAS via `ifMatchVersion`).
+Firm (or agents) POST `pdf_creation` for client-side download metadata, or use
+`POST /documents/{id}/pdf` to **store** rendered PDF bytes as a letter linked via
+`sourceDocumentId` (requires `documents:write` + `letters:write`, **local-core**
+blob storage — same as letter PDFs). `GET /documents/{id}/pdfs` lists history;
+rows with `pdfPath` are fetched via `GET /letters/{id}/pdf`. Branded Takumi layout
+rendering still happens in Firm (or an agent that uploads bytes); core persists
+and serves the artifact. Letters created with `sourceDocumentId` also record
+`pdf_creation`. PDF brand is per project/space; all other export settings are per
+document (CAS via `ifMatchVersion`).
+
+#### Agent document PDF flow
+
+```http
+# 1) Store an export (body = application/pdf, or multipart field `file`)
+POST /api/v1/documents/{id}/pdf
+Content-Type: application/pdf
+X-Filename: brief-rdv.pdf
+X-Brand: rdv
+
+%PDF-1.4...
+
+# → 201 { letter, activity, pdfPath }
+
+# 2) List prior exports
+GET /api/v1/documents/{id}/pdfs?limit=20
+
+# 3) Download bytes (local-core)
+GET /api/v1/letters/{letterId}/pdf
+```
 
 **Document versions (OS-204):** every content write that bumps `content_version`
 also upserts a full-text row in `document_versions` (unique on

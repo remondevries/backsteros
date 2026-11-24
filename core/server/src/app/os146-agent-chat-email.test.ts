@@ -8,6 +8,7 @@ import { Hono } from "hono";
 import type { AuthContext } from "../middleware/auth.js";
 import {
   clearIdempotencyCacheForTests,
+  deleteIdempotencyRowForTests,
   withIdempotency,
 } from "../lib/idempotency.js";
 import * as chatCreateService from "../services/chat-create-conversation.js";
@@ -313,12 +314,17 @@ describe("OS-146 agent chat/email", () => {
   it("Idempotency-Key coalesces duplicate create/send work", async () => {
     let runs = 0;
     const scope = "api_key:agent-key-1:chat";
+    const key = `os146-chat-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    clearIdempotencyCacheForTests();
+    await deleteIdempotencyRowForTests(scope, key).catch(() => {
+      /* table may be missing in unit env */
+    });
     const run = async () => {
       runs += 1;
       return { status: 200, body: { id: "conv-1" } };
     };
-    const first = await withIdempotency(scope, "os146-chat-1", run);
-    const second = await withIdempotency(scope, "os146-chat-1", run);
+    const first = await withIdempotency(scope, key, run);
+    const second = await withIdempotency(scope, key, run);
     assert.deepEqual(first, second);
     assert.equal(runs, 1);
   });

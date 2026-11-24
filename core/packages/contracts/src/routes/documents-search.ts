@@ -423,4 +423,68 @@ export const documentsSearchRoutes: AppRouter = c.router({
     summary:
       "Alias of palette search (same handler as /api/v1/search multi-entity profile; OS-73)",
   },
+  listDocumentPdfs: {
+    method: "GET",
+    path: "/api/v1/documents/:id/pdfs",
+    pathParams: z.object({ id: z.string() }),
+    query: z
+      .object({
+        limit: z.coerce.number().int().min(1).max(100).optional(),
+        cursor: z.string().optional(),
+      })
+      .optional(),
+    responses: {
+      200: z.object({
+        pdfs: z.array(
+          z.object({
+            activityId: z.string(),
+            letterId: z.string().nullable(),
+            occurredAt: z.string(),
+            channel: z.string().nullable(),
+            brand: z.string().nullable(),
+            filename: z.string().nullable(),
+            byteSize: z.number().nullable(),
+            contentVersion: z.number().nullable(),
+            pdfPath: z.string().nullable(),
+          }),
+        ),
+        nextCursor: z.string().nullable(),
+      }),
+      401: errorSchema,
+      403: errorSchema,
+      404: errorSchema,
+    },
+    summary:
+      "List PDF export history for a document (pdf_creation activities with letter download paths)",
+  },
+  createDocumentPdf: {
+    method: "POST",
+    path: "/api/v1/documents/:id/pdf",
+    pathParams: z.object({ id: z.string() }),
+    headers: z.object({
+      "x-filename": z.string().optional(),
+      "x-brand": z.enum(["rdv", "lemo-design"]).optional(),
+      "x-title": z.string().optional(),
+    }),
+    body: c.type<ArrayBuffer | Blob>(),
+    responses: {
+      201: z.object({
+        letter: z.record(z.string(), z.unknown()),
+        activity: z.object({
+          id: z.string(),
+          type: z.string(),
+          occurredAt: z.string(),
+          data: z.unknown(),
+        }),
+        pdfPath: z.string(),
+      }),
+      400: badRequestSchema,
+      401: errorSchema,
+      403: errorSchema,
+      404: errorSchema,
+      503: errorSchema,
+    },
+    summary:
+      "Store a document PDF export as a linked letter + pdf_creation activity (local-core; raw application/pdf or multipart file)",
+  },
 });

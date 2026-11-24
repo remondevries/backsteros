@@ -1,5 +1,6 @@
 import type { Hono } from "../route-deps.js";
 import {
+	blobReadsRequireLocalCore,
 	documentService,
 	forbidden,
 	getAuth,
@@ -11,10 +12,14 @@ import {
 	zValidator,
 } from "../route-deps.js";
 import {
+	deleteDocumentActivity,
 	isDocumentActivityType,
 	listDocumentActivities,
 	recordDocumentActivity,
 } from "../../services/document-activities.js";
+import {
+	documentPdfExportDeps,
+} from "../../services/document-pdf-export.js";
 import {
 	getPdfDocumentSettings,
 	getPdfExportBrand,
@@ -168,6 +173,28 @@ export function registerDocumentActivityRoutes(app: Hono) {
 		},
 	);
 
+	app.delete("/api/v1/documents/:id/activities/:activityId", async (c) => {
+		const auth = getAuth(c);
+		if (!requireScope("documents:write")(auth)) {
+			return c.json(auth ? forbidden() : unauthorized(), auth ? 403 : 401);
+		}
+		const documentId = c.req.param("id");
+		const activityId = c.req.param("activityId");
+		const doc = await documentService.getDocumentById(
+			auth.workspaceId,
+			documentId,
+		);
+		if (!doc) return c.json(notFound("Document"), 404);
+
+		const deleted = await deleteDocumentActivity(
+			auth.workspaceId,
+			documentId,
+			activityId,
+		);
+		if (!deleted) return c.json(notFound("Activity"), 404);
+		return c.body(null, 204);
+	});
+
 	app.get("/api/v1/document-activities", async (c) => {
 		const auth = getAuth(c);
 		if (!requireScope("documents:read")(auth)) {
@@ -309,6 +336,147 @@ export function registerDocumentActivityRoutes(app: Hono) {
 			});
 		},
 	);
+
+	/**
+	 * List retrievable PDF exports for a document (pdf_creation activities).
+	 * Rows with `letterId` / `pdfPath` can be fetched via GET /letters/:id/pdf.
+	 */
+	app.get("/api/v1/documents/:id/pdfs", async (c) => {
+		const auth = getAuth(c);
+		if (!requireScope("documents:read")(auth)) {
+			return c.json(auth ? forbidden() : unauthorized(), auth ? 403 : 401);
+		}
+		const documentId = c.req.param("id");
+		const doc = await documentService.getDocumentById(
+			auth.workspaceId,
+			documentId,
+		);
+		if (!doc) return c.json(notFound("Document"), 404);
+
+		const url = new URL(c.req.url);
+		const limitRaw = Number(url.searchParams.get("limit") ?? "40");
+		const cursor = url.searchParams.get("cursor");
+		const result = await documentPdfExportDeps.listDocumentPdfExports({
+			workspaceId: auth.workspaceId,
+			documentId,
+			limit: Number.isFinite(limitRaw) ? limitRaw : 40,
+			cursor,
+		});
+		return c.json({
+			pdfs: result.pdfs,
+			nextCursor: result.nextCursor,
+		});
+	});
+
+	/**
+	 * Persist a PDF export for a document as a linked letter + activity.
+	 * Body: raw `application/pdf` bytes (Firm/agent render). Requires local-core
+	 * blob storage (same as PUT /letters/:id/pdf).
+	 */
+	app.post("/api/v1/documents/:id/pdf", async (c) => {
+		const auth = getAuth(c);
+		if (
+			!requireScope("documents:write")(auth) ||
+			!requireScope("letters:write")(auth)
+		) {
+			return c.json(auth ? forbidden() : unauthorized(), auth ? 403 : 401);
+		}
+		if (blobReadsRequireLocalCore()) {
+			return c.json(
+				{
+					error: "Document PDFs can only be stored on local-core",
+					code: "pdf_requires_local_core",
+				},
+				503,
+			);
+		}
+		const documentId = c.req.param("id");
+		const contentType = (c.req.header("content-type") ?? "").toLowerCase();
+		let bytes: Uint8Array;
+		let filename =
+			c.req.header("X-Filename")?.trim() ||
+			c.req.query("filename")?.trim() ||
+			null;
+		let title = c.req.header("X-Title")?.trim() || c.req.query("title")?.trim() || null;
+		let brandRaw =
+			c.req.header("X-Brand")?.trim() || c.req.query("brand")?.trim() || null;
+
+		if (contentType.includes("multipart/form-data")) {
+			const form = await c.req.formData();
+			const file = form.get("file");
+			if (!(file instanceof File)) {
+				return c.json(
+					{ error: "Expected multipart field `file` with a PDF", code: "bad_request" },
+					400,
+				);
+			}
+			bytes = new Uint8Array(await file.arrayBuffer());
+			filename =
+				(typeof form.get("filename") === "string"
+					? String(form.get("filename")).trim()
+					: null) ||
+				file.name ||
+				filename;
+			title =
+				(typeof form.get("title") === "string"
+					? String(form.get("title")).trim()
+					: null) || title;
+			brandRaw =
+				(typeof form.get("brand") === "string"
+					? String(form.get("brand")).trim()
+					: null) || brandRaw;
+		} else {
+			bytes = new Uint8Array(await c.req.arrayBuffer());
+		}
+
+		const brand =
+			brandRaw === "rdv" || brandRaw === "lemo-design" ? brandRaw : null;
+
+		const result = await documentPdfExportDeps.createDocumentPdfExport({
+			workspaceId: auth.workspaceId,
+			documentId,
+			bytes,
+			filename,
+			title,
+			brand,
+			actor: writeActorFromAuth(auth),
+			actorKind: auth.apiKeyId ? "agent" : "user",
+			actorApiKeyId: auth.apiKeyId ?? null,
+		});
+
+		if (!result.ok) {
+			const status =
+				result.code === "not_found"
+					? 404
+					: result.code === "storage_unavailable"
+						? 503
+						: 400;
+			return c.json(
+				{
+					error: result.error,
+					code:
+						result.code === "storage_unavailable"
+							? "pdf_requires_local_core"
+							: result.code,
+				},
+				status,
+			);
+		}
+
+		return c.json(
+			{
+				letter: result.letter,
+				activity: {
+					id: result.activity.id,
+					type: result.activity.type,
+					occurredAt: result.activity.occurredAt.toISOString(),
+					data: result.activity.data,
+				},
+				pdfPath: result.pdfPath,
+			},
+			201,
+		);
+	});
 
 	app.get("/api/v1/documents/:id/pdf-export-settings", async (c) => {
 		const auth = getAuth(c);
