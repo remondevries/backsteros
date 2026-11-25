@@ -6,7 +6,7 @@ export type TopCategorySpendRow = {
   icon: string | null;
   /** Net-spend polarity after spend clamping (positive = outflow). */
   spentCents: number;
-  depth: 0 | 1;
+  depth: 0 | 1 | 2;
 };
 
 function sortCategories(rows: FinancialCategory[]): FinancialCategory[] {
@@ -55,18 +55,16 @@ export function buildTopCategoriesSpend(
 
   const rows: TopCategorySpendRow[] = [];
 
-  for (const root of sortCategories(roots)) {
-    const children = sortCategories(childrenByParent.get(root.id) ?? []);
-    const childSpend = children.map((child) => ({
-      child,
-      // Clamp: credits (negative net) do not reduce parent spend in this list.
-      spentCents: Math.max(0, spentCentsByCategoryId[child.id] ?? 0),
-    }));
-    const childrenWithSpend = childSpend.filter((row) => row.spentCents > 0);
-    const ownSpend = Math.max(0, spentCentsByCategoryId[root.id] ?? 0);
-    const rolledSpend =
-      ownSpend + childrenWithSpend.reduce((sum, row) => sum + row.spentCents, 0);
+  const rollSpend = (categoryId: string): number => {
+    const own = Math.max(0, spentCentsByCategoryId[categoryId] ?? 0);
+    const kids = sortCategories(childrenByParent.get(categoryId) ?? []);
+    return (
+      own + kids.reduce((sum, child) => sum + rollSpend(child.id), 0)
+    );
+  };
 
+  for (const root of sortCategories(roots)) {
+    const rolledSpend = rollSpend(root.id);
     if (rolledSpend <= 0) continue;
 
     rows.push({
@@ -76,14 +74,32 @@ export function buildTopCategoriesSpend(
       spentCents: rolledSpend,
       depth: 0,
     });
-    for (const { child, spentCents } of childrenWithSpend) {
+    for (const child of sortCategories(childrenByParent.get(root.id) ?? [])) {
+      const childRolled = rollSpend(child.id);
+      if (childRolled <= 0) continue;
       rows.push({
         id: child.id,
         name: child.name,
         icon: child.icon,
-        spentCents,
+        spentCents: childRolled,
         depth: 1,
       });
+      for (const grand of sortCategories(
+        childrenByParent.get(child.id) ?? [],
+      )) {
+        const grandSpend = Math.max(
+          0,
+          spentCentsByCategoryId[grand.id] ?? 0,
+        );
+        if (grandSpend <= 0) continue;
+        rows.push({
+          id: grand.id,
+          name: grand.name,
+          icon: grand.icon,
+          spentCents: grandSpend,
+          depth: 2,
+        });
+      }
     }
   }
 

@@ -196,6 +196,57 @@ function normalizeBudgetCents(
   return value;
 }
 
+/** Root = 0; allow root → group → leaf (3 levels). */
+const FINANCIAL_CATEGORY_MAX_DEPTH = 2;
+
+async function categoryDepthFromRoot(
+  workspaceId: string,
+  category: DbFinancialCategory,
+  executor: DbExecutor,
+): Promise<number> {
+  let depth = 0;
+  let current: DbFinancialCategory | null = category;
+  const seen = new Set<string>();
+  while (current?.parentId) {
+    if (seen.has(current.id)) break;
+    seen.add(current.id);
+    depth += 1;
+    if (depth > FINANCIAL_CATEGORY_MAX_DEPTH) return depth;
+    current = await getFinancialCategoryById(
+      workspaceId,
+      current.parentId,
+      executor,
+    );
+  }
+  return depth;
+}
+
+async function categorySubtreeHeight(
+  workspaceId: string,
+  categoryId: string,
+  executor: DbExecutor,
+): Promise<number> {
+  const children = await executor
+    .select({ id: financialCategories.id })
+    .from(financialCategories)
+    .where(
+      and(
+        eq(financialCategories.workspaceId, workspaceId),
+        eq(financialCategories.parentId, categoryId),
+        isNull(financialCategories.deletedAt),
+      ),
+    );
+  if (children.length === 0) return 0;
+  let maxChild = 0;
+  for (const child of children) {
+    maxChild = Math.max(
+      maxChild,
+      await categorySubtreeHeight(workspaceId, child.id, executor),
+    );
+  }
+  return 1 + maxChild;
+}
+
 async function resolveCategoryParent(
   workspaceId: string,
   parentId: string | null | undefined,
@@ -206,7 +257,9 @@ async function resolveCategoryParent(
   if (!parent) {
     throw new Error("CATEGORY_PARENT_NOT_FOUND");
   }
-  if (parent.parentId != null) {
+  const parentDepth = await categoryDepthFromRoot(workspaceId, parent, executor);
+  // Child sits at parentDepth + 1 and must stay within max depth.
+  if (parentDepth + 1 > FINANCIAL_CATEGORY_MAX_DEPTH) {
     throw new Error("CATEGORY_PARENT_TOO_DEEP");
   }
   return parent;
@@ -259,21 +312,33 @@ export async function updateFinancialCategory(
     if (input.parentId === id) {
       throw new Error("CATEGORY_INVALID_PARENT");
     }
-    await resolveCategoryParent(workspaceId, input.parentId, executor);
+    const parent = await resolveCategoryParent(
+      workspaceId,
+      input.parentId,
+      executor,
+    );
     if (input.parentId != null) {
-      const [child] = await executor
-        .select({ id: financialCategories.id })
-        .from(financialCategories)
-        .where(
-          and(
-            eq(financialCategories.workspaceId, workspaceId),
-            eq(financialCategories.parentId, id),
-            isNull(financialCategories.deletedAt),
-          ),
-        )
-        .limit(1);
-      if (child) {
-        throw new Error("CATEGORY_HAS_CHILDREN");
+      // Prevent cycles: new parent must not be under this category.
+      let cursor: DbFinancialCategory | null = parent;
+      const seen = new Set<string>([id]);
+      while (cursor) {
+        if (seen.has(cursor.id)) {
+          throw new Error("CATEGORY_INVALID_PARENT");
+        }
+        seen.add(cursor.id);
+        if (!cursor.parentId) break;
+        cursor = await getFinancialCategoryById(
+          workspaceId,
+          cursor.parentId,
+          executor,
+        );
+      }
+      const parentDepth = parent
+        ? await categoryDepthFromRoot(workspaceId, parent, executor)
+        : -1;
+      const height = await categorySubtreeHeight(workspaceId, id, executor);
+      if (parentDepth + 1 + height > FINANCIAL_CATEGORY_MAX_DEPTH) {
+        throw new Error("CATEGORY_PARENT_TOO_DEEP");
       }
     }
   }

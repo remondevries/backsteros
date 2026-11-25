@@ -209,9 +209,10 @@ export function normalizeKind(
   return "expense";
 }
 
+/** Recursive tree — core allows root → group → leaf (3 levels). */
 export type CategoryTreeNode = {
   category: FinancialCategory;
-  children: FinancialCategory[];
+  children: CategoryTreeNode[];
 };
 
 export type ListingGroup = {
@@ -431,7 +432,7 @@ export function buildCategoryDropdownOptions(
   const pushOption = (
     category: FinancialCategory,
     depth: number,
-    parentName?: string,
+    pathNames: string[],
   ) => {
     if (seen.has(category.id)) return;
     seen.add(category.id);
@@ -439,21 +440,21 @@ export function buildCategoryDropdownOptions(
       value: category.id,
       label: category.name,
       depth,
-      searchTerms: parentName ? `${parentName} ${category.name}` : category.name,
+      searchTerms: pathNames.join(" "),
       icon: <CategoryIcon icon={category.icon} size={14} />,
     });
+    for (const child of childrenByParent.get(category.id) ?? []) {
+      pushOption(child, depth + 1, [...pathNames, child.name]);
+    }
   };
 
   for (const category of categories) {
     if (category.parentId != null) continue;
-    pushOption(category, 0);
-    for (const child of childrenByParent.get(category.id) ?? []) {
-      pushOption(child, 1, category.name);
-    }
+    pushOption(category, 0, [category.name]);
   }
   // Any leftover categories (e.g. child whose parent is missing) at top level.
   for (const category of categories) {
-    pushOption(category, 0);
+    pushOption(category, 0, [category.name]);
   }
 
   return result;
@@ -500,21 +501,25 @@ export function buildListingGroups(categories: FinancialCategory[]): ListingGrou
         a.sortOrder - b.sortOrder || a.name.localeCompare(b.name),
     );
 
+  const nodeFor = (category: FinancialCategory): CategoryTreeNode => ({
+    category,
+    children: sortCats(byParent.get(category.id) ?? []).map(nodeFor),
+  });
+
+  const countNodes = (nodes: CategoryTreeNode[]): number =>
+    nodes.reduce(
+      (sum, node) => sum + 1 + countNodes(node.children),
+      0,
+    );
+
   const makeGroup = (
     id: FinancialCategoryListing,
     label: string,
   ): ListingGroup => {
     const groupRoots = sortCats(
       roots.filter((row) => normalizeListing(row.listing) === id),
-    ).map((category) => ({
-      category,
-      children: sortCats(byParent.get(category.id) ?? []),
-    }));
-    const count = groupRoots.reduce(
-      (sum, node) => sum + 1 + node.children.length,
-      0,
-    );
-    return { id, label, roots: groupRoots, count };
+    ).map(nodeFor);
+    return { id, label, roots: groupRoots, count: countNodes(groupRoots) };
   };
 
   return [

@@ -348,10 +348,30 @@ export function applyOptimisticCategoryReorder(
   const moving = categories.find((row) => row.id === request.itemId);
   if (!moving) return categories;
 
-  const hasChildren = categories.some((row) => row.parentId === moving.id);
-  if (hasChildren && parsedTo.kind === "parent") {
-    // Parents with children cannot become nested under another category.
-    return categories;
+  if (parsedTo.kind === "parent") {
+    const byId = new Map(categories.map((row) => [row.id, row] as const));
+    const depthOf = (id: string): number => {
+      let depth = 0;
+      let current = byId.get(id);
+      const seen = new Set<string>();
+      while (current?.parentId && byId.has(current.parentId)) {
+        if (seen.has(current.id)) break;
+        seen.add(current.id);
+        depth += 1;
+        if (depth > 2) return depth;
+        current = byId.get(current.parentId);
+      }
+      return depth;
+    };
+    const heightOf = (id: string): number => {
+      const kids = categories.filter((row) => row.parentId === id);
+      if (kids.length === 0) return 0;
+      return 1 + Math.max(...kids.map((kid) => heightOf(kid.id)));
+    };
+    // Keep tree within root → group → leaf (max depth 2).
+    if (depthOf(parsedTo.parentId) + 1 + heightOf(moving.id) > 2) {
+      return categories;
+    }
   }
 
   const parentListing =

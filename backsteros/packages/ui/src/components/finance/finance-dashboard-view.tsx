@@ -91,8 +91,8 @@ export type FinanceDashboardTopCategory = {
   name: string;
   icon: string | null;
   spentCents: number;
-  /** 0 = top-level category, 1 = subcategory (matches Categories page nesting). */
-  depth: 0 | 1;
+  /** 0 = root, 1 = group, 2 = leaf (matches Categories page nesting). */
+  depth: 0 | 1 | 2;
 };
 
 export type FinanceDashboardOrganization = FinanceCategoryOrganization;
@@ -505,7 +505,8 @@ function CategorySpendRow({
     <li
       className={[
         "finance-dashboard__category-row",
-        row.depth > 0 ? "finance-dashboard__category-row--child" : null,
+        row.depth === 1 ? "finance-dashboard__category-row--child" : null,
+        row.depth >= 2 ? "finance-dashboard__category-row--grandchild" : null,
         collapsible ? "finance-dashboard__category-row--parent" : null,
       ]
         .filter(Boolean)

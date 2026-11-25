@@ -8,8 +8,9 @@ export type FinanceCategoryRow = {
   sortOrder: number;
 };
 
+/** Recursive tree — core allows root → group → leaf (3 levels). */
 export type FinanceCategoryNode = FinanceCategoryRow & {
-  children: FinanceCategoryRow[];
+  children: FinanceCategoryNode[];
 };
 
 export type CategoryIconDisplay = {
@@ -75,11 +76,15 @@ export function buildCategoryTree(
     }
   }
 
+  const nodeFor = (row: FinanceCategoryRow): FinanceCategoryNode => ({
+    ...row,
+    children: (childrenByParent.get(row.id) ?? [])
+      .sort(bySortThenName)
+      .map(nodeFor),
+  });
+
   roots.sort(bySortThenName);
-  return roots.map((root) => ({
-    ...root,
-    children: (childrenByParent.get(root.id) ?? []).sort(bySortThenName),
-  }));
+  return roots.map(nodeFor);
 }
 
 /** Root category id for any category (rolls children into their parent). */

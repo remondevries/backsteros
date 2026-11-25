@@ -2179,11 +2179,17 @@
   padding-left: 18px;
 }
 
-.finance-dashboard__category-row--child .finance-dashboard__category-name {
+.finance-dashboard__category-row--grandchild {
+  padding-left: 34px;
+}
+
+.finance-dashboard__category-row--child .finance-dashboard__category-name,
+.finance-dashboard__category-row--grandchild .finance-dashboard__category-name {
   font-weight: 450;
 }
 
-.finance-dashboard__category-row--child .finance-dashboard__category-chevron-spacer {
+.finance-dashboard__category-row--child .finance-dashboard__category-chevron-spacer,
+.finance-dashboard__category-row--grandchild .finance-dashboard__category-chevron-spacer {
   display: none;
 }
 

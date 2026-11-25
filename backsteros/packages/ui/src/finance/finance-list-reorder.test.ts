@@ -219,7 +219,7 @@ describe("finance category reorder", () => {
     ]);
   });
 
-  it("refuses nesting a parent that already has children", () => {
+  it("allows nesting a parent with children under another root (3-level tree)", () => {
     const categories = [
       category("parent", "regular", 0),
       category("child", "regular", 0, "parent"),
@@ -231,15 +231,23 @@ describe("finance category reorder", () => {
       toGroupKey: financeCategoryParentGroupKey("other"),
       beforeItemId: null,
     });
+    assert.equal(next.find((row) => row.id === "parent")?.parentId, "other");
+    assert.equal(next.find((row) => row.id === "child")?.parentId, "parent");
+  });
+
+  it("refuses nesting that would exceed 3 levels", () => {
+    const categories = [
+      category("root", "regular", 0),
+      category("mid", "regular", 0, "root"),
+      category("leaf", "regular", 0, "mid"),
+      category("other-mid", "regular", 10, "root"),
+    ];
+    const next = applyOptimisticCategoryReorder(categories, {
+      itemId: "mid",
+      fromGroupKey: financeCategoryParentGroupKey("root"),
+      toGroupKey: financeCategoryParentGroupKey("other-mid"),
+      beforeItemId: null,
+    });
     assert.equal(next, categories);
-    assert.deepEqual(
-      categoryReorderPatches(categories, {
-        itemId: "parent",
-        fromGroupKey: financeCategoryListingGroupKey("regular"),
-        toGroupKey: financeCategoryParentGroupKey("other"),
-        beforeItemId: null,
-      }),
-      [],
-    );
   });
 });

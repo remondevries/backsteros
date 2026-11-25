@@ -5,6 +5,7 @@ import type {
   FinancialCategoryListing,
 } from "@backsteros/contracts";
 import {
+  Fragment,
   useCallback,
   useEffect,
   useMemo,
@@ -99,7 +100,7 @@ function CategoryRow({
   showDragInsertBefore = false,
 }: {
   category: FinancialCategory;
-  depth: 0 | 1;
+  depth: 0 | 1 | 2;
   selected: boolean;
   highlighted?: boolean;
   spentCents: number;
@@ -116,6 +117,7 @@ function CategoryRow({
       className={[
         "finance-categories-view__row",
         depth === 1 ? "finance-categories-view__row--child" : null,
+        depth >= 2 ? "finance-categories-view__row--grandchild" : null,
         selected ? "is-selected" : null,
         showDragInsertBefore
           ? "finance-categories-view__row--insert-before"
@@ -234,12 +236,30 @@ export function FinanceCategoriesView({
   }, [localCategories]);
 
   const rolledSpentByCategoryId = useMemo(() => {
-    const rolled: Record<string, number> = { ...spentCentsByCategoryId };
+    const childrenByParent = new Map<string, string[]>();
     for (const category of localCategories) {
       if (!category.parentId) continue;
-      const childSpend = spentCentsByCategoryId[category.id] ?? 0;
-      if (!childSpend) continue;
-      rolled[category.parentId] = (rolled[category.parentId] ?? 0) + childSpend;
+      const list = childrenByParent.get(category.parentId) ?? [];
+      list.push(category.id);
+      childrenByParent.set(category.parentId, list);
+    }
+    const memo = new Map<string, number>();
+    const roll = (id: string): number => {
+      const cached = memo.get(id);
+      if (cached != null) return cached;
+      const own = spentCentsByCategoryId[id] ?? 0;
+      const total =
+        own +
+        (childrenByParent.get(id) ?? []).reduce(
+          (sum, childId) => sum + roll(childId),
+          0,
+        );
+      memo.set(id, total);
+      return total;
+    };
+    const rolled: Record<string, number> = {};
+    for (const category of localCategories) {
+      rolled[category.id] = roll(category.id);
     }
     return rolled;
   }, [localCategories, spentCentsByCategoryId]);
@@ -267,24 +287,23 @@ export function FinanceCategoriesView({
       (sum, slice) => sum + Math.max(0, slice.spentCents),
       0,
     );
-    const budgetCents = regularRoots.reduce((sum, node) => {
+    const budgetOf = (
+      node: (typeof regularRoots)[number],
+    ): number => {
       const own =
         node.category.budgetCents != null && node.category.budgetCents > 0
           ? node.category.budgetCents
           : 0;
-      if (own > 0) return sum + own;
-      // Fall back to child budgets when the parent has none.
-      return (
-        sum +
-        node.children.reduce((childSum, child) => {
-          const childBudget =
-            child.budgetCents != null && child.budgetCents > 0
-              ? child.budgetCents
-              : 0;
-          return childSum + childBudget;
-        }, 0)
+      if (own > 0) return own;
+      return node.children.reduce(
+        (childSum, child) => childSum + budgetOf(child),
+        0,
       );
-    }, 0);
+    };
+    const budgetCents = regularRoots.reduce(
+      (sum, node) => sum + budgetOf(node),
+      0,
+    );
     return { slices, spentCents, budgetCents };
   }, [groups, rolledSpentByCategoryId]);
   const [collapsed, setCollapsed] = useState<
@@ -376,19 +395,18 @@ export function FinanceCategoriesView({
 
   const keyboardItemIds = useMemo(() => {
     const ids: string[] = [];
+    const walk = (node: (typeof groups)[number]["roots"][number]) => {
+      ids.push(node.category.id);
+      if (
+        node.children.length > 0 &&
+        !collapsedParents[node.category.id]
+      ) {
+        for (const child of node.children) walk(child);
+      }
+    };
     for (const group of groups) {
       if (collapsed[group.id]) continue;
-      for (const node of group.roots) {
-        ids.push(node.category.id);
-        if (
-          node.children.length > 0 &&
-          !collapsedParents[node.category.id]
-        ) {
-          for (const child of node.children) {
-            ids.push(child.id);
-          }
-        }
-      }
+      for (const node of group.roots) walk(node);
     }
     return ids;
   }, [collapsed, collapsedParents, groups]);
@@ -426,9 +444,37 @@ export function FinanceCategoriesView({
     const selectedListing = selected
       ? normalizeListing(selected.listing)
       : null;
+    const byId = new Map(
+      localCategories.map((entry) => [entry.id, entry] as const),
+    );
+    const depthOf = (entry: FinancialCategory): number => {
+      let depth = 0;
+      let current: FinancialCategory | undefined = entry;
+      const seen = new Set<string>();
+      while (current?.parentId && byId.has(current.parentId)) {
+        if (seen.has(current.id)) break;
+        seen.add(current.id);
+        depth += 1;
+        if (depth > 2) return depth;
+        current = byId.get(current.parentId);
+      }
+      return depth;
+    };
+    const pathLabel = (entry: FinancialCategory): string => {
+      const parts = [entry.name];
+      let current: FinancialCategory | undefined = entry;
+      const seen = new Set<string>();
+      while (current?.parentId && byId.has(current.parentId)) {
+        if (seen.has(current.id)) break;
+        seen.add(current.id);
+        current = byId.get(current.parentId);
+        if (current) parts.unshift(current.name);
+      }
+      return parts.join(" › ");
+    };
     for (const entry of localCategories) {
-      // Only top-level categories can be parents (1-level nesting).
-      if (entry.parentId != null) continue;
+      // Core allows root → group → leaf (parent depth must be < 2).
+      if (depthOf(entry) >= 2) continue;
       if (entry.id === selectedId) continue;
       if (
         selectedListing &&
@@ -436,7 +482,7 @@ export function FinanceCategoriesView({
       ) {
         continue;
       }
-      options.push({ id: entry.id, name: entry.name });
+      options.push({ id: entry.id, name: pathLabel(entry) });
     }
     return options;
   }, [localCategories, selected, selectedId]);
@@ -470,7 +516,8 @@ export function FinanceCategoriesView({
       currentListing: normalizeListing(target.listing),
       currentKind: normalizeKind(target.kind),
       currentParentId: target.parentId,
-      canChangeGroup: !selectedHasChildren,
+      // Core allows reparenting groups when the resulting tree stays ≤ 3 levels.
+      canChangeGroup: true,
       groupOptions,
       onSetListing: (listing) => {
         void onUpdate(target.id, { listing });
@@ -689,35 +736,89 @@ export function FinanceCategoriesView({
                               />
                             }
                           >
-                            {node.children.map((child) => (
-                              <CategoryRow
-                                key={child.id}
-                                category={child}
-                                depth={1}
-                                selected={selectedId === child.id}
-                                highlighted={highlightedId === child.id}
-                                spentCents={
-                                  spentCentsByCategoryId[child.id] ?? 0
-                                }
-                                showAmounts
-                                onSelect={() => selectCategory(child.id)}
-                                pointerReorderBind={
-                                  canReorder
-                                    ? bindItem(
-                                        child.id,
-                                        financeCategoryParentGroupKey(
-                                          node.category.id,
-                                        ),
-                                      )
-                                    : null
-                                }
-                                dragging={draggingItemId === child.id}
-                                showDragInsertBefore={
-                                  insertBeforeKey ===
-                                  financeCategoryOrderKey(child.id)
-                                }
-                              />
-                            ))}
+                            {node.children.map((childNode) => {
+                              const child = childNode.category;
+                              const openCreateGrandchild = () => {
+                                setCreateError(null);
+                                setCreateState({
+                                  listing: normalizeListing(child.listing),
+                                  parentId: child.id,
+                                  parentName: child.name,
+                                });
+                              };
+                              return (
+                                <Fragment key={child.id}>
+                                  <CategoryRow
+                                    category={child}
+                                    depth={1}
+                                    selected={selectedId === child.id}
+                                    highlighted={highlightedId === child.id}
+                                    spentCents={
+                                      rolledSpentByCategoryId[child.id] ??
+                                      spentCentsByCategoryId[child.id] ??
+                                      0
+                                    }
+                                    showAmounts
+                                    onSelect={() => selectCategory(child.id)}
+                                    onAddChild={openCreateGrandchild}
+                                    pointerReorderBind={
+                                      canReorder
+                                        ? bindItem(
+                                            child.id,
+                                            financeCategoryParentGroupKey(
+                                              node.category.id,
+                                            ),
+                                          )
+                                        : null
+                                    }
+                                    dragging={draggingItemId === child.id}
+                                    showDragInsertBefore={
+                                      insertBeforeKey ===
+                                      financeCategoryOrderKey(child.id)
+                                    }
+                                  />
+                                  {childNode.children.map((grandNode) => {
+                                    const grand = grandNode.category;
+                                    return (
+                                      <CategoryRow
+                                        key={grand.id}
+                                        category={grand}
+                                        depth={2}
+                                        selected={selectedId === grand.id}
+                                        highlighted={
+                                          highlightedId === grand.id
+                                        }
+                                        spentCents={
+                                          spentCentsByCategoryId[grand.id] ??
+                                          0
+                                        }
+                                        showAmounts
+                                        onSelect={() =>
+                                          selectCategory(grand.id)
+                                        }
+                                        pointerReorderBind={
+                                          canReorder
+                                            ? bindItem(
+                                                grand.id,
+                                                financeCategoryParentGroupKey(
+                                                  child.id,
+                                                ),
+                                              )
+                                            : null
+                                        }
+                                        dragging={
+                                          draggingItemId === grand.id
+                                        }
+                                        showDragInsertBefore={
+                                          insertBeforeKey ===
+                                          financeCategoryOrderKey(grand.id)
+                                        }
+                                      />
+                                    );
+                                  })}
+                                </Fragment>
+                              );
+                            })}
                           </StatusGroupSection>
                         );
                       }

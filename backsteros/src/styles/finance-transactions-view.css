@@ -646,6 +646,11 @@
   width: calc(100% - 36px);
 }
 
+.finance-categories-view__row--grandchild {
+  margin-left: 60px;
+  width: calc(100% - 60px);
+}
+
 .finance-categories-view .status-group-header-row,
 .finance-categories-view .project-type-subgroup__header-row {
   display: grid;
