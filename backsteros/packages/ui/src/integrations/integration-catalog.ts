@@ -5,6 +5,7 @@ export type WorkspaceIntegrationId =
   | "transip"
   | "cloudflare"
   | "moneybird"
+  | "stripe"
   | "mapbox"
   | "brandfetch"
   | "chatwoot"
@@ -52,6 +53,12 @@ export const WORKSPACE_INTEGRATIONS: WorkspaceIntegrationMeta[] = [
     title: "Moneybird",
     description: "Sales invoices and bookkeeping for Finance",
     faviconHost: "moneybird.com",
+  },
+  {
+    id: "stripe",
+    title: "Stripe",
+    description: "Balance transactions for Finance",
+    faviconHost: "stripe.com",
   },
   {
     id: "mapbox",

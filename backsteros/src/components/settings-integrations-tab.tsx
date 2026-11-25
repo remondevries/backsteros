@@ -22,6 +22,8 @@ import type {
   MoneybirdTestConnectionResult,
   SocialSettings,
   SocialTestConnectionResult,
+  StripeSettings,
+  StripeTestConnectionResult,
   TransipSettings,
   TransipTestConnectionResult,
 } from "@backsteros/contracts";
@@ -51,6 +53,7 @@ import { SettingsChatwootTab } from "./settings-chatwoot-tab";
 import { SettingsMapboxTab } from "./settings-mapbox-tab";
 import { SettingsMoneybirdTab } from "./settings-moneybird-tab";
 import { SettingsSocialTab } from "./settings-social-tab";
+import { SettingsStripeTab } from "./settings-stripe-tab";
 import { SettingsTransipTab } from "./settings-transip-tab";
 import { SettingsWhoopTab } from "./settings-whoop-tab";
 import { SettingsAutoReviewWebhookTab } from "./settings-auto-review-webhook-tab";
@@ -69,6 +72,7 @@ type LoadedIntegrationSettings = {
   github?: GithubSettings | null;
   cloudflare?: CloudflareSettings | null;
   moneybird?: MoneybirdSettings | null;
+  stripe?: StripeSettings | null;
   mapbox?: MapboxSettings | null;
   brandfetch?: BrandfetchSettings | null;
   chatwoot?: ChatwootSettings | null;
@@ -175,6 +179,7 @@ export function SettingsIntegrationsTab({
         transip,
         cloudflare,
         moneybird,
+        stripe,
         mapbox,
         brandfetch,
         chatwoot,
@@ -216,6 +221,11 @@ export function SettingsIntegrationsTab({
               "/api/v1/settings/moneybird",
             ),
           (body) => body.apiTokenConfigured,
+        ),
+        loadConfigured(
+          "stripe",
+          () => client.requestJson<StripeSettings>("/api/v1/settings/stripe"),
+          (body) => body.secretKeyConfigured || body.envSecretConfigured,
         ),
         loadConfigured(
           "mapbox",
@@ -300,6 +310,7 @@ export function SettingsIntegrationsTab({
         github: github.body,
         cloudflare: cloudflare.body,
         moneybird: moneybird.body,
+        stripe: stripe.body,
         mapbox: mapbox.body,
         brandfetch: brandfetch.body,
         chatwoot: chatwoot.body,
@@ -340,6 +351,13 @@ export function SettingsIntegrationsTab({
           ? probeLive("moneybird", () =>
               client.requestJson<MoneybirdTestConnectionResult>(
                 "/api/v1/settings/moneybird/test",
+              ),
+            )
+          : null,
+        stripe.probe
+          ? probeLive("stripe", () =>
+              client.requestJson<StripeTestConnectionResult>(
+                "/api/v1/settings/stripe/test",
               ),
             )
           : null,
@@ -523,6 +541,14 @@ export function SettingsIntegrationsTab({
             description={activeMeta.description}
             hideHeader
             initialSettings={loadedSettings.moneybird}
+          />
+        ) : null}
+        {activeId === "stripe" && activeMeta ? (
+          <SettingsStripeTab
+            title={activeMeta.title}
+            description={activeMeta.description}
+            hideHeader
+            initialSettings={loadedSettings.stripe}
           />
         ) : null}
         {activeId === "mapbox" && activeMeta ? (

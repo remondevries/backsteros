@@ -17,6 +17,7 @@ export const LEGACY_INTEGRATION_SETTINGS_TABS = [
   "transip",
   "cloudflare",
   "moneybird",
+  "stripe",
   "mapbox",
   "google-calendar",
   "email",
