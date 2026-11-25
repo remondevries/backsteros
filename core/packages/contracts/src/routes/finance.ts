@@ -822,4 +822,19 @@ export const financeRoutes: AppRouter = c.router({
     summary:
       "Ingest bunq sandbox payments into the Bunq Personal bank account (read-only)",
   },
+  syncBankAccountStripe: {
+    method: "POST",
+    path: "/api/v1/bank-accounts/:id/stripe-sync",
+    pathParams: s.idParamsSchema,
+    body: z.undefined().optional(),
+    responses: {
+      200: s.stripeBankAccountSyncResultSchema,
+      400: badRequestSchema,
+      401: errorSchema,
+      403: errorSchema,
+      404: errorSchema,
+    },
+    summary:
+      "Ingest Stripe Balance Transactions into the Stripe bank account (read-only)",
+  },
 });

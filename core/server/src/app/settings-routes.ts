@@ -426,6 +426,25 @@ export function registerSettingsRoutes(app: Hono) {
       return c.json({ error: message, code: "bad_request" }, 400);
     }
   });
+  app.post("/api/v1/settings/stripe/ensure-bank-account", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "settings:write") && !can(auth, "finance:write")) {
+      return c.json(forbidden(), 403);
+    }
+    try {
+      const { ensureStripeBankAccount } = await import(
+        "../services/stripe-bank-account.js"
+      );
+      const account = await ensureStripeBankAccount(auth.workspaceId);
+      return c.json(account);
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Could not ensure Stripe bank account";
+      return c.json({ error: message, code: "bad_request" }, 400);
+    }
+  });
   app.post(
     "/api/v1/settings/bunq/sandbox-user",
     zValidator("json", provisionBunqSandboxUserSchema),

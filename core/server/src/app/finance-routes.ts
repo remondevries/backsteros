@@ -60,6 +60,7 @@ import * as moneybirdSettingsService from "../services/moneybird-settings.js";
 import * as bunqBankSyncService from "../services/finance/bunq-sync.js";
 import * as bunqPaymentProposalsService from "../services/bunq-payment-proposals.js";
 import * as bunqSettingsService from "../services/bunq-settings.js";
+import * as stripeBankSyncService from "../services/finance/stripe-sync.js";
 import * as stripeSettingsService from "../services/stripe-settings.js";
 import {
   StripeApiError,
@@ -1906,6 +1907,33 @@ export function registerFinanceRoutes(app: Hono) {
       const message =
         error instanceof Error ? error.message : "bunq bank sync failed";
       return c.json({ error: message, code: "bad_request" }, 400);
+    }
+  });
+
+  app.post("/api/v1/bank-accounts/:id/stripe-sync", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "finance:write")) return c.json(forbidden(), 403);
+    try {
+      const result = await stripeBankSyncService.syncBankAccountFromStripe(
+        auth.workspaceId,
+        c.req.param("id"),
+      );
+      if (!result) return c.json(notFound("Bank account"), 404);
+      return c.json(result);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Stripe bank sync failed";
+      const code =
+        error instanceof StripeNotConfiguredError
+          ? error.code
+          : error instanceof StripeApiError
+            ? error.code
+            : "bad_request";
+      const status =
+        error instanceof StripeApiError && error.status >= 400
+          ? Math.min(error.status, 502)
+          : 400;
+      return c.json({ error: message, code }, status as 400);
     }
   });
 

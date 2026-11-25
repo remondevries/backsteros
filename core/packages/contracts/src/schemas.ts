@@ -638,6 +638,7 @@ export {
   moneybirdBankAccountSyncResultSchema,
   moneybirdBankAccountSyncQuerySchema,
   bunqBankAccountSyncResultSchema,
+  stripeBankAccountSyncResultSchema,
 } from "./schemas/finance.js";
 export type {
   BankAccount,
@@ -686,6 +687,7 @@ export type {
   MoneybirdFinancialAccount,
   MoneybirdBankAccountSyncResult,
   BunqBankAccountSyncResult,
+  StripeBankAccountSyncResult,
 } from "./schemas/finance.js";
 export {
   upsertDevicePushTokenSchema,

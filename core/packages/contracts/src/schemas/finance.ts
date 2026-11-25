@@ -809,6 +809,15 @@ export const bunqBankAccountSyncResultSchema = z.object({
   lastSyncedAt: isoDateSchema,
 });
 
+/** Result of ingesting Stripe Balance Transactions into the Stripe bank account. */
+export const stripeBankAccountSyncResultSchema = z.object({
+  bankAccountId: z.string(),
+  fetched: z.number().int().nonnegative(),
+  inserted: z.number().int().nonnegative(),
+  duplicates: z.number().int().nonnegative(),
+  lastSyncedAt: isoDateSchema,
+});
+
 export type BankAccount = z.infer<typeof bankAccountSchema>;
 
 export type BankAccountInput = z.infer<typeof bankAccountInputSchema>;
@@ -951,4 +960,8 @@ export type MoneybirdBankAccountSyncResult = z.infer<
 
 export type BunqBankAccountSyncResult = z.infer<
   typeof bunqBankAccountSyncResultSchema
+>;
+
+export type StripeBankAccountSyncResult = z.infer<
+  typeof stripeBankAccountSyncResultSchema
 >;

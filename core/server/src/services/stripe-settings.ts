@@ -120,7 +120,14 @@ export async function updateStripeSettings(
       });
   }
 
-  return getStripeSettings(workspaceId);
+  const settings = await getStripeSettings(workspaceId);
+  if (settings.connected) {
+    const { ensureStripeBankAccount } = await import(
+      "./stripe-bank-account.js"
+    );
+    await ensureStripeBankAccount(workspaceId);
+  }
+  return settings;
 }
 
 export async function testStripeConnection(
@@ -217,6 +224,29 @@ export async function listStripeBalanceTransactions(
         : "Could not list Stripe balance transactions";
     throw new StripeApiError(message);
   }
+}
+
+/** Page through Balance Transactions for ledger sync (insert-only ingest). */
+export async function listAllStripeBalanceTransactions(
+  workspaceId: string,
+  options: { pageSize?: number; maxPages?: number } = {},
+): Promise<StripeBalanceTransaction[]> {
+  const pageSize = Math.min(Math.max(options.pageSize ?? 100, 1), 100);
+  const maxPages = Math.min(Math.max(options.maxPages ?? 25, 1), 50);
+  const all: StripeBalanceTransaction[] = [];
+  let startingAfter: string | undefined;
+  for (let page = 0; page < maxPages; page++) {
+    const result = await listStripeBalanceTransactions(workspaceId, {
+      limit: pageSize,
+      startingAfter,
+    });
+    all.push(...result.transactions);
+    if (!result.hasMore || result.transactions.length === 0) break;
+    startingAfter =
+      result.transactions[result.transactions.length - 1]?.id ?? undefined;
+    if (!startingAfter) break;
+  }
+  return all;
 }
 
 export { StripeApiError, StripeNotConfiguredError };
