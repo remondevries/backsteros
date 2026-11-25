@@ -883,6 +883,54 @@ export const githubTestConnectionResultSchema = z.object({
   login: z.string().nullable(),
 });
 
+/** Stripe integration (workspace secret key; optional env fallback). */
+export const stripeSettingsSchema = z.object({
+  secretKeyConfigured: z.boolean(),
+  secretKeyPreview: z.string().nullable(),
+  /** True when a workspace secret or env fallback is configured. */
+  connected: z.boolean(),
+  /** Env `STRIPE_SECRET_KEY` is set (shown so Settings can explain fallback). */
+  envSecretConfigured: z.boolean(),
+});
+
+export const updateStripeSettingsSchema = z.object({
+  /** Set to a new secret key, or empty string to clear. Omit to leave unchanged. */
+  secretKey: z.string().optional(),
+});
+
+export const stripeTestConnectionResultSchema = z.object({
+  ok: z.boolean(),
+  error: z.string().nullable(),
+  /** From Stripe Balance retrieve when connected. */
+  livemode: z.boolean().nullable(),
+});
+
+export const stripeBalanceTransactionSchema = z.object({
+  id: z.string(),
+  amount: z.number().int(),
+  currency: z.string(),
+  type: z.string(),
+  status: z.string().nullable(),
+  /** Unix seconds. */
+  created: z.number().int(),
+  description: z.string().nullable(),
+  fee: z.number().int(),
+  net: z.number().int(),
+  /** Related Stripe object id (charge, payout, …). */
+  source: z.string().nullable(),
+});
+
+export const stripeBalanceTransactionsQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(100).optional(),
+  startingAfter: z.string().min(1).optional(),
+  type: z.string().min(1).optional(),
+});
+
+export const stripeBalanceTransactionsResponseSchema = z.object({
+  transactions: z.array(stripeBalanceTransactionSchema),
+  hasMore: z.boolean(),
+});
+
 /** TransIP domain inventory (Catalog Domains sync). */
 export const transipStatusSchema = z.object({
   configured: z.boolean(),
@@ -1480,6 +1528,28 @@ export type UpdateGithubSettingsInput = z.infer<
 
 export type GithubTestConnectionResult = z.infer<
   typeof githubTestConnectionResultSchema
+>;
+
+export type StripeSettings = z.infer<typeof stripeSettingsSchema>;
+
+export type UpdateStripeSettingsInput = z.infer<
+  typeof updateStripeSettingsSchema
+>;
+
+export type StripeTestConnectionResult = z.infer<
+  typeof stripeTestConnectionResultSchema
+>;
+
+export type StripeBalanceTransaction = z.infer<
+  typeof stripeBalanceTransactionSchema
+>;
+
+export type StripeBalanceTransactionsQuery = z.infer<
+  typeof stripeBalanceTransactionsQuerySchema
+>;
+
+export type StripeBalanceTransactionsResponse = z.infer<
+  typeof stripeBalanceTransactionsResponseSchema
 >;
 
 export type TransipStatus = z.infer<typeof transipStatusSchema>;

@@ -640,6 +640,38 @@ export const integrationsRoutes: AppRouter = c.router({
     },
     summary: "Test GitHub API token with /user",
   },
+  getStripeSettings: {
+    method: "GET",
+    path: "/api/v1/settings/stripe",
+    responses: {
+      200: s.stripeSettingsSchema,
+      401: errorSchema,
+      403: errorSchema,
+    },
+    summary: "Get Stripe integration settings (secret key redacted)",
+  },
+  updateStripeSettings: {
+    method: "PATCH",
+    path: "/api/v1/settings/stripe",
+    body: s.updateStripeSettingsSchema,
+    responses: {
+      200: s.stripeSettingsSchema,
+      400: badRequestSchema,
+      401: errorSchema,
+      403: errorSchema,
+    },
+    summary: "Update Stripe secret key",
+  },
+  testStripeConnection: {
+    method: "GET",
+    path: "/api/v1/settings/stripe/test",
+    responses: {
+      200: s.stripeTestConnectionResultSchema,
+      401: errorSchema,
+      403: errorSchema,
+    },
+    summary: "Test Stripe secret key with Balance retrieve",
+  },
   getTransipStatus: {
     method: "GET",
     path: "/api/v1/transip/status",

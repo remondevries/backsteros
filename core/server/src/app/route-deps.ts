@@ -97,6 +97,7 @@ export {
   updateFinancialRecurringSchema,
   updateFinancialTransactionSchema,
   updateGithubSettingsSchema,
+  updateStripeSettingsSchema,
   updateGoogleCalendarSettingsSchema,
   updateHabitSchema,
   updateMapboxSettingsSchema,
@@ -390,6 +391,11 @@ export {
 } from "../services/meetings.js";
 export * as moneybirdSettingsService from "../services/moneybird-settings.js";
 export * as bunqSettingsService from "../services/bunq-settings.js";
+export * as stripeSettingsService from "../services/stripe-settings.js";
+export {
+  StripeApiError,
+  StripeNotConfiguredError,
+} from "../lib/stripe-client.js";
 export {
   BunqApiError,
   BunqLiveApiRefusedError,

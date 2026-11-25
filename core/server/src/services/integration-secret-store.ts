@@ -8,7 +8,8 @@ export type IntegrationSecretColumn =
   | "brandfetchApiKey"
   | "cloudflareApiToken"
   | "githubApiToken"
-  | "mapboxAccessToken";
+  | "mapboxAccessToken"
+  | "stripeSecretKey";
 
 /** One column of `workspace_integration_secrets`, upserted per workspace. */
 export function workspaceIntegrationSecretStore(

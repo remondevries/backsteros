@@ -32,6 +32,7 @@ import {
   moneybirdInvoiceRevenueQuerySchema,
   moneybirdBankAccountSyncQuerySchema,
   bunqPaymentsQuerySchema,
+  stripeBalanceTransactionsQuerySchema,
   createBunqPaymentProposalInputSchema,
   approveBunqPaymentProposalInputSchema,
   acknowledgeBunqPaymentUnknownOutcomeInputSchema,
@@ -59,6 +60,11 @@ import * as moneybirdSettingsService from "../services/moneybird-settings.js";
 import * as bunqBankSyncService from "../services/finance/bunq-sync.js";
 import * as bunqPaymentProposalsService from "../services/bunq-payment-proposals.js";
 import * as bunqSettingsService from "../services/bunq-settings.js";
+import * as stripeSettingsService from "../services/stripe-settings.js";
+import {
+  StripeApiError,
+  StripeNotConfiguredError,
+} from "../lib/stripe-client.js";
 import {
   recordBankAccountRestSyncEvent,
   recordCashflowPlannerRestSyncEvent,
@@ -453,6 +459,39 @@ export function registerFinanceRoutes(app: Hono) {
       return c.json({ error: message, code: "bad_request" }, 400);
     }
   });
+  app.get(
+    "/api/v1/finance/stripe/balance-transactions",
+    zValidator("query", stripeBalanceTransactionsQuerySchema),
+    async (c) => {
+      const auth = getAuth(c);
+      if (!can(auth, "finance:read")) return c.json(forbidden(), 403);
+      const query = c.req.valid("query");
+      try {
+        const result =
+          await stripeSettingsService.listStripeBalanceTransactions(
+            auth.workspaceId,
+            query,
+          );
+        return c.json(result);
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Could not list Stripe balance transactions";
+        const code =
+          error instanceof StripeNotConfiguredError
+            ? error.code
+            : error instanceof StripeApiError
+              ? error.code
+              : "bad_request";
+        const status =
+          error instanceof StripeApiError && error.status >= 400
+            ? Math.min(error.status, 502)
+            : 400;
+        return c.json({ error: message, code }, status as 400);
+      }
+    },
+  );
   app.get("/api/v1/finance/bunq/accounts", async (c) => {
     const auth = getAuth(c);
     if (!can(auth, "finance:read")) return c.json(forbidden(), 403);

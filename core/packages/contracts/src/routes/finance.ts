@@ -116,6 +116,19 @@ export const financeRoutes: AppRouter = c.router({
     summary:
       "List Moneybird financial accounts for linking a BacksterOS bank account",
   },
+  listStripeBalanceTransactions: {
+    method: "GET",
+    path: "/api/v1/finance/stripe/balance-transactions",
+    query: s.stripeBalanceTransactionsQuerySchema,
+    responses: {
+      200: s.stripeBalanceTransactionsResponseSchema,
+      400: badRequestSchema,
+      401: errorSchema,
+      403: errorSchema,
+    },
+    summary:
+      "List Stripe Balance Transactions (read-only live proxy; cursor via startingAfter)",
+  },
   listBunqMonetaryAccounts: {
     method: "GET",
     path: "/api/v1/finance/bunq/accounts",

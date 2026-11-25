@@ -149,6 +149,8 @@ export const workspaceIntegrationSecrets = pgTable(
     chatwootApiAccessToken: text("chatwoot_api_access_token"),
     chatwootWebhookSecret: text("chatwoot_webhook_secret"),
     githubApiToken: text("github_api_token"),
+    /** Stripe secret key (sk_…) — never returned in full; never PowerSync. */
+    stripeSecretKey: text("stripe_secret_key"),
     transipAccessToken: text("transip_access_token"),
     /** TransIP control-panel login — used with private key to mint JWTs. */
     transipLogin: text("transip_login"),

@@ -780,6 +780,9 @@ importers:
       sharp:
         specifier: 0.34.4
         version: 0.34.4
+      stripe:
+        specifier: ^23.2.0
+        version: 23.2.0(@types/node@22.20.1)
       svix:
         specifier: ^1.99.1
         version: 1.99.1
@@ -8312,6 +8315,15 @@ packages:
   strip-ansi@7.2.0:
     resolution: {integrity: sha512-yDPMNjp4WyfYBkHnjIRLfca1i6KMyGCtsVgoKe/z1+6vukgaENdgGBZt+ZmKPc4gavvEZ5OgHfHdrazhgNyG7w==}
     engines: {node: '>=12'}
+
+  stripe@23.2.0:
+    resolution: {integrity: sha512-0W0J4yA9qFO2rnF61v8Y62OiO2SmAR+Cv04VJaFUMpCxiq8lG5bxEYbeSMSpMDR9ofFZGd+Z/iUIgSFbOolmUw==}
+    engines: {node: '>=20'}
+    peerDependencies:
+      '@types/node': '>=20'
+    peerDependenciesMeta:
+      '@types/node':
+        optional: true
 
   structured-headers@0.4.1:
     resolution: {integrity: sha512-0MP/Cxx5SzeeZ10p/bZI0S6MpgD+yxAhi1BOQ34jgnMXsCq3j1t6tQnZu+KdlL7dvJTLT3g9xN8tl10TqgFMcg==}
@@ -17085,6 +17097,10 @@ snapshots:
   strip-ansi@7.2.0:
     dependencies:
       ansi-regex: 6.3.0
+
+  stripe@23.2.0(@types/node@22.20.1):
+    optionalDependencies:
+      '@types/node': 22.20.1
 
   structured-headers@0.4.1: {}
 
