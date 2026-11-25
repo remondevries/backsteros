@@ -883,8 +883,11 @@ export const githubTestConnectionResultSchema = z.object({
   login: z.string().nullable(),
 });
 
-/** Stripe integration (workspace secret key; optional env fallback). */
+/** Stripe integration (publishable + secret; optional env secret fallback). */
 export const stripeSettingsSchema = z.object({
+  /** Publishable / API key (`pk_…`). */
+  publishableKeyConfigured: z.boolean(),
+  publishableKeyPreview: z.string().nullable(),
   secretKeyConfigured: z.boolean(),
   secretKeyPreview: z.string().nullable(),
   /** True when a workspace secret or env fallback is configured. */
@@ -894,6 +897,8 @@ export const stripeSettingsSchema = z.object({
 });
 
 export const updateStripeSettingsSchema = z.object({
+  /** Set to a new publishable key, or empty string to clear. Omit to leave unchanged. */
+  publishableKey: z.string().optional(),
   /** Set to a new secret key, or empty string to clear. Omit to leave unchanged. */
   secretKey: z.string().optional(),
 });

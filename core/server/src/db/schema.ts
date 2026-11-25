@@ -149,6 +149,8 @@ export const workspaceIntegrationSecrets = pgTable(
     chatwootApiAccessToken: text("chatwoot_api_access_token"),
     chatwootWebhookSecret: text("chatwoot_webhook_secret"),
     githubApiToken: text("github_api_token"),
+    /** Stripe publishable / API key (pk_…) — never returned in full; never PowerSync. */
+    stripePublishableKey: text("stripe_publishable_key"),
     /** Stripe secret key (sk_…) — never returned in full; never PowerSync. */
     stripeSecretKey: text("stripe_secret_key"),
     transipAccessToken: text("transip_access_token"),

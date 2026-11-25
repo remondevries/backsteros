@@ -1,15 +1,17 @@
+import { eq } from "drizzle-orm";
 import type {
   StripeBalanceTransaction,
   StripeBalanceTransactionsQuery,
   StripeBalanceTransactionsResponse,
   StripeSettings,
   StripeTestConnectionResult,
+  UpdateStripeSettingsInput,
 } from "@backsteros/contracts";
 import type Stripe from "stripe";
 
+import { db } from "../db/index.js";
+import { workspaceIntegrationSecrets } from "../db/schema.js";
 import { previewCursorApiKey } from "./cursor-settings.js";
-import { createIntegrationSecretSettingsService } from "./integration-secret-settings.js";
-import { workspaceIntegrationSecretStore } from "./integration-secret-store.js";
 import { getConfiguredStripeSecretKey } from "./stripe-auth.js";
 import {
   createStripeClient,
@@ -21,31 +23,113 @@ export function previewStripeSecretKey(key: string): string {
   return previewCursorApiKey(key);
 }
 
-const stripeSettings = createIntegrationSecretSettingsService({
-  store: workspaceIntegrationSecretStore("stripeSecretKey"),
-  patchKey: "secretKey",
-  preview: previewStripeSecretKey,
-  envFallback: getConfiguredStripeSecretKey,
-  toSettings: (state): StripeSettings => ({
-    secretKeyConfigured: state.configured,
-    secretKeyPreview: state.preview,
-    connected: state.connected,
-    envSecretConfigured: state.envConfigured,
-  }),
-  test: testStripeSecretKey,
-});
+function normalizeSecret(value: string | null | undefined): string | null {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : null;
+}
+
+async function getSecretRow(workspaceId: string): Promise<{
+  stripePublishableKey: string | null;
+  stripeSecretKey: string | null;
+} | null> {
+  const [row] = await db
+    .select({
+      stripePublishableKey: workspaceIntegrationSecrets.stripePublishableKey,
+      stripeSecretKey: workspaceIntegrationSecrets.stripeSecretKey,
+    })
+    .from(workspaceIntegrationSecrets)
+    .where(eq(workspaceIntegrationSecrets.workspaceId, workspaceId))
+    .limit(1);
+  return row ?? null;
+}
 
 /** Workspace-stored Stripe secret (Settings → Stripe). */
-export const getWorkspaceStripeSecretKey = stripeSettings.getWorkspaceSecret;
+export async function getWorkspaceStripeSecretKey(
+  workspaceId: string,
+): Promise<string | null> {
+  const row = await getSecretRow(workspaceId);
+  return normalizeSecret(row?.stripeSecretKey);
+}
 
 /** Workspace secret, then `STRIPE_SECRET_KEY` / machine-secret fallback. */
-export const getWorkspaceOrEnvStripeSecretKey = stripeSettings.getSecret;
+export async function getWorkspaceOrEnvStripeSecretKey(
+  workspaceId: string,
+): Promise<string | null> {
+  return (
+    (await getWorkspaceStripeSecretKey(workspaceId)) ??
+    normalizeSecret(getConfiguredStripeSecretKey())
+  );
+}
 
-export const getStripeSettings = stripeSettings.getSettings;
+export async function getStripeSettings(
+  workspaceId: string,
+): Promise<StripeSettings> {
+  const row = await getSecretRow(workspaceId);
+  const publishable = normalizeSecret(row?.stripePublishableKey);
+  const secret = normalizeSecret(row?.stripeSecretKey);
+  const envSecret = normalizeSecret(getConfiguredStripeSecretKey());
+  return {
+    publishableKeyConfigured: publishable != null,
+    publishableKeyPreview: publishable
+      ? previewStripeSecretKey(publishable)
+      : null,
+    secretKeyConfigured: secret != null,
+    secretKeyPreview: secret ? previewStripeSecretKey(secret) : null,
+    connected: secret != null || envSecret != null,
+    envSecretConfigured: envSecret != null,
+  };
+}
 
-export const updateStripeSettings = stripeSettings.updateSettings;
+export async function updateStripeSettings(
+  workspaceId: string,
+  patch: UpdateStripeSettingsInput,
+): Promise<StripeSettings> {
+  const updates: {
+    stripePublishableKey?: string | null;
+    stripeSecretKey?: string | null;
+    updatedAt: Date;
+  } = { updatedAt: new Date() };
 
-export const testStripeConnection = stripeSettings.testConnection;
+  if (patch.publishableKey !== undefined) {
+    updates.stripePublishableKey = normalizeSecret(patch.publishableKey);
+  }
+  if (patch.secretKey !== undefined) {
+    updates.stripeSecretKey = normalizeSecret(patch.secretKey);
+  }
+
+  if (
+    patch.publishableKey !== undefined ||
+    patch.secretKey !== undefined
+  ) {
+    await db
+      .insert(workspaceIntegrationSecrets)
+      .values({
+        workspaceId,
+        stripePublishableKey:
+          patch.publishableKey !== undefined
+            ? normalizeSecret(patch.publishableKey)
+            : null,
+        stripeSecretKey:
+          patch.secretKey !== undefined
+            ? normalizeSecret(patch.secretKey)
+            : null,
+      })
+      .onConflictDoUpdate({
+        target: workspaceIntegrationSecrets.workspaceId,
+        set: updates,
+      });
+  }
+
+  return getStripeSettings(workspaceId);
+}
+
+export async function testStripeConnection(
+  workspaceId: string,
+): Promise<StripeTestConnectionResult> {
+  return testStripeSecretKey(
+    await getWorkspaceOrEnvStripeSecretKey(workspaceId),
+  );
+}
 
 async function testStripeSecretKey(
   secretKey: string | null,
