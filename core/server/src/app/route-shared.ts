@@ -539,6 +539,7 @@ export const letterSchema = z.object({
   extractedText: z.string().max(2_000_000).nullable().optional(),
   sourceDocumentId: z.string().nullable().optional(),
   sourceContentVersion: z.number().int().nonnegative().nullable().optional(),
+  exportSettings: z.record(z.string(), z.unknown()).nullable().optional(),
   sortOrder: z.number().int().optional(),
 });
 

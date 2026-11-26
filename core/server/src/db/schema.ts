@@ -2202,6 +2202,8 @@ export const letters = pgTable(
       onDelete: "set null",
     }),
     sourceContentVersion: integer("source_content_version"),
+    /** Frozen PDF export prefs (recipient, locale, chrome) for this letter. */
+    exportSettings: jsonb("export_settings").$type<Record<string, unknown> | null>(),
     sortOrder: bigint("sort_order", { mode: "number" }).notNull().default(0),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),

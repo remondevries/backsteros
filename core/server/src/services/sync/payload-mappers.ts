@@ -309,6 +309,7 @@ export const letterKeys = {
   checksum: "checksum", content_etag: "contentEtag",
   source_document_id: "sourceDocumentId",
   source_content_version: "sourceContentVersion",
+  export_settings: "exportSettings",
   sort_order: "sortOrder",
 };
 

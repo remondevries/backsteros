@@ -120,7 +120,9 @@ export function buildLetterRestPayload(
   letterId: string,
   body: Record<string, unknown>,
 ): Record<string, unknown> {
-  return restFieldsToSyncPayload(letterId, body);
+  return restFieldsToSyncPayload(letterId, body, {
+    jsonStringify: ["export_settings"],
+  });
 }
 
 export function buildMeetingRestPayload(

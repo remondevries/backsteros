@@ -789,6 +789,13 @@ export async function applySyncChange(
         workspaceId, change.entity_id, executor,
       );
       const payload = camelizePayload(change.payload, letterKeys);
+      if (typeof payload.exportSettings === "string") {
+        try {
+          payload.exportSettings = JSON.parse(payload.exportSettings);
+        } catch {
+          payload.exportSettings = null;
+        }
+      }
       if (existing) {
         const parsed = letterInputSchema.partial().safeParse(payload);
         if (!parsed.success) throw new Error("INVALID_LETTER");

@@ -5,6 +5,7 @@ import {
 	type DocumentActivityRow,
 } from "./document-activities.js";
 import * as documentService from "./documents.js";
+import { getPdfDocumentSettings } from "./pdf-export-settings.js";
 import type { TaskWriteActor } from "../lib/write-actor.js";
 
 const MAX_PDF_BYTES = 25_000_000;
@@ -32,6 +33,8 @@ export type CreateDocumentPdfInput = {
 	title?: string | null;
 	brand?: DocumentPdfBrand | null;
 	context?: string | null;
+	/** Snapshot of PDF export prefs frozen onto the letter. */
+	exportSettings?: Record<string, unknown> | null;
 	actor: TaskWriteActor;
 	actorKind?: "user" | "agent" | "system";
 	actorApiKeyId?: string | null;
@@ -148,6 +151,26 @@ export async function createDocumentPdfExport(
 		? input.brand
 		: null;
 
+	let exportSettings =
+		input.exportSettings &&
+		typeof input.exportSettings === "object" &&
+		!Array.isArray(input.exportSettings)
+			? input.exportSettings
+			: null;
+	if (!exportSettings) {
+		const draft = await getPdfDocumentSettings(
+			input.workspaceId,
+			documentId,
+		);
+		if (
+			draft?.settings &&
+			typeof draft.settings === "object" &&
+			!Array.isArray(draft.settings)
+		) {
+			exportSettings = draft.settings as Record<string, unknown>;
+		}
+	}
+
 	let letter: Awaited<ReturnType<typeof circleService.createLetter>>;
 	try {
 		letter = await circleService.createLetter(input.workspaceId, {
@@ -164,6 +187,7 @@ export async function createDocumentPdfExport(
 				typeof doc.contentVersion === "number"
 					? doc.contentVersion
 					: null,
+			exportSettings,
 			receivedDate: new Date().toISOString(),
 		});
 	} catch (err) {

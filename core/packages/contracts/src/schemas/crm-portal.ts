@@ -624,6 +624,8 @@ export const letterInputSchema = z.object({
   extractedText: z.string().max(2_000_000).nullable().optional(),
   sourceDocumentId: z.string().nullable().optional(),
   sourceContentVersion: z.number().int().nonnegative().nullable().optional(),
+  /** Frozen PDF export prefs for this letter (Firm / agents). */
+  exportSettings: z.record(z.string(), z.unknown()).nullable().optional(),
   sortOrder: z.number().int().optional(),
 });
 
@@ -660,6 +662,9 @@ export const letterSchema = z.object({
   checksum: z.string().nullable(),
   contentEtag: z.string().nullable(),
   extractedText: z.string().nullable(),
+  sourceDocumentId: z.string().nullable().optional(),
+  sourceContentVersion: z.number().int().nullable().optional(),
+  exportSettings: z.record(z.string(), z.unknown()).nullable().optional(),
   sortOrder: z.number().int(),
   createdAt: isoDateSchema,
   updatedAt: isoDateSchema,

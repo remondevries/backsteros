@@ -47,8 +47,35 @@ type LetterInput = {
   extractedText?: string | null;
   sourceDocumentId?: string | null;
   sourceContentVersion?: number | null;
+  exportSettings?: Record<string, unknown> | string | null;
   sortOrder?: number;
 };
+
+function normalizeExportSettings(
+  value: LetterInput["exportSettings"],
+): Record<string, unknown> | null | undefined {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value) as unknown;
+      if (
+        parsed &&
+        typeof parsed === "object" &&
+        !Array.isArray(parsed)
+      ) {
+        return parsed as Record<string, unknown>;
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  }
+  if (typeof value === "object" && !Array.isArray(value)) {
+    return value;
+  }
+  return null;
+}
 
 export async function listLetters(
   workspaceId: string,
@@ -171,17 +198,20 @@ export async function createLetter(
     input.number,
     executor,
   );
+  const { exportSettings: rawExportSettings, ...restInput } = input;
+  const exportSettings = normalizeExportSettings(rawExportSettings);
   const [row] = await executor
     .insert(letters)
     .values({
       id,
       workspaceId,
-      ...input,
+      ...restInput,
       number,
       status: input.status ?? (input.direction !== "outgoing" ? "triage" : "ready_to_start"),
       dueDate: input.dueDate ? new Date(input.dueDate) : null,
       receivedDate: input.receivedDate ? new Date(input.receivedDate) : null,
       originalFilename: input.originalFilename ?? "",
+      exportSettings: exportSettings === undefined ? null : exportSettings,
     })
     .returning();
   return row!;
@@ -222,10 +252,12 @@ export async function updateLetter(
     input.receivedDate !== undefined || input.title !== undefined;
   const titleChanged =
     input.title !== undefined && typeof input.title === "string";
+  const { exportSettings: rawExportSettings, ...restInput } = input;
+  const exportSettings = normalizeExportSettings(rawExportSettings);
   const [row] = await executor
     .update(letters)
     .set({
-      ...input,
+      ...restInput,
       dueDate:
         input.dueDate === undefined ? undefined : input.dueDate ? new Date(input.dueDate) : null,
       receivedDate:
@@ -234,6 +266,7 @@ export async function updateLetter(
           : input.receivedDate
             ? new Date(input.receivedDate)
             : null,
+      ...(exportSettings !== undefined ? { exportSettings } : {}),
       updatedAt: new Date(),
     })
     .where(and(eq(letters.workspaceId, workspaceId), eq(letters.id, id), isNull(letters.deletedAt)))
